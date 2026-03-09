@@ -1,0 +1,609 @@
+# Architecture — Ideate v2
+
+## 1. Component Map
+
+### Skills (User-Invocable Workflows)
+
+| Skill | Purpose | Invokes Agents | Key Artifacts |
+|-------|---------|---------------|---------------|
+| `/ideate:plan` | Interview → research → decompose → produce specs | researcher, architect, decomposer | steering/*, plan/* |
+| `/ideate:execute` | Build project following the plan | code-reviewer (incremental) | reviews/incremental/*, journal.md |
+| `/ideate:review` | Comprehensive multi-perspective evaluation | code-reviewer, spec-reviewer, gap-analyst, journal-keeper | reviews/final/* |
+| `/ideate:refine` | Plan changes to existing codebase | researcher, architect, decomposer | Updated steering/*, new plan/work-items/* |
+
+### Agents (Delegated Workers)
+
+| Agent | Model | Background | Tools | Spawned By |
+|-------|-------|-----------|-------|------------|
+| researcher | sonnet | yes | Read, Grep, Glob, WebSearch, WebFetch | plan, refine |
+| architect | opus | no | Read, Grep, Glob, Bash | plan, refine |
+| decomposer | opus | no | Read, Grep, Glob | plan, refine |
+| code-reviewer | sonnet | no | Read, Grep, Glob, Bash | execute, review |
+| spec-reviewer | sonnet | no | Read, Grep, Glob | review |
+| gap-analyst | sonnet | no | Read, Grep, Glob | review |
+| journal-keeper | sonnet | no | Read, Grep, Glob | review |
+
+### External Tooling
+
+| Component | Type | Purpose |
+|-----------|------|---------|
+| session-spawner | MCP server (Python) | Enables recursive session invocation via `spawn_session` tool |
+
+---
+
+## 2. Data Flow
+
+### Phase Sequence and Artifact Flow
+
+```
+USER IDEA
+    │
+    ▼
+┌─────────┐    spawns     ┌────────────┐
+│  plan    │──────────────▶│ researcher │──▶ steering/research/*.md
+│  skill   │──────────────▶│ architect  │──▶ plan/architecture.md, plan/modules/*.md
+│          │──────────────▶│ decomposer │──▶ plan/work-items/*.md
+│          │                └────────────┘
+│          │──▶ steering/interview.md
+│          │──▶ steering/guiding-principles.md
+│          │──▶ steering/constraints.md
+│          │──▶ plan/overview.md
+│          │──▶ plan/execution-strategy.md
+│          │──▶ journal.md (init)
+└─────────┘
+    │
+    ▼
+┌─────────┐    reads      plan/*, steering/*
+│ execute  │    spawns     ┌───────────────┐
+│  skill   │──────────────▶│ code-reviewer │──▶ reviews/incremental/*.md
+│          │──▶ journal.md (append per item)
+│          │──▶ PROJECT SOURCE CODE
+└─────────┘
+    │
+    ▼
+┌─────────┐    reads      everything above
+│ review   │    spawns     ┌───────────────┐
+│  skill   │──────────────▶│ code-reviewer │──▶ reviews/final/code-quality.md
+│          │──────────────▶│ spec-reviewer │──▶ reviews/final/spec-adherence.md
+│          │──────────────▶│ gap-analyst   │──▶ reviews/final/gap-analysis.md
+│          │──────────────▶│ journal-keeper│──▶ reviews/final/decision-log.md
+│          │──▶ reviews/final/summary.md
+│          │──▶ journal.md (append)
+└─────────┘
+    │
+    ▼
+┌─────────┐    reads      all prior artifacts + source code
+│ refine   │    spawns     researcher, architect, decomposer
+│  skill   │──▶ updates steering/* (append, not overwrite)
+│          │──▶ new plan/work-items/*
+│          │──▶ journal.md (append)
+└─────────┘
+    │
+    ▼ (back to execute)
+```
+
+### Coordination Protocol
+
+All inter-phase communication is file-based. Each skill invocation starts with no in-memory state and reads everything it needs from the artifact directory. The artifact directory IS the coordination protocol.
+
+Read/write permissions per phase:
+
+| Artifact | plan | execute | review | refine |
+|----------|------|---------|--------|--------|
+| steering/interview.md | write | read | read | append |
+| steering/guiding-principles.md | write | read | read | update |
+| steering/constraints.md | write | read | read | update |
+| steering/research/*.md | write | read | read | write |
+| plan/overview.md | write | read | read | overwrite |
+| plan/architecture.md | write | read | read | update |
+| plan/modules/*.md | write | read | read | update |
+| plan/execution-strategy.md | write | read | read | overwrite |
+| plan/work-items/*.md | write | read | read | write (new) |
+| reviews/incremental/*.md | — | write | read | read |
+| reviews/final/*.md | — | — | write | read |
+| journal.md | init | append | append | append |
+
+---
+
+## 3. Skill Definitions
+
+### `/ideate:plan`
+
+**Trigger**: User runs `/ideate:plan` with optional initial idea.
+
+**Input**: User's idea (argument or first response).
+
+**Process**:
+1. Ask for artifact directory, create structure
+2. Interview across three tracks (intent, design, process)
+   - Actively probe for ambiguity markers
+   - Spawn `researcher` agents in background for mentioned topics
+   - Integrate research findings into follow-up questions
+3. Detect completion (all tracks covered or user says move on)
+4. Present summary with open questions
+5. Spawn `architect` to produce architecture + module decomposition
+6. For large projects (5+ modules): spawn `decomposer` per module in parallel
+7. For small projects: decompose to work items in main session
+8. Validate: DAG check, 100% coverage, non-overlapping scope, spec sufficiency
+9. Write all artifacts
+10. Present plan summary
+
+**Output artifacts**: All steering/*, all plan/*, journal.md init.
+
+**Decision points**: User input needed for intent/design/process questions during interview. After interview, planning proceeds without user input unless contradictions are found.
+
+### `/ideate:execute`
+
+**Trigger**: User runs `/ideate:execute` with optional artifact directory path.
+
+**Input**: Reads plan/*, steering/*.
+
+**Process**:
+1. Locate and read all plan artifacts
+2. Validate DAG, present execution plan, get confirmation
+3. Execute work items per execution strategy (sequential, batched, or teams)
+4. Each worker receives: work item, architecture, relevant module spec, guiding principles, constraints
+5. On item completion: spawn `code-reviewer` for incremental review
+6. Review handling: minor → fix silently; significant → fix + journal; scope-changing → Andon cord
+7. Collect unresolvable gaps, present in batches
+8. Report status at milestones
+9. Final summary
+
+**Output artifacts**: Project source code, reviews/incremental/*.md, journal.md entries.
+
+**Decision points**: Confirmation before starting. Andon cord for unresolvable issues.
+
+### `/ideate:review`
+
+**Trigger**: User runs `/ideate:review` with optional artifact directory path.
+
+**Input**: Reads everything — steering/*, plan/*, reviews/incremental/*, journal.md, project source code.
+
+**Process**:
+1. Locate artifacts, read all context
+2. Survey project source code
+3. Spawn four reviewers in parallel
+4. Collect results, write to reviews/final/
+5. Synthesize into reviews/final/summary.md
+6. Present findings, ask user about items requiring decisions
+7. Record answers in journal
+8. Suggest refine if warranted
+
+**Output artifacts**: reviews/final/*.md, journal.md entry.
+
+**Decision points**: Findings requiring user input (not covered by steering docs).
+
+### `/ideate:refine`
+
+**Trigger**: User runs `/ideate:refine` with optional change description.
+
+**Input**: All existing artifacts + project source code.
+
+**Process**:
+1. Locate artifact directory
+2. Spawn `architect` to survey existing codebase
+3. Load all prior context (principles, constraints, plan, journal, review findings)
+4. Interview focused on changes (not full re-interview)
+5. Spawn `researcher` for new topics
+6. Update steering docs (append/update, never silently delete)
+7. Create new work items (numbered from highest existing + 1)
+8. Write change plan to overview.md
+9. Update architecture if needed
+10. Present refinement summary
+
+**Output artifacts**: Updated steering/*, new plan/work-items/*, journal.md entry.
+
+**Decision points**: User input on what to change, which review findings to address vs defer.
+
+---
+
+## 4. Agent Definitions
+
+### researcher
+
+- **Purpose**: Investigate technologies, domains, patterns, APIs during interviews
+- **Responsibility boundary**: Research only — does not make design decisions
+- **Tools**: Read, Grep, Glob, WebSearch, WebFetch
+- **Model**: sonnet (focused tasks, cost efficiency)
+- **MaxTurns**: 20
+- **Background**: yes
+- **Input contract**: Topic to investigate + any specific questions
+- **Output contract**: Structured report (Summary, Key Facts, Recommendations, Risks, Sources). Saves to specified path if Write is available, otherwise returns in response.
+- **Fallback**: If WebSearch/WebFetch denied, uses training knowledge with disclaimer
+
+### architect
+
+- **Purpose**: Analyze codebases and design technical architecture with module decomposition
+- **Responsibility boundary**: Architecture and structure — does not implement code
+- **Tools**: Read, Grep, Glob, Bash
+- **Model**: opus (complex multi-factor reasoning)
+- **MaxTurns**: 40
+- **Background**: no
+- **Input contract**: Interview context + research findings + guiding principles + constraints. Mode: "analyze" (existing codebase) or "design" (new system).
+- **Output contract**: Architecture document with component map, module specs (Provides/Requires/Boundary Rules), data flow, interface contracts. Writes to plan/architecture.md and plan/modules/*.md.
+
+### decomposer
+
+- **Purpose**: Break module specs into atomic work items
+- **Responsibility boundary**: Decomposition only — works within the architecture defined by the architect
+- **Tools**: Read, Grep, Glob
+- **Model**: opus (design decisions about task boundaries)
+- **MaxTurns**: 25
+- **Background**: no
+- **Input contract**: Module spec + architecture doc + guiding principles + constraints + relevant research
+- **Output contract**: Set of work items in standard format. Each has: objective, machine-verifiable acceptance criteria, non-overlapping file scope, dependencies, implementation notes, complexity. Explicit 100% coverage statement.
+
+### code-reviewer
+
+- **Purpose**: Review code for correctness, quality, security, and acceptance criteria satisfaction
+- **Responsibility boundary**: Code quality — does not assess spec adherence (that's spec-reviewer)
+- **Tools**: Read, Grep, Glob, Bash
+- **Model**: sonnet
+- **MaxTurns**: 20
+- **Background**: no
+- **Input contract**: Work item spec (incremental) or full project scope (comprehensive) + architecture doc + guiding principles
+- **Output contract**: Verdict (Pass/Fail), findings by severity (Critical/Significant/Minor) with file:line references and suggested fixes. No praise — only problems.
+
+### spec-reviewer
+
+- **Purpose**: Verify implementation matches the plan, architecture, and guiding principles
+- **Responsibility boundary**: Adherence — does not assess code quality
+- **Tools**: Read, Grep, Glob
+- **Model**: sonnet
+- **MaxTurns**: 25
+- **Background**: no
+- **Input contract**: All work items + architecture doc + module specs + guiding principles
+- **Output contract**: Deviations from architecture (with evidence), unmet acceptance criteria, principle violations, undocumented additions.
+
+### gap-analyst
+
+- **Purpose**: Find what's missing — not what's wrong with what exists, but what doesn't exist at all
+- **Responsibility boundary**: Completeness — does not assess quality of existing code
+- **Tools**: Read, Grep, Glob
+- **Model**: sonnet
+- **MaxTurns**: 25
+- **Background**: no
+- **Input contract**: Interview transcript + guiding principles + full plan + project source code
+- **Output contract**: Gaps by category (missing requirements, unhandled edge cases, incomplete integrations, missing infrastructure, implicit requirements). Each with severity and recommendation (address now vs defer + rationale).
+
+### journal-keeper
+
+- **Purpose**: Synthesize project history from all available artifacts
+- **Responsibility boundary**: Synthesis — does not produce new findings, connects existing ones
+- **Tools**: Read, Grep, Glob
+- **Model**: sonnet
+- **MaxTurns**: 15
+- **Background**: no
+- **Input contract**: journal.md + all reviews (incremental and final) + guiding principles + plan overview
+- **Output contract**: Decision log (chronological: decision, rationale, alternatives, implications) + open questions (question, impact, who answers, consequence of inaction). Does not duplicate other reviewers' content.
+
+---
+
+## 5. MCP Server Design — Session Spawner
+
+### Tool Interface
+
+```
+Tool: spawn_session
+
+Parameters:
+  prompt: string (required)
+    The prompt for the spawned Claude Code session.
+
+  working_dir: string (required)
+    Working directory for the spawned session.
+
+  max_turns: integer (default: 30)
+    Maximum agentic turns before the session terminates.
+
+  max_depth: integer (default: 3)
+    Maximum recursive spawn depth. Prevents fork bombs.
+
+  timeout: integer (default: 600)
+    Per-session timeout in seconds.
+
+  permission_mode: string (default: "acceptEdits")
+    Permission mode: acceptEdits | dontAsk
+
+  allowed_tools: string[] (optional)
+    Tool allowlist for the spawned session.
+
+Returns:
+  output: string
+    The spawned session's output (stdout).
+
+  exit_code: integer
+    Process exit code (0 = success).
+
+  session_id: string
+    Session ID for potential resume.
+
+  duration_ms: integer
+    Wall-clock duration.
+
+  error: string | null
+    Error message if the session failed.
+```
+
+### Safety Mechanisms
+
+1. **Depth tracking**: Environment variable `IDEATE_SPAWN_DEPTH` incremented per level. Server refuses spawns when depth >= max_depth.
+2. **Concurrency limiter**: asyncio.Semaphore limits simultaneous spawned sessions (default: 5). Excess requests queue.
+3. **Timeout enforcement**: `subprocess.run(timeout=...)` kills hung sessions.
+4. **Output truncation**: If stdout exceeds a size threshold (configurable, default 50KB), truncate and write full output to a temp file, return summary + file path.
+5. **No auto-enable**: User must explicitly configure the MCP server. Not bundled as auto-start.
+
+### Implementation
+
+```python
+# Pseudocode — actual implementation in work item 010
+import subprocess, os, asyncio
+from mcp.server import Server
+
+server = Server("ideate-session-spawner")
+semaphore = asyncio.Semaphore(5)
+
+@server.tool("spawn_session")
+async def spawn_session(prompt, working_dir, max_turns=30, max_depth=3, timeout=600, permission_mode="acceptEdits", allowed_tools=None):
+    current_depth = int(os.environ.get("IDEATE_SPAWN_DEPTH", "0"))
+    if current_depth >= max_depth:
+        return {"error": f"Max recursive depth {max_depth} reached", "output": "", "exit_code": 1}
+
+    env = {**os.environ, "IDEATE_SPAWN_DEPTH": str(current_depth + 1)}
+    cmd = ["claude", "--print", "--output-format", "json",
+           "--permission-mode", permission_mode,
+           "--max-turns", str(max_turns),
+           "--cwd", working_dir, prompt]
+
+    if allowed_tools:
+        cmd.extend(["--allowedTools", ",".join(allowed_tools)])
+
+    async with semaphore:
+        result = await asyncio.to_thread(
+            subprocess.run, cmd, capture_output=True, text=True, timeout=timeout, env=env
+        )
+
+    return {
+        "output": result.stdout[:50000],
+        "exit_code": result.returncode,
+        "session_id": "",  # parsed from JSON output if available
+        "duration_ms": 0,  # calculated from wall clock
+        "error": result.stderr if result.returncode != 0 else None
+    }
+```
+
+### Error Handling
+
+- **Timeout**: Returns structured error with partial output and "timeout" flag
+- **Process crash**: Returns stderr + exit code + any partial stdout
+- **Depth exceeded**: Returns immediately with descriptive error, no subprocess spawned
+- **Concurrency exceeded**: Queues (does not reject) — caller waits for a slot
+
+---
+
+## 6. Module Decomposition Protocol
+
+### When to Use Modules
+
+- **Skip modules**: Projects with fewer than 5 logical components. Decompose directly from architecture to work items.
+- **Use modules**: Projects with 5+ components, or any project where components have non-trivial interfaces between them.
+
+### Module Spec Format
+
+```markdown
+# Module: {Name}
+
+## Scope
+What this module is responsible for. What it is NOT responsible for.
+
+## Provides
+- `{export/interface}` — {description, signature if applicable}
+
+## Requires
+- `{import/dependency}` (from: {module-name}) — {what it needs and why}
+
+## Boundary Rules
+- {Constraints on this module's behavior}
+- {What it may and may not access}
+- {Performance/security requirements specific to this module}
+
+## Internal Design Notes
+Optional: data models, key algorithms, implementation approach.
+Not binding — the decomposer may refine these when creating work items.
+```
+
+### Interface Contract Rules
+
+1. Every `Provides` entry in one module that is referenced as a `Requires` by another module must have a matching signature/contract.
+2. Contracts are defined at the module level BEFORE work items are created. Work items implement the contracts; they do not define them.
+3. If two modules disagree on an interface (discovered during decomposition), the architect must resolve the conflict before work items are finalized.
+
+### 100% Coverage Check
+
+After decomposition, the plan skill verifies:
+1. Every module's scope is fully covered by its work items (no gaps)
+2. Every work item maps to exactly one module (no orphans)
+3. The union of all module scopes equals the full project scope defined in the architecture
+4. No work item's file scope overlaps with another's (unless sequenced by dependency)
+
+### Parallel Decomposition Flow
+
+```
+architect produces:
+  plan/architecture.md (components, relationships)
+  plan/modules/auth.md (scope, provides, requires)
+  plan/modules/api.md
+  plan/modules/ui.md
+      │
+      ▼ (parallel, one per module)
+decomposer(auth) ──▶ work items 001-003
+decomposer(api)  ──▶ work items 004-007
+decomposer(ui)   ──▶ work items 008-011
+      │
+      ▼ (plan skill reconciles)
+cross-module dependency resolution
+coverage check
+DAG validation
+      │
+      ▼
+final plan/work-items/*.md
+```
+
+---
+
+## 7. Continuous Review Architecture
+
+### Review Layers
+
+```
+Layer 1: INCREMENTAL (per work item, during execute)
+  Trigger: work item completion
+  Agent: code-reviewer
+  Scope: files created/modified by that work item
+  Output: reviews/incremental/NNN-{name}.md
+  Blocking: only if critical issues found
+
+Layer 2: CAPSTONE (end of cycle, during review)
+  Trigger: user runs /ideate:review
+  Agents: code-reviewer, spec-reviewer, gap-analyst, journal-keeper (parallel)
+  Scope: entire project + all artifacts
+  Output: reviews/final/*.md + reviews/final/summary.md
+  Purpose: cross-cutting concerns, full-picture assessment
+```
+
+### Incremental Review During Execution
+
+When a work item completes (in any execution mode):
+
+1. The execute skill spawns `code-reviewer` with the work item spec and list of files touched
+2. Review runs while other work items continue (non-blocking for other items)
+3. Review result written to `reviews/incremental/NNN-{name}.md`
+4. Finding handling:
+   - **Minor**: Execute skill fixes immediately, notes rework in journal
+   - **Significant within scope**: Execute skill fixes, notes in journal
+   - **Critical or scope-changing**: Added to Andon cord queue
+
+### Andon Cord Mechanism
+
+```
+During execution, issues accumulate in a queue:
+  - Unresolvable gaps (guiding principles don't answer)
+  - Scope-changing review findings
+  - Contradictions between work items discovered at runtime
+  - Missing dependencies or incorrect interface contracts
+
+Queue is presented to user at:
+  - Natural pause points (between dependency groups)
+  - When a blocking issue prevents progress
+  - At user request
+
+User response options:
+  - Answer the question → recorded in journal, execution continues
+  - Defer → noted in journal, work continues around it
+  - Stop → execution pauses for full re-evaluation
+```
+
+### Capstone Review Integration
+
+The capstone review (layer 2) accounts for incremental reviews:
+- spec-reviewer and gap-analyst read `reviews/incremental/` to know what was already caught
+- The capstone focuses on what per-item reviews CAN'T see: cross-module consistency, architectural coherence, integration completeness, overall principle adherence
+- Findings that duplicate incremental reviews are omitted
+
+---
+
+## 8. Artifact Directory Contract
+
+### Complete File Specification
+
+#### `steering/interview.md`
+- **Purpose**: Record of the planning conversation
+- **Format**: Alternating Q: and A: blocks capturing substance of each exchange
+- **Semantics**: Plan writes initial; refine appends new section with date header and context
+- **Phases**: plan (write), execute (read), review (read), refine (append)
+
+#### `steering/guiding-principles.md`
+- **Purpose**: Decision framework — the "why" behind the project
+- **Format**: Numbered principles, each with name and one-paragraph explanation
+- **Semantics**: Plan writes initial (5-15 principles). Refine updates with change notes. Deprecated principles marked, never silently deleted.
+- **Phases**: plan (write), execute (read), review (read), refine (update)
+
+#### `steering/constraints.md`
+- **Purpose**: Hard boundaries on technology, design, and process
+- **Format**: Categorized list of constraints
+- **Semantics**: Plan writes initial. Refine may add or update constraints.
+- **Phases**: plan (write), execute (read), review (read), refine (update)
+
+#### `steering/research/{topic-slug}.md`
+- **Purpose**: Background research findings on specific topics
+- **Format**: Structured report (Summary, Key Facts, Recommendations, Risks, Sources)
+- **Naming**: kebab-case topic slug (e.g., `session-multiplexing.md`)
+- **Semantics**: Written by researcher agents during plan or refine. Never overwritten — new research on the same topic gets a new file with a suffix.
+- **Phases**: plan (write), execute (read), review (read), refine (write)
+
+#### `plan/overview.md`
+- **Purpose**: High-level summary of what's being built
+- **Format**: Prose with structural diagrams
+- **Semantics**: Plan writes full project overview. Refine overwrites with a change plan focused on the delta.
+- **Phases**: plan (write), execute (read), review (read), refine (overwrite)
+
+#### `plan/architecture.md`
+- **Purpose**: Technical architecture — components, relationships, data flow, interfaces
+- **Format**: Structured sections with component map, data flow diagrams, interface definitions
+- **Semantics**: Plan writes initial. Refine updates only if architecture changes.
+- **Phases**: plan (write), execute (read), review (read), refine (update if changed)
+
+#### `plan/modules/{name}.md`
+- **Purpose**: Intermediate decomposition — module scope, interfaces, boundary rules
+- **Format**: Module spec (Scope, Provides, Requires, Boundary Rules, Internal Design Notes)
+- **Naming**: kebab-case module name matching architecture.md references
+- **Semantics**: Written during plan. Updated during refine if module scope changes.
+- **Phases**: plan (write), execute (read), review (read), refine (update)
+
+#### `plan/execution-strategy.md`
+- **Purpose**: How agents execute the plan — mode, parallelism, worktrees, grouping
+- **Format**: Structured fields (Mode, Parallelism, Worktrees, Review Cadence, Work Item Groups, Agent Configuration)
+- **Valid modes**: Sequential, Batched parallel, Full parallel (teams)
+- **Semantics**: Plan writes initial. Refine writes new strategy for the refinement cycle.
+- **Phases**: plan (write), execute (read), review (read), refine (overwrite)
+
+#### `plan/work-items/NNN-{name}.md`
+- **Purpose**: Atomic executable task specification
+- **Format**: Objective, Acceptance Criteria, File Scope, Dependencies, Implementation Notes, Complexity
+- **Naming**: 3-digit zero-padded number + kebab-case name (e.g., `001-plugin-manifest.md`)
+- **Numbering**: Sequential within a cycle. Refine continues from highest existing number.
+- **Constraints**: Non-overlapping file scope between concurrent items. Dependencies form a DAG. Acceptance criteria machine-verifiable where possible.
+- **Phases**: plan (write), execute (read + mark criteria), review (read), refine (write new)
+
+#### `reviews/incremental/NNN-{name}.md`
+- **Purpose**: Per-work-item review results from execution phase
+- **Format**: Verdict (Pass/Fail), findings by severity with file:line references
+- **Naming**: Matches work item number and name
+- **Phases**: execute (write), review (read), refine (read)
+
+#### `reviews/final/code-quality.md`
+- **Purpose**: Comprehensive code review findings
+- **Phases**: review (write), refine (read)
+
+#### `reviews/final/spec-adherence.md`
+- **Purpose**: Architecture/principle/criteria adherence check
+- **Phases**: review (write), refine (read)
+
+#### `reviews/final/gap-analysis.md`
+- **Purpose**: Missing requirements and blind spots
+- **Phases**: review (write), refine (read)
+
+#### `reviews/final/decision-log.md`
+- **Purpose**: Synthesized history of decisions and open questions
+- **Phases**: review (write), refine (read)
+
+#### `reviews/final/summary.md`
+- **Purpose**: Cross-reviewer synthesis with prioritized findings and refinement recommendations
+- **Format**: Findings by severity, mapped to principles/work items, user-input items separated, proposed refinement plan
+- **Phases**: review (write), refine (read)
+
+#### `journal.md`
+- **Purpose**: Running log of all project activity
+- **Format**: Phase-tagged entries with dates. Format: `## [{phase}] {date} — {title}`
+- **Semantics**: STRICTLY APPEND-ONLY. No phase ever edits or deletes existing entries.
+- **Phases**: plan (init), execute (append per item), review (append), refine (append)
