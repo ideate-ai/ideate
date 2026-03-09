@@ -13,7 +13,7 @@ The workflow follows four phases -- plan, execute, review, refine -- each backed
 Add the plugin directly from the repository:
 
 ```bash
-claude plugin add /path/to/ideate2
+claude plugin add /path/to/ideate
 ```
 
 Or clone the repository and add it manually to your Claude Code plugin search path.
@@ -25,14 +25,14 @@ The session-spawner MCP server enables recursive Claude Code session invocation,
 ### 1. Install dependencies
 
 ```bash
-cd /path/to/ideate2/mcp/session-spawner
+cd /path/to/ideate/mcp/session-spawner
 pip install -r requirements.txt
 ```
 
 ### 2. Register the MCP server
 
 ```bash
-claude mcp add ideate-session-spawner -- python /path/to/ideate2/mcp/session-spawner/server.py
+claude mcp add ideate-session-spawner -- python /path/to/ideate/mcp/session-spawner/server.py
 ```
 
 See [mcp/session-spawner/README.md](mcp/session-spawner/README.md) for detailed configuration options, safety mechanisms, and environment variables.

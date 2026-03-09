@@ -1,5 +1,5 @@
 {
-  "name": "ideate2-marketplace",
+  "name": "ideate-marketplace",
   "owner": {
     "name": "Dan"
   },
@@ -9,7 +9,7 @@
   },
   "plugins": [
     {
-      "name": "ideate2",
+      "name": "ideate",
       "source": "./",
       "description": "Structured SDLC workflow for planning, building, and validating software projects.",
       "version": "0.2.0"
