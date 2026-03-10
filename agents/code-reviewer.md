@@ -7,6 +7,7 @@ tools:
   - Glob
   - Bash
 model: sonnet
+background: false
 maxTurns: 20
 ---
 

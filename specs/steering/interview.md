@@ -82,3 +82,47 @@ A: We can omit. Claude Code defaults to background: false.
 
 **Q: Several minor findings were flagged (artifact overwrite guard, subset execution, temp cleanup, domain agnosticism path, git history assumption). Promote any to this cycle?**
 A: Note these issues and continue. All minors deferred.
+
+---
+
+## Refinement Interview — 2026-03-09
+
+**Context**: Refinement to add observability and execution control to the session-spawner MCP server.
+
+**Q: What aspects of the tool do you want to improve?**
+A: Capture stats about MCP usage (specifically the session spawner), and have better tools to tune parallelism.
+
+**Q: What do you want to do with the stats?**
+A: The session spawner doesn't get called as much as expected. Want to capture data about how often sessions are spawned and how many agents work in parallel.
+
+**Q: Where should stats be captured?**
+A: A log file in the session spawner. Should be configurable.
+
+**Q: What should "team selection" mean for spawned sessions?**
+A: Whenever possible, spawned sessions should use agent teams. Want to capture whether spawned sessions leveraged an agent team. Goal: understand progress and identify opportunities for better parallel workstreams.
+
+**Q: Log format?**
+A: JSONL.
+
+**Q: What should quick stats during execution look like?**
+A: A table providing a status report of spawned teams, printed to the terminal.
+
+**Q: What should the spawned subprocess instructions cover?**
+A: Preference for parallelism, agent team usage. Want control not just of the foreground session but all sessions spawned as a result — instructions propagate recursively.
+
+**Q: Goal — observability only, or active tuning?**
+A: Both. Metrics for manual analysis and quick stats for the user during execution.
+
+**Q: Resolve open questions (log rotation, instruction injection mechanism, table timing)?**
+A: Use reasonable assumptions.
+
+---
+## Refinement Interview — 2026-03-09
+
+**Context**: All remaining deferred open items from review cycles 1-3 and the observability feature cycle. User requested to address all items in a single cleanup cycle.
+
+**Q: There are 6 deferred items: _reset_globals fixture comment, status table structural test assertions, concurrent status table README note, --allowedTools syntax verification via test, agent background frontmatter field for non-background agents, and overflow temp file documentation. Address all or subset?**
+A: Yes, lets do them all.
+
+**Q: For overflow temp files, should we add cleanup logic to server.py or document the limitation in README?**
+A: Document the limitation (implied by accepting the items as-is in a documentation-focused cycle).

@@ -1,4 +1,95 @@
-# Review Summary
+# Review Summary — Cycle 3 (2026-03-09)
+
+*Post-minor-fixes review of session spawner MCP server (`mcp/session-spawner/`).*
+
+## Overview
+
+All cycle 2 critical and significant findings were correctly resolved. All 32 tests pass. One new critical issue was found that escaped two prior review cycles: a latent `AttributeError` crash in the JSON parsing path. The README Observability section introduced during the cycle 2 README update contains two significant inaccuracies — the status table example is entirely wrong and the JSONL schema omits a required field. These are documentation defects that affect usability but not runtime correctness.
+
+## Critical Findings
+
+- [code-reviewer] `parsed.get("session_id", "")` called before `isinstance(parsed, dict)` guard at `server.py:327` — `AttributeError` on non-dict JSON output escapes `except (json.JSONDecodeError, TypeError)` and propagates unhandled, discarding the spawn result and preventing log entry and registry update — relates to: work item 022
+
+## Significant Findings
+
+- [code-reviewer + spec-reviewer + gap-analyst] README status table example (`README.md:147-152`) shows wrong column names (`team/depth/duration/tokens/status`), wrong duration format (`12500ms`), wrong status vocabulary (`ok`), and a non-existent `tokens` column — actual columns are `#/Session ID/Depth/Status/Duration/Team` with duration as `12.5s` — relates to: cross-cutting (3 reviewers independently)
+- [code-reviewer + spec-reviewer + gap-analyst] README JSONL schema example (`README.md:124-140`) omits the `used_team` field (always written by implementation) and states "`team_name` is omitted when not provided" (incorrect — implementation always writes `null`) — relates to: cross-cutting (3 reviewers independently)
+- [gap-analyst] No observability of peak concurrency — JSONL log records per-call data but cannot answer "how many sessions were running simultaneously"; the user's stated goal requires external timestamp-overlap analysis not documented anywhere — relates to: cross-cutting (recommended defer with README documentation)
+
+## Minor Findings
+
+- [code-reviewer] Status table non-determinism under concurrent spawns undocumented — multiple coroutines may print overlapping tables without synchronization — relates to: cross-cutting
+- [code-reviewer] `test_jsonl_timeout_entry` does not assert `prompt_bytes` value in timeout path — a regression recording wrong bytes would go undetected (3rd review cycle without resolution) — relates to: work item 025
+- [gap-analyst] Status table test does not verify separator characters or any data row value — table-formatting logic entirely untested beyond header word presence — relates to: work item 025
+
+## Findings Requiring User Input
+
+- **Peak concurrency measurement**: The JSONL log cannot directly answer "how many sessions were running in parallel." Options: (a) add an instantaneous concurrency counter field (requires shared async state, adds hot-path complexity), or (b) document that users can approximate concurrency by comparing `timestamp` + `duration_ms` across entries. The gap-analyst recommends option (b) as the lower-complexity approach, but this requires confirmation.
+
+## Proposed Refinement Plan
+
+The review identified 1 critical and 2 significant findings (plus 1 significant deferred). A targeted fix cycle is warranted. Scope is small — all fixes are in `mcp/session-spawner/server.py`, `test_server.py`, and `README.md`.
+
+1. **Fix `AttributeError` crash** (`server.py:327`) — move `parsed.get("session_id", "")` inside the `isinstance(parsed, dict)` block. ~2 lines.
+2. **Fix README status table example** (`README.md`) — replace with a table using actual column names and format. ~10 lines.
+3. **Fix README JSONL schema** (`README.md`) — add `used_team`, correct `team_name` null description. ~3 lines.
+4. **Fix `test_jsonl_timeout_entry`** (`test_server.py:424`) — add `prompt_bytes` value assertion. ~1 line.
+5. **Document peak concurrency limitation in README** (pending user decision on option a vs b above).
+
+Estimated: 1 targeted work item, all in `mcp/session-spawner/`. Or apply directly without a formal refine cycle.
+
+---
+
+*Prior-cycle summary follows.*
+
+---
+
+# Review Summary — Cycle 2 (2026-03-09)
+
+*Work items 022–025: session spawner observability and execution control.*
+
+## Overview
+The four work items are functionally complete and all 29 tests pass. One critical issue exists that will cause production failures under normal usage: `_log_entry()` has no exception handler, so any disk or permission error on `IDEATE_LOG_FILE` propagates as an MCP error and breaks all subsequent spawn calls for the server's lifetime. Three significant issues require attention before the feature set is fully usable: the timestamp format does not match the architecture schema, the README was not updated and makes all new parameters and env vars invisible to users, and `team_name` does not achieve its stated user intent of causing spawned sessions to use agent teams.
+
+## Critical Findings
+- [code-reviewer] `_log_entry()` has no exception handler — any `IDEATE_LOG_FILE` path error crashes every subsequent `spawn_session` call for the server's lifetime — relates to: work item 022, cross-cutting with gap-analysis
+
+## Significant Findings
+- [code-reviewer] Timestamp format emits `+00:00` with microsecond precision; architecture schema specifies `Z` suffix with millisecond precision — relates to: work item 022
+- [code-reviewer] Entry dict duplicated across timeout and success branches — schema drift risk on future field additions — relates to: work item 022
+- [gap-analyst] README not updated — `team_name`, `exec_instructions`, `IDEATE_LOG_FILE`, `IDEATE_EXEC_INSTRUCTIONS`, `IDEATE_TEAM_NAME` all absent — relates to: cross-cutting (no work item owned README updates)
+- [gap-analyst] `team_name` does not cause spawned sessions to use agent teams — `IDEATE_TEAM_NAME` env var is written but nothing reads it — relates to: work item 022, user intent from interview
+- [code-reviewer / spec-reviewer] `team_name` and `exec_instructions` missing from README parameters table — relates to: cross-cutting
+
+## Minor Findings
+- [spec-reviewer] `#` column minimum width initialized to 2, spec notes specify 4 — relates to: work item 023
+- [spec-reviewer] `test_status_table_printed_to_stderr` only checks `len(captured.err) > 0`, cannot detect broken renderer — relates to: work item 025
+- [spec-reviewer] `_reset_globals` fixture resets more globals than WI-025 specified — relates to: work item 025
+- [code-reviewer] Status table non-deterministic under concurrent spawns — relates to: work item 023
+- [code-reviewer] No negative-case test for `IDEATE_TEAM_NAME` absent from child env — relates to: work item 025
+- [gap-analyst] `IDEATE_TEAM_NAME` leaks to grandchild sessions via `os.environ` spread — relates to: work item 022
+- [gap-analyst] Recursive `exec_instructions` propagation semantics not documented — relates to: cross-cutting
+- [gap-analyst] Log write failures should emit `logger.warning`, not pass silently — relates to: work item 022
+
+## Findings Requiring User Input
+- **README update scope**: No work item was assigned README update responsibility. The README currently describes the pre-cycle-2 version of the server. Does the user want this addressed in a targeted fix now, or deferred to the next refinement cycle?
+- **`team_name` product intent**: The implementation logs and propagates team name but does not activate agent team behavior. Should `team_name` automatically inject a team directive into the instruction block when provided? Or is observability-only acceptable with a README note?
+
+## Proposed Refinement Plan
+The review identified 1 critical and 5 significant findings. A targeted fix cycle is recommended before the new features are used in production. Scope:
+
+1. **Fix `_log_entry()` error isolation** (server.py) — wrap in try/except, add `logger.warning`. ~5 lines.
+2. **Fix timestamp format** (server.py, 2 locations) — `.isoformat(timespec="milliseconds").replace("+00:00", "Z")`. ~1 line each.
+3. **Update README** (README.md) — add `team_name`, `exec_instructions` to parameters table; add `IDEATE_LOG_FILE`, `IDEATE_EXEC_INSTRUCTIONS`, `IDEATE_TEAM_NAME` to env var table; document recursive propagation; document `team_name` as advisory-only; show example JSONL entry.
+4. **Resolve entry dict duplication** (server.py) — consolidate timeout and success entry construction into one block. Optional for this cycle; significant for long-term maintainability.
+
+Estimated: 3–4 targeted work items, all in `mcp/session-spawner/`. Run `/ideate:refine` with this scope.
+
+---
+*Prior-cycle summary follows below.*
+
+---
+# Review Summary — Cycle 1
 
 ## Overview
 The ideate v2 plugin is structurally complete — all four skills, seven agents, the MCP server, and artifact conventions are implemented and internally coherent. The architecture is well-decomposed and the guiding principles are consistently reflected across all components. The primary issues are: (1) the MCP server has several security and correctness bugs, (2) the artifact-conventions document has drifted from the actual formats used by agents and skills, (3) the plugin manifest likely needs additional fields for Claude Code to discover the skills, and (4) the project lacks a top-level README and MCP server tests.

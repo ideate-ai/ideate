@@ -1,7 +1,7 @@
 {
   "name": "ideate",
   "description": "Structured SDLC workflow for planning, building, and validating software projects through iterative interview, execution, and review with progressive decomposition and continuous review.",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "author": {
     "name": "Dan Singer"
   },

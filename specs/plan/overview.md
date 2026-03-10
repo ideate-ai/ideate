@@ -1,28 +1,33 @@
-# Refinement Plan — Post-Review Hardening
+# Refinement Plan — Deferred Open Items Cleanup
 
 ## What Is Changing
 
-The comprehensive review identified security vulnerabilities in the MCP session-spawner, missing infrastructure (README, tests, plugin validation), format inconsistencies between artifact-conventions.md and actual agent/skill output, and incomplete features in the execute skill. This refinement addresses all critical and significant findings from the review.
+This refinement addresses all deferred open items accumulated across three review cycles and a dedicated observability/execution-control feature cycle. The items fall into three categories: test suite polish, documentation improvements, and agent configuration consistency.
+
+## Scope Boundary
+
+**Changing:**
+- `mcp/session-spawner/test_server.py` — fixture documentation, status table structural assertions, --allowedTools syntax test
+- `mcp/session-spawner/README.md` — concurrent status table note, overflow file lifecycle note
+- `agents/architect.md`, `agents/code-reviewer.md`, `agents/spec-reviewer.md`, `agents/gap-analyst.md`, `agents/journal-keeper.md`, `agents/decomposer.md` — add `background: false` frontmatter field
+
+**Not changing:**
+- `mcp/session-spawner/server.py` — no behavioral changes; overflow limitation is documented rather than fixed
+- `skills/` — no skill changes
+- `steering/` — no principle or constraint changes
+- `agents/researcher.md` — already has `background: true`, not modified
 
 ## Work Streams
 
-### Stream 1: MCP Server Hardening
-Fix security bugs (caller-controlled max_depth bypass, unsanitized working_dir, unbounded prompt size), correctness issues (TimeoutExpired "None" string, module-level semaphore), add token budget logging, and write comprehensive tests.
+### Stream 1: Test Suite Polish (WI 026)
+Three additions to test_server.py: a comment on `_reset_globals` explaining why all three globals are reset, structural assertions in the status table test (separator `+` and `completed` data row), and a new test verifying `--allowedTools` comma-separated CLI syntax.
 
-### Stream 2: Plugin Infrastructure
-Create a top-level README with installation, MCP setup, and usage instructions. Run `claude plugin validate` and fix any manifest issues.
+### Stream 2: README Notes (WI 027)
+Two clarifying notes in README.md: a concurrency non-determinism note in the Status Table section (row order is completion order, not start order), and an overflow file lifetime note in the Output Truncation section (files are not auto-deleted).
 
-### Stream 3: Format Canonicalization
-Align artifact-conventions.md with the richer formats that agents and skills actually produce. Eliminate the three-way format divergence for incremental reviews and the agent-vs-conventions mismatch for final reviews.
+### Stream 3: Agent Background Field (WI 028)
+Add `background: false` to the YAML frontmatter of the six foreground agents: architect, code-reviewer, spec-reviewer, gap-analyst, journal-keeper, decomposer. Researcher already has `background: true` and is not modified.
 
-### Stream 4: Skill Improvements
-Add resume detection and project source root derivation to the execute skill. Specify the worktree merge strategy. Fix architect path handling in the plan skill. Fix journal-keeper timing in the review skill. Add Write tool to researcher agent so it can save findings directly.
+## Expected Impact
 
-## Deferred Items
-- Python vs TypeScript for session-spawner (v3 determination)
-- Plan skill artifact overwrite guard
-- Subset work item execution
-- Overflow temp file cleanup
-- Domain agnosticism implementation path
-- Refine skill git history assumption for overview.md backup
-- Background field in agent frontmatter (omission acceptable)
+No behavioral changes. All three work items are documentation, test coverage, or configuration metadata. The session spawner's runtime behavior, the review and execution skills, and all agent capabilities remain unchanged.

@@ -7,6 +7,7 @@ tools:
   - Grep
   - Glob
   - Bash
+background: false
 maxTurns: 40
 ---
 

@@ -9,6 +9,7 @@ import asyncio
 import json
 import os
 import subprocess
+import tempfile
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -40,9 +41,19 @@ def _make_completed_process(
 
 @pytest.fixture(autouse=True)
 def _reset_globals():
-    """Reset module-level globals before each test."""
+    """Reset module-level globals before each test.
+
+    All three globals are reset intentionally:
+    - _semaphore: tests like test_concurrency replace it with a smaller semaphore;
+      subsequent tests must start with the default.
+    - _server_max_depth: tests like test_server_side_max_depth set a lower limit;
+      subsequent tests must use DEFAULT_MAX_DEPTH.
+    - _session_registry: each test starts with an empty registry to avoid
+      cross-test contamination in status table and JSONL logging assertions.
+    """
     spawner._semaphore = asyncio.Semaphore(spawner.DEFAULT_CONCURRENCY)
     spawner._server_max_depth = spawner.DEFAULT_MAX_DEPTH
+    spawner._session_registry = []
     yield
 
 
@@ -331,3 +342,463 @@ async def test_token_budget_top_level_fields(tmp_working_dir):
     data = _parse_response(result)
     assert "token_usage" in data
     assert data["token_usage"]["total_tokens"] == 700
+
+
+# ---------------------------------------------------------------------------
+# 11. JSONL Logging Tests
+# ---------------------------------------------------------------------------
+
+REQUIRED_LOG_FIELDS = {
+    "timestamp", "session_id", "depth", "working_dir", "prompt_bytes",
+    "team_name", "used_team", "duration_ms", "exit_code", "success",
+    "timed_out", "token_usage",
+}
+
+
+@pytest.mark.asyncio
+async def test_jsonl_logging_writes_entry(tmp_working_dir):
+    """When IDEATE_LOG_FILE is set, a completed spawn writes exactly one valid JSON line."""
+    with tempfile.NamedTemporaryFile(mode='w', suffix='.jsonl', delete=False) as f:
+        log_path = f.name
+    try:
+        with patch("subprocess.run", return_value=_make_completed_process(stdout='{"result": "ok"}')):
+            with patch.dict(os.environ, {"IDEATE_LOG_FILE": log_path}):
+                await spawner.call_tool("spawn_session", {"prompt": "hello", "working_dir": tmp_working_dir})
+
+        with open(log_path) as f:
+            lines = [l for l in f.read().splitlines() if l.strip()]
+        assert len(lines) == 1
+        entry = json.loads(lines[0])
+        assert REQUIRED_LOG_FIELDS.issubset(entry.keys())
+        assert entry["prompt_bytes"] == len("hello".encode("utf-8"))
+    finally:
+        os.unlink(log_path)
+
+
+@pytest.mark.asyncio
+async def test_jsonl_logging_disabled_when_unset(tmp_working_dir):
+    """When IDEATE_LOG_FILE is not set, no file is created and no exception is raised."""
+    env_without_log = {k: v for k, v in os.environ.items() if k != "IDEATE_LOG_FILE"}
+    with patch("subprocess.run", return_value=_make_completed_process(stdout='{"result": "ok"}')):
+        with patch.dict(os.environ, env_without_log, clear=True):
+            # Should not raise
+            result = await spawner.call_tool("spawn_session", {"prompt": "hello", "working_dir": tmp_working_dir})
+    data = _parse_response(result)
+    assert data["exit_code"] == 0
+
+
+@pytest.mark.asyncio
+async def test_jsonl_logging_appends(tmp_working_dir):
+    """Two sequential spawn calls result in a file with exactly two JSON lines."""
+    with tempfile.NamedTemporaryFile(mode='w', suffix='.jsonl', delete=False) as f:
+        log_path = f.name
+    try:
+        with patch("subprocess.run", return_value=_make_completed_process(stdout='{"result": "ok"}')):
+            with patch.dict(os.environ, {"IDEATE_LOG_FILE": log_path}):
+                await spawner.call_tool("spawn_session", {"prompt": "first", "working_dir": tmp_working_dir})
+                await spawner.call_tool("spawn_session", {"prompt": "second", "working_dir": tmp_working_dir})
+
+        with open(log_path) as f:
+            lines = [l for l in f.read().splitlines() if l.strip()]
+        assert len(lines) == 2
+        for line in lines:
+            entry = json.loads(line)
+            assert REQUIRED_LOG_FIELDS.issubset(entry.keys())
+    finally:
+        os.unlink(log_path)
+
+
+@pytest.mark.asyncio
+async def test_jsonl_no_entry_on_depth_exceeded(tmp_working_dir):
+    """A depth-exceeded rejection does not write a log entry."""
+    with tempfile.NamedTemporaryFile(mode='w', suffix='.jsonl', delete=False) as f:
+        log_path = f.name
+    try:
+        with patch.dict(os.environ, {"IDEATE_SPAWN_DEPTH": "3", "IDEATE_LOG_FILE": log_path}):
+            result = await spawner.call_tool(
+                "spawn_session",
+                {"prompt": "hello", "working_dir": tmp_working_dir, "max_depth": 3},
+            )
+
+        data = _parse_response(result)
+        assert data["exit_code"] == 1
+
+        with open(log_path) as f:
+            lines = [l for l in f.read().splitlines() if l.strip()]
+        assert len(lines) == 0
+    finally:
+        os.unlink(log_path)
+
+
+@pytest.mark.asyncio
+async def test_jsonl_timeout_entry(tmp_working_dir):
+    """A timed-out call writes an entry with timed_out=True, exit_code=-1, success=False."""
+    with tempfile.NamedTemporaryFile(mode='w', suffix='.jsonl', delete=False) as f:
+        log_path = f.name
+    try:
+        exc = subprocess.TimeoutExpired(cmd=["claude"], timeout=10)
+        exc.stdout = None
+        exc.stderr = None
+
+        with patch("subprocess.run", side_effect=exc):
+            with patch.dict(os.environ, {"IDEATE_LOG_FILE": log_path}):
+                await spawner.call_tool(
+                    "spawn_session",
+                    {"prompt": "hello", "working_dir": tmp_working_dir, "timeout": 10},
+                )
+
+        with open(log_path) as f:
+            lines = [l for l in f.read().splitlines() if l.strip()]
+        assert len(lines) == 1
+        entry = json.loads(lines[0])
+        assert entry["timed_out"] is True
+        assert entry["exit_code"] == -1
+        assert entry["success"] is False
+        assert entry["prompt_bytes"] == len("hello".encode("utf-8"))  # original prompt, not injected
+    finally:
+        os.unlink(log_path)
+
+
+# ---------------------------------------------------------------------------
+# 12. Session Registry Tests
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_session_registry_accumulates(tmp_working_dir):
+    """After two spawn calls, _session_registry has exactly two entries."""
+    with patch("subprocess.run", return_value=_make_completed_process(stdout='{"result": "ok"}')):
+        await spawner.call_tool("spawn_session", {"prompt": "first", "working_dir": tmp_working_dir})
+        await spawner.call_tool("spawn_session", {"prompt": "second", "working_dir": tmp_working_dir})
+
+    assert len(spawner._session_registry) == 2
+
+
+@pytest.mark.asyncio
+async def test_session_registry_reset_between_tests(tmp_working_dir):
+    """The _reset_globals fixture resets _session_registry to []."""
+    # At the start of each test, _reset_globals has already run, so registry must be empty
+    assert spawner._session_registry == []
+
+    with patch("subprocess.run", return_value=_make_completed_process(stdout='{"result": "ok"}')):
+        await spawner.call_tool("spawn_session", {"prompt": "hello", "working_dir": tmp_working_dir})
+
+    assert len(spawner._session_registry) == 1
+
+
+# ---------------------------------------------------------------------------
+# 13. team_name Tests
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_team_name_in_log_entry(tmp_working_dir):
+    """When team_name='workers' is passed, log entry has team_name='workers' and used_team=True."""
+    with tempfile.NamedTemporaryFile(mode='w', suffix='.jsonl', delete=False) as f:
+        log_path = f.name
+    try:
+        with patch("subprocess.run", return_value=_make_completed_process(stdout='{"result": "ok"}')):
+            with patch.dict(os.environ, {"IDEATE_LOG_FILE": log_path}):
+                await spawner.call_tool(
+                    "spawn_session",
+                    {"prompt": "hello", "working_dir": tmp_working_dir, "team_name": "workers"},
+                )
+
+        with open(log_path) as f:
+            lines = [l for l in f.read().splitlines() if l.strip()]
+        entry = json.loads(lines[0])
+        assert entry["team_name"] == "workers"
+        assert entry["used_team"] is True
+    finally:
+        os.unlink(log_path)
+
+
+@pytest.mark.asyncio
+async def test_no_team_name_in_log_entry(tmp_working_dir):
+    """When team_name is not passed, log entry has team_name=None and used_team=False."""
+    with tempfile.NamedTemporaryFile(mode='w', suffix='.jsonl', delete=False) as f:
+        log_path = f.name
+    try:
+        with patch("subprocess.run", return_value=_make_completed_process(stdout='{"result": "ok"}')):
+            with patch.dict(os.environ, {"IDEATE_LOG_FILE": log_path}):
+                await spawner.call_tool(
+                    "spawn_session",
+                    {"prompt": "hello", "working_dir": tmp_working_dir},
+                )
+
+        with open(log_path) as f:
+            lines = [l for l in f.read().splitlines() if l.strip()]
+        entry = json.loads(lines[0])
+        assert entry["team_name"] is None
+        assert entry["used_team"] is False
+    finally:
+        os.unlink(log_path)
+
+
+@pytest.mark.asyncio
+async def test_team_name_propagated_to_env(tmp_working_dir):
+    """When team_name='workers' is passed, child subprocess receives IDEATE_TEAM_NAME='workers'."""
+    captured_env = {}
+
+    def fake_run(cmd, **kwargs):
+        captured_env.update(kwargs.get("env", {}))
+        return _make_completed_process(stdout='{"result": "ok"}')
+
+    with patch("subprocess.run", side_effect=fake_run):
+        await spawner.call_tool(
+            "spawn_session",
+            {"prompt": "hello", "working_dir": tmp_working_dir, "team_name": "workers"},
+        )
+
+    assert captured_env.get("IDEATE_TEAM_NAME") == "workers"
+
+
+# ---------------------------------------------------------------------------
+# 14. Execution Instructions Tests
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_exec_instructions_param_prepended(tmp_working_dir):
+    """When exec_instructions='prefer parallel' is passed, subprocess receives injected prompt."""
+    captured_cmd = []
+
+    def fake_run(cmd, **kwargs):
+        captured_cmd.extend(cmd)
+        return _make_completed_process(stdout='{"result": "ok"}')
+
+    env_without_exec = {k: v for k, v in os.environ.items() if k != "IDEATE_EXEC_INSTRUCTIONS"}
+    with patch("subprocess.run", side_effect=fake_run):
+        with patch.dict(os.environ, env_without_exec, clear=True):
+            await spawner.call_tool(
+                "spawn_session",
+                {"prompt": "do something", "working_dir": tmp_working_dir, "exec_instructions": "prefer parallel"},
+            )
+
+    actual_prompt = captured_cmd[-1]
+    assert actual_prompt.startswith(
+        "[EXECUTION INSTRUCTIONS]\nprefer parallel\n[END EXECUTION INSTRUCTIONS]\n\n"
+    )
+    assert "do something" in actual_prompt
+
+
+@pytest.mark.asyncio
+async def test_exec_instructions_env_var_used(tmp_working_dir):
+    """When IDEATE_EXEC_INSTRUCTIONS='use teams' is set and no param provided, prompt is injected."""
+    captured_cmd = []
+
+    def fake_run(cmd, **kwargs):
+        captured_cmd.extend(cmd)
+        return _make_completed_process(stdout='{"result": "ok"}')
+
+    with patch("subprocess.run", side_effect=fake_run):
+        with patch.dict(os.environ, {"IDEATE_EXEC_INSTRUCTIONS": "use teams"}):
+            await spawner.call_tool(
+                "spawn_session",
+                {"prompt": "do something", "working_dir": tmp_working_dir},
+            )
+
+    actual_prompt = captured_cmd[-1]
+    assert actual_prompt.startswith(
+        "[EXECUTION INSTRUCTIONS]\nuse teams\n[END EXECUTION INSTRUCTIONS]\n\n"
+    )
+
+
+@pytest.mark.asyncio
+async def test_exec_instructions_param_overrides_env(tmp_working_dir):
+    """When both param and env var are set, param value is used."""
+    captured_cmd = []
+
+    def fake_run(cmd, **kwargs):
+        captured_cmd.extend(cmd)
+        return _make_completed_process(stdout='{"result": "ok"}')
+
+    with patch("subprocess.run", side_effect=fake_run):
+        with patch.dict(os.environ, {"IDEATE_EXEC_INSTRUCTIONS": "env value"}):
+            await spawner.call_tool(
+                "spawn_session",
+                {
+                    "prompt": "do something",
+                    "working_dir": tmp_working_dir,
+                    "exec_instructions": "param value",
+                },
+            )
+
+    actual_prompt = captured_cmd[-1]
+    assert "param value" in actual_prompt
+    assert "env value" not in actual_prompt
+
+
+@pytest.mark.asyncio
+async def test_exec_instructions_propagated_to_child_env(tmp_working_dir):
+    """When instructions are resolved, IDEATE_EXEC_INSTRUCTIONS is set in child subprocess env."""
+    captured_env = {}
+
+    def fake_run(cmd, **kwargs):
+        captured_env.update(kwargs.get("env", {}))
+        return _make_completed_process(stdout='{"result": "ok"}')
+
+    env_without_exec = {k: v for k, v in os.environ.items() if k != "IDEATE_EXEC_INSTRUCTIONS"}
+    with patch("subprocess.run", side_effect=fake_run):
+        with patch.dict(os.environ, env_without_exec, clear=True):
+            await spawner.call_tool(
+                "spawn_session",
+                {"prompt": "hello", "working_dir": tmp_working_dir, "exec_instructions": "prefer parallel"},
+            )
+
+    assert captured_env.get("IDEATE_EXEC_INSTRUCTIONS") == "prefer parallel"
+
+
+@pytest.mark.asyncio
+async def test_no_exec_instructions_prompt_unchanged(tmp_working_dir):
+    """When neither param nor env var is set, subprocess receives the original prompt unchanged."""
+    captured_cmd = []
+
+    def fake_run(cmd, **kwargs):
+        captured_cmd.extend(cmd)
+        return _make_completed_process(stdout='{"result": "ok"}')
+
+    env_without_exec = {k: v for k, v in os.environ.items() if k != "IDEATE_EXEC_INSTRUCTIONS"}
+    with patch("subprocess.run", side_effect=fake_run):
+        with patch.dict(os.environ, env_without_exec, clear=True):
+            await spawner.call_tool(
+                "spawn_session",
+                {"prompt": "original prompt", "working_dir": tmp_working_dir},
+            )
+
+    actual_prompt = captured_cmd[-1]
+    assert actual_prompt == "original prompt"
+
+
+@pytest.mark.asyncio
+async def test_prompt_size_validation_uses_original_prompt(tmp_working_dir):
+    """A prompt just under 100KB with exec_instructions passes validation (instructions not counted)."""
+    # 99,900 bytes prompt — under the 100KB limit
+    big_prompt = "a" * 99_900
+    # 1000-byte exec_instructions — would push total over limit if counted, but shouldn't be
+    exec_instr = "x" * 1000
+
+    with patch("subprocess.run", return_value=_make_completed_process(stdout='{"result": "ok"}')) as mock_run:
+        env_without_exec = {k: v for k, v in os.environ.items() if k != "IDEATE_EXEC_INSTRUCTIONS"}
+        with patch.dict(os.environ, env_without_exec, clear=True):
+            result = await spawner.call_tool(
+                "spawn_session",
+                {"prompt": big_prompt, "working_dir": tmp_working_dir, "exec_instructions": exec_instr},
+            )
+        mock_run.assert_called_once()
+
+    data = _parse_response(result)
+    assert data["exit_code"] == 0
+
+
+# ---------------------------------------------------------------------------
+# 15. Status Table Tests
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_status_table_printed_to_stderr(capsys, tmp_working_dir):
+    """After a spawn call, the status table is printed to stderr with expected column headers."""
+    with patch("subprocess.run", return_value=_make_completed_process(stdout='{"result": "ok"}')):
+        await spawner.call_tool("spawn_session", {"prompt": "hi", "working_dir": tmp_working_dir})
+
+    captured = capsys.readouterr()
+    assert "Session ID" in captured.err
+    assert "Depth" in captured.err
+    assert "Status" in captured.err
+    assert "Duration" in captured.err
+    assert "Team" in captured.err
+    assert "+" in captured.err          # separator row(s) present
+    assert "completed" in captured.err  # at least one completed data row
+
+
+def test_status_table_empty_registry_no_output(capsys):
+    """If _session_registry is empty, _print_status_table() prints nothing to stderr."""
+    spawner._session_registry = []
+    spawner._print_status_table()
+    captured = capsys.readouterr()
+    assert captured.err == ""
+
+
+# ---------------------------------------------------------------------------
+# 16. Negative-case env propagation tests
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_team_name_absent_from_child_env_when_not_provided(tmp_working_dir):
+    """When team_name is not passed, IDEATE_TEAM_NAME is absent from the child subprocess env."""
+    captured_env = {}
+
+    def fake_run(cmd, **kwargs):
+        captured_env.update(kwargs.get("env", {}))
+        return _make_completed_process(stdout='{"result": "ok"}')
+
+    env_without_team = {k: v for k, v in os.environ.items() if k != "IDEATE_TEAM_NAME"}
+    with patch("subprocess.run", side_effect=fake_run):
+        with patch.dict(os.environ, env_without_team, clear=True):
+            await spawner.call_tool(
+                "spawn_session",
+                {"prompt": "hello", "working_dir": tmp_working_dir},
+            )
+
+    assert "IDEATE_TEAM_NAME" not in captured_env
+
+
+@pytest.mark.asyncio
+async def test_team_name_not_inherited_from_grandparent_env(tmp_working_dir):
+    """Even if IDEATE_TEAM_NAME is set in os.environ, it is stripped when team_name param is absent."""
+    captured_env = {}
+
+    def fake_run(cmd, **kwargs):
+        captured_env.update(kwargs.get("env", {}))
+        return _make_completed_process(stdout='{"result": "ok"}')
+
+    with patch("subprocess.run", side_effect=fake_run):
+        with patch.dict(os.environ, {"IDEATE_TEAM_NAME": "grandparent-team"}):
+            await spawner.call_tool(
+                "spawn_session",
+                {"prompt": "hello", "working_dir": tmp_working_dir},
+                # No team_name param — should strip inherited env var
+            )
+
+    assert "IDEATE_TEAM_NAME" not in captured_env
+
+
+@pytest.mark.asyncio
+async def test_exec_instructions_absent_from_child_env_when_not_provided(tmp_working_dir):
+    """When exec_instructions is not passed and env var is unset, IDEATE_EXEC_INSTRUCTIONS is absent from child env."""
+    captured_env = {}
+
+    def fake_run(cmd, **kwargs):
+        captured_env.update(kwargs.get("env", {}))
+        return _make_completed_process(stdout='{"result": "ok"}')
+
+    env_without_exec = {k: v for k, v in os.environ.items() if k != "IDEATE_EXEC_INSTRUCTIONS"}
+    with patch("subprocess.run", side_effect=fake_run):
+        with patch.dict(os.environ, env_without_exec, clear=True):
+            await spawner.call_tool(
+                "spawn_session",
+                {"prompt": "hello", "working_dir": tmp_working_dir},
+            )
+
+    assert "IDEATE_EXEC_INSTRUCTIONS" not in captured_env
+
+
+# ---------------------------------------------------------------------------
+# 17. --allowedTools CLI Syntax Tests
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_allowed_tools_comma_syntax(tmp_working_dir):
+    """allowed_tools list is passed to claude as '--allowedTools Read,Edit' (comma-separated)."""
+    captured_cmd = []
+
+    def fake_run(cmd, **kwargs):
+        captured_cmd.extend(cmd)
+        return _make_completed_process(stdout='{"result": "ok"}')
+
+    with patch("subprocess.run", side_effect=fake_run):
+        await spawner.call_tool(
+            "spawn_session",
+            {"prompt": "hello", "working_dir": tmp_working_dir, "allowed_tools": ["Read", "Edit"]},
+        )
+
+    assert "--allowedTools" in captured_cmd
+    idx = captured_cmd.index("--allowedTools")
+    assert captured_cmd[idx + 1] == "Read,Edit"

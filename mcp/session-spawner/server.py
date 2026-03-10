@@ -16,10 +16,12 @@ Safety mechanisms:
 """
 
 import asyncio
+import datetime
 import json
 import logging
 import os
 import subprocess
+import sys
 import tempfile
 import time
 from pathlib import Path
@@ -40,7 +42,7 @@ DEFAULT_MAX_TURNS = 30
 DEFAULT_OUTPUT_FORMAT = "json"
 MAX_PROMPT_BYTES = 100_000
 
-server = Server("ideate-session-spawner")
+server = Server("ideate-session-spawner", version="0.3.0")
 
 
 @server.list_tools()
@@ -96,6 +98,17 @@ async def list_tools() -> list[Tool]:
                         "enum": ["json", "text", "stream-json"],
                         "default": DEFAULT_OUTPUT_FORMAT,
                     },
+                    "team_name": {
+                        "type": "string",
+                        "description": "Advisory team name for the spawned session. Logged and propagated via IDEATE_TEAM_NAME env var.",
+                    },
+                    "exec_instructions": {
+                        "type": "string",
+                        "description": (
+                            "Execution instructions prepended to the spawned session's prompt. "
+                            "Overrides IDEATE_EXEC_INSTRUCTIONS env var for this call and its children."
+                        ),
+                    },
                 },
                 "required": ["prompt", "working_dir"],
             },
@@ -117,10 +130,15 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
     permission_mode = arguments.get("permission_mode", DEFAULT_PERMISSION_MODE)
     allowed_tools = arguments.get("allowed_tools")
     output_format = arguments.get("output_format", DEFAULT_OUTPUT_FORMAT)
+    team_name = arguments.get("team_name")
+    exec_instructions = arguments.get("exec_instructions") or os.environ.get("IDEATE_EXEC_INSTRUCTIONS", "")
+
+    # Capture original prompt byte length before any injection
+    original_prompt_bytes = len(prompt.encode("utf-8"))
 
     # Fix 4: Prompt length validation — reject prompts exceeding 100KB
-    prompt_byte_len = len(prompt.encode("utf-8"))
-    if prompt_byte_len > MAX_PROMPT_BYTES:
+    # Validation applies to original prompt only; injected instructions do not count toward limit.
+    if original_prompt_bytes > MAX_PROMPT_BYTES:
         return [
             TextContent(
                 type="text",
@@ -131,7 +149,7 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
                         "session_id": "",
                         "duration_ms": 0,
                         "error": (
-                            f"Prompt too large: {prompt_byte_len} bytes exceeds "
+                            f"Prompt too large: {original_prompt_bytes} bytes exceeds "
                             f"the {MAX_PROMPT_BYTES} byte limit. "
                             "Reduce the prompt size before retrying."
                         ),
@@ -206,6 +224,13 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
             )
         ]
 
+    # Build effective prompt — prepend execution instructions if present
+    effective_prompt = prompt
+    if exec_instructions:
+        effective_prompt = (
+            f"[EXECUTION INSTRUCTIONS]\n{exec_instructions}\n[END EXECUTION INSTRUCTIONS]\n\n{prompt}"
+        )
+
     # Build the command
     cmd = [
         "claude",
@@ -218,17 +243,28 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
         str(max_turns),
         "--cwd",
         working_dir,
-        prompt,
+        effective_prompt,
     ]
 
     if allowed_tools:
         cmd.extend(["--allowedTools", ",".join(allowed_tools)])
 
-    # Build environment with incremented depth
+    # Build environment with incremented depth.
+    # IDEATE_TEAM_NAME is explicitly removed then conditionally re-set so it does not
+    # leak from grandparent sessions when the direct caller omits team_name.
     env = {**os.environ, "IDEATE_SPAWN_DEPTH": str(current_depth + 1)}
+    env.pop("IDEATE_TEAM_NAME", None)
+    if team_name:
+        env["IDEATE_TEAM_NAME"] = team_name
+    if exec_instructions:
+        env["IDEATE_EXEC_INSTRUCTIONS"] = exec_instructions
 
     # Execute with concurrency limiting
     start_time = time.monotonic()
+    timed_out = False
+    result = None
+    partial_stdout = ""
+    partial_stderr = ""
     try:
         async with _semaphore:
             result = await asyncio.to_thread(
@@ -244,7 +280,7 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
         # Fix 2: TimeoutExpired "None" fix — e.stdout/e.stderr may be None or bytes
         # With text=True, they could be str or None. With capture_output, they are
         # typically None on TimeoutExpired. Handle both bytes and str cases safely.
-        duration_ms = int((time.monotonic() - start_time) * 1000)
+        timed_out = True
         if isinstance(e.stdout, bytes):
             partial_stdout = e.stdout.decode("utf-8", errors="ignore")
         else:
@@ -253,6 +289,81 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
             partial_stderr = e.stderr.decode("utf-8", errors="ignore")
         else:
             partial_stderr = e.stderr or ""
+
+    duration_ms = int((time.monotonic() - start_time) * 1000)
+
+    # Determine outcome fields shared by both paths
+    if timed_out:
+        outcome_session_id = ""
+        outcome_exit_code = -1
+        outcome_success = False
+        outcome_token_usage = None
+    else:
+        # Handle output truncation (truncate by bytes, not characters)
+        stdout = result.stdout
+        output_truncated = False
+        overflow_path = None
+
+        stdout_bytes = stdout.encode("utf-8")
+        if len(stdout_bytes) > DEFAULT_MAX_OUTPUT_BYTES:
+            output_truncated = True
+            with tempfile.NamedTemporaryFile(
+                mode="w",
+                prefix="ideate-session-",
+                suffix=".txt",
+                dir=working_dir,
+                delete=False,
+            ) as f:
+                f.write(stdout)
+                overflow_path = f.name
+            stdout = stdout_bytes[:DEFAULT_MAX_OUTPUT_BYTES].decode("utf-8", errors="ignore")
+
+        # Parse session ID and token usage from JSON output if available
+        outcome_session_id = ""
+        outcome_token_usage = None
+        if output_format == "json":
+            try:
+                parsed = json.loads(result.stdout)
+                if isinstance(parsed, dict):
+                    outcome_session_id = parsed.get("session_id", "")
+                    usage = parsed.get("usage") or parsed.get("token_usage")
+                    if isinstance(usage, dict):
+                        outcome_token_usage = usage
+                    elif any(
+                        k in parsed
+                        for k in ("input_tokens", "output_tokens", "total_tokens")
+                    ):
+                        outcome_token_usage = {
+                            k: parsed[k]
+                            for k in ("input_tokens", "output_tokens", "total_tokens")
+                            if k in parsed
+                        }
+            except (json.JSONDecodeError, TypeError):
+                pass
+
+        outcome_exit_code = result.returncode
+        outcome_success = result.returncode == 0
+
+    # Shared post-processing: registry, logging, status table
+    entry = {
+        "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="milliseconds").replace("+00:00", "Z"),
+        "session_id": outcome_session_id,
+        "depth": current_depth + 1,
+        "working_dir": str(resolved_working_dir),
+        "prompt_bytes": original_prompt_bytes,
+        "team_name": team_name or None,
+        "used_team": bool(team_name),
+        "duration_ms": duration_ms,
+        "exit_code": outcome_exit_code,
+        "success": outcome_success,
+        "timed_out": timed_out,
+        "token_usage": outcome_token_usage,
+    }
+    _session_registry.append(entry)
+    _log_entry(entry)
+    _print_status_table()
+
+    if timed_out:
         return [
             TextContent(
                 type="text",
@@ -272,65 +383,16 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
             )
         ]
 
-    duration_ms = int((time.monotonic() - start_time) * 1000)
-
-    # Handle output truncation (truncate by bytes, not characters)
-    stdout = result.stdout
-    output_truncated = False
-    overflow_path = None
-
-    stdout_bytes = stdout.encode("utf-8")
-    if len(stdout_bytes) > DEFAULT_MAX_OUTPUT_BYTES:
-        output_truncated = True
-        # Write full output to a temp file
-        with tempfile.NamedTemporaryFile(
-            mode="w",
-            prefix="ideate-session-",
-            suffix=".txt",
-            dir=working_dir,
-            delete=False,
-        ) as f:
-            f.write(stdout)
-            overflow_path = f.name
-        # Truncate by byte boundary, decode safely
-        stdout = stdout_bytes[:DEFAULT_MAX_OUTPUT_BYTES].decode("utf-8", errors="ignore")
-
-    # Parse session ID and token usage from JSON output if available
-    session_id = ""
-    token_usage = None
-    if output_format == "json":
-        try:
-            parsed = json.loads(result.stdout)
-            session_id = parsed.get("session_id", "")
-            # Fix 7: Token budget logging — extract token usage fields if present
-            if isinstance(parsed, dict):
-                usage = parsed.get("usage") or parsed.get("token_usage")
-                if isinstance(usage, dict):
-                    token_usage = usage
-                # Also check for top-level token fields
-                elif any(
-                    k in parsed
-                    for k in ("input_tokens", "output_tokens", "total_tokens")
-                ):
-                    token_usage = {
-                        k: parsed[k]
-                        for k in ("input_tokens", "output_tokens", "total_tokens")
-                        if k in parsed
-                    }
-        except (json.JSONDecodeError, TypeError):
-            pass
-
     response = {
         "output": stdout,
         "exit_code": result.returncode,
-        "session_id": session_id,
+        "session_id": outcome_session_id,
         "duration_ms": duration_ms,
         "error": result.stderr if result.returncode != 0 else None,
     }
 
-    # Fix 7: Include token usage in response if available
-    if token_usage is not None:
-        response["token_usage"] = token_usage
+    if outcome_token_usage is not None:
+        response["token_usage"] = outcome_token_usage
 
     if output_truncated:
         response["output_truncated"] = True
@@ -380,6 +442,111 @@ async def main():
 # even if someone imports the module without running main().
 _semaphore: asyncio.Semaphore = asyncio.Semaphore(DEFAULT_CONCURRENCY)
 _server_max_depth: int = DEFAULT_MAX_DEPTH
+_session_registry: list[dict] = []
+
+
+def _log_entry(entry: dict) -> None:
+    log_file = os.environ.get("IDEATE_LOG_FILE", "")
+    if not log_file:
+        return
+    try:
+        with open(log_file, "a", encoding="utf-8") as f:
+            f.write(json.dumps(entry) + "\n")
+    except Exception as exc:
+        logger.warning("Failed to write JSONL log entry to %s: %s", log_file, exc)
+
+
+def _print_status_table() -> None:
+    try:
+        if not _session_registry:
+            return
+
+        # Determine status string for each entry
+        def _status(entry: dict) -> str:
+            if entry.get("success"):
+                return "completed"
+            if entry.get("timed_out"):
+                return "timed_out"
+            return "failed"
+
+        # Determine team string for each entry
+        def _team(entry: dict) -> str:
+            t = entry.get("team_name")
+            if not t:
+                return "-"
+            return t
+
+        # Determine session_id display (truncate to 12 chars)
+        def _session_id(entry: dict) -> str:
+            sid = entry.get("session_id") or ""
+            return sid[:12]
+
+        # Determine duration string
+        def _duration(entry: dict) -> str:
+            ms = entry.get("duration_ms", 0)
+            return f"{ms / 1000:.1f}s"
+
+        # Minimum column widths
+        col_widths = {
+            "#": 4,
+            "Session ID": 12,
+            "Depth": 5,
+            "Status": 9,
+            "Duration": 8,
+            "Team": 15,
+        }
+
+        # Expand widths based on actual content
+        rows = []
+        for i, entry in enumerate(_session_registry, start=1):
+            row = {
+                "#": str(i),
+                "Session ID": _session_id(entry),
+                "Depth": str(entry.get("depth", "")),
+                "Status": _status(entry),
+                "Duration": _duration(entry),
+                "Team": _team(entry),
+            }
+            rows.append(row)
+            for col in col_widths:
+                col_widths[col] = max(col_widths[col], len(row[col]))
+
+        # Also ensure header fits
+        for col in col_widths:
+            col_widths[col] = max(col_widths[col], len(col))
+
+        columns = ["#", "Session ID", "Depth", "Status", "Duration", "Team"]
+
+        def _separator() -> str:
+            parts = ["-" * (col_widths[col] + 2) for col in columns]
+            return "+" + "+".join(parts) + "+"
+
+        def _row_line(values: dict) -> str:
+            cells = []
+            for col in columns:
+                val = values[col]
+                w = col_widths[col]
+                # Right-align numeric columns, left-align others
+                if col in ("#", "Depth"):
+                    cells.append(f" {val:>{w}} ")
+                elif col == "Duration":
+                    cells.append(f" {val:>{w}} ")
+                else:
+                    cells.append(f" {val:<{w}} ")
+            return "|" + "|".join(cells) + "|"
+
+        sep = _separator()
+        header_values = {col: col for col in columns}
+
+        print(sep, file=sys.stderr)
+        print(_row_line(header_values), file=sys.stderr)
+        print(sep, file=sys.stderr)
+        for row in rows:
+            print(_row_line(row), file=sys.stderr)
+        print(sep, file=sys.stderr)
+    except Exception:
+        pass
+
 
 if __name__ == "__main__":
     asyncio.run(main())

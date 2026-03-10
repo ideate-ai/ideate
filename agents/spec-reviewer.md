@@ -6,6 +6,7 @@ tools:
   - Grep
   - Glob
 model: sonnet
+background: false
 maxTurns: 25
 ---
 

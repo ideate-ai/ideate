@@ -6,6 +6,7 @@ tools:
   - Grep
   - Glob
 model: opus
+background: false
 maxTurns: 25
 ---
 

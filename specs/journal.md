@@ -133,3 +133,87 @@ Updated README with setup instructions, parameter table, safety mechanisms, envi
 Items completed: 10/10
 Items requiring rework: 0
 Outstanding issues: none
+
+## [review] 2026-03-09 — User decisions recorded
+- README update: address now in a targeted fix.
+- team_name intent: observability and tracking only. No automatic team directive injection. README should document this.
+
+## [review] 2026-03-09 — Comprehensive review completed
+Critical findings: 1
+Significant findings: 5
+Minor findings: 8
+Suggestions: 0
+Items requiring user input: 2
+
+## [execute] 2026-03-09 — Work item 022: JSONL Logging, Session Registry, and team_name Parameter
+Status: complete
+Added `import datetime`, `_session_registry`, `_log_entry()`, `team_name` tool parameter, `original_prompt_bytes` capture, `IDEATE_TEAM_NAME` env propagation. Refactored timeout path to fall through to shared post-processing block instead of returning early, enabling both success and timeout paths to write log entries.
+
+## [execute] 2026-03-09 — Work item 023: Status Table
+Status: complete
+Added `import sys`, `_print_status_table()` with plain ASCII box table format. Called in both timeout and success paths after `_log_entry()`. Empty registry produces no output. Wrapped in try/except for error isolation.
+
+## [execute] 2026-03-09 — Work item 024: Execution Instructions Injection
+Status: complete
+Added `exec_instructions` tool parameter. Resolves from param (priority) or `IDEATE_EXEC_INSTRUCTIONS` env var. Augments prompt with `[EXECUTION INSTRUCTIONS]...[END EXECUTION INSTRUCTIONS]` block. Propagates via `IDEATE_EXEC_INSTRUCTIONS` in child env. Original prompt used for size validation and `prompt_bytes` logging.
+
+## [execute] 2026-03-09 — Work item 025: Tests for New Features
+Status: complete with rework
+Added 18 new tests across 5 groups (JSONL logging, session registry, team_name, exec_instructions, status table). Updated `_reset_globals` fixture to reset `_session_registry`. All 29 tests pass.
+Rework: 1 significant finding fixed from incremental review — added `prompt_bytes` value assertion to `test_jsonl_logging_writes_entry` and `test_jsonl_timeout_entry`. 1 minor finding fixed — removed `prompt_byte_len` alias in server.py.
+
+## [execute] 2026-03-09 — Targeted fixes from cycle 3 review
+Status: complete
+Applied 4 fixes: (1) C1 — moved `parsed.get("session_id", "")` inside `isinstance(parsed, dict)` block to prevent `AttributeError` on non-dict JSON output; (2) S1 — replaced README status table example with correct columns/format (`#/Session ID/Depth/Status/Duration/Team`, duration as `12.5s`, status as `completed/failed/timed_out`); (3) S2 — added `used_team` to README JSONL schema example, corrected `team_name` null description, added peak concurrency approximation note; (4) M2 carry-forward resolved — `prompt_bytes` assertion already present in `test_jsonl_timeout_entry` (comment added for clarity). All 32 tests pass.
+
+## [review] 2026-03-09 — Comprehensive review completed (cycle 3)
+Critical findings: 1
+Significant findings: 3
+Minor findings: 3
+Suggestions: 0
+Items requiring user input: 1
+
+## [execute] 2026-03-09 — Minor fixes before cycle 3 review
+Status: complete
+Addressed all 5 remaining minor findings from cycle 2: (1) OQ3 — consolidated duplicate entry dict into a single shared block using outcome variables, both timeout and success paths now use one dict; (2) OQ6 — corrected `#` column minimum width from 2 to 4 to match spec; (3) OQ7 — strengthened status table test to assert column headers present (Session ID, Depth, Status, Duration, Team); (4) OQ8 — fixed IDEATE_TEAM_NAME grandchild leak by stripping it from env before conditional re-set; (5) OQ9 — added 3 negative-case tests for absent env vars; (6) OQ10 — fixed WI-023 acceptance criterion from em dash to ASCII hyphen. 32 tests pass.
+
+## [execute] 2026-03-09 — Targeted fixes from cycle 2 review
+Status: complete
+Applied 3 fixes based on critical/significant findings: (1) wrapped `_log_entry()` file I/O in try/except with `logger.warning` — prevents IDEATE_LOG_FILE misconfiguration from crashing the server; (2) fixed timestamp format to millisecond precision with Z suffix at both call sites; (3) updated README with team_name and exec_instructions parameters, returns schema, observability section (JSONL schema, status table example), env var table with IDEATE_LOG_FILE/IDEATE_EXEC_INSTRUCTIONS/IDEATE_TEAM_NAME, and recursive propagation documentation. All 29 tests pass.
+
+## [refine] 2026-03-09 — Refinement planning completed
+Trigger: user request to add observability and execution control to session spawner.
+Principles changed: none.
+New work items: 022-025.
+Addresses: JSONL logging of spawn calls (configurable IDEATE_LOG_FILE), in-memory session registry, team_name parameter with IDEATE_TEAM_NAME propagation, terminal status table printed to stderr after each spawn, execution instructions injection via exec_instructions parameter and IDEATE_EXEC_INSTRUCTIONS env var with recursive propagation.
+Scope: mcp/session-spawner/server.py and test_server.py only.
+Deferred: researcher findings on claude CLI flags (background agent running; may influence instruction injection mechanism if CLI flags exist).
+
+## [refine] 2026-03-09 — Refinement planning completed
+Trigger: user request to address all deferred open items across all prior review cycles.
+Principles changed: none.
+New work items: 026-028.
+Addresses: _reset_globals fixture comment (WI 026), status table structural test assertions (WI 026), --allowedTools comma syntax test (WI 026), concurrent status table README non-determinism note (WI 027), overflow temp file lifecycle documentation (WI 027), agent background: false frontmatter field for 6 foreground agents (WI 028).
+Scope: test_server.py, README.md, agents/*.md only. No behavioral changes.
+Deferred: none — all open items addressed.
+
+## [execute] 2026-03-09 — Work item 026: Test Suite Polish
+Status: complete with rework
+Rework: 1 significant finding fixed (AC5 test count corrected from 35 to 33 in work item spec), 1 minor finding fixed (test_allowed_tools_comma_syntax moved from inside status table section to its own section 17 at end of file). All 33 tests pass.
+
+## [execute] 2026-03-09 — Work item 027: README Observability Notes
+Status: complete with rework
+Rework: 1 significant finding fixed — overflow file lifecycle note was placed after the Returns JSON block (line 82) instead of in the Output Truncation section (line 108). Moved note to correct location under ### Output Truncation.
+
+## [execute] 2026-03-09 — Work item 028: Agent Background Field
+Status: complete with rework
+Rework: 1 significant finding fixed — background: false was placed after maxTurns in all six files, but researcher.md places background before maxTurns. Reordered all six files to match the reference ordering (model → background → maxTurns).
+
+## [execute] 2026-03-09 — Work item 029: Marketplace Version Bump
+Status: complete
+Both version fields in .claude-plugin/marketplace.json updated from 0.2.0 to 0.3.0.
+
+## [execute] 2026-03-09 — Execution complete
+Items completed: 4/4
+Items requiring rework: 3 (026, 027, 028)
+Outstanding issues: none
