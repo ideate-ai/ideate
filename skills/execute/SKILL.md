@@ -70,7 +70,7 @@ If validation fails, report the specific issues and stop. Do not execute a broke
 
 Before validating dependencies, check whether any work items were already completed in a previous execution run. This enables resuming execution after a partial run or user-initiated stop.
 
-1. Glob `reviews/incremental/*.md` in the artifact directory.
+1. Glob `archive/incremental/*.md` in the artifact directory.
 2. For each review file found, read the verdict line (`## Verdict: {Pass | Fail}`).
 3. Cross-reference with journal entries. A work item is considered complete if:
    - A journal entry exists matching `## [execute] * — Work item NNN:*` with `Status: complete` or `Status: complete with rework`, AND
@@ -162,6 +162,7 @@ Regardless of execution mode, every worker (subagent, teammate, or the main sess
 5. **Constraints** — `{artifact_dir}/steering/constraints.md`
 6. **Relevant research** — any files from `{artifact_dir}/steering/research/` referenced in the work item's implementation notes or relevant to its scope
 7. **Project source root** — the absolute path to the project source root derived in Phase 1, so workers know where to create and modify source files
+8. **Relevant domain policies** — if `{artifact_dir}/domains/` exists, identify which domain(s) are relevant to the work item based on its file scope. Load `{artifact_dir}/domains/{relevant-domain}/policies.md` for each relevant domain. If no clear domain mapping exists, skip this step. Domain policies supplement the guiding principles — they are more specific rules derived from prior review cycles.
 
 All paths provided to workers must be absolute. Do not use relative paths that depend on the worker's current working directory matching the artifact directory.
 
@@ -266,7 +267,7 @@ The code-reviewer performs an incremental review scoped to the files touched by 
 
 **Non-blocking**: The review runs while other work items continue. In batched parallel mode, reviews for items in the current group run concurrently with each other. In team mode, a review does not block other teammates from picking up new work items. In sequential mode, the review runs before the next work item begins (it is inherently blocking since only one item runs at a time).
 
-Write the review result to `reviews/incremental/NNN-{name}.md`, matching the work item's number and name.
+Write the review result to `archive/incremental/NNN-{name}.md`, matching the work item's number and name.
 
 The review follows the format defined in the artifact conventions:
 
@@ -513,7 +514,7 @@ If the user stops execution partway through:
 2. Write a journal entry noting the pause and which items remain
 3. List what would be needed to resume (which items are next, any pending Andon cord issues)
 
-The user can re-run `/ideate:execute` to resume. The skill should detect already-completed items (by checking for existing `reviews/incremental/NNN-{name}.md` files and journal entries) and skip them.
+The user can re-run `/ideate:execute` to resume. The skill should detect already-completed items (by checking for existing `archive/incremental/NNN-{name}.md` files and journal entries) and skip them.
 
 ---
 
@@ -523,7 +524,7 @@ The user can re-run `/ideate:execute` to resume. The skill should detect already
 - You do not skip incremental reviews. Every completed work item gets reviewed.
 - You do not present minor review findings to the user. Fix them silently.
 - You do not interrupt the user for routine decisions. The Andon cord is for issues that guiding principles cannot resolve.
-- You do not modify steering artifacts. You have read-only access to `steering/`. You append to `journal.md` and write to `reviews/incremental/`.
+- You do not modify steering artifacts. You have read-only access to `steering/`. You append to `journal.md` and write to `archive/incremental/`.
 - You do not re-plan. If the plan has problems (cycles, missing items, contradictions), you stop and tell the user to fix the plan or run `/ideate:refine`.
 - You do not praise work. Absence of findings means the work is acceptable.
 - You do not use filler phrases, encouragement, or enthusiasm. State facts.

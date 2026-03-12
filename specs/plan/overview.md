@@ -1,33 +1,65 @@
-# Refinement Plan — Deferred Open Items Cleanup
+# Refinement Plan — Ideate/Outpost Architectural Split
 
 ## What Is Changing
 
-This refinement addresses all deferred open items accumulated across three review cycles and a dedicated observability/execution-control feature cycle. The items fall into three categories: test suite polish, documentation improvements, and agent configuration consistency.
+ideate's orchestration components (session-spawner, remote-worker, roles system, manager agent) are moving to a separate project called "outpost". ideate becomes focused solely on SDLC: planning, refinement, execution, and review. The brrr skill's proxy-human invocation changes from MCP spawn_session to native Agent tool.
 
-## Scope Boundary
+## Triggering Context
 
-**Changing:**
-- `mcp/session-spawner/test_server.py` — fixture documentation, status table structural assertions, --allowedTools syntax test
-- `mcp/session-spawner/README.md` — concurrent status table note, overflow file lifecycle note
-- `agents/architect.md`, `agents/code-reviewer.md`, `agents/spec-reviewer.md`, `agents/gap-analyst.md`, `agents/journal-keeper.md`, `agents/decomposer.md` — add `background: false` frontmatter field
+User decision (2026-03-11): The session-spawner MCP component has expanded beyond its original design scope for ideate. MCP orchestration introduces design decisions that may not be relevant for all ideate use cases. Separating concerns allows:
+- ideate to remain focused on SDLC workflow
+- outpost to specialize in MCP orchestration (session management, remote dispatch)
+- Independent evolution of each project's principles and constraints
 
-**Not changing:**
-- `mcp/session-spawner/server.py` — no behavioral changes; overflow limitation is documented rather than fixed
-- `skills/` — no skill changes
-- `steering/` — no principle or constraint changes
-- `agents/researcher.md` — already has `background: true`, not modified
+## What Is NOT Changing
 
-## Work Streams
+- ideate's skills: plan, refine, execute, review, brrr (only brrr's proxy-human invocation changes)
+- ideate's agents: researcher, architect, decomposer, code-reviewer, spec-reviewer, gap-analyst, journal-keeper (proxy-human stays; manager moves to outpost)
+- ideate's guiding principles and constraints
+- ideate's artifact conventions
+- Existing work items 001-051 (historical record retained)
 
-### Stream 1: Test Suite Polish (WI 026)
-Three additions to test_server.py: a comment on `_reset_globals` explaining why all three globals are reset, structural assertions in the status table test (separator `+` and `completed` data row), and a new test verifying `--allowedTools` comma-separated CLI syntax.
+## Scope
 
-### Stream 2: README Notes (WI 027)
-Two clarifying notes in README.md: a concurrency non-determinism note in the Status Table section (row order is completion order, not start order), and an overflow file lifetime note in the Output Truncation section (files are not auto-deleted).
+Files and directories affected:
 
-### Stream 3: Agent Background Field (WI 028)
-Add `background: false` to the YAML frontmatter of the six foreground agents: architect, code-reviewer, spec-reviewer, gap-analyst, journal-keeper, decomposer. Researcher already has `background: true` and is not modified.
+**Create (outpost project structure):**
+- `~/code/outpost/CLAUDE.md`
+- `~/code/outpost/.claude-plugin/plugin.json`
+- `~/code/outpost/.claude-plugin/marketplace.json`
+- `~/code/outpost/README.md`
+- `~/code/outpost/.gitignore`
+- `~/code/outpost/specs/` (directory structure)
+
+**Move (lift-and-shift):**
+- `ideate/mcp/session-spawner/` → `outpost/mcp/session-spawner/`
+- `ideate/mcp/remote-worker/` → `outpost/mcp/remote-worker/`
+- `ideate/mcp/roles/` → `outpost/mcp/roles/`
+- `ideate/agents/manager.md` → `outpost/agents/manager.md`
+
+**Modify:**
+- `skills/brrr/SKILL.md` — Agent tool invocation for proxy-human
+- `specs/plan/architecture.md` — Remove MCP components
+- `.claude-plugin/plugin.json` — Remove MCP servers, bump version
+- `.claude-plugin/marketplace.json` — Update description
+- `README.md` — Reflect new architecture
+
+**Delete (after move confirmed):**
+- `ideate/mcp/session-spawner/`
+- `ideate/mcp/remote-worker/`
+- `ideate/mcp/roles/`
+- `ideate/agents/manager.md`
+- `ideate/mcp/` (if empty)
 
 ## Expected Impact
 
-No behavioral changes. All three work items are documentation, test coverage, or configuration metadata. The session spawner's runtime behavior, the review and execution skills, and all agent capabilities remain unchanged.
+After this cycle:
+- ideate contains only SDLC-focused skills and agents
+- outpost is a separate MCP server project for session orchestration
+- brrr invokes proxy-human via Agent tool (no MCP dependency for Andon)
+- ideate's architecture.md reflects reduced scope
+- outpost has its own principles, constraints, and architecture (via /ideate:plan)
+
+## New Work Items
+
+WI-052 through WI-061 (10 items across 4 dependency groups).

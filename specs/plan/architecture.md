@@ -10,24 +10,24 @@
 | `/ideate:execute` | Build project following the plan | code-reviewer (incremental) | reviews/incremental/*, journal.md |
 | `/ideate:review` | Comprehensive multi-perspective evaluation | code-reviewer, spec-reviewer, gap-analyst, journal-keeper | reviews/final/* |
 | `/ideate:refine` | Plan changes to existing codebase | researcher, architect, decomposer | Updated steering/*, new plan/work-items/* |
+| `/ideate:brrr` | Autonomous SDLC loop until convergence (zero findings + zero violations) | spec-reviewer, code-reviewer, gap-analyst, proxy-human | brrr-state.md, proxy-human-log.md, journal.md |
 
 ### Agents (Delegated Workers)
 
 | Agent | Model | Background | Tools | Spawned By |
 |-------|-------|-----------|-------|------------|
 | researcher | sonnet | yes | Read, Grep, Glob, WebSearch, WebFetch | plan, refine |
-| architect | opus | no | Read, Grep, Glob, Bash | plan, refine |
-| decomposer | opus | no | Read, Grep, Glob | plan, refine |
+| architect | sonnet | no | Read, Grep, Glob, Bash | plan, refine |
+| decomposer | sonnet | no | Read, Grep, Glob | plan, refine |
 | code-reviewer | sonnet | no | Read, Grep, Glob, Bash | execute, review |
 | spec-reviewer | sonnet | no | Read, Grep, Glob | review |
 | gap-analyst | sonnet | no | Read, Grep, Glob | review |
 | journal-keeper | sonnet | no | Read, Grep, Glob | review |
+| proxy-human | sonnet | no | Read, Grep, Glob, Bash | brrr |
 
 ### External Tooling
 
-| Component | Type | Purpose |
-|-----------|------|---------|
-| session-spawner | MCP server (Python) | Enables recursive session invocation via `spawn_session` tool |
+Session orchestration and remote work dispatch are handled by separate projects (e.g., outpost) configured as MCP servers. Ideate does not include built-in MCP server implementations.
 
 ---
 
@@ -216,7 +216,7 @@ Read/write permissions per phase:
 - **Purpose**: Analyze codebases and design technical architecture with module decomposition
 - **Responsibility boundary**: Architecture and structure — does not implement code
 - **Tools**: Read, Grep, Glob, Bash
-- **Model**: opus (complex multi-factor reasoning)
+- **Model**: sonnet (complex multi-factor reasoning). Note: plan and refine skills override to claude-opus-4-6 at spawn time.
 - **MaxTurns**: 40
 - **Background**: no
 - **Input contract**: Interview context + research findings + guiding principles + constraints. Mode: "analyze" (existing codebase) or "design" (new system).
@@ -227,7 +227,7 @@ Read/write permissions per phase:
 - **Purpose**: Break module specs into atomic work items
 - **Responsibility boundary**: Decomposition only — works within the architecture defined by the architect
 - **Tools**: Read, Grep, Glob
-- **Model**: opus (design decisions about task boundaries)
+- **Model**: sonnet (design decisions about task boundaries). Note: plan and refine skills override to claude-opus-4-6 at spawn time.
 - **MaxTurns**: 25
 - **Background**: no
 - **Input contract**: Module spec + architecture doc + guiding principles + constraints + relevant research
@@ -277,107 +277,22 @@ Read/write permissions per phase:
 - **Input contract**: journal.md + all reviews (incremental and final) + guiding principles + plan overview
 - **Output contract**: Decision log (chronological: decision, rationale, alternatives, implications) + open questions (question, impact, who answers, consequence of inaction). Does not duplicate other reviewers' content.
 
+### proxy-human
+
+- **Purpose**: Act as human decision-maker during autonomous brrr cycles when the human is absent
+- **Responsibility boundary**: Andon decisions only — makes binding decisions when executing agents cannot resolve from existing artifacts
+- **Tools**: Read, Grep, Glob, Bash
+- **Model**: sonnet (spawn-time override to opus in brrr skill for complex reasoning)
+- **MaxTurns**: 40
+- **Background**: no
+- **Input contract**: artifact_dir + andon_event description + cycle_number
+- **Output contract**: Decision (PROCEED | DEFER | ESCALATE), rationale, principles cited, confidence level. Appends structured entry to proxy-human-log.md.
+
 ---
 
-## 5. MCP Server Design — Session Spawner
+## 5. MCP Servers
 
-### Tool Interface
-
-```
-Tool: spawn_session
-
-Parameters:
-  prompt: string (required)
-    The prompt for the spawned Claude Code session.
-
-  working_dir: string (required)
-    Working directory for the spawned session.
-
-  max_turns: integer (default: 30)
-    Maximum agentic turns before the session terminates.
-
-  max_depth: integer (default: 3)
-    Maximum recursive spawn depth. Prevents fork bombs.
-
-  timeout: integer (default: 600)
-    Per-session timeout in seconds.
-
-  permission_mode: string (default: "acceptEdits")
-    Permission mode: acceptEdits | dontAsk
-
-  allowed_tools: string[] (optional)
-    Tool allowlist for the spawned session.
-
-Returns:
-  output: string
-    The spawned session's output (stdout).
-
-  exit_code: integer
-    Process exit code (0 = success).
-
-  session_id: string
-    Session ID for potential resume.
-
-  duration_ms: integer
-    Wall-clock duration.
-
-  error: string | null
-    Error message if the session failed.
-```
-
-### Safety Mechanisms
-
-1. **Depth tracking**: Environment variable `IDEATE_SPAWN_DEPTH` incremented per level. Server refuses spawns when depth >= max_depth.
-2. **Concurrency limiter**: asyncio.Semaphore limits simultaneous spawned sessions (default: 5). Excess requests queue.
-3. **Timeout enforcement**: `subprocess.run(timeout=...)` kills hung sessions.
-4. **Output truncation**: If stdout exceeds a size threshold (configurable, default 50KB), truncate and write full output to a temp file, return summary + file path.
-5. **No auto-enable**: User must explicitly configure the MCP server. Not bundled as auto-start.
-
-### Implementation
-
-```python
-# Pseudocode — actual implementation in work item 010
-import subprocess, os, asyncio
-from mcp.server import Server
-
-server = Server("ideate-session-spawner")
-semaphore = asyncio.Semaphore(5)
-
-@server.tool("spawn_session")
-async def spawn_session(prompt, working_dir, max_turns=30, max_depth=3, timeout=600, permission_mode="acceptEdits", allowed_tools=None):
-    current_depth = int(os.environ.get("IDEATE_SPAWN_DEPTH", "0"))
-    if current_depth >= max_depth:
-        return {"error": f"Max recursive depth {max_depth} reached", "output": "", "exit_code": 1}
-
-    env = {**os.environ, "IDEATE_SPAWN_DEPTH": str(current_depth + 1)}
-    cmd = ["claude", "--print", "--output-format", "json",
-           "--permission-mode", permission_mode,
-           "--max-turns", str(max_turns),
-           "--cwd", working_dir, prompt]
-
-    if allowed_tools:
-        cmd.extend(["--allowedTools", ",".join(allowed_tools)])
-
-    async with semaphore:
-        result = await asyncio.to_thread(
-            subprocess.run, cmd, capture_output=True, text=True, timeout=timeout, env=env
-        )
-
-    return {
-        "output": result.stdout[:50000],
-        "exit_code": result.returncode,
-        "session_id": "",  # parsed from JSON output if available
-        "duration_ms": 0,  # calculated from wall clock
-        "error": result.stderr if result.returncode != 0 else None
-    }
-```
-
-### Error Handling
-
-- **Timeout**: Returns structured error with partial output and "timeout" flag
-- **Process crash**: Returns stderr + exit code + any partial stdout
-- **Depth exceeded**: Returns immediately with descriptive error, no subprocess spawned
-- **Concurrency exceeded**: Queues (does not reject) — caller waits for a slot
+Session orchestration and remote work dispatch are handled by separate projects configured as MCP servers. Ideate focuses on planning, refinement, execution, and review workflows. MCP server implementations (such as session spawning and remote worker dispatch) are maintained in separate repositories and configured by users as needed.
 
 ---
 

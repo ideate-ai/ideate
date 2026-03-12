@@ -4,15 +4,15 @@
     "name": "Dan Singer"
   },
   "metadata": {
-    "description": "Ideate plugin marketplace",
-    "version": "0.3.0"
+    "description": "Ideate plugin marketplace - SDLC workflow tools for Claude Code",
+    "version": "0.5.0"
   },
   "plugins": [
     {
       "name": "ideate",
       "source": "./",
-      "description": "Structured SDLC workflow for planning, building, and validating software projects.",
-      "version": "0.3.0"
+      "description": "Structured SDLC workflow: plan, execute, review, refine. Takes rough ideas to production-ready specs through iterative interview and continuous validation.",
+      "version": "0.5.0"
     }
   ]
 }

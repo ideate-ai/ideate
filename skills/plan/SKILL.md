@@ -28,12 +28,14 @@ Once the user provides a path, create the full directory structure:
 {artifact-dir}/
 ├── steering/
 │   ├── research/
+│   └── interviews/
 ├── plan/
 │   ├── modules/
 │   └── work-items/
-├── reviews/
+├── archive/
 │   ├── incremental/
-│   └── final/
+│   └── cycles/
+└── domains/
 ```
 
 Do not create any artifact files yet. The structure is scaffolding only at this stage.
@@ -280,7 +282,7 @@ Constraints are non-negotiable boundaries. If the user said "must use Python 3.1
 
 ## 4.1 Spawn the Architect
 
-Spawn the `architect` agent in **design** mode. Provide it with:
+Spawn the `architect` agent in **design** mode with `model: claude-opus-4-6`. This overrides the agent's default model for this task. Provide it with:
 
 - The full interview transcript (`steering/interview.md`)
 - Guiding principles (`steering/guiding-principles.md`)
@@ -351,7 +353,7 @@ Decompose to work items yourself, in the main session. For each module (or for t
 
 ### Large projects (5 or more modules)
 
-Spawn one `decomposer` agent per module, in parallel. Provide each with:
+Spawn one `decomposer` agent per module, in parallel, each with `model: claude-opus-4-6`. This overrides the agent's default model for this task. Provide each with:
 
 - The module spec (`plan/modules/{name}.md`)
 - The architecture doc (`plan/architecture.md`)
@@ -534,7 +536,7 @@ Write every artifact file that has not been written yet:
 ```
 
 Verify that the following files exist and are complete:
-- `steering/interview.md`
+- `steering/interviews/plan/_full.md` (or `steering/interview.md` if interviews/ not yet created)
 - `steering/guiding-principles.md`
 - `steering/constraints.md`
 - `steering/research/*.md` (any files produced by researchers)
@@ -544,6 +546,8 @@ Verify that the following files exist and are complete:
 - `plan/execution-strategy.md`
 - `plan/work-items/*.md`
 - `journal.md`
+- `domains/index.md` (created in Phase 8)
+- `domains/*/policies.md`, `domains/*/decisions.md`, `domains/*/questions.md` (one set per domain)
 
 ## 7.2 Present Plan Summary
 
@@ -573,6 +577,118 @@ Present the final plan to the user with this structure:
 
 ### Next Step
 Run `/ideate:execute` to begin building, or `/ideate:refine` to adjust the plan.
+```
+
+---
+
+# PHASE 8: DOMAIN BOOTSTRAP
+
+## 8.1 Identify Domains
+
+After writing all plan artifacts, identify 2–4 candidate domains from the interview transcript and architecture document. Domains are areas of the project that have:
+
+- **Different conceptual language**: the vocabulary shifts when discussing them (e.g., "schema migrations" vs. "API contracts" vs. "rendering pipeline")
+- **Different decision authorities**: different stakeholders care about different domains
+- **Different change cadences**: some parts stabilize fast, others stay in flux
+
+Start coarse. Two or three domains are usually right. Signals for splitting a domain later:
+- More than 10 decisions in one domain after the first review cycle
+- A distinct cluster of questions that don't relate to the other decisions in that domain
+- A new stakeholder group emerges who cares about a subset of the domain
+
+Do NOT create domains for every module. Domains are knowledge units, not code units.
+
+## 8.2 Create Interview Structure
+
+The planning interview is stored in per-domain files for precise domain-scoped loading.
+
+Write the interview to `steering/interviews/plan/`:
+
+1. `_full.md` — the compiled transcript (human reading only, never loaded into context by skills)
+2. `_general.md` — questions that span domains or predate domain creation
+3. `{domain-name}.md` — one file per domain with questions tagged to that domain
+
+When creating domain files, go back through the interview and sort each Q&A exchange into the most relevant domain file. Add an inline tag at the start of each question block: `<!-- domains: {domain-name} -->`. Cross-cutting questions get tags for all relevant domains.
+
+If the interview transcript was already written to `steering/interview.md` in Phase 3.1, use it as the source. Create the `steering/interviews/plan/` directory and produce the split files from it. Do not delete `steering/interview.md` — it remains as legacy.
+
+## 8.3 Create Domain Files
+
+For each domain identified in 8.1, create:
+
+`domains/{name}/policies.md`:
+```markdown
+# Policies: {Domain Name}
+
+## P-{N}: {Short title}
+{One-sentence rule. Actionable and unambiguous.}
+- **Derived from**: {GP-N (Principle Name)}
+- **Established**: planning phase
+- **Status**: active
+```
+
+Project the guiding principles into domain-specific actionable rules. A GP becomes a domain policy when its application in this domain is substantively more specific than the GP alone. If the GP applies identically everywhere, it stays a GP.
+
+`domains/{name}/decisions.md`:
+```markdown
+# Decisions: {Domain Name}
+
+## D-{N}: {Short title}
+- **Decision**: {What was decided — one sentence}
+- **Rationale**: {Why — from interview or architecture doc}
+- **Assumes**: {Key assumptions — omit if none}
+- **Source**: {plan/architecture.md | steering/interviews/plan/{domain}.md#Q{N}}
+- **Status**: settled
+```
+
+Record planning-phase decisions: technology selections, architectural choices, interface contracts, data model decisions. These are the first entries — workers in cycle 1 start with real policy context.
+
+`domains/{name}/questions.md`:
+```markdown
+# Questions: {Domain Name}
+
+## Q-{N}: {Short title}
+- **Question**: {Specific question}
+- **Source**: {steering/interviews/plan/{domain}.md#Q{N} or plan/overview.md}
+- **Impact**: {What is affected if this remains unanswered}
+- **Status**: open
+- **Reexamination trigger**: {Condition that would make this urgent}
+```
+
+Capture open questions from the interview that belong to this domain.
+
+## 8.4 Create domains/index.md
+
+```markdown
+# Domain Registry
+
+current_cycle: 0
+
+## Domains
+
+### {domain-name}
+{One-sentence description of what this domain covers.}
+Files: domains/{domain-name}/policies.md, decisions.md, questions.md
+
+### {domain-name-2}
+...
+
+## Cross-Cutting Concerns
+{Any concerns that span multiple domains and cannot be assigned to one.}
+```
+
+The cycle counter starts at 0 (no review cycles have run yet). The first `/ideate:review` run will update this to 1.
+
+## 8.5 Update Journal
+
+Append to `journal.md`:
+
+```markdown
+## [plan] {today's date} — Domain bootstrap complete
+Domains created: {list}
+Initial policies: {N} (across all domains)
+Initial decisions: {N} (from planning phase)
+Open questions: {N}
 ```
 
 ---

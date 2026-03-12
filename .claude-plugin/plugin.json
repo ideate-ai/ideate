@@ -1,10 +1,27 @@
 {
   "name": "ideate",
+  "version": "0.5.0",
   "description": "Structured SDLC workflow for planning, building, and validating software projects through iterative interview, execution, and review with progressive decomposition and continuous review.",
-  "version": "0.3.0",
   "author": {
     "name": "Dan Singer"
   },
-  "license": "UNLICENSED",
-  "keywords": ["planning", "development", "review", "workflow", "agents", "sdlc", "spec-driven"]
+  "license": "MIT",
+  "keywords": ["planning", "development", "review", "workflow", "agents", "sdlc", "spec-driven"],
+  "skills": [
+    "plan",
+    "execute",
+    "review",
+    "refine",
+    "brrr"
+  ],
+  "agents": [
+    "researcher",
+    "architect",
+    "decomposer",
+    "code-reviewer",
+    "spec-reviewer",
+    "gap-analyst",
+    "journal-keeper",
+    "proxy-human"
+  ]
 }

@@ -33,7 +33,7 @@ Store the project source root separately from the artifact directory.
 
 # Phase 2: Survey Existing Codebase
 
-Before interviewing the user, spawn the `architect` agent in **analyze** mode to survey the current state of the project source code.
+Before interviewing the user, spawn the `architect` agent in **analyze** mode with `model: claude-opus-4-6`. This overrides the agent's default model for this task. Spawn it to survey the current state of the project source code.
 
 Prompt for the architect:
 
@@ -60,7 +60,26 @@ Read all existing artifacts from the artifact directory. Load them in this order
 7. `plan/work-items/*.md` — all existing work items
 8. `steering/interview.md` — the original interview transcript
 9. `steering/research/*.md` — all research findings
-10. `journal.md` — project history
+10. `journal.md` — project history (if it exists)
+
+## 3.1 Domain Layer (Primary Source for Current State)
+
+If `domains/` exists in the artifact directory, load the domain layer instead of individual review files:
+
+11. `domains/index.md` — domain registry and current cycle number
+12. `domains/*/policies.md` — all domain policies (glob all domains)
+13. `domains/*/questions.md` — all domain open and resolved questions (glob all domains)
+
+Then load the latest cycle summary from the archive:
+
+14. `archive/cycles/{N}/summary.md` — where N is the current cycle number from `domains/index.md`
+
+Do NOT load all incremental reviews. The domain layer already distills what matters from prior cycles.
+
+## 3.2 Legacy Fallback (No Domain Layer)
+
+If `domains/` does not exist (pre-migration artifact directory), load the legacy review files:
+
 11. `reviews/final/summary.md` — review summary (if it exists)
 12. `reviews/final/code-quality.md` — code quality findings (if it exists)
 13. `reviews/final/spec-adherence.md` — spec adherence findings (if it exists)
@@ -187,6 +206,10 @@ A: {answer}
 A: {answer}
 ```
 
+**New interview structure**: If `steering/interviews/` exists, write the refinement interview to `steering/interviews/refine-{cycle_number}/` instead of appending to `steering/interview.md`. Create one file per domain discussed (`{domain-name}.md`) plus `_general.md` for cross-cutting questions. Write `_full.md` as the compiled transcript for human reading only.
+
+If `steering/interviews/` does not exist (legacy structure), append to `steering/interview.md` as before.
+
 ## 7b. steering/guiding-principles.md — UPDATE
 
 If any principles changed, update them in place with a change note. If any principles are no longer applicable, mark them deprecated. Never silently delete a principle.
@@ -235,7 +258,7 @@ If the refinement changes the architecture (new modules, changed interfaces, new
 
 If architecture is unchanged, do not modify this file. State in the refinement summary that architecture remains unchanged.
 
-If changes are significant enough to warrant a full redesign of a section, spawn the `architect` agent in **design** mode with the updated context to produce the revised sections.
+If changes are significant enough to warrant a full redesign of a section, spawn the `architect` agent in **design** mode with `model: claude-opus-4-6` and the updated context to produce the revised sections. This overrides the agent's default model for this task.
 
 ## 7f. plan/modules/*.md — UPDATE only if changed
 
@@ -267,7 +290,7 @@ For refinement work items, follow the same format as defined in the artifact con
 - **Reference existing code.** Implementation notes should reference existing functions, classes, modules, and patterns found in the codebase analysis. The executor needs to know what exists so it can integrate changes correctly.
 - **Scope narrowly.** Each work item addresses a specific change. Do not bundle unrelated changes into a single work item.
 
-For large refinements (5+ work items), spawn `decomposer` agent(s) to break down the changes into atomic work items:
+For large refinements (5+ work items), spawn `decomposer` agent(s) with `model: claude-opus-4-6` to break down the changes into atomic work items. This overrides the agent's default model for this task:
 
 > Decompose the following changes into atomic work items. Start numbering from {next available number}.
 >

@@ -217,3 +217,225 @@ Both version fields in .claude-plugin/marketplace.json updated from 0.2.0 to 0.3
 Items completed: 4/4
 Items requiring rework: 3 (026, 027, 028)
 Outstanding issues: none
+
+## [execute] 2026-03-11 — Work item 030: Remote Worker Daemon
+Status: complete with rework
+Rework: 1 critical (timing attack — use hmac.compare_digest), 3 significant (docs auth bypass removed, working_dir validation added, pyproject.toml build backend fixed), 4 minor (lifespan pattern, IDEATE_WORKER_HOST env var, logging order, startup concurrency stored).
+
+## [execute] 2026-03-11 — Work item 032: Role System
+Status: complete with rework
+Rework: 2 minor (unclosed file handles replaced with context managers, overbroad exception handling narrowed with per-entry validation). Test coverage and _reset_globals fix deferred to WI-034 by design.
+
+## [execute] 2026-03-11 — Work item 031: Remote Worker Tests
+Status: complete with rework
+Rework: 1 critical (removed all @pytest.mark.asyncio decorators — redundant with asyncio_mode=auto), 3 significant (concurrency test now polls health endpoint instead of started_count, asyncio.get_event_loop() replaced with asyncio.get_running_loop(), _execute_job refactored to delegate to worker._process_job), 3 minor (asyncio.sleep(0) after gather teardown, test_cancel_running_job_returns_409 added, multi-byte UTF-8 boundary tests added). 32 tests pass.
+
+## [execute] 2026-03-11 — Work item 033: Remote Dispatch Tools
+Status: complete with rework
+Rework: 1 critical (try/finally wrapping _http_session.close()), 3 significant (_fetch_worker_health logs debug on failure, poll_remote_job returns auth error immediately on 401/403, _get_http_session() lazy initializer added to prevent None dereference), 4 minor (exception detail logged not exposed in error response, redundant "required":[] removed from list_remote_workers schema, poll_remote_job fan-out changed to asyncio.gather for concurrency, IDEATE_REMOTE_WORKERS entries validated at startup).
+
+## [execute] 2026-03-11 — Work item 034: Remote Dispatch Tests
+Status: complete with rework
+Rework: 1 significant (added mock_session.get.assert_not_called() to no-workers test to fully verify AC2), 3 minor (removed redundant _http_session patch from all 8 remote dispatch tests, changed list_remote_workers test to use side_effect list for concurrent mocks, added test_list_remote_workers_auth_error_worker for GET /health 401 path). 42 tests pass.
+
+## [execute] 2026-03-11 — Work item 037: brrr Skill
+Status: complete with rework
+Rework: 2 significant (added Human Re-Engagement Handling section for AC11, added proxy-human-log.md write instruction to spawn prompt for AC13), 6 minor (disambiguated {N} placeholder in cycle banner, named principles-checker separately with inline output, fixed last_cycle_findings initialization, documented Phase 5 skip on resume, moved cycles_completed increment to Phase 6e unconditionally, added Phase 9 journal reconstruction guidance for per-cycle data).
+
+## [execute] 2026-03-11 — Work item 038: Documentation and Version Bump
+Status: complete with rework
+Rework: 1 minor (added job_id to running-state GET /jobs/{job_id} response in server.py and README — caller could not correlate mid-flight poll results without it). All 6 acceptance criteria met. marketplace.json and session-spawner version at 0.4.0; remote-worker remains 0.1.0.
+
+## [execute] 2026-03-11 — Work item 035: Manager Agent
+Status: complete with rework
+Rework: 1 significant (added list_remote_workers MCP tool as preferred worker status mechanism; curl fallback retained), 1 minor (pgrep pattern fix for session-specific process check). S2 false positive confirmed — Handoff Pending section present in template. Also fixed model field to short-form convention (claude-sonnet-4-6 → sonnet).
+
+## [execute] 2026-03-11 — Work item 036: Proxy Human Agent
+Status: complete with rework
+Rework: 1 minor (model field convention: claude-opus-4-6 → opus, consistent with all other agents).
+
+## [refine] 2026-03-11 — Refinement planning completed
+Trigger: user request to expand orchestration capabilities.
+Principles changed: none.
+New work items: 030-038.
+Addresses: remote worker daemon (HTTP service for distributing jobs to remote machines running local models), role system (named config bundles for spawn_session), remote dispatch tools (spawn_remote_session, poll_remote_job, list_remote_workers), manager agent (LLM agent for team coordination and health monitoring), proxy-human agent (autonomous Andon handler with full authority using guiding principles), brrr skill (autonomous SDLC loop until convergence — zero findings + zero principle violations), tests and documentation.
+Deferred: persistent job queue (in-memory only for v1), pull-model workers, WebSocket transport (HTTP polling sufficient for now).
+
+## [review] 2026-03-11 — Comprehensive review completed (WI 030-038 capstone)
+Critical findings: 0
+Significant findings: 6
+Minor findings: 9
+Suggestions: 0
+Items requiring user input: 3
+
+## [refine] 2026-03-11 — Refinement planning completed
+Trigger: capstone review findings (6 significant) + user design aside on model agnosticism.
+Principles changed: none.
+New work items: 039-051 (13 items).
+Addresses:
+- S1: Add proxy-human role to default-roles.json; fix brrr invocation to use role: "proxy-human" + model: opus at spawn time (WI-041)
+- S2: Add role system tests to session-spawner test suite; fix _reset_globals (WI-043)
+- S3: Unify proxy-human log format; brrr Phase 9 extraction consistent with canonical format (WI-042)
+- S4/OQ6: Add diff application section to manager agent — git apply with Andon routing on conflict (WI-045)
+- S5/OQ2: Document role as advisory-only for remote dispatch in both READMEs (WI-044)
+- S6: Fix list_remote_workers, spawn_remote_session, poll_remote_job README schema mismatches (WI-044)
+- OQ1: Token budget logging in spawn_session — parse usage from JSON output, add to JSONL log (WI-046)
+- Design aside: Add model parameter to spawn_session (WI-039); change architect/decomposer/proxy-human frontmatter to model: sonnet; update plan/refine skills to specify model: opus at spawn time (WI-040)
+- Minor: architecture.md update (WI-047), plugin.json version (WI-048), remote-worker lifespan shutdown (WI-049), brrr principles-checker working_dir + refinement cap (WI-050)
+- Tests: model parameter + token budget logging tests (WI-051)
+Deferred: none — all open items addressed.
+
+## [execute] 2026-03-11 — Work item 039: Add model Parameter to spawn_session
+Status: complete with rework
+Rework: 1 significant finding fixed (inconsistent caller-wins pattern — changed from truthiness check to `"model" not in arguments` pattern matching other role-overridable params); 1 minor fixed (README capitalization).
+
+## [execute] 2026-03-11 — Work item 040: Agent Model Agnosticism
+Status: complete
+
+## [execute] 2026-03-11 — Work item 041: Add proxy-human Role and Fix brrr Invocation
+Status: complete with rework
+Rework: 1 minor finding fixed (max_turns in default-roles.json corrected from 20 to 40 to match proxy-human.md frontmatter).
+
+## [execute] 2026-03-11 — Work item 042: Unify proxy-human Log Format
+Status: complete
+
+## [execute] 2026-03-11 — Work item 043: Role System Test Coverage
+Status: complete with rework
+Rework: 3 minor findings fixed (fragile captured_cmd[-1] heuristic replaced with cwd_idx+2 pattern; string comparison comment added).
+
+## [execute] 2026-03-11 — Work item 044: Fix Remote Dispatch README Documentation
+Status: complete
+
+## [execute] 2026-03-11 — Work item 045: Manager Agent Diff Application
+Status: complete with rework
+Rework: 1 significant finding fixed (inaccurate cross-reference "After polling remote jobs in step 5" corrected to reference poll_remote_job tool call directly).
+
+## [execute] 2026-03-11 — Work item 046: Token Budget Logging in spawn_session
+Status: complete with rework
+Rework: 2 minor findings fixed (timeout path tool response now includes explicit token_usage: null; fallback extraction enforces both input_tokens and output_tokens present before accepting object).
+
+## [execute] 2026-03-11 — Work item 047: Update Architecture Document Component Tables
+Status: complete with rework
+Rework: 2 significant findings fixed (proxy-human tools corrected from Write to Bash; model was already sonnet).
+
+## [execute] 2026-03-11 — Work item 048: Fix plugin.json Version
+Status: complete
+
+## [execute] 2026-03-11 — Work item 049: Fix Remote Worker Lifespan Coroutine Shutdown
+Status: complete
+
+## [execute] 2026-03-11 — Work item 050: brrr Skill Minor Fixes
+Status: complete
+
+## [execute] 2026-03-11 — Work item 051: Tests for model Parameter and Token Budget Logging
+Status: complete
+
+## [review] 2026-03-11 — Comprehensive review completed (WI 039-051 capstone)
+Critical findings: 0
+Significant findings: 3 (all fixed during rework)
+Minor findings: 2
+Items requiring user input: 0
+
+### Rework performed
+- Fixed proxy-human system_prompt in `default-roles.json` to use canonical log format
+- Fixed architecture.md manager row to include `Agent` tool
+- Fixed architecture.md architect/decomposer rows to show `sonnet` with spawn-time override note
+
+### Resolution
+All significant findings addressed. Project ready for user evaluation. No refinement cycle needed.
+
+## [review] 2026-03-11 — Comprehensive review completed (WI 039-051 capstone)
+Critical findings: 0
+Significant findings: 3 (all fixed in rework)
+Minor findings: 2 (deferred)
+Items requiring user input: 0
+
+Rework applied:
+- D1/S1: proxy-human system_prompt in default-roles.json updated to canonical log format
+- D2/M1: architect/decomposer model in architecture.md corrected to sonnet with override note
+- D3/S2: manager Agent tool added to architecture tools column
+
+All findings resolved. No refinement cycle required.
+
+## [refine] 2026-03-11 — Refinement planning completed
+Trigger: user decision to split session-spawner into separate project (outpost)
+Principles changed: none.
+New work items: 052-061 (10 items).
+Addresses: Architectural separation of concerns — ideate focused on SDLC (plan/refine/execute/review), outpost focused on MCP orchestration (session-spawner, remote-worker, roles, manager). brrr skill updated to use Agent tool for proxy-human invocation instead of MCP spawn_session.
+Scope: Create outpost project, move orchestration components, update brrr, update ideate architecture/docs, clean up ideate after move, generate outpost principles, update plugin version.
+Deferred: none — this is the complete split plan.
+
+## [execute] 2026-03-11 — Work item 052: Create Outpost Project Structure
+Status: complete
+Created ~/code/outpost/ with CLAUDE.md, plugin.json, marketplace.json, README.md, .gitignore, specs/ directory structure, journal.md. Git initialized with initial commit.
+
+## [execute] 2026-03-11 — Work item 057: Update brrr to Use Agent Tool
+Status: complete
+Modified skills/brrr/SKILL.md Phase 6a to use Agent tool with subagent_type: "proxy-human" instead of spawn_session MCP tool. Fallback documentation updated.
+
+## [execute] 2026-03-11 — Work item 058: Update Ideate Architecture for Split
+Status: complete
+Modified specs/plan/architecture.md to remove MCP server components. Removed manager from Agents table, removed remote worker dispatch flow, replaced Section 5 (MCP Server Design) with note about separate projects.
+
+## [execute] 2026-03-11 — Work item 053: Move Session-Spawner to Outpost
+Status: complete
+Copied mcp/session-spawner/ to ~/code/outpost/mcp/session-spawner/. Renamed IDEATE_* environment variables to OUTPOST_*. Updated server name to outpost-session-spawner. All 55 tests pass. Original ideate directory preserved.
+
+## [execute] 2026-03-11 — Work item 054: Move Remote-Worker to Outpost
+Status: complete
+Copied mcp/remote-worker/ to ~/code/outpost/mcp/remote-worker/. Renamed logger and FastAPI title to outpost-remote-worker. Package name changed to outpost-remote-worker. Environment variables kept as IDEATE_* for compatibility. All 32 tests pass. Original ideate directory preserved.
+
+## [execute] 2026-03-11 — Work item 056: Move Manager Agent to Outpost
+Status: complete
+Created ~/code/outpost/agents/manager.md with content from ideate/agents/manager.md. Updated outpost CLAUDE.md to reference manager agent. Original ideate file preserved.
+
+## [execute] 2026-03-11 — Work item 055: Move Roles System to Outpost
+Status: complete
+Verified roles file already present from WI-053 copy. Path resolution correct. All 55 tests pass. Original ideate directory preserved.
+
+## [execute] 2026-03-11 — Work item 059: Remove Outpost Components from Ideate
+Status: complete
+Deleted ideate/mcp/session-spawner/, ideate/mcp/remote-worker/, ideate/mcp/roles/, ideate/agents/manager.md. Cleaned plugin.json and README.md references. Historical work items retained.
+
+## [execute] 2026-03-11 — Work item 060: Initialize Outpost Principles and Constraints
+Status: complete
+Created outpost specs/steering/guiding-principles.md (12 principles), constraints.md (19 constraints), interview.md. Created specs/plan/overview.md, architecture.md, execution-strategy.md. All specific to MCP orchestration scope.
+
+## [execute] 2026-03-11 — Work item 061: Update Ideate Plugin Version and Metadata
+Status: complete
+Bumped version to 0.5.0. Added skills and agents arrays to plugin.json. Updated marketplace.json description. Updated README.md to reflect ideate/outpost split. Added proxy-human to agents array.
+
+## [execute] 2026-03-11 — Work item 061: Update Ideate Plugin Version and Metadata
+Status: complete
+Bumped version to 0.5.0. Added skills and agents arrays to plugin.json. Updated marketplace.json description. Updated README.md to reflect ideate/outpost split. Added proxy-human to agents array.
+
+## [execute] 2026-03-11 — Work item 053: Move Session-Spawner to Outpost
+Status: complete
+Copied mcp/session-spawner/ to ~/code/outpost/mcp/session-spawner/. Environment variables renamed (IDEATE_ → OUTPOST_), server name updated, README updated for outpost context. All 55 tests pass. Original ideate directory preserved.
+
+## [execute] 2026-03-11 — Work item 054: Move Remote-Worker to Outpost
+Status: complete
+Copied mcp/remote-worker/ to ~/code/outpost/mcp/remote-worker/. Logger and package names updated (ideate → outpost), environment variables kept as IDEATE_* for compatibility. All 32 tests pass. Original ideate directory preserved.
+
+## [execute] 2026-03-11 — Work item 056: Move Manager Agent to Outpost
+Status: complete
+Copied agents/manager.md to ~/code/outpost/agents/manager.md. Updated outpost CLAUDE.md to document manager agent. Original ideate file preserved.
+
+## [refine] 2026-03-11 — Refinement planning completed
+Trigger: user decision to separate session-spawner into standalone project
+Principles changed: none.
+New work items: 052-061 (10 items).
+Addresses: architectural separation of ideate (SDLC) and outpost (MCP orchestration). Session-spawner, remote-worker, roles, and manager move to outpost. brrr uses Agent tool for proxy-human instead of spawn_session. ideate architecture.md removes MCP components. outpost gets its own principles via /ideate:plan.
+Scope: ideate and outpost projects (two repos, two plugins).
+Deferred: none.
+
+## [execute] 2026-03-11 — Work item 062: Move Outpost-Specific Specs to Outpost
+Status: complete
+Moved 7 work items (010, 030-035) and 6 incremental reviews to ~/code/outpost/. proxy-human (036) and brrr (037) kept in ideate per shared-component judgment. Historical outpost journal entries appended to outpost journal with origin header.
+
+## [review] 2026-03-11 — Comprehensive review completed (WI 052–062 capstone)
+Critical findings: 0
+Significant findings: 3
+Minor findings: 8
+Suggestions: 0
+Items requiring user input: 1

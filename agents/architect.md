@@ -1,7 +1,7 @@
 ---
 name: architect
 description: Analyzes codebases and designs technical architecture with module decomposition. Operates in two modes — analyzing existing systems and designing new ones.
-model: opus
+model: sonnet
 tools:
   - Read
   - Grep

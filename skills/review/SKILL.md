@@ -1,7 +1,7 @@
 ---
-description: "Comprehensive review of completed work against the plan, guiding principles, and original intent. Spawns specialized reviewers for code quality, spec adherence, gap analysis, and decision synthesis."
+description: "Comprehensive review of completed work. Supports cycle review (default), domain review (--domain name), full audit (--full), and ad-hoc review (natural language scope). Spawns specialized reviewers and the domain curator."
 user-invocable: true
-argument-hint: "[artifact directory path]"
+argument-hint: "[artifact directory path] [--domain name | --full | \"natural language scope\"]"
 ---
 
 You are the **review** skill for the ideate plugin. You coordinate a comprehensive, multi-perspective evaluation of completed work. You are a coordinator — you spawn specialized reviewers and synthesize their findings. You do not do the reviewing yourself.
@@ -16,67 +16,120 @@ Tone: neutral, factual. No encouragement, no validation, no hedging qualifiers. 
 
 ---
 
-# Phase 1: Locate Artifact Directory
+# Phase 1: Parse Arguments and Determine Review Mode
 
-If the user provided an artifact directory path as an argument or in previous context, use it. Otherwise ask:
+## 1.1 Parse Invocation Arguments
 
-> What is the path to the artifact directory for this project?
+Parse the invocation for:
 
-Verify the directory exists and contains at minimum `steering/guiding-principles.md` and `plan/overview.md`. If these are missing, stop and tell the user this does not look like an ideate artifact directory. Do not proceed without a valid artifact directory.
+1. **Artifact directory path** — a positional argument. If not provided, search in the current directory and its immediate children for directories containing `plan/execution-strategy.md` and `steering/guiding-principles.md`. If multiple candidates exist, present them and ask the user to choose. If none are found, ask: "What is the path to the artifact directory for this project?"
+
+2. **Review mode flags and arguments**:
+   - No arguments (beyond artifact dir): **cycle review** (default)
+   - `--domain {name}`: **domain review** — load that domain's files, scope reviewers to it
+   - `--full`: **full audit** — load all domain files + latest cycle summary + full source tree
+   - `--scope "{description}"`: combined with `--domain`, narrows the focus further
+   - Any other argument (natural language): **ad-hoc review** — classify intent and select agent set
 
 Store the artifact directory path. All file operations reference this root.
 
+Verify the artifact directory contains at minimum `steering/guiding-principles.md` and `plan/overview.md`. If these are missing, stop and tell the user this does not look like an ideate artifact directory.
+
+## 1.2 Determine Review Mode
+
+Based on parsed arguments:
+
+| Arguments | Mode | Output location | Curator runs |
+|---|---|---|---|
+| None | Cycle review | `archive/cycles/{N}/` | Always |
+| `--domain {name}` | Domain review | `archive/adhoc/{date}-domain-{name}/` | If policy/question/conflict-grade findings |
+| `--full` | Full audit | `archive/adhoc/{date}-full-audit/` | If policy/question/conflict-grade findings |
+| Natural language string | Ad-hoc (feature-fit or retrospective) | `archive/adhoc/{date}-{slug}/` | If policy/question/conflict-grade findings |
+
+**Slug generation for ad-hoc**: lowercase the natural language argument, replace spaces with hyphens, truncate to 40 characters. E.g., "how does auth fit the current model" → `how-does-auth-fit-the-current-model`.
+
+**Date format**: `YYYYMMDD` using today's date.
+
+**Cycle number for cycle reviews**: If `domains/index.md` exists, read `current_cycle` from it and add 1. If the file does not exist, use `001`.
+
+Store the determined mode, output directory path, and cycle number (if applicable).
+
 ---
 
-# Phase 2: Read All Context
+# Phase 2: Load Context (Mode-Aware)
 
-Read every available artifact from the artifact directory. Load them in this order:
+## 2.1 Always load
 
-## 2.1 Steering Documents
+1. `steering/guiding-principles.md`
+2. `steering/constraints.md`
+3. `plan/architecture.md`
+4. `plan/overview.md`
 
-1. `steering/guiding-principles.md` — the decision framework
-2. `steering/constraints.md` — hard boundaries
-3. `steering/interview.md` — the original interview transcript (and any refinement interviews appended to it)
-4. `steering/research/*.md` — all research findings
+## 2.2 Cycle review context
 
-## 2.2 Plan Documents
+For cycle reviews, additionally load:
 
-5. `plan/overview.md` — what was planned (or the change plan, if refinement occurred)
-6. `plan/architecture.md` — technical architecture
-7. `plan/modules/*.md` — module specs (if they exist)
-8. `plan/execution-strategy.md` — how execution was structured
-9. `plan/work-items/*.md` — every work item spec
+5. All domain policies: `domains/*/policies.md` (glob all domains, if `domains/` exists)
+6. Current-cycle incremental reviews from `archive/incremental/`. Scope to this cycle:
+   - If `domains/index.md` exists, read `current_cycle` (N). Load only `archive/incremental/` files written since cycle N began. If cycle boundary cannot be determined from journal, load all incremental reviews.
+   - If `archive/incremental/` does not exist, fall back to `reviews/incremental/*.md`.
+7. `plan/work-items/*.md` — all work items
 
-## 2.3 Prior Reviews and Journal
+Do NOT load all prior cycle archives — the domain layer already distills history.
 
-10. `reviews/incremental/*.md` — all incremental review results from execution
-11. `journal.md` — project history
+Legacy fallback (no archive/, no domains/):
+- Load `reviews/incremental/*.md` and `steering/interview.md`
 
-## 2.4 Survey Project Source Code
+## 2.3 Domain review context
 
-Use Glob to map the project source tree. Identify:
+For `--domain {name}` reviews:
 
-- All source files (code, configuration, assets)
-- Directory structure
-- Entry points
-- Test files
-- Build/deployment configuration
+5. `domains/{name}/policies.md`
+6. `domains/{name}/decisions.md`
+7. `domains/{name}/questions.md`
+8. Source files associated with that domain (derive from the domain's `decisions.md` — look at file paths mentioned in decision sources and implementation notes)
+9. Relevant incremental reviews for those source files
 
-The source code location should be determinable from the work item file scopes or the architecture document. If the project source code is in a separate location from the artifact directory, identify that location from the plan artifacts before surveying.
+## 2.4 Full audit context
 
-Read enough of the source code to understand the project's actual structure. You need a working mental model of what was built, not just what was planned.
+For `--full` reviews:
 
-If any artifact does not exist, note its absence and continue. Missing incremental reviews, for example, simply means no incremental reviews were conducted — proceed without them.
+5. All domain policies: `domains/*/policies.md`
+6. All domain questions: `domains/*/questions.md`
+7. Latest cycle summary: `archive/cycles/{N}/summary.md`
+8. Source code (survey via Glob)
+
+Do NOT re-read all raw archive — the domain layer already distills the history.
+
+## 2.5 Ad-hoc (natural language) context
+
+For natural language scope:
+
+5. All domain policies: `domains/*/policies.md`
+6. All domain questions: `domains/*/questions.md`
+7. `plan/architecture.md` (already loaded in 2.1)
+8. Source files relevant to the described scope (derive from the description + domain decisions)
+
+## 2.6 Survey Project Source Code
+
+In all modes: use Glob to map the project source tree. Identify source files, directory structure, entry points, test files, and build configuration.
+
+The source code location is determinable from work item file scopes or the architecture document. Read enough source code to form a working mental model of what was built.
 
 ---
 
 # Phase 3: Ensure Output Directory
 
-Create the output directory if it does not already exist:
+Create the output directory based on the review mode determined in Phase 1:
 
-```
-{artifact-dir}/reviews/final/
-```
+- **Cycle review**: `{artifact-dir}/archive/cycles/{N}/`
+- **Domain review**: `{artifact-dir}/archive/adhoc/{date}-domain-{name}/`
+- **Full audit**: `{artifact-dir}/archive/adhoc/{date}-full-audit/`
+- **Ad-hoc**: `{artifact-dir}/archive/adhoc/{date}-{slug}/`
+
+Also ensure `{artifact-dir}/archive/adhoc/` exists as a parent directory.
+
+Store the output directory path. All reviewer output goes here.
 
 ---
 
@@ -104,9 +157,9 @@ All three agents run in parallel. Do not wait for one to finish before starting 
 >
 > Project source code is at: {project source path}
 >
-> This is a capstone review. Incremental reviews have already been conducted per work item. They are at: {artifact-dir}/reviews/incremental/*.md — read them to understand what was already caught. Focus on cross-cutting concerns: consistency across modules, patterns that span multiple work items, integration between components, systemic issues that no single-item review could see.
+> This is a capstone review. Incremental reviews have already been conducted per work item. They are at: {artifact-dir}/archive/incremental/*.md (or {artifact-dir}/reviews/incremental/*.md if the archive path does not exist) — read them to understand what was already caught. Focus on cross-cutting concerns: consistency across modules, patterns that span multiple work items, integration between components, systemic issues that no single-item review could see.
 >
-> Write your findings to: {artifact-dir}/reviews/final/code-quality.md
+> Write your findings to: {output-dir}/code-quality.md
 >
 > Follow the output format defined in your agent instructions. Verdict is Fail if there are any Critical or Significant findings or unmet acceptance criteria. Otherwise Pass.
 
@@ -127,13 +180,13 @@ All three agents run in parallel. Do not wait for one to finish before starting 
 > - Guiding principles: {artifact-dir}/steering/guiding-principles.md
 > - Constraints: {artifact-dir}/steering/constraints.md
 > - All work items: {artifact-dir}/plan/work-items/*.md
-> - Incremental reviews: {artifact-dir}/reviews/incremental/*.md (to avoid duplicating already-caught findings)
+> - Incremental reviews: {artifact-dir}/archive/incremental/*.md (or {artifact-dir}/reviews/incremental/*.md if the archive path does not exist) — to avoid duplicating already-caught findings
 >
 > Project source code is at: {project source path}
 >
 > This is a capstone review. Focus on cross-cutting adherence: do all components collectively follow the architecture? Are interfaces consistent across module boundaries? Are guiding principles upheld across the entire codebase, not just within individual work items?
 >
-> Write your findings to: {artifact-dir}/reviews/final/spec-adherence.md
+> Write your findings to: {output-dir}/spec-adherence.md
 >
 > Follow the output format defined in your agent instructions. Include all sections even if empty.
 
@@ -155,23 +208,23 @@ All three agents run in parallel. Do not wait for one to finish before starting 
 > - Architecture: {artifact-dir}/plan/architecture.md
 > - Module specs: {artifact-dir}/plan/modules/*.md (if they exist)
 > - All work items: {artifact-dir}/plan/work-items/*.md
-> - Incremental reviews: {artifact-dir}/reviews/incremental/*.md (to know what was already caught and addressed)
+> - Incremental reviews: {artifact-dir}/archive/incremental/*.md (or {artifact-dir}/reviews/incremental/*.md if the archive path does not exist) — to know what was already caught and addressed
 >
 > Project source code is at: {project source path}
 >
 > This is a capstone review. Incremental reviews may have already identified per-item gaps. Read them to avoid duplication. Focus on gaps that span the full project: missing requirements from the interview that fell through the cracks across all work items, integration gaps between components, infrastructure that no single work item was responsible for, implicit requirements that the project as a whole should meet.
 >
-> Write your findings to: {artifact-dir}/reviews/final/gap-analysis.md
+> Write your findings to: {output-dir}/gap-analysis.md
 >
 > Follow the output format defined in your agent instructions. Include all sections even if empty.
 
-Wait for all three reviewers to complete. Verify their output files were written to `reviews/final/` before proceeding.
+Wait for all three reviewers to complete. Verify their output files were written to `{output-dir}/` before proceeding.
 
 ---
 
 # Phase 4b: Spawn Journal-Keeper (Sequential)
 
-Spawn the journal-keeper only AFTER all three reviewers from Phase 4a have completed and their output files exist in `reviews/final/`. The journal-keeper depends on these files for cross-referencing.
+Spawn the journal-keeper only AFTER all three reviewers from Phase 4a have completed and their output files exist in `{output-dir}/`. The journal-keeper depends on these files for cross-referencing.
 
 ## 4b.1 journal-keeper
 
@@ -186,18 +239,19 @@ Spawn the journal-keeper only AFTER all three reviewers from Phase 4a have compl
 >
 > Context files to read:
 > - Journal: {artifact-dir}/journal.md
-> - Interview transcript: {artifact-dir}/steering/interview.md
 > - Guiding principles: {artifact-dir}/steering/guiding-principles.md
 > - Plan overview: {artifact-dir}/plan/overview.md
 > - Architecture: {artifact-dir}/plan/architecture.md
-> - All incremental reviews: {artifact-dir}/reviews/incremental/*.md
+> - All incremental reviews: {artifact-dir}/archive/incremental/*.md (or {artifact-dir}/reviews/incremental/*.md if the archive path does not exist)
+>
+> For cycle reviews, also read `{artifact-dir}/steering/interview.md` or the latest refine interview file from `{artifact-dir}/steering/interviews/` if that directory exists.
 >
 > The following three review files have been completed by the other reviewers. Read all three for cross-referencing:
-> - Code quality review: {artifact-dir}/reviews/final/code-quality.md
-> - Spec adherence review: {artifact-dir}/reviews/final/spec-adherence.md
-> - Gap analysis: {artifact-dir}/reviews/final/gap-analysis.md
+> - Code quality review: {output-dir}/code-quality.md
+> - Spec adherence review: {output-dir}/spec-adherence.md
+> - Gap analysis: {output-dir}/gap-analysis.md
 >
-> Write your output to: {artifact-dir}/reviews/final/decision-log.md
+> Write your output to: {output-dir}/decision-log.md
 >
 > Follow the output format defined in your agent instructions. Build the decision log chronologically. Include cross-references where findings from different reviewers relate to the same concern.
 
@@ -208,10 +262,10 @@ Spawn the journal-keeper only AFTER all three reviewers from Phase 4a have compl
 After the journal-keeper completes (all four reviewers are now done):
 
 1. Read all four output files:
-   - `reviews/final/code-quality.md`
-   - `reviews/final/spec-adherence.md`
-   - `reviews/final/gap-analysis.md`
-   - `reviews/final/decision-log.md`
+   - `{output-dir}/code-quality.md`
+   - `{output-dir}/spec-adherence.md`
+   - `{output-dir}/gap-analysis.md`
+   - `{output-dir}/decision-log.md`
 
 2. Verify each file was written and contains substantive content. If a reviewer failed to produce output (session timeout, error, empty file), note the failure and proceed with the outputs that do exist. Do not re-run failed reviewers automatically — note the gap in the summary.
 
@@ -219,7 +273,7 @@ After the journal-keeper completes (all four reviewers are now done):
 
 # Phase 6: Synthesize into Summary
 
-Read all four reviewer outputs and produce `reviews/final/summary.md`. This is the single document that captures the full picture.
+Read all four reviewer outputs and produce `{output-dir}/summary.md`. This is the single document that captures the full picture.
 
 ## 6.1 Classify All Findings by Severity
 
@@ -261,7 +315,7 @@ If no critical or significant findings exist, state that no refinement cycle is 
 
 ## 6.5 Write Summary File
 
-Write `reviews/final/summary.md` in this format:
+Write `{output-dir}/summary.md` in this format:
 
 ```markdown
 # Review Summary
@@ -292,7 +346,47 @@ Omit severity sections that have no findings. Include the "Findings Requiring Us
 
 ---
 
-# Phase 7: Update Journal
+# Phase 7: Spawn Domain Curator
+
+## 7.1 Determine Whether Curator Runs
+
+**Cycle reviews**: always run the curator.
+
+**Ad-hoc reviews** (domain, full audit, or natural language): run the curator only if the review produced at least one finding that is:
+- Policy-grade: implies a durable rule future workers must follow
+- Question-grade: an unresolved issue with impact if unanswered
+- Conflict-grade: contradicts an existing policy in `domains/*/policies.md`
+
+Read the summary file to make this determination. If no such findings exist, skip to Phase 8 (Update Journal). Note in the journal that the curator was not run.
+
+## 7.2 Spawn Curator
+
+Spawn the `domain-curator` agent with `model: claude-opus-4-6`. This overrides the agent's default model for this task.
+
+Provide:
+
+> Artifact directory: {artifact-dir}
+>
+> Review type: {cycle | adhoc}
+>
+> Review source: {output-dir}/*.md (all review files in the output directory)
+>
+> Cycle number: {N} (for cycle reviews) or slug: {date-slug} (for ad-hoc reviews)
+>
+> Process the review output and update the domain layer. Follow your agent instructions.
+
+**Wait for the curator to complete.** The curator runs in the foreground because it writes domain files that downstream skills depend on.
+
+## 7.3 After Curator Completes (Cycle Reviews Only)
+
+After the curator completes a cycle review:
+
+1. Update `domains/index.md`: set `current_cycle` to the current cycle number N.
+2. Verify that the curator wrote at least one file to at least one `domains/` subdirectory. If not, note the failure in the journal.
+
+---
+
+# Phase 8: Update Journal
 
 Append a review entry to `journal.md`. This is strictly append — do not modify any existing entries.
 
@@ -305,17 +399,18 @@ Significant findings: {N}
 Minor findings: {N}
 Suggestions: {N}
 Items requiring user input: {N}
+Curator: {ran | skipped — no policy-grade findings}
 ```
 
 Count findings from the summary, not from individual reviewers (to avoid double-counting findings that appear in multiple reviewer outputs).
 
 ---
 
-# Phase 8: Present Findings to User
+# Phase 9: Present Findings to User
 
 Present the review results to the user. Structure the presentation as follows:
 
-## 8.1 Top-Level Assessment
+## 9.1 Top-Level Assessment
 
 State the overall verdict:
 - If any critical findings exist: the project has critical issues that must be resolved.
@@ -324,7 +419,7 @@ State the overall verdict:
 
 State the finding counts by severity.
 
-## 8.2 Critical and Significant Findings
+## 9.2 Critical and Significant Findings
 
 Present each critical and significant finding with enough context for the user to understand the issue without reading the full review files. Include:
 - What the problem is
@@ -332,13 +427,13 @@ Present each critical and significant finding with enough context for the user t
 - Which principle or work item it relates to
 - The reviewer's suggested resolution
 
-## 8.3 Findings Requiring User Decisions
+## 9.3 Findings Requiring User Decisions
 
 For each finding that requires user input, present it as a clear question. Explain the context, the options (if identifiable), and the impact of each option.
 
 Wait for the user to respond to each decision point. Record their answers.
 
-## 8.4 Record User Decisions in Journal
+## 9.4 Record User Decisions in Journal
 
 After the user has responded to decision points, append their decisions to `journal.md`:
 
@@ -348,11 +443,11 @@ After the user has responded to decision points, append their decisions to `jour
 - {Question}: {User's answer}
 ```
 
-## 8.5 Minor Findings and Suggestions
+## 9.5 Minor Findings and Suggestions
 
 Briefly summarize minor findings and suggestions. Tell the user they are documented in the review files for reference. Do not walk through each one unless the user asks.
 
-## 8.6 Refinement Recommendation
+## 9.6 Refinement Recommendation
 
 If the summary includes a proposed refinement plan:
 
@@ -385,9 +480,17 @@ If a reviewer session fails or times out:
 
 ## Missing artifacts
 
-- Missing incremental reviews: proceed without them. The capstone review does not depend on incremental reviews existing — it accounts for them when they do.
+- Missing incremental reviews (`archive/incremental/` or legacy `reviews/incremental/`): proceed without them. The capstone review does not depend on incremental reviews existing — it accounts for them when they do.
 - Missing work items: this suggests execution was incomplete. Note this in the summary as a significant finding.
 - Missing steering documents (beyond the required guiding-principles.md and overview.md): note the absence and review against whatever context is available.
+
+## Curator fails
+
+If the domain-curator agent fails to produce output:
+1. Note the failure in the journal
+2. Do not block the review presentation — continue to Phase 9
+3. Note in the summary that domain files were not updated this cycle
+4. The user can re-run the curator manually by spawning the domain-curator agent directly
 
 ## No source code found
 

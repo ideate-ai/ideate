@@ -1,0 +1,22 @@
+# Questions: Workflow
+
+## Q-1: brrr Phase 6c convergence check still uses spawn_session
+- **Question**: `skills/brrr/SKILL.md:494` invokes `spawn_session` for the principles-checker (Condition B of convergence) with no fallback. Should this be replaced with an Agent tool invocation using `subagent_type: "spec-reviewer"` to match the proxy-human fix in WI-057?
+- **Source**: archive/cycles/001/gap-analysis.md G1+E1, archive/cycles/001/decision-log.md OQ1
+- **Impact**: Without outpost configured, Condition B cannot be evaluated; brrr exhausts max_cycles without declaring convergence and produces no error message explaining why.
+- **Status**: open
+- **Reexamination trigger**: Any attempt to run `/ideate:brrr` on an installation without outpost configured.
+
+## Q-2: Decision label mismatch — brrr checks DEFERRED, proxy-human writes DEFER
+- **Question**: `skills/brrr/SKILL.md:317` checks for the string `DEFERRED` but `agents/proxy-human.md:90` specifies `Decision: {PROCEED | DEFER | ESCALATE}`. Will any proxy-human output ever match?
+- **Source**: archive/cycles/001/decision-log.md OQ2
+- **Impact**: Proxy-human deferrals are silently dropped from brrr's deferred items list; Phase 9 activity report always shows zero deferrals regardless of actual proxy-human decisions.
+- **Status**: open
+- **Reexamination trigger**: Next refinement cycle (one-line fix; no design decision required).
+
+## Q-3: spawn_session listed as primary path in plan/execute/review skills after split
+- **Question**: `skills/plan/SKILL.md`, `skills/execute/SKILL.md`, and `skills/review/SKILL.md` present spawn_session as the primary agent-spawning mechanism and Agent tool as fallback. Post-split, this ordering is inverted from reality. Should the preference be updated so Agent tool is primary and spawn_session is noted as optional outpost enhancement?
+- **Source**: archive/cycles/001/gap-analysis.md I1, archive/cycles/001/decision-log.md OQ5
+- **Impact**: Skills attempt spawn_session first on every invocation, receive a tool-not-found error, then fall back; this produces visible noise inconsistent with brrr (which was correctly updated in WI-057).
+- **Status**: open
+- **Reexamination trigger**: Documentation pass; fallbacks exist so runtime behavior is correct but the noise degrades user experience.
