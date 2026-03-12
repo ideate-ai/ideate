@@ -439,3 +439,7 @@ Significant findings: 3
 Minor findings: 8
 Suggestions: 0
 Items requiring user input: 1
+
+## [execute] 2026-03-11 — Work items 063-071: Domain knowledge layer
+Status: complete
+Work items 063-071 implemented the domain knowledge layer (archive + domains structure) and migrated specs/ to use it. Key changes: agents/domain-curator.md created; skills/execute, plan, review, refine updated for new paths and domain bootstrap; README replaced with full artifact system documentation; scripts/migrate-to-domains.sh created. Design documents saved to specs/steering/research/. Track B migration: 37 incremental reviews → specs/archive/incremental/, 5 final reviews → specs/archive/cycles/001/, 4 domains bootstrapped (workflow, artifact-structure, agent-system, project-boundaries — 16 policies, 16 decisions, 11 questions), specs/steering/interview.md → specs/steering/interviews/legacy.md.
