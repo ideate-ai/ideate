@@ -23,3 +23,9 @@ New work items in a refinement cycle must be numbered starting from the highest 
 - **Derived from**: GP-4 (Parallel-First Design) — execution tooling globs by prefix; duplicates cause ambiguous ordering
 - **Established**: planning phase
 - **Status**: active
+
+## P-17: Every artifact directory must contain a manifest.json with a schema_version field
+The plan skill creates `manifest.json` with `{"schema_version": 1}` during initial directory scaffolding; the file is written once and updated only by migration scripts, never by execute, review, or refine phases.
+- **Derived from**: D-17 (manifest.json as schema version marker)
+- **Established**: cycle 003
+- **Status**: active

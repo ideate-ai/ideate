@@ -1,6 +1,6 @@
 # Domain Registry
 
-current_cycle: 2
+current_cycle: 3
 
 ## Domains
 
@@ -26,4 +26,4 @@ Files: domains/project-boundaries/policies.md, decisions.md, questions.md
 
 **Duplicate work item numbers**: Q-4 (artifact-structure) is a latent defect that affects workflow execution (Q-4 cross-references the execute and brrr skills). Any future `/ideate:execute` or `/ideate:brrr` run encounters ambiguous ordering for five number prefixes.
 
-**Missing CLAUDE.md**: Q-5 (artifact-structure) and the Q-5 rationale cite GP-8 (Durable Knowledge Capture), which is also the foundation of P-6 and P-7. Absence of a root CLAUDE.md is both a knowledge-capture violation and an obstacle to the dogfood workflow.
+**Documentation propagation**: Cycle 003 identified that changes to artifact directory structure (manifest.json addition) were not propagated to README.md, CLAUDE.md, or architecture.md. These are implementation gaps tracked in the archive (cycles/003/decision-log.md OQ1-OQ3) rather than domain questions, as they require no design decision — only mechanical fixes.
