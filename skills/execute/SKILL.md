@@ -135,6 +135,23 @@ If the execution strategy specifies worktree isolation, verify git worktree is a
 
 ---
 
+# Phase 4.5: Prepare Context Digest
+
+Before spawning workers, create a **context digest** — a filtered subset of architecture, principles, and constraints relevant to the current batch. This replaces loading the full documents for every worker.
+
+1. Read the full architecture document, guiding principles, and constraints.
+2. For each module in the current batch (as determined by the execution strategy groups):
+   - Extract architecture sections relevant to this module's file scope
+   - Extract guiding principles that apply to this module's domain
+   - Extract constraints that affect this module's technology or boundaries
+3. Compose the digest (~100-150 lines) containing only the relevant sections.
+
+The digest is ephemeral — it is not written to a file. It is passed directly to workers in the current batch. Different batches may have different digests if they cover different modules.
+
+Workers receive the digest plus paths to the full documents: "Full architecture at {path}, full principles at {path}, full constraints at {path} — read these if you need detail beyond what the digest provides."
+
+---
+
 # Phase 5: Confirm Before Starting
 
 After presenting the execution plan, ask:
@@ -156,10 +173,10 @@ Execute according to the mode specified in the execution strategy.
 Regardless of execution mode, every worker (subagent, teammate, or the main session in sequential mode) receives:
 
 1. **The work item spec** — `{artifact_dir}/plan/work-items/NNN-{name}.md`
-2. **The architecture document** — `{artifact_dir}/plan/architecture.md`
+2. **Context digest** — the filtered architecture, principles, and constraints prepared in Phase 4.5 for the current batch. Includes paths to the full documents if the worker needs more detail.
 3. **The relevant module spec** — if `{artifact_dir}/plan/modules/` contains module specs, identify which module the work item belongs to (by matching file scope or explicit module reference) and include that module's spec. If the work item spans modules or no modules exist, include the full architecture doc instead (already provided).
-4. **Guiding principles** — `{artifact_dir}/steering/guiding-principles.md`
-5. **Constraints** — `{artifact_dir}/steering/constraints.md`
+4. _(Included in context digest)_
+5. _(Included in context digest)_
 6. **Relevant research** — any files from `{artifact_dir}/steering/research/` referenced in the work item's implementation notes or relevant to its scope
 7. **Project source root** — the absolute path to the project source root derived in Phase 1, so workers know where to create and modify source files
 8. **Relevant domain policies** — if `{artifact_dir}/domains/` exists, identify which domain(s) are relevant to the work item based on its file scope. Load `{artifact_dir}/domains/{relevant-domain}/policies.md` for each relevant domain. If no clear domain mapping exists, skip this step. Domain policies supplement the guiding principles — they are more specific rules derived from prior review cycles.
@@ -169,10 +186,10 @@ All paths provided to workers must be absolute. Do not use relative paths that d
 The worker prompt must instruct the agent to:
 - Build exactly what the work item specifies
 - Write source files under the project source root
-- Follow the architecture document for system context
+- Follow the context digest (and full architecture document if needed) for system context
 - Follow the module spec for interface contracts and boundary rules
-- Use the guiding principles to resolve ambiguous situations
-- Respect all constraints
+- Use the guiding principles from the digest to resolve ambiguous situations (read full principles at {path} if needed)
+- Respect all constraints from the digest (read full constraints at {path} if needed)
 - Not make design decisions beyond what the spec prescribes
 - Report completion with a list of files created or modified
 

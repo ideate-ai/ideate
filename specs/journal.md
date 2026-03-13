@@ -443,3 +443,27 @@ Items requiring user input: 1
 ## [execute] 2026-03-11 — Work items 063-071: Domain knowledge layer
 Status: complete
 Work items 063-071 implemented the domain knowledge layer (archive + domains structure) and migrated specs/ to use it. Key changes: agents/domain-curator.md created; skills/execute, plan, review, refine updated for new paths and domain bootstrap; README replaced with full artifact system documentation; scripts/migrate-to-domains.sh created. Design documents saved to specs/steering/research/. Track B migration: 37 incremental reviews → specs/archive/incremental/, 5 final reviews → specs/archive/cycles/001/, 4 domains bootstrapped (workflow, artifact-structure, agent-system, project-boundaries — 16 policies, 16 decisions, 11 questions), specs/steering/interview.md → specs/steering/interviews/legacy.md.
+
+## [refine] 2026-03-12 — Refinement planning completed
+Trigger: review findings from cycle 001 (brrr defects)
+Principles changed: none.
+New work items: 072-073 (2 items).
+Addresses: S1 (brrr Phase 6c spawn_session → Agent tool), S2 (DEFERRED → DEFER label mismatch)
+Scope: brrr skill fixes only; G1 and stream 2 deferred
+Deferred: G1 (CLAUDE.md), plugin manifest updates, preference ordering, duplicate work item cleanup
+
+## [refine] 2026-03-12 — Refinement planning completed (Cycle 002)
+Trigger: Review findings from Cycle 001 — brrr correctness defects on standard installations
+Principles changed: none (all 12 principles unchanged)
+New work items: 072–073 (2 items, parallel)
+Scope: Fix S1 (Phase 6c spawn_session → Agent tool) and S2 (DEFERRED → DEFER label mismatch) from archive/cycles/001/summary.md
+Deferred: G1 (CLAUDE.md creation), stream 2 items (plugin manifest updates, preference ordering in plan/execute/review, duplicate work item cleanup)
+Tension accepted: Minimal refinement — only addressing critical blockers, not comprehensive cleanup
+
+## [refine] 2026-03-12 — Refinement planning completed
+Trigger: review findings from cycle 001 (S1, S2)
+Principles changed: none.
+New work items: 072-073 (2 items).
+Addresses: brrr Phase 6c convergence check (spawn_session → Agent tool) and DEFERRED/DEFER label mismatch.
+Scope: skills/brrr/SKILL.md modifications only.
+Deferred: G1 (CLAUDE.md), stream 2 (plugin manifests, preference ordering, duplicate work item cleanup).

@@ -57,7 +57,7 @@ Read all existing artifacts from the artifact directory. Load them in this order
 4. `plan/architecture.md` — technical architecture
 5. `plan/modules/*.md` — module specs (if they exist)
 6. `plan/execution-strategy.md` — how execution was structured
-7. `plan/work-items/*.md` — all existing work items
+7. `plan/work-items/*.md` — current cycle's work items. If prior cycles have been archived (check for `archive/cycles/*/work-items/`), note their existence but do not load them unless the user's changes specifically reference prior work. The domain layer and cycle summaries already distill prior cycle context.
 8. `steering/interview.md` — the original interview transcript
 9. `steering/research/*.md` — all research findings
 10. `journal.md` — project history (if it exists)

@@ -62,7 +62,7 @@ For each open question, record:
 
 ## How to Synthesize
 
-1. Read `journal.md` in full. Extract every decision and every open issue.
+1. Read the last 20 entries from `journal.md` (use offset/limit if the file is long). For older context, rely on the domain layer and prior cycle summaries. Extract every decision and every open issue from the entries you read.
 2. Read all incremental reviews. Note decisions made in response to findings and issues left unresolved.
 3. Read the other final reviews (code-quality, spec-adherence, gap-analysis). Note where reviewers disagree or where findings in one review relate to findings in another.
 4. Read the interview transcript. Identify decisions made during planning.
@@ -74,39 +74,11 @@ For each open question, record:
 
 ## Output Format
 
-```
-## Decision Log
+Follow the format of existing entries in `journal.md` and prior decision logs in `archive/cycles/*/decision-log.md`. If no prior decision logs exist, structure output as:
 
-### Planning Phase
-
-#### DL1: [Decision title]
-- **When**: [Phase — context]
-- **Decision**: [What was decided]
-- **Rationale**: [Why]
-- **Alternatives**: [If recorded, otherwise omit this line]
-- **Implications**: [What this affects]
-
-### Execution Phase
-
-#### DL2: [Decision title]
-...
-
-### Review Phase
-
-#### DL3: [Decision title]
-...
-
----
-
-## Open Questions
-
-### OQ1: [Question title]
-- **Question**: [Specific question]
-- **Source**: [Where this came from]
-- **Impact**: [What is affected]
-- **Who answers**: [User | Technical investigation | Design review]
-- **Consequence of inaction**: [What happens if ignored]
-```
+- **Decision Log**: chronological entries grouped by phase (Planning, Execution, Review), each with When, Decision, Rationale, Alternatives (if recorded), Implications
+- **Open Questions**: each with Question, Source, Impact, Who answers, Consequence of inaction
+- **Cross-References**: substantive connections between findings from different reviewers
 
 ## Connecting Related Findings
 

@@ -30,16 +30,17 @@ Produce a single markdown document containing all work items for the assigned mo
 
 ### Work Item Format
 
-Each work item uses this exact format:
+Read one existing file from `plan/work-items/` to understand the expected format and conventions. Match the format exactly.
+
+If no work items exist yet (first decomposition), use this template:
 
 ```markdown
 # NNN: {Title}
 
 ## Objective
-{What this work item accomplishes. One to three sentences. State the deliverable, not the activity.}
+{What this work item accomplishes. One to three sentences.}
 
 ## Acceptance Criteria
-- [ ] {Machine-verifiable criterion}
 - [ ] {Machine-verifiable criterion}
 
 ## File Scope
@@ -50,7 +51,7 @@ Each work item uses this exact format:
 - Blocks: {NNN | none}
 
 ## Implementation Notes
-{Technical details, edge cases, error handling, integration points. Enough detail that two independent LLMs would produce functionally equivalent output.}
+{Technical details, edge cases, integration points.}
 
 ## Complexity
 {Low | Medium | High}

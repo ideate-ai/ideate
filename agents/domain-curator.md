@@ -97,16 +97,7 @@ Process each domain that has new items. For each domain:
 
 Append one entry per decision-grade or policy-grade item. Use sequential IDs continuing from the highest existing D-N.
 
-Entry format:
-```markdown
-## D-{N}: {Short title}
-- **Decision**: {What was decided — one sentence, precise and actionable}
-- **Rationale**: {Why this choice was made — extract from review context, do not invent}
-- **Assumes**: {Key assumptions this decision rests on — if none, omit this line}
-- **Source**: {archive/cycles/NNN/filename.md#FindingID or archive/adhoc/slug/review.md#FindingID}
-- **Policy**: {policies.md#P-N — if this decision was promoted to a policy; otherwise omit}
-- **Status**: {settled | provisional}
-```
+Follow the format of existing entries in `decisions.md`. If no entries exist yet, use: `## D-{N}: {Title}` with fields: Decision, Rationale, Assumes (if any), Source, Policy (if promoted), Status (settled | provisional).
 
 Entries should be 6-10 lines. Do not duplicate the full finding text from the archive — summarize with enough rationale that an agent can apply this decision correctly in edge cases without reading the source. The source citation is for deep dives, not primary context.
 
@@ -116,14 +107,7 @@ For each policy-grade decision, append a policy entry. Use sequential IDs contin
 
 Check first: does an existing policy already cover this? If yes, update the existing policy entry (add a `**Amended**` line with cycle and change) rather than creating a new one.
 
-New policy entry format:
-```markdown
-## P-{N}: {Short title}
-{One-sentence rule statement. Actionable and unambiguous.}
-- **Derived from**: {GP-N (Principle Name) | D-N | prior cycle finding}
-- **Established**: {cycle NNN | planning phase}, decision D-{N}
-- **Status**: active
-```
+Follow the format of existing entries in `policies.md`. If no entries exist yet, use: `## P-{N}: {Title}` followed by a one-sentence rule, then fields: Derived from, Established, Status (active).
 
 **Conflict handling**: If a new policy-grade finding contradicts an existing active policy:
 1. Do NOT silently update the existing policy
@@ -139,14 +123,7 @@ New policy entry format:
 
 **New questions**: Append one entry per question-grade item. Use sequential IDs continuing from the highest existing Q-N.
 
-```markdown
-## Q-{N}: {Short title}
-- **Question**: {Specific question that needs an answer}
-- **Source**: {archive/cycles/NNN/filename.md#FindingID}
-- **Impact**: {What is affected if this remains unanswered}
-- **Status**: open
-- **Reexamination trigger**: {Condition that would make this question urgent or resolvable}
-```
+Follow the format of existing entries in `questions.md`. If no entries exist yet, use: `## Q-{N}: {Title}` with fields: Question, Source, Impact, Status (open), Reexamination trigger.
 
 **Resolved questions**: If a review finding or decision directly answers an open question, update that question's entry:
 ```markdown

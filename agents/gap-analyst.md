@@ -37,16 +37,7 @@ Re-read the interview transcript carefully, line by line. Look for:
 
 ### 2. Unhandled Edge Cases
 
-For each component in the implementation, consider:
-
-- What happens with empty input?
-- What happens with extremely large input?
-- What happens with malformed input?
-- What happens when an external dependency is unavailable?
-- What happens when the file system is full or read-only?
-- What happens on concurrent access?
-- What happens when the user provides unexpected types?
-- What happens on the second run (idempotency)?
+For each component, consider boundary conditions (empty/large/malformed input), external failures (dependencies unavailable, filesystem issues), concurrency, and idempotency. Use judgment for which edge cases are relevant to each component — not all apply everywhere.
 
 ### 3. Incomplete Integrations
 
@@ -60,25 +51,11 @@ For each interface or integration point defined in the architecture:
 
 ### 4. Missing Infrastructure
 
-- **Error handling**: Are errors surfaced to the user with meaningful messages? Is there a consistent error handling strategy?
-- **Logging**: Are significant operations logged? Are log levels appropriate?
-- **Configuration**: Are configurable values hardcoded? Is there a configuration mechanism?
-- **Deployment**: Is there documentation or automation for deployment?
-- **Documentation**: Is there user-facing documentation? API documentation? Setup instructions?
-- **Health checks**: For services, are there health/readiness endpoints?
-- **Graceful shutdown**: Do long-running processes handle SIGTERM?
+Check for gaps in: error handling, logging, configuration management, deployment automation, documentation, health checks, and graceful shutdown. Focus on what the project's architecture and constraints say it needs — not a generic checklist.
 
 ### 5. Implicit Requirements
 
-Requirements that no reasonable user would think to state because they are obvious:
-
-- Error messages should be meaningful (not stack traces or cryptic codes)
-- APIs should return appropriate status codes
-- CLI tools should have help text and usage examples
-- File operations should handle path separators correctly across platforms
-- User-facing text should be free of typos and grammatically correct
-- Operations that can fail should not silently succeed
-- Destructive operations should require confirmation or be reversible
+Requirements that no reasonable user would think to state because they are obvious — meaningful error messages, appropriate API status codes, CLI help text, cross-platform path handling, correct user-facing text, no silent failures, confirmation for destructive operations. Use judgment for what applies to this project's type and audience.
 
 ## How to Analyze
 

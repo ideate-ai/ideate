@@ -4,15 +4,17 @@
 - **Question**: `skills/brrr/SKILL.md:494` invokes `spawn_session` for the principles-checker (Condition B of convergence) with no fallback. Should this be replaced with an Agent tool invocation using `subagent_type: "spec-reviewer"` to match the proxy-human fix in WI-057?
 - **Source**: archive/cycles/001/gap-analysis.md G1+E1, archive/cycles/001/decision-log.md OQ1
 - **Impact**: Without outpost configured, Condition B cannot be evaluated; brrr exhausts max_cycles without declaring convergence and produces no error message explaining why.
-- **Status**: open
+- **Status**: being addressed in cycle 002 (WI-072)
 - **Reexamination trigger**: Any attempt to run `/ideate:brrr` on an installation without outpost configured.
+- **Resolution**: Resolved in cycle 002 via WI-072 (replaced spawn_session with Agent tool invocation).
 
 ## Q-2: Decision label mismatch — brrr checks DEFERRED, proxy-human writes DEFER
 - **Question**: `skills/brrr/SKILL.md:317` checks for the string `DEFERRED` but `agents/proxy-human.md:90` specifies `Decision: {PROCEED | DEFER | ESCALATE}`. Will any proxy-human output ever match?
 - **Source**: archive/cycles/001/decision-log.md OQ2
 - **Impact**: Proxy-human deferrals are silently dropped from brrr's deferred items list; Phase 9 activity report always shows zero deferrals regardless of actual proxy-human decisions.
-- **Status**: open
+- **Status**: being addressed in cycle 002 (WI-073)
 - **Reexamination trigger**: Next refinement cycle (one-line fix; no design decision required).
+- **Resolution**: Resolved in cycle 002 via WI-073 (changed `DEFERRED` to `DEFER` at line 317).
 
 ## Q-3: spawn_session listed as primary path in plan/execute/review skills after split
 - **Question**: `skills/plan/SKILL.md`, `skills/execute/SKILL.md`, and `skills/review/SKILL.md` present spawn_session as the primary agent-spawning mechanism and Agent tool as fallback. Post-split, this ordering is inverted from reality. Should the preference be updated so Agent tool is primary and spawn_session is noted as optional outpost enhancement?

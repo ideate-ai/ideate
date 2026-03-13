@@ -1,65 +1,40 @@
-# Refinement Plan — Ideate/Outpost Architectural Split
+# Refinement Plan — brrr Critical Fixes (Cycle 002)
 
 ## What Is Changing
 
-ideate's orchestration components (session-spawner, remote-worker, roles system, manager agent) are moving to a separate project called "outpost". ideate becomes focused solely on SDLC: planning, refinement, execution, and review. The brrr skill's proxy-human invocation changes from MCP spawn_session to native Agent tool.
+Fixing two defects in the brrr skill that prevent correct operation on standard installations without outpost configured:
+
+1. **Phase 6c convergence check** — Replace `spawn_session` invocation with Agent tool using `subagent_type: "spec-reviewer"` (with fallback for when Agent tool is unavailable)
+2. **DEFERRED/DEFER label mismatch** — Change brrr's string comparison from `DEFERRED` to `DEFER` to match proxy-human output contract
 
 ## Triggering Context
 
-User decision (2026-03-11): The session-spawner MCP component has expanded beyond its original design scope for ideate. MCP orchestration introduces design decisions that may not be relevant for all ideate use cases. Separating concerns allows:
-- ideate to remain focused on SDLC workflow
-- outpost to specialize in MCP orchestration (session management, remote dispatch)
-- Independent evolution of each project's principles and constraints
+Review findings from cycle 001 (outpost split):
+- S1: spawn_session in brrr Phase 6c has no fallback — without outpost, convergence cannot be declared
+- S2: Decision label mismatch — proxy-human deferrals are silently dropped
+
+Both are blockers for brrr correctness on standard installations.
 
 ## What Is NOT Changing
 
-- ideate's skills: plan, refine, execute, review, brrr (only brrr's proxy-human invocation changes)
-- ideate's agents: researcher, architect, decomposer, code-reviewer, spec-reviewer, gap-analyst, journal-keeper (proxy-human stays; manager moves to outpost)
-- ideate's guiding principles and constraints
-- ideate's artifact conventions
-- Existing work items 001-051 (historical record retained)
+- G1 (CLAUDE.md creation) — deferred to future cycle
+- Stream 2 items (plugin manifest updates, preference ordering, duplicate work item cleanup) — all deferred
+- No architectural changes
+- No new features or scope expansions
 
 ## Scope
 
-Files and directories affected:
-
-**Create (outpost project structure):**
-- `~/code/outpost/CLAUDE.md`
-- `~/code/outpost/.claude-plugin/plugin.json`
-- `~/code/outpost/.claude-plugin/marketplace.json`
-- `~/code/outpost/README.md`
-- `~/code/outpost/.gitignore`
-- `~/code/outpost/specs/` (directory structure)
-
-**Move (lift-and-shift):**
-- `ideate/mcp/session-spawner/` → `outpost/mcp/session-spawner/`
-- `ideate/mcp/remote-worker/` → `outpost/mcp/remote-worker/`
-- `ideate/mcp/roles/` → `outpost/mcp/roles/`
-- `ideate/agents/manager.md` → `outpost/agents/manager.md`
-
 **Modify:**
-- `skills/brrr/SKILL.md` — Agent tool invocation for proxy-human
-- `specs/plan/architecture.md` — Remove MCP components
-- `.claude-plugin/plugin.json` — Remove MCP servers, bump version
-- `.claude-plugin/marketplace.json` — Update description
-- `README.md` — Reflect new architecture
-
-**Delete (after move confirmed):**
-- `ideate/mcp/session-spawner/`
-- `ideate/mcp/remote-worker/`
-- `ideate/mcp/roles/`
-- `ideate/agents/manager.md`
-- `ideate/mcp/` (if empty)
+- `skills/brrr/SKILL.md` — Phase 6c Condition B (Agent tool invocation)
+- `skills/brrr/SKILL.md` — line 317 (DEFERRED → DEFER)
 
 ## Expected Impact
 
 After this cycle:
-- ideate contains only SDLC-focused skills and agents
-- outpost is a separate MCP server project for session orchestration
-- brrr invokes proxy-human via Agent tool (no MCP dependency for Andon)
-- ideate's architecture.md reflects reduced scope
-- outpost has its own principles, constraints, and architecture (via /ideate:plan)
+- brrr can declare convergence on installations without outpost
+- Proxy-human deferrals are correctly captured and reported
+- Minor: May include optional fixes for confidence level case and fallback entry heading format
 
 ## New Work Items
 
-WI-052 through WI-061 (10 items across 4 dependency groups).
+WI-072 through WI-073 (2 items, parallelizable).

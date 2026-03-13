@@ -70,8 +70,7 @@ Store the determined mode, output directory path, and cycle number (if applicabl
 For cycle reviews, additionally load:
 
 5. All domain policies: `domains/*/policies.md` (glob all domains, if `domains/` exists)
-6. Current-cycle incremental reviews from `archive/incremental/`. Scope to this cycle:
-   - If `domains/index.md` exists, read `current_cycle` (N). Load only `archive/incremental/` files written since cycle N began. If cycle boundary cannot be determined from journal, load all incremental reviews.
+6. Current-cycle incremental reviews: load only from `archive/incremental/` (current cycle's reviews). Do NOT load incremental reviews from prior cycles archived in `archive/cycles/*/incremental/`.
    - If `archive/incremental/` does not exist, fall back to `reviews/incremental/*.md`.
 7. `plan/work-items/*.md` — all work items
 
@@ -133,6 +132,40 @@ Store the output directory path. All reviewer output goes here.
 
 ---
 
+# Phase 3.5: Generate Review Manifest
+
+For **cycle reviews only**, generate a lightweight manifest that reviewers use as an index instead of reading all work items and incremental reviews upfront.
+
+1. Glob `{artifact-dir}/plan/work-items/*.md` — for each file, extract:
+   - Work item number (from filename prefix NNN)
+   - Title (from the `# NNN: {Title}` heading)
+   - File scope (from the `## File Scope` section — list of files with create/modify/delete)
+
+2. Glob `{artifact-dir}/archive/incremental/*.md` — for each file, extract:
+   - Work item number (from filename prefix NNN)
+   - Verdict (from `## Verdict: {Pass | Fail}`)
+   - Finding count by severity (count `### C`, `### S`, `### M` headings)
+
+3. Match incremental reviews to work items by number prefix.
+
+4. Write `{output-dir}/review-manifest.md`:
+
+```markdown
+# Review Manifest — Cycle {N}
+
+## Work Items
+
+| # | Title | File Scope | Incremental Verdict | Findings (C/S/M) | Work Item Path | Review Path |
+|---|---|---|---|---|---|---|
+| NNN | {title} | {comma-separated file list} | Pass/Fail/None | {c}/{s}/{m} | plan/work-items/NNN-name.md | archive/incremental/NNN-name.md |
+```
+
+Items without incremental reviews show "None" for verdict and "—" for findings and review path.
+
+The manifest is ~2-3 lines per work item. For 50 items, this is ~150 lines vs reading 50 full work item files + 50 review files.
+
+---
+
 # Phase 4a: Spawn Three Reviewers in Parallel
 
 Spawn three review agents simultaneously. Each receives the relevant subset of context and has access to the project source code. Use `spawn_session` (if the session-spawner MCP server is available) or subagents.
@@ -153,11 +186,11 @@ All three agents run in parallel. Do not wait for one to finish before starting 
 > Context files to read:
 > - Architecture: {artifact-dir}/plan/architecture.md
 > - Guiding principles: {artifact-dir}/steering/guiding-principles.md
-> - All work items: {artifact-dir}/plan/work-items/*.md
+> - Review manifest: {output-dir}/review-manifest.md — this is your index of all work items and their incremental review status. Use it to understand what was built and where. Read individual work items from `{artifact-dir}/plan/work-items/NNN-{name}.md` only when you find an issue in files covered by that work item and need to check its acceptance criteria or scope.
 >
 > Project source code is at: {project source path}
 >
-> This is a capstone review. Incremental reviews have already been conducted per work item. They are at: {artifact-dir}/archive/incremental/*.md (or {artifact-dir}/reviews/incremental/*.md if the archive path does not exist) — read them to understand what was already caught. Focus on cross-cutting concerns: consistency across modules, patterns that span multiple work items, integration between components, systemic issues that no single-item review could see.
+> This is a capstone review. Incremental reviews have already been conducted per work item — their verdicts and finding counts are in the manifest. Read individual incremental reviews from the paths in the manifest only when you find an issue in the same file scope and need to check whether it was already caught. Focus on cross-cutting concerns: consistency across modules, patterns that span multiple work items, integration between components, systemic issues that no single-item review could see.
 >
 > Write your findings to: {output-dir}/code-quality.md
 >
@@ -179,8 +212,7 @@ All three agents run in parallel. Do not wait for one to finish before starting 
 > - Module specs: {artifact-dir}/plan/modules/*.md (if they exist)
 > - Guiding principles: {artifact-dir}/steering/guiding-principles.md
 > - Constraints: {artifact-dir}/steering/constraints.md
-> - All work items: {artifact-dir}/plan/work-items/*.md
-> - Incremental reviews: {artifact-dir}/archive/incremental/*.md (or {artifact-dir}/reviews/incremental/*.md if the archive path does not exist) — to avoid duplicating already-caught findings
+> - Review manifest: {output-dir}/review-manifest.md — use as an index. Read individual work items and incremental reviews only when investigating specific findings in their file scope.
 >
 > Project source code is at: {project source path}
 >
@@ -207,8 +239,7 @@ All three agents run in parallel. Do not wait for one to finish before starting 
 > - Constraints: {artifact-dir}/steering/constraints.md
 > - Architecture: {artifact-dir}/plan/architecture.md
 > - Module specs: {artifact-dir}/plan/modules/*.md (if they exist)
-> - All work items: {artifact-dir}/plan/work-items/*.md
-> - Incremental reviews: {artifact-dir}/archive/incremental/*.md (or {artifact-dir}/reviews/incremental/*.md if the archive path does not exist) — to know what was already caught and addressed
+> - Review manifest: {output-dir}/review-manifest.md — use as an index. Read individual work items and incremental reviews only when investigating specific gaps in their file scope.
 >
 > Project source code is at: {project source path}
 >
@@ -238,11 +269,11 @@ Spawn the journal-keeper only AFTER all three reviewers from Phase 4a have compl
 > Synthesize the project's history into a decision log and open questions list.
 >
 > Context files to read:
-> - Journal: {artifact-dir}/journal.md
+> - Review manifest: {output-dir}/review-manifest.md — use as an index of all work items and their review status. Read individual incremental reviews only when cross-referencing specific findings.
+> - Journal: read only the last 20 entries from {artifact-dir}/journal.md (not the full file if it is long)
 > - Guiding principles: {artifact-dir}/steering/guiding-principles.md
 > - Plan overview: {artifact-dir}/plan/overview.md
 > - Architecture: {artifact-dir}/plan/architecture.md
-> - All incremental reviews: {artifact-dir}/archive/incremental/*.md (or {artifact-dir}/reviews/incremental/*.md if the archive path does not exist)
 >
 > For cycle reviews, also read `{artifact-dir}/steering/interview.md` or the latest refine interview file from `{artifact-dir}/steering/interviews/` if that directory exists.
 >
@@ -383,6 +414,43 @@ After the curator completes a cycle review:
 
 1. Update `domains/index.md`: set `current_cycle` to the current cycle number N.
 2. Verify that the curator wrote at least one file to at least one `domains/` subdirectory. If not, note the failure in the journal.
+
+---
+
+# Phase 7.5: Archive Completed Work Items (Cycle Reviews Only)
+
+For **cycle reviews only**, after the domain curator completes, archive the current cycle's work items and incremental reviews into the cycle directory. This keeps `plan/work-items/` containing only active/pending items.
+
+1. Move the review manifest: it was already written to `{output-dir}/review-manifest.md` in Phase 3.5.
+
+2. Copy completed work items:
+   - For each work item in `plan/work-items/` that has a passing incremental review in `archive/incremental/`:
+     - Copy the work item file to `{output-dir}/work-items/` (creating the directory if needed)
+     - Remove the original from `plan/work-items/`
+   - Work items without incremental reviews (not yet executed) remain in `plan/work-items/`
+
+3. Move incremental reviews:
+   - Move all files from `archive/incremental/` to `{output-dir}/incremental/` (creating the directory if needed)
+   - This clears `archive/incremental/` for the next cycle
+
+4. Verify:
+   - `{output-dir}/work-items/` contains the archived work items
+   - `{output-dir}/incremental/` contains the archived incremental reviews
+   - `plan/work-items/` contains only items not completed this cycle (if any)
+   - `archive/incremental/` is empty or contains only items from incomplete work
+
+After archival, the cycle directory structure is:
+```
+archive/cycles/{N}/
+  review-manifest.md     # Generated in Phase 3.5
+  work-items/            # Completed work items from this cycle
+  incremental/           # Incremental reviews from this cycle
+  code-quality.md        # From Phase 4a
+  spec-adherence.md      # From Phase 4a
+  gap-analysis.md        # From Phase 4a
+  decision-log.md        # From Phase 4b
+  summary.md             # From Phase 6
+```
 
 ---
 
