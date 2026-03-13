@@ -467,3 +467,17 @@ New work items: 072-073 (2 items).
 Addresses: brrr Phase 6c convergence check (spawn_session → Agent tool) and DEFERRED/DEFER label mismatch.
 Scope: skills/brrr/SKILL.md modifications only.
 Deferred: G1 (CLAUDE.md), stream 2 (plugin manifests, preference ordering, duplicate work item cleanup).
+
+## [execute] 2026-03-13 — Work item 074: Manifest convention and plan skill update
+Status: complete with rework
+Rework: 1 minor finding fixed — directory structure diagram in artifact-conventions.md was showing legacy reviews/ layout instead of current archive/ + domains/ structure. Updated to match current on-disk structure.
+
+## [execute] 2026-03-13 — Work item 075: Create specs/manifest.json
+Status: complete
+No deviations.
+
+## [refine] 2026-03-13 — Refinement planning completed (Cycle 003)
+Trigger: User request — artifact schema versioning
+Principles changed: none
+New work items: 074–075 (2 items, parallel)
+Adds manifest.json to the artifact directory schema (schema_version: 1). Plan skill creates it during scaffolding. Artifact-conventions.md documents it. Ideate's own specs/ gets the manifest retroactively. No skill enforcement — manifest is informational only, consumed by future migration scripts.

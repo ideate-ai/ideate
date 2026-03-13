@@ -8,6 +8,7 @@ This document defines the file formats, schemas, naming conventions, and semanti
 
 ```
 {artifact-dir}/
+├── manifest.json
 ├── steering/
 │   ├── interview.md
 │   ├── guiding-principles.md
@@ -22,17 +23,34 @@ This document defines the file formats, schemas, naming conventions, and semanti
 │   ├── execution-strategy.md
 │   └── work-items/
 │       └── NNN-{name}.md
-├── reviews/
+├── archive/
 │   ├── incremental/
 │   │   └── NNN-{name}.md
-│   └── final/
-│       ├── code-quality.md
-│       ├── spec-adherence.md
-│       ├── gap-analysis.md
-│       ├── decision-log.md
-│       └── summary.md
+│   └── cycles/
+│       └── NNN/
+│           └── summary.md
+├── domains/
+│   ├── index.md
+│   └── {domain-name}/
+│       ├── policies.md
+│       ├── decisions.md
+│       └── questions.md
 └── journal.md
 ```
+
+---
+
+## `manifest.json`
+
+**Purpose**: Identifies the schema version of this artifact directory. Used by migration scripts to determine which upgrades to apply.
+
+**Format**:
+```json
+{"schema_version": 1}
+```
+
+**Phases**: plan (write), never modified by other phases
+**Semantics**: Written once during `/ideate:plan` directory scaffolding. Not read or checked by any skill at runtime. Updated only by migration scripts when the schema version advances.
 
 ---
 

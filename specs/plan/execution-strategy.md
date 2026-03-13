@@ -1,46 +1,36 @@
-# Execution Strategy — Cycle 002 (brrr Fixes)
+# Execution Strategy — Cycle 003
 
 ## Mode
-Sequential — both work items modify `skills/brrr/SKILL.md`, so they run in sequence to avoid conflicts.
 
-## Parallelism Settings
-- Max concurrent: 1 (sequential due to shared file)
-- Agent model: sonnet (default for execute)
+Full parallel — both work items are independent with non-overlapping file scope.
 
-## Worktrees
-Not required — single file modifications, no risk of conflict beyond sequencing.
+## Parallelism
+
+2 agents, no ordering constraints.
+
+## Worktree
+
+Not required. Changes are confined to two non-overlapping files per item.
 
 ## Review Cadence
-Incremental review after each work item completion. Quick review expected (small changes).
+
+Incremental review after each item completes. No capstone review required — scope is too small to warrant a full cycle review.
 
 ## Work Item Groups
 
-### Group 1: brrr Phase 6c Fix
-- WI-072: Fix brrr Phase 6c — Replace spawn_session with Agent tool
+### Group 1 (parallel)
 
-### Group 2: brrr Label Fix (after Group 1)
-- WI-073: Fix DEFERRED → DEFER label mismatch
+| Item | Title | Files |
+|------|-------|-------|
+| WI-074 | Manifest convention and plan skill | `specs/artifact-conventions.md`, `skills/plan/SKILL.md` |
+| WI-075 | Create specs/manifest.json | `specs/manifest.json` |
 
 ## Dependency Graph
 
-```
-WI-072 ──▶ WI-073
-```
-
-Sequential execution required — both modify brrr/SKILL.md.
+None. WI-074 and WI-075 are fully independent.
 
 ## Agent Configuration
 
-| Phase | Agent Type | Model | Background |
-|-------|------------|-------|------------|
-| Execution | worker | sonnet | no |
-| Review | code-reviewer | sonnet | no |
-
-## Execution Notes
-
-- WI-072 modifies Phase 6c (lines 494-508 area)
-- WI-073 modifies line 317
-- Running sequentially prevents edit conflicts on the same file
-
-## Estimated Completion
-2 work items × ~15 min each + reviews = ~45 minutes total.
+- Model: sonnet (default)
+- Background: false
+- Max turns: 10 per item (small scope)

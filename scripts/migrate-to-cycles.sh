@@ -132,7 +132,7 @@ review_copied=0
 # Track already-copied reviews using another tmpdir subdir
 mkdir -p "$tmpdir/copied"
 
-for wi_file in "${completed_items[@]}"; do
+for wi_file in "${completed_items[@]+"${completed_items[@]}"}"; do
   wi_basename="$(basename "$wi_file")"
   wi_num=$(num_prefix "$wi_file")
 
@@ -171,13 +171,13 @@ manifest="$cycle_dir/review-manifest.md"
     wi_num=$(num_prefix "$wi_file")
 
     # Extract title from first heading
-    title=$(grep -m1 '^# ' "$wi_file" | sed 's/^# //' | sed "s/^${wi_num}: //")
+    title=$(grep -m1 '^# ' "$wi_file" 2>/dev/null | sed 's/^# //' | sed "s/^${wi_num}: //" || true)
     [[ -z "$title" ]] && title="(untitled)"
 
     # Extract file scope — lines between "## File Scope" and next "##"
     file_scope=$(awk '/^## File Scope/{found=1;next} found && /^## /{exit} found{print}' "$wi_file" \
       | grep -E '^\s*-' | sed 's/^[[:space:]]*- //' | sed 's/ (.*)$//' \
-      | head -5 | tr '\n' ', ' | sed 's/, $//')
+      | head -5 | tr '\n' ', ' | sed 's/, $//' || true)
     [[ -z "$file_scope" ]] && file_scope="—"
 
     # Find matching review
@@ -225,7 +225,7 @@ echo "      Incremental reviews: $review_copied"
 echo "      Review manifest:     1"
 echo ""
 echo "    Active items remaining in plan/work-items/:"
-for wi_file in "${active_items[@]}"; do
+for wi_file in "${active_items[@]+"${active_items[@]}"}"; do
   echo "      $(basename "$wi_file")"
 done
 [[ ${#active_items[@]} -eq 0 ]] && echo "      (none)"
@@ -239,10 +239,10 @@ echo ""
 
 # ── Step 7: Offer to delete originals ───────────────────────────────────────
 
-read -r -p "==> Delete original completed items from plan/work-items/ and archive/incremental/? [y/N] " confirm
+read -r -p "==> Delete original completed items from plan/work-items/ and archive/incremental/? [y/N] " confirm || confirm=""
 if [[ "$confirm" =~ ^[Yy]$ ]]; then
   deleted_wi=0
-  for wi_file in "${completed_items[@]}"; do
+  for wi_file in "${completed_items[@]+"${completed_items[@]}"}"; do
     rm "$wi_file"
     ((deleted_wi++))
   done
@@ -264,7 +264,7 @@ if [[ "$confirm" =~ ^[Yy]$ ]]; then
 else
   echo "    Originals not deleted. To delete manually:"
   echo "      # Completed work items:"
-  for wi_file in "${completed_items[@]}"; do
+  for wi_file in "${completed_items[@]+"${completed_items[@]}"}"; do
     echo "      rm \"$wi_file\""
   done
   echo "      # Incremental reviews (those archived above):"

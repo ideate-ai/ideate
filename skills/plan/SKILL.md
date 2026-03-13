@@ -22,10 +22,11 @@ Before anything else, ask the user where to store the planning artifacts:
 
 If the user provided an initial idea as an argument, acknowledge it and still ask for the artifact directory before proceeding.
 
-Once the user provides a path, create the full directory structure:
+Once the user provides a path, create the directory structure and write `manifest.json`:
 
 ```
 {artifact-dir}/
+├── manifest.json
 ├── steering/
 │   ├── research/
 │   └── interviews/
@@ -38,7 +39,12 @@ Once the user provides a path, create the full directory structure:
 └── domains/
 ```
 
-Do not create any artifact files yet. The structure is scaffolding only at this stage.
+Create `manifest.json` with the content:
+```json
+{"schema_version": 1}
+```
+
+Create `.gitkeep` files in all empty directories. No other artifact files yet.
 
 ## 1.2 Initial Idea Capture
 
