@@ -7,8 +7,10 @@ build/
 *.egg
 
 # MCP artifact server — dist is committed so it works as a plugin without a build step
+# node_modules is NOT committed — start.sh installs deps on first run
 !mcp/artifact-server/dist/
 !mcp/artifact-server/dist/**
+node_modules/
 
 # Virtual environments
 .venv/
