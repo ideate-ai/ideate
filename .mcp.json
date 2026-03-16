@@ -1,8 +1,8 @@
 {
   "mcpServers": {
     "ideate-artifact-server": {
-      "command": "node",
-      "args": ["${CLAUDE_PLUGIN_ROOT}/mcp/artifact-server/dist/index.js"]
+      "command": "sh",
+      "args": ["${CLAUDE_PLUGIN_ROOT}/mcp/artifact-server/start.sh"]
     }
   }
 }
