@@ -216,6 +216,8 @@ All three agents run in parallel. Do not wait for one to finish before starting 
 >
 > Write your findings to: {output-dir}/code-quality.md
 >
+> **Dynamic testing (comprehensive scope)**: After your static review, perform the dynamic checks defined in your agent instructions under "Dynamic Testing > Comprehensive review scope". Discover the project's test model and run the full test suite. Report test failures per the severity guidance in your agent instructions.
+>
 > Follow the output format defined in your agent instructions. Verdict is Fail if there are any Critical or Significant findings or unmet acceptance criteria. Otherwise Pass.
 
 After this agent returns, record a metrics entry (see Metrics Instrumentation).

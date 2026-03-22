@@ -13,6 +13,23 @@ Called by the brrr loop controller at the start of each cycle. The following var
 
 Execute all pending work items following the execution strategy from `{artifact_dir}/plan/execution-strategy.md`.
 
+### Prepare Context Digest
+
+Before spawning workers, prepare a filtered context digest for this cycle's pending work items. This reduces context sent to each worker without losing relevant information.
+
+For each pending work item:
+1. Read `{artifact_dir}/plan/architecture.md`. Check its total line count.
+   - If architecture.md is ≤200 lines total, skip digest preparation for that item and pass the full file.
+   - If architecture.md is >200 lines, extract:
+     - The full `## Interface Contracts` section — always included in full, uncapped (contracts span modules and must not be truncated regardless of length)
+     - Sections mentioning any file path in the work item's `file_scope`
+     - The component map entry for the relevant component
+     - Cap all non-interface-contracts content at 150 lines total; if over this limit, include the component map entry first, then file-scope sections. If the interface contracts section alone exceeds 150 lines, include only the interface contracts section.
+2. Read `{artifact_dir}/steering/guiding-principles.md` in full (typically short enough to include entirely)
+3. Read `{artifact_dir}/steering/constraints.md` in full
+
+Store as `{work_item_context_digest[item_id]}`. Pass to the worker instead of the raw architecture file path. Include the full paths to the original files so workers can read them if more detail is needed: "Full architecture at `{artifact_dir}/plan/architecture.md`, full principles at `{artifact_dir}/steering/guiding-principles.md`, full constraints at `{artifact_dir}/steering/constraints.md` — read these if you need detail beyond what the digest provides."
+
 ### Context for Every Worker
 
 **MCP availability check**: Look in your tool list for a tool whose name ends in `ideate_get_work_item_context` (it will be prefixed, e.g. `mcp__ideate_artifact_server__ideate_get_work_item_context` or `mcp__plugin_ideate_ideate_artifact_server__ideate_get_work_item_context`). If found:
@@ -26,10 +43,10 @@ Every worker subagent receives:
 
 1. The work item spec — if `{artifact_dir}/plan/work-items.yaml` exists, extract the item's content. Otherwise read `{artifact_dir}/plan/work-items/NNN-{name}.md`.
 2. If `{artifact_dir}/plan/notes/{id}.md` exists, include it as additional implementation notes.
-3. The architecture document — `{artifact_dir}/plan/architecture.md`
+3. The context digest — `{work_item_context_digest[item_id]}` prepared in the "Prepare Context Digest" step above. Includes paths to the full architecture, principles, and constraints documents for reference.
 4. The relevant module spec — from `{artifact_dir}/plan/modules/` if it exists and matches the work item's scope; otherwise the full architecture doc
-5. Guiding principles — `{artifact_dir}/steering/guiding-principles.md`
-6. Constraints — `{artifact_dir}/steering/constraints.md`
+5. _(Included in context digest)_
+6. _(Included in context digest)_
 7. Relevant research — any files from `{artifact_dir}/steering/research/` referenced in the work item
 8. Project source root — the absolute path `{project_source_root}`
 
@@ -38,9 +55,9 @@ All paths provided to workers must be absolute.
 The worker prompt must instruct the agent to:
 - Build exactly what the work item specifies
 - Write source files under `{project_source_root}`
-- Follow the architecture document for system context
-- Use the guiding principles to resolve ambiguous situations
-- Respect all constraints
+- Follow the context digest for system context (and read full architecture at the provided path if more detail is needed)
+- Use the guiding principles from the digest to resolve ambiguous situations (read full principles if needed)
+- Respect all constraints from the digest (read full constraints if needed)
 - Not make design decisions beyond what the spec prescribes
 - Report completion with a list of files created or modified
 
@@ -86,6 +103,15 @@ When a work item completes, spawn the `code-reviewer` agent with:
 
 Instruct the code-reviewer: "Spot-check at least 2 `satisfied` claims. Prioritize investigation of `unverifiable` criteria."
 
+Include the following in the code-reviewer's prompt:
+
+  > **Unverifiable claims**: The worker's self-check may contain criteria marked `unverifiable`. For each:
+  > 1. List all `unverifiable` criteria explicitly in your findings.
+  > 2. Attempt to verify at least 2 of them by reading the relevant source files. If verifiable by file inspection, reclassify as `satisfied` or `unsatisfied`.
+  > 3. Only accept `unverifiable` for criteria requiring runtime testing, external system dependencies, or human judgment that cannot be derived from file contents.
+  >
+  > **Dynamic testing (incremental scope)**: After your static review, perform the dynamic checks defined in your agent instructions under "Dynamic Testing > Incremental review scope". Discover the project's test model, run the smoke test, and run tests scoped to the changed files. If the project cannot build or start, report a Critical finding titled "Startup failure after [work item name]".
+
 Write the result to `{artifact_dir}/archive/incremental/NNN-{name}.md`. After the code-reviewer returns, record a metrics entry with `phase: "6a"`, `agent_type: "code-reviewer"`. Include `input_tokens`, `output_tokens`, `cache_read_tokens`, `cache_write_tokens` from agent response metadata (null if unavailable), and `mcp_tools_called` (array of MCP tool names used to assemble context, or `[]` if none). (Full schema including `skill` and `cycle` fields defined in controller SKILL.md.)
 
 **Review format**:
@@ -129,6 +155,7 @@ If a severity section has no findings, include the header with "None." underneat
 
 - **Minor findings**: Fix immediately, silently. Note rework in the journal entry.
 - **Significant findings within scope**: Fix. Note rework in the journal entry.
+- **Critical findings — "Startup failure after ..."**: Always scope-changing. Do NOT fix. Route to Andon cord → proxy-human immediately, regardless of apparent fixability.
 - **Critical findings fixable within scope**: Fix. Note as significant rework in the journal entry.
 - **Critical findings that are scope-changing or worktree merge conflicts**: Do NOT fix. Route to Andon cord → proxy-human (see below).
 - **Unmet acceptance criteria**: Attempt to fix. If unfixable due to spec issues, route to Andon cord → proxy-human.
@@ -166,7 +193,11 @@ When an Andon event occurs (scope-changing finding, merge conflict, spec ambigui
    Confidence: {HIGH | MEDIUM | LOW}
    ```
 
-5. Apply the decision. If the decision is `DEFER`, add it to the cycle's deferred items list and continue with other work items where possible.
+5. Apply the decision. If the decision is `DEFER`, add it to the cycle's deferred items list and continue with other work items where possible. Immediately print to running output:
+   ```
+   [brrr] ⚠ Deferred: {event description} — proxy-human deferred this decision. See activity report for details.
+   ```
+   Do NOT interrupt the loop or ask the user. This is logging only.
 
 **If the Agent tool is not available**: Handle the event yourself — read `guiding-principles.md` and `constraints.md`, apply them to the event, make the best decision, and record it in `{artifact_dir}/proxy-human-log.md` with heading: `## [brrr-fallback] {ISO date} — Cycle {cycle_number}` followed by the same Event/Decision/Confidence/Rationale fields.
 

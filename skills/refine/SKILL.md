@@ -82,9 +82,9 @@ Do NOT load all incremental reviews. The domain layer already distills what matt
 
 ## 3.2 Legacy Fallback (No Domain Layer)
 
-If `domains/` does not exist (pre-migration artifact directory), load the legacy review files:
+If `domains/` does not exist (pre-migration artifact directory), load the legacy review files. To determine the latest cycle number, glob `archive/cycles/` and pick the highest NNN directory. If `domains/index.md` exists, use its cycle number instead.
 
-11. `archive/cycles/{NNN}/summary.md` — where NNN is the current cycle number from `domains/index.md` (if it exists)
+11. `archive/cycles/{NNN}/summary.md` — where NNN is the latest cycle number (highest directory under `archive/cycles/`)
 12. `archive/cycles/{NNN}/code-quality.md` — code quality findings (if it exists)
 13. `archive/cycles/{NNN}/spec-adherence.md` — spec adherence findings (if it exists)
 14. `archive/cycles/{NNN}/gap-analysis.md` — gap analysis (if it exists)

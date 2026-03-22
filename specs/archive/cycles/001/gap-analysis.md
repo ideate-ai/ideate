@@ -1,41 +1,34 @@
-# Gap Analysis — Cycle 001 (brrr)
+# Gap Analysis — Cycle 001
 
-**Scope**: WI-101 (Fix residual documentation inconsistencies). Full review cycle.
+**Scope**: WI-102 through WI-108 — quality and structural risk improvements.
 
 ## Verdict: Pass
 
-No critical or significant gaps. One minor gap found: `brrr/phases/review.md` hardcodes the legacy interview path without the `steering/interviews/` fallback used by the review skill.
+No critical or significant gaps. The changes implement the requested improvements with appropriate integration. Two minor gaps noted.
 
-## Missing Requirements
+## Missing Requirements from Interview
 
-None critical or significant.
+None. All 7 improvements identified in the technical analysis and refinement interview are addressed by WI-102 through WI-108.
 
 ## Unhandled Edge Cases
 
-None critical or significant.
+### MG1: domain-curator RAG dedup with no existing policies (first run)
+- **Location**: `agents/domain-curator.md` — Phase 4.2 semantic search step
+- **Gap**: The RAG dedup step calls `ideate_artifact_semantic_search` before writing new policies. On the first run (empty domains/), the search returns no results. The agent should handle this gracefully without treating empty results as an error.
+- **Assessment**: Minor — the agent will naturally proceed when the search returns empty. No failure condition exists.
+- **Severity**: Minor.
 
 ## Incomplete Integrations
 
-None critical or significant.
+None. The domain-curator integration with brrr (WI-104) and the deferred gap token contract (WI-103) are both verified end-to-end.
 
 ## Missing Infrastructure
 
-None critical or significant.
+None. All work items operate on existing files and directories.
 
-## Minor Gaps
+## Implicit Requirements
 
-### MG1: `skills/brrr/phases/review.md` passes `steering/interview.md` without `steering/interviews/` fallback
-
-- **Location**: `skills/brrr/phases/review.md:143` and `:171` — gap-analyst and journal-keeper prompts both reference `{artifact_dir}/steering/interview.md` only.
-- **Context**: `skills/review/SKILL.md:309` correctly handles both paths: "read `{artifact-dir}/steering/interview.md` or the latest refine interview file from `{artifact-dir}/steering/interviews/` if that directory exists." The brrr phase document hardcodes only the legacy path.
-- **Impact**: For projects that have migrated to the `steering/interviews/` structure (including ideate's own `specs/` directory, which has no `interview.md`), the gap-analyst and journal-keeper spawned by brrr will receive a path to a non-existent file. They may find nothing, silently skip interview requirements context, or need to discover the interviews directory themselves.
-- **Severity**: Minor — agents can adapt by checking the filesystem, and the domain layer provides equivalent context for most purposes.
-- **Recommendation**: Update both agent prompt blocks in `brrr/phases/review.md` to mirror the dual-path instruction used in `skills/review/SKILL.md:309`.
-
-### MG2: `specs/plan/architecture.md` does not list `domain-curator` agent
-
-- **Location**: `specs/plan/architecture.md` §1 Agents table
-- **Context**: The domain-curator agent (`agents/domain-curator.md`) is invoked by the review skill after journal-keeper. It was added after the architecture document was last updated.
-- **Impact**: Documentation staleness — a developer reading only the architecture document would not know the ninth agent exists.
-- **Severity**: Minor — the README, review skill, and domain files all document it correctly.
-- **Recommendation**: Add domain-curator row to the agents table in `specs/plan/architecture.md`.
+### MG2: `execute/SKILL.md` Phase 4.5 interface contracts cap exemption
+- **Gap**: Standalone execute workers can have interface contracts truncated; only brrr workers have the cap exemption (from WI-105). This creates a quality asymmetry between brrr-driven execution and standalone execution.
+- **Severity**: Minor (also captured as S1 in code-quality.md).
+- **Note**: This is an implicit requirement — anyone using `/ideate:execute` directly would expect the same context quality as brrr.

@@ -150,7 +150,11 @@ Before spawning workers, create a **context digest** — a filtered subset of ar
    - Extract architecture sections relevant to this module's file scope
    - Extract guiding principles that apply to this module's domain
    - Extract constraints that affect this module's technology or boundaries
-3. Compose the digest (~100-150 lines) containing only the relevant sections.
+3. Compose the context digest with the following priority and caps:
+   - The full `## Interface Contracts` section from architecture.md — always include in full, uncapped (contracts span modules and must not be truncated regardless of length)
+   - Sections from architecture.md mentioning any file path in the work item's `file_scope`
+   - The component map entry for the relevant component
+   - Cap all non-interface-contracts content at 150 lines total; if over this limit, include the component map entry first, then file-scope sections. If the interface contracts section alone exceeds 150 lines, include only the interface contracts section.
 
 The digest is ephemeral — it is not written to a file. It is passed directly to workers in the current batch. Different batches may have different digests if they cover different modules.
 
@@ -309,7 +313,16 @@ Provide the code-reviewer with:
 - The guiding principles (`steering/guiding-principles.md`)
 - The worker's self-check results (the `## Self-Check` section from the worker's completion report)
 
-Instruct the code-reviewer: "Spot-check at least 2 `satisfied` claims. Prioritize investigation of `unverifiable` criteria."
+Instruct the code-reviewer:
+
+> Spot-check at least 2 `satisfied` claims from the worker's self-check.
+>
+> **Unverifiable claims**: The worker's self-check may contain criteria marked `unverifiable`. For each such claim:
+> 1. List all `unverifiable` criteria explicitly in your findings.
+> 2. Attempt to verify at least 2 of them by reading the relevant source files. If a criterion marked `unverifiable` can actually be verified by file inspection, reclassify it and report it as either `satisfied` or `unsatisfied`.
+> 3. Only accept `unverifiable` for criteria that genuinely require runtime testing, external system dependencies, or human judgment that cannot be derived from file contents.
+>
+> **Dynamic testing (incremental scope)**: After your static review, perform the dynamic checks defined in your agent instructions under "Dynamic Testing > Incremental review scope". Discover the project's test model, run the smoke test, and run tests scoped to the changed files. If the project cannot build or start, report a Critical finding titled "Startup failure after [work item name]".
 
 The code-reviewer performs an incremental review scoped to the files touched by that work item.
 
@@ -383,6 +396,8 @@ Rework: {N} significant findings fixed from incremental review. Details: {brief 
 Do not present significant-but-fixable findings to the user unless they indicate a pattern (e.g., the same type of issue appearing across multiple work items).
 
 ## Critical Findings
+
+**Exception — Startup failure**: Any Critical finding titled "Startup failure after [work item name]" is always treated as scope-changing. Do NOT attempt to fix it. Route to the Andon cord immediately, regardless of whether the fix appears simple or contained.
 
 If the finding is fixable within the work item's scope without changing the plan: fix it, note in the journal as significant rework.
 

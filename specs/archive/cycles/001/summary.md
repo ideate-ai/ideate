@@ -1,4 +1,48 @@
-# Review Summary — Capstone (2026-03-11, WI 052–062)
+# Cycle 001 Summary (brrr session — WI-102 through WI-108)
+
+**Date**: 2026-03-22
+**Work items**: WI-102 through WI-108 (7 items)
+**Focus**: Quality and structural risk improvements identified by technical analysis
+
+## What Changed
+
+| Work Item | File(s) | Change |
+|---|---|---|
+| WI-102 | agents/spec-reviewer.md, skills/brrr/SKILL.md | Verdict line instructions moved outside code fence; Condition B anchored to line-start |
+| WI-103 | agents/gap-analyst.md, agents/domain-curator.md | Deferred gap token contract fixed (`- **Status**: deferred`); RAG dedup before writing policies |
+| WI-104 | skills/brrr/phases/review.md | Domain-curator spawn added after journal-keeper |
+| WI-105 | skills/brrr/phases/execute.md, skills/brrr/phases/reporting.md | Context digest with uncapped interface contracts; unverifiable scrutiny; mode-relative Andon |
+| WI-106 | skills/execute/SKILL.md | Unverifiable self-check scrutiny added to incremental reviewer |
+| WI-107 | agents/journal-keeper.md | Input section updated to reference review manifest; individual reviews loaded on demand |
+| WI-108 | specs/plan/architecture.md | domain-curator added: agents table, Section 4 definition block, data flow diagram, process steps |
+
+## Rework Required
+
+5 of 7 items required rework after incremental review (WI-102, WI-103, WI-105, WI-107, WI-108). All rework items passed re-review.
+
+## Review Findings
+
+| Reviewer | Verdict | Critical | Significant | Minor |
+|---|---|---|---|---|
+| code-quality | Fail | 0 | 1 | 1 |
+| spec-adherence | Fail | 0 | 0 | 0 (1 arch deviation) |
+| gap-analysis | Pass | 0 | 0 | 2 |
+
+**Total**: 0 critical, 1 significant, 3 minor
+
+Cross-cutting issues:
+- **S1**: `execute/SKILL.md` Phase 4.5 context digest missing interface contracts cap exemption
+- **D1**: `specs/plan/architecture.md` domain-curator `MaxTurns: 30` contradicts agent file `maxTurns: 25`
+
+**Principle violations**: None (`**Principle Violation Verdict**: Pass`)
+
+## Convergence Status
+
+Not converged — 1 significant finding. Refinement required.
+
+---
+
+# Prior Cycle Summary — Capstone (2026-03-11, WI 052–062)
 
 *Comprehensive review of the outpost split cycle: architectural separation of SDLC (ideate) from MCP orchestration (outpost), brrr proxy-human migration to Agent tool, plugin manifest cleanup, and spec file reorganization.*
 

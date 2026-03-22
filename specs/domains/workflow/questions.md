@@ -27,5 +27,13 @@
 - **Question**: Should `skills/brrr/phases/review.md` include a quality_summary emission block equivalent to `skills/review/SKILL.md` Phase 7.6? The `last_cycle_findings` dict is already in scope at the insertion point.
 - **Source**: archive/cycles/006/gap-analysis.md SG1; archive/cycles/006/decision-log.md D3, D4, OQ1
 - **Impact**: The Quality Trends section of `scripts/report.sh` produces no rows for any brrr-driven project. Because brrr is the primary path for multi-cycle runs, quality trend analysis is non-functional for the majority of ideate users.
+- **Status**: resolved
+- **Resolution**: WI-112 added the emission block; WI-113 fixed the `skill` field value from `"review"` to `"brrr"`. Both the structural gap and the field value contradiction are now closed.
+- **Resolved in**: cycle 004
+
+## Q-24: Startup failure Andon rule not yet implemented in skills/execute/SKILL.md and skills/brrr/phases/execute.md
+- **Question**: Policy P-22 requires an explicit named exception in Phase 8 of `skills/execute/SKILL.md` and in the finding-handling block of `skills/brrr/phases/execute.md` for "Startup failure after ..." Critical findings. Neither file currently contains this rule (cycle 007 II1). Should WI-120 be created to add the exception to both files?
+- **Source**: archive/cycles/007/gap-analysis.md II1; archive/cycles/007/summary.md Proposed Refinement Plan
+- **Impact**: Until implemented, a worker executing Phase 8 may silently fix a startup failure that appears trivially fixable, bypassing the Andon escalation that the dynamic testing quality floor (WI-117) was designed to enforce. The defect is latent — it only manifests when a code-reviewer emits a startup failure finding during an execute run.
 - **Status**: open
-- **Reexamination trigger**: Next refinement cycle; no design decision required — additive insertion after the journal-keeper step.
+- **Reexamination trigger**: Next refinement cycle; proposed as WI-120 in the cycle 007 summary. Low complexity — 2 files, 2 insertions.

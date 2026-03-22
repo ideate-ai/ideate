@@ -8,9 +8,9 @@
 |-------|---------|---------------|---------------|
 | `/ideate:plan` | Interview → research → decompose → produce specs | researcher, architect, decomposer | steering/*, plan/* |
 | `/ideate:execute` | Build project following the plan | code-reviewer (incremental) | archive/incremental/*, journal.md |
-| `/ideate:review` | Comprehensive multi-perspective evaluation | code-reviewer, spec-reviewer, gap-analyst, journal-keeper | archive/cycles/{NNN}/* |
+| `/ideate:review` | Comprehensive multi-perspective evaluation | code-reviewer, spec-reviewer, gap-analyst, journal-keeper, domain-curator | archive/cycles/{NNN}/*, domains/* |
 | `/ideate:refine` | Plan changes to existing codebase | researcher, architect, decomposer | Updated steering/*, new plan/work-items/* |
-| `/ideate:brrr` | Autonomous SDLC loop until convergence (zero findings + zero violations) | spec-reviewer, code-reviewer, gap-analyst, proxy-human | brrr-state.md, proxy-human-log.md, journal.md |
+| `/ideate:brrr` | Autonomous SDLC loop until convergence (zero findings + zero violations) | spec-reviewer, code-reviewer, gap-analyst, journal-keeper, domain-curator, proxy-human | brrr-state.md, proxy-human-log.md, journal.md, domains/* |
 
 ### Agents (Delegated Workers)
 
@@ -23,6 +23,7 @@
 | spec-reviewer | sonnet | no | Read, Grep, Glob | review |
 | gap-analyst | sonnet | no | Read, Grep, Glob | review |
 | journal-keeper | sonnet | no | Read, Grep, Glob | review |
+| domain-curator | opus | no | Read, Write, Glob | review, brrr |
 | proxy-human | sonnet | no | Read, Grep, Glob, Bash | brrr |
 
 ### External Tooling
@@ -67,6 +68,7 @@ USER IDEA
 │          │──────────────▶│ spec-reviewer │──▶ archive/cycles/{NNN}/spec-adherence.md
 │          │──────────────▶│ gap-analyst   │──▶ archive/cycles/{NNN}/gap-analysis.md
 │          │──────────────▶│ journal-keeper│──▶ archive/cycles/{NNN}/decision-log.md
+│          │──────────────▶│domain-curator │──▶ domains/*/policies.md, decisions.md, questions.md
 │          │──▶ archive/cycles/{NNN}/summary.md
 │          │──▶ journal.md (append)
 └─────────┘
@@ -166,11 +168,12 @@ Read/write permissions per phase:
 3. Spawn four reviewers in parallel
 4. Collect results, write to archive/cycles/{NNN}/
 5. Synthesize into archive/cycles/{NNN}/summary.md
-6. Present findings, ask user about items requiring decisions
-7. Record answers in journal
-8. Suggest refine if warranted
+6. Spawn `domain-curator` to update domain knowledge layer from this cycle's review artifacts
+7. Present findings, ask user about items requiring decisions
+8. Record answers in journal
+9. Suggest refine if warranted
 
-**Output artifacts**: archive/cycles/{NNN}/*.md, journal.md entry.
+**Output artifacts**: archive/cycles/{NNN}/*.md, domains/*, journal.md entry.
 
 **Decision points**: Findings requiring user input (not covered by steering docs).
 
@@ -278,6 +281,17 @@ Read/write permissions per phase:
 - **Input contract**: journal.md + all reviews (incremental and final) + guiding principles + plan overview
 - **Output contract**: Decision log (chronological: decision, rationale, alternatives, implications) + open questions (question, impact, who answers, consequence of inaction). Does not duplicate other reviewers' content.
 
+### domain-curator
+
+- **Purpose**: Distill policies, decisions, and open questions from review artifacts into the domain knowledge layer
+- **Responsibility boundary**: Domain synthesis only — reads archive, writes domains/; does not produce new review findings
+- **Tools**: Read, Write, Glob
+- **Model**: opus (cross-cutting synthesis requiring judgment across many artifacts)
+- **MaxTurns**: 25
+- **Background**: no
+- **Input contract**: artifact_dir + cycle number + archive/cycles/{NNN}/*.md + existing domains/
+- **Output contract**: Updated domains/{name}/policies.md, decisions.md, questions.md with citations to source archive files; updated domains/index.md cycle number.
+
 ### proxy-human
 
 - **Purpose**: Act as human decision-maker during autonomous brrr cycles when the human is absent
@@ -381,7 +395,7 @@ Layer 1: INCREMENTAL (per work item, during execute)
 
 Layer 2: CAPSTONE (end of cycle, during review)
   Trigger: user runs /ideate:review
-  Agents: code-reviewer, spec-reviewer, gap-analyst, journal-keeper (parallel)
+  Agents: code-reviewer, spec-reviewer, gap-analyst, journal-keeper (parallel); domain-curator (post-synthesis)
   Scope: entire project + all artifacts
   Output: archive/cycles/{NNN}/*.md + archive/cycles/{NNN}/summary.md
   Purpose: cross-cutting concerns, full-picture assessment

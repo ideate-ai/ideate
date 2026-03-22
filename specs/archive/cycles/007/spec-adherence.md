@@ -1,12 +1,12 @@
 # Spec Adherence Review — Cycle 007
 
-**Reviewer**: spec-reviewer (claude-sonnet-4-6)
-**Date**: 2026-03-21
-**Scope**: WI-098, WI-099, WI-100 (brrr cycle 3)
+**Reviewer**: spec-reviewer (capstone)
+**Date**: 2026-03-22
+**Scope**: WI-117, WI-118, WI-119 (dynamic testing guidance additions)
 
 ## Verdict: Pass
 
-All acceptance criteria satisfied across all three work items; no architecture deviations or principle violations.
+Implementation matches the plan. All three work items satisfy their acceptance criteria. The Dynamic Testing guidance respects domain agnosticism, the Andon routing chain is intact, and the instruction style is consistent with surrounding content in all five modified files.
 
 ## Architecture Deviations
 
@@ -14,29 +14,11 @@ None.
 
 ## Unmet Acceptance Criteria
 
-None. All 16 criteria verified:
+### Work Item 118 — conditional note
 
-**WI-098** — Add quality_summary emission to brrr review phase:
-- [x] `### Emit Quality Summary` section exists after journal-keeper step — `skills/brrr/phases/review.md:223`
-- [x] Best-effort semantics declared — `skills/brrr/phases/review.md:225`
-- [x] `"skill":"brrr"` in emitted JSON — `skills/brrr/phases/review.md:256`
-- [x] Severity counts derived from `last_cycle_findings` — `skills/brrr/phases/review.md:229-234`
-- [x] Event structure matches canonical quality_summary schema — `skills/brrr/phases/review.md:256`; `specs/artifact-conventions.md:735` now documents `"<review|brrr>"` as valid skill values
-- [x] No reference to summary.md in the new section — confirmed absent
-- [x] Artifacts Written section lists metrics.jsonl with "quality_summary event appended" — `skills/brrr/phases/review.md:278`
+- [ ] No other sections in either file are modified — `skills/brrr/phases/execute.md` contains a "Prepare Context Digest" section and extended DEFER print block; `skills/execute/SKILL.md` has a Phase 4.5 step 3 rewrite. Both are outside WI-118's scope.
 
-**WI-099** — Fix stale archive path in three agent definitions:
-- [x] No occurrences of `reviews/incremental/` in agents/spec-reviewer.md — confirmed via grep
-- [x] No occurrences of `reviews/incremental/` in agents/gap-analyst.md — confirmed via grep
-- [x] No occurrences of `reviews/incremental/` in agents/journal-keeper.md — confirmed via grep
-
-**WI-100** — Fix documentation cluster and README discoverability:
-- [x] `specs/artifact-conventions.md:710` uses `###` heading — confirmed
-- [x] `specs/artifact-conventions.md:720` uses `<integer or null>` for cycle — confirmed
-- [x] `specs/artifact-conventions.md:724` uses `<integer>` for wall_clock_ms — confirmed
-- [x] `skills/refine/SKILL.md:373` inline schema includes `"cycle":null` — confirmed
-- [x] README.md contains report.sh section covering purpose, usage, output sections, Python 3 — confirmed at lines 168-186
-- [x] README.md report.sh section co-located with other utility scripts under `## Validation and Migration Tools` — confirmed
+  **Resolution**: The cycle 007 review manifest records that the incremental reviewer's Fail verdict was dismissed as a false positive after git diff confirmed WI-118 added only the dynamic testing instruction. Out-of-scope content is attributed to WI-105/106. This review cannot independently verify the git diff but accepts the documented dismissal. Criterion resolves to met if that evidence holds.
 
 ## Principle Violations
 
@@ -44,14 +26,16 @@ None.
 
 ## Principle Adherence Evidence
 
-- **P1 (Spec Sufficiency)**: The Emit Quality Summary section specifies every field derivation rule explicitly (severity from `last_cycle_findings`, per-reviewer by heading pattern, category by keyword rules applied in order). Two independent executor runs produce functionally equivalent output.
-- **P2 (Minimal Inference at Execution)**: Category classification is keyword-ordered with no subjective judgment delegated to the executor.
-- **P4 (Parallel-First Design)**: WI-098, WI-099, WI-100 have non-overlapping file scope and ran concurrently.
-- **P5 (Continuous Review)**: Incremental reviews were written during execution; no new issues surface at capstone that were missed incrementally.
-- **P8 (Durable Knowledge Capture)**: quality_summary emission appends to metrics.jsonl with documented best-effort append-only semantics.
-- **P10 (Full SDLC Ownership)**: WI-098 restores full telemetry coverage for brrr-driven projects (Quality Trends now populated).
-- **P12 (Refinement as Validation)**: WI-098 was driven by a review finding (SG1 in cycle 006), demonstrating the review → refine loop working correctly.
+- **Principle 2 (Minimal Inference at Execution)**: `agents/code-reviewer.md:72–100` — the Dynamic Testing section gives the reviewer a complete ordered procedure. Spawn prompts at `skills/execute/SKILL.md:325` and `skills/brrr/phases/execute.md:113` delegate by reference rather than re-specifying inline.
+- **Principle 5 (Continuous Review)**: `agents/code-reviewer.md:84–91` covers the incremental layer (smoke test + targeted tests); `agents/code-reviewer.md:93–100` covers the capstone layer (full test suite). Both review layers now include dynamic coverage.
+- **Principle 6 (Andon Cord Interaction Model)**: `agents/code-reviewer.md:91` marks startup failure as "scope-changing — this is an Andon-level issue"; `skills/execute/SKILL.md` Phase 8 routes scope-changing Critical findings to Andon; `skills/brrr/phases/execute.md` routes Andon events to proxy-human in autonomous mode. Detection-to-escalation chain is intact.
+- **Principle 9 (Domain Agnosticism)**: `agents/code-reviewer.md:73–80` — discovery sequence covers README, package.json, Makefile, pyproject.toml, CI workflows, Dockerfile. Incremental scope guidance branches on compiled/interpreted/CLI without hardcoding any specific stack.
+- **Principle 11 (Honest and Critical Tone)**: `agents/code-reviewer.md:91` — direct, unhedged: "report this as a Critical finding." Spawn prompt wording is identical.
 
 ## Naming/Pattern Inconsistencies
 
-None.
+None. Dynamic testing instructions in incremental spawn prompts use `> **Dynamic testing (incremental scope)**:` — bolded label inside a blockquote — matching the adjacent "Unverifiable claims" block style in both files. Capstone additions are placed before the closing verdict-format sentence, consistent with `specs/plan/notes/119.md`.
+
+## Undocumented Additions
+
+None within the declared scope files for this cycle. Out-of-scope content in `skills/execute/SKILL.md` and `skills/brrr/phases/execute.md` is attributed to prior work items per the review manifest.

@@ -33,3 +33,31 @@
 - **Source**: archive/cycles/006/decision-log.md D3, D4; archive/cycles/006/gap-analysis.md SG1
 - **Policy**: P-18
 - **Status**: settled
+
+## D-23: Andon behavior is mode-relative — brrr logs deferrals, standalone execute interrupts
+- **Decision**: In brrr mode, proxy-human deferrals are logged visibly in the activity report without interrupting the autonomous loop. In standalone `/ideate:execute`, the existing interrupt-and-ask behavior is unchanged.
+- **Rationale**: brrr is designed for full autonomy; interrupting the loop for a deferral contradicts the autonomous design. Standalone execute has a human present, so the interrupt model remains appropriate.
+- **Source**: archive/cycles/003/decision-log.md D2
+- **Policy**: P-20
+- **Status**: settled
+
+## D-24: Domain-curator uses RAG semantic search before writing new policies
+- **Decision**: The domain-curator agent performs an MCP semantic search against existing domain files before writing a new policy entry, to detect near-duplicate policies that should be amended rather than duplicated.
+- **Rationale**: Decided during refine-008 interview to address policy accumulation risk as the domain layer grows.
+- **Source**: archive/cycles/003/decision-log.md D3
+- **Status**: settled
+
+## D-31: Full review at cycle 4 revealed pre-existing bugs that incremental reviews missed
+- **Decision**: The full capstone review (triggered because cycle 4 met the full_review_interval threshold) discovered two critical and one significant bug in report.sh that had been present since the previous brrr run. Incremental per-item reviewers did not catch these because the bugs span the boundary between two independently-planned work items (WI-093 defined nested schema, WI-094 consumed flat keys).
+- **Rationale**: Incremental reviewers lack cross-item schema context. The full review is the designed catch for integration-level defects that span work item boundaries. This validates the full_review_interval mechanism.
+- **Source**: archive/cycles/004/decision-log.md D2, CR2; archive/cycles/004/summary.md
+- **Policy**: P-21
+- **Status**: settled
+
+## D-33: Startup failure Critical findings must bypass execute-skill scope judgment and route unconditionally to Andon
+- **Decision**: Any Critical finding produced by the code-reviewer that is titled "Startup failure after ..." must be treated as scope-changing and routed to the Andon cord, regardless of whether the underlying cause appears trivially fixable within the current work item's scope. The execute skill (Phase 8) and brrr's execute phase finding-handling block must enforce this as an explicit named exception, not as an instance of the general scope-changing judgment.
+- **Rationale**: Cycle 007 gap-analysis (II1) identified that Phase 8 of `skills/execute/SKILL.md` requires the worker to judge whether a Critical finding is "scope-changing." A startup failure whose root cause appears to be a typo may not trigger that judgment, bypassing the Andon escalation path that the dynamic testing quality floor (WI-117) was designed to establish. The rule must be unconditional to be reliable.
+- **Assumes**: The code-reviewer uses the exact title prefix "Startup failure after ..." when reporting this finding class (per agents/code-reviewer.md:91).
+- **Source**: archive/cycles/007/gap-analysis.md II1; archive/cycles/007/summary.md Significant Findings
+- **Policy**: P-22
+- **Status**: settled

@@ -31,3 +31,9 @@
 - **Source**: archive/cycles/006/gap-analysis.md SG2; archive/cycles/006/decision-log.md D16, OQ2
 - **Policy**: P-19
 - **Status**: settled
+
+## D-25: Domain-curator performs RAG deduplication check before creating new policies
+- **Decision**: The domain-curator agent uses MCP semantic search against existing domain policy files before writing a new policy entry, to detect near-duplicate or overlapping policies that should be amended rather than duplicated.
+- **Rationale**: Decided during refine-008 interview to prevent policy accumulation as the domain layer grows across cycles.
+- **Source**: archive/cycles/003/decision-log.md D3
+- **Status**: settled

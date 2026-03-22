@@ -194,8 +194,13 @@ Read `{artifact_dir}/archive/cycles/{formatted_cycle_number}/spec-adherence.md`:
 
 1. File missing → Condition B fails. Log: "spec-adherence.md not found — treating as non-converged."
 2. No section matching `## Principle Violation` (case-insensitive, with or without trailing "s") → fails. Log: "spec-adherence.md missing Principle Violations section."
-3. Matched section contains only "None." or "None" (case-insensitive, whitespace-tolerant) → **passes**.
-4. Matched section contains lines starting with `###` or `- ` → **fails**.
+3. Check for machine-parseable verdict line first:
+   - Section contains a line beginning with `**Principle Violation Verdict**: Pass` → **passes**.
+   - Section contains a line beginning with `**Principle Violation Verdict**: Fail` → **fails**.
+4. Fallback (no verdict line present):
+   - Section contains only "None." or "None" (case-insensitive, whitespace-tolerant) → **passes**.
+   - Section contains lines starting with `###` or `- ` → **fails**.
+   - Section is present but matches neither pattern → log: "spec-adherence.md Principle Violations section has unexpected format — treating as non-converged." and **fails**.
 
 **Convergence Decision**
 

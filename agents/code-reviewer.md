@@ -63,6 +63,42 @@ Read the work item spec(s). For each acceptance criterion, verify it is met by t
 - Do tests actually assert meaningful behavior (not just that the function runs without throwing)?
 - Are there integration tests where components interact?
 
+If Bash is available and tests are discoverable (see Dynamic Testing section), run them at the scope appropriate for this review type.
+
+### 6. Dynamic Testing
+
+Use the Bash tool to perform dynamic checks. The scope depends on the review type.
+
+**Step 1 — Discover the project's testing model:**
+
+Before running anything, identify what commands are available. Check in order:
+1. `README.md` or `README.rst` — look for "test", "run", "start", "development" sections
+2. `package.json` → `scripts` block — note `test`, `start`, `dev`, `build` keys
+3. `Makefile` — look for `test`, `run`, `start`, `build`, `check` targets
+4. `pyproject.toml` or `pytest.ini` — test runner config
+5. `.github/workflows/*.yml` — CI pipeline often has the canonical test command
+6. `Dockerfile` or `docker-compose.yml` — startup command reveals how the app runs
+
+If no test runner is discoverable, note this in findings and skip dynamic testing.
+
+**Step 2 — Incremental review scope (single work item):**
+
+1. Smoke test: verify the project still builds or starts after the work item's changes.
+   - For compiled languages: run the build command and check for errors.
+   - For interpreted languages: attempt to import the main module or start the app in dry-run mode.
+   - For CLIs: run `--help` or `--version` as a startup proxy.
+2. Run tests targeted to the changed files: find and run tests whose file names or import paths correspond to the modified source files.
+3. **If the smoke test fails (the project cannot build or start), report this as a Critical finding** with title "Startup failure after [work item name]" and treat it as scope-changing — this is an Andon-level issue.
+
+**Step 3 — Comprehensive review scope (full project):**
+
+1. Run the full test suite using the discovered test command.
+2. Report failures:
+   - Test failures that break core functionality → Critical finding.
+   - Test failures scoped to specific features → Significant finding.
+   - Flaky or environment-specific test failures (with evidence of pre-existing flakiness) → Minor finding with note.
+3. If the test suite does not exist or cannot be run (missing deps, env vars, external services), note this as a Minor finding: "Test suite not runnable in review environment — {reason}."
+
 ## How to Review
 
 1. Read the work item spec(s) to understand what was supposed to be built.
@@ -71,7 +107,7 @@ Read the work item spec(s). For each acceptance criterion, verify it is met by t
 4. Use Glob to find all relevant source files.
 5. Read each file systematically. Do not skim.
 6. Use Grep to search for patterns that indicate problems (TODO, FIXME, HACK, console.log, print statements left in, hardcoded credentials, etc.).
-7. If Bash is available, run linters, type checkers, or test suites if configured.
+7. If Bash is available, run linters and type checkers. Then follow the Dynamic Testing section to perform the dynamic checks appropriate for this review type.
 8. For each problem found, note the exact file path and line number.
 
 ## Output Format

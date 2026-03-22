@@ -81,7 +81,7 @@ Total wall-clock across all cycles: {total_ms}ms
 
 If `metrics.jsonl` could not be written, note "metrics unavailable".
 
-**Reconstructing per-cycle data**: `brrr-state.md` stores only aggregates. Read `{artifact_dir}/journal.md` — collect all `## [brrr]` entries. For each cycle N, collect: work item completions (`## [brrr] * — Cycle {N} — Work item NNN:*`), review summaries (`## [brrr] * — Cycle {N} review complete`), and proxy-human decisions (`## [brrr] * — Proxy-human decision (Cycle {N})`). Read `{artifact_dir}/proxy-human-log.md` if it exists and extract entries by cycle.
+**Reconstructing per-cycle data**: `brrr-state.md` stores only aggregates. Read `{artifact_dir}/journal.md` — collect all `## [brrr]` entries. For each cycle N, collect: work item completions (`## [brrr] * — Cycle {N} — Work item NNN:*`), review summaries (`## [brrr] * — Cycle {N} review complete`), and proxy-human decisions (`## [brrr] * — Proxy-human decision (Cycle {N})`). Read `{artifact_dir}/proxy-human-log.md` if it exists and extract entries by cycle. For each proxy-human decision where the decision is `DEFER`, record it as a deferred item for that cycle.
 
 Present the full activity report:
 
@@ -104,6 +104,7 @@ Critical findings: {N}
 Significant findings: {N}
 Minor findings: {N}
 Proxy-human decisions: {N}
+Deferred decisions: {N} — {list of deferred event topics, or "None."}
 
 #### Cycle 2
 ...
@@ -113,7 +114,14 @@ Proxy-human decisions: {N}
 {If no decisions were made: "No proxy-human decisions were required."}
 
 ### Open Items
-{List any deferred Andon events, unresolved conflicts, or items that could not be completed.}
+
+**Deferred Andon Events**
+{For each deferred proxy-human decision across all cycles, list:}
+- Cycle {N} — {event description} — Rationale: {proxy-human's deferral rationale from proxy-human-log.md}
+{If no deferred Andon events: "None."}
+
+**Other Unresolved Items**
+{List any unresolved conflicts or items that could not be completed for reasons other than deferral.}
 {If none: "None."}
 
 ### Final State

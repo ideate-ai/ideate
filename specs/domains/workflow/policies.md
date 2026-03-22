@@ -35,3 +35,21 @@ When a feature is added to `skills/review/SKILL.md` that governs review orchestr
 - **Derived from**: D-19 (brrr/phases/review.md is an independent reimplementation)
 - **Established**: cycle 006
 - **Status**: active
+
+## P-20: Andon deferral handling differs by execution mode
+In brrr mode, proxy-human deferrals are logged to `proxy-human-log.md` without interrupting the autonomous loop; the deferral appears in the Phase 9 activity report. In standalone `/ideate:execute`, deferrals interrupt execution and prompt the user directly.
+- **Derived from**: D-23 (Andon behavior is mode-relative)
+- **Established**: cycle 003
+- **Status**: active
+
+## P-21: Planning notes for consumer work items must cite the producer's schema definition
+When two or more work items share a data contract (one defines a schema, another reads it), the planning note for the consumer must explicitly cite the producer work item's schema definition by file and section. Relying on parallel but independently-worded schema descriptions across planning notes risks contradictory assumptions that incremental reviewers cannot detect.
+- **Derived from**: D-31 (Full review revealed cross-item spec inconsistency); D-28 (report.sh nested vs flat severity path)
+- **Established**: cycle 004
+- **Status**: active
+
+## P-22: Startup failure Critical findings always route to Andon — execute skill must not apply scope judgment
+When the code-reviewer emits a Critical finding titled "Startup failure after ...", `skills/execute/SKILL.md` Phase 8 and `skills/brrr/phases/execute.md` finding-handling must treat it as scope-changing unconditionally. The execute skill's general scope-judgment rule does not apply to this finding class; apparent fixability within the work item's scope is not a valid reason to suppress escalation.
+- **Derived from**: D-33 (Startup failure must bypass scope judgment)
+- **Established**: cycle 007
+- **Status**: active

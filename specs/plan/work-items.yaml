@@ -931,3 +931,267 @@ items:
       - 'scripts/report.sh Quality Trends empty-state message references both /ideate:review and /ideate:brrr'
       - 'specs/artifact-conventions.md quality_summary section includes a note explaining that quality_summary is a review-phase-only event and that plan/execute/refine do not emit it'
     notes: plan/notes/101.md
+  "102":
+    title: Spec-reviewer verdict contract + brrr convergence robustness
+    complexity: medium
+    scope:
+      - {path: agents/spec-reviewer.md, op: modify}
+      - {path: skills/brrr/SKILL.md, op: modify}
+    depends: []
+    blocks: []
+    criteria:
+      - 'agents/spec-reviewer.md output format section instructs spec-reviewer to write `**Principle Violation Verdict**: Pass` or `**Principle Violation Verdict**: Fail — {N} violation(s)` as the first line of the Principle Violations section'
+      - 'agents/spec-reviewer.md instructs spec-reviewer to write exactly `None.` when no violations'
+      - 'skills/brrr/SKILL.md convergence Condition B checks for `**Principle Violation Verdict**: Pass` first before falling back to `None.` detection'
+      - 'skills/brrr/SKILL.md convergence Condition B logs an error message for unrecognized formats (treating as non-converged)'
+      - 'skills/brrr/SKILL.md convergence Condition B correctly fails when `**Principle Violation Verdict**: Fail` is present'
+    notes: plan/notes/102.md
+  "103":
+    title: Gap-analyst deferred-gap awareness + domain-curator improvements
+    complexity: medium
+    scope:
+      - {path: agents/gap-analyst.md, op: modify}
+      - {path: agents/domain-curator.md, op: modify}
+    depends: []
+    blocks: []
+    criteria:
+      - 'agents/gap-analyst.md contains a Pre-Analysis section that reads domains/*/questions.md before the main analysis'
+      - 'The pre-analysis section instructs gap-analyst to skip re-raising findings that match status: deferred questions (unless new evidence exists)'
+      - 'agents/domain-curator.md Phase 4.3 includes instructions to write deferred gap findings with `status: deferred` in questions.md'
+      - 'agents/domain-curator.md Phase 4.2 includes provisional policy escalation logic (after 2+ cycles, add a questions.md entry)'
+      - 'agents/domain-curator.md Phase 4.2 includes a RAG dedup check using ideate_artifact_semantic_search (if available) before writing new policies'
+    notes: plan/notes/103.md
+  "104":
+    title: brrr/phases/review.md — domain curator invocation + interview path fallback
+    complexity: medium
+    scope:
+      - {path: skills/brrr/phases/review.md, op: modify}
+    depends: []
+    blocks: []
+    criteria:
+      - 'skills/brrr/phases/review.md contains a Spawn Domain Curator section after the journal-keeper section'
+      - 'The domain-curator spawn includes artifact_dir, review source path, cycle number, and review type in the prompt'
+      - 'A metrics entry is recorded after the domain-curator returns'
+      - 'The Artifacts Written section lists the domains/ update'
+      - 'The gap-analyst prompt in brrr/phases/review.md references both steering/interview.md and the steering/interviews/ fallback'
+      - 'The journal-keeper prompt in brrr/phases/review.md references both steering/interview.md and the steering/interviews/ fallback'
+    notes: plan/notes/104.md
+  "105":
+    title: brrr/phases/execute.md — context digest + unverifiable scrutiny + mode-relative Andon
+    complexity: medium
+    scope:
+      - {path: skills/brrr/phases/execute.md, op: modify}
+    depends: []
+    blocks: []
+    criteria:
+      - 'skills/brrr/phases/execute.md contains a context digest preparation step before worker spawning'
+      - 'The context digest always includes the full interface contracts section from architecture.md'
+      - 'Workers receive the context digest instead of raw architecture.md when architecture > 200 lines'
+      - 'The incremental reviewer prompt includes instructions to list all unverifiable criteria'
+      - 'The instructions require the reviewer to attempt verification of at least 2 unverifiable claims'
+      - 'When proxy-human returns DEFER, brrr prints a visible [brrr] Deferred: line to running output'
+      - 'The activity report cycle-by-cycle summary lists deferred decisions per cycle'
+      - 'The activity report Open Items section lists all deferred Andon events with rationale'
+    notes: plan/notes/105.md
+  "106":
+    title: execute/SKILL.md — unverifiable self-check scrutiny
+    complexity: low
+    scope:
+      - {path: skills/execute/SKILL.md, op: modify}
+    depends: []
+    blocks: []
+    criteria:
+      - 'skills/execute/SKILL.md incremental reviewer prompt includes instructions to list all unverifiable criteria from the worker self-check'
+      - 'The instructions require the reviewer to attempt verification of at least 2 unverifiable claims by reading source files'
+      - 'The instructions state that unverifiable is only acceptable for criteria requiring runtime testing, external dependencies, or human judgment'
+    notes: plan/notes/106.md
+  "107":
+    title: journal-keeper.md — align with manifest-first instruction
+    complexity: low
+    scope:
+      - {path: agents/journal-keeper.md, op: modify}
+    depends: []
+    blocks: []
+    criteria:
+      - 'agents/journal-keeper.md no longer instructs the agent to read all incremental reviews'
+      - 'The updated instruction directs the agent to use the review manifest as the primary index'
+      - 'Individual review files are described as being read only for specific cross-reference investigation'
+    notes: plan/notes/107.md
+  "108":
+    title: architecture.md — add domain-curator to agents table
+    complexity: low
+    scope:
+      - {path: specs/plan/architecture.md, op: modify}
+    depends: []
+    blocks: []
+    criteria:
+      - 'specs/plan/architecture.md agents table contains a row for domain-curator with model opus, background no, tools Read/Write/Glob, spawned by review and brrr'
+      - 'The skills table /ideate:review row lists domain-curator in its agents column'
+      - 'The skills table /ideate:brrr row lists domain-curator and journal-keeper in its agents column'
+    notes: plan/notes/108.md
+  "109":
+    title: execute/SKILL.md — apply interface contracts cap exemption to Phase 4.5
+    complexity: low
+    scope:
+      - {path: skills/execute/SKILL.md, op: modify}
+    depends: []
+    blocks: []
+    criteria:
+      - 'skills/execute/SKILL.md Phase 4.5 context digest explicitly exempts the ## Interface Contracts section from the line cap'
+      - 'Interface contracts are described as always included in full, uncapped, regardless of length'
+      - 'The cap applies only to non-interface-contracts content (file-scope sections and component map entry)'
+      - 'The restructuring matches the fix applied to skills/brrr/phases/execute.md in WI-105'
+    notes: plan/notes/109.md
+  "110":
+    title: architecture.md — fix domain-curator MaxTurns (30 → 25)
+    complexity: low
+    scope:
+      - {path: specs/plan/architecture.md, op: modify}
+    depends: []
+    blocks: []
+    criteria:
+      - 'specs/plan/architecture.md domain-curator definition block specifies MaxTurns: 25'
+      - 'This matches agents/domain-curator.md maxTurns: 25 and skills/brrr/phases/review.md MaxTurns: 25'
+    notes: plan/notes/110.md
+  "111":
+    title: Fix stale reviews/incremental/ path in spec-reviewer, gap-analyst, journal-keeper
+    complexity: low
+    scope:
+      - {path: agents/spec-reviewer.md, op: modify}
+      - {path: agents/gap-analyst.md, op: modify}
+      - {path: agents/journal-keeper.md, op: modify}
+    depends: []
+    blocks: []
+    criteria:
+      - 'agents/spec-reviewer.md does not reference reviews/incremental/ — uses archive/incremental/ or review manifest'
+      - 'agents/gap-analyst.md does not reference reviews/incremental/ — uses archive/incremental/ or review manifest'
+      - 'agents/journal-keeper.md does not reference reviews/incremental/ — uses archive/incremental/ or review manifest'
+      - 'All three agents use the archive/incremental/ path consistently'
+    notes: plan/notes/111.md
+  "112":
+    title: brrr/phases/review.md — add quality_summary emission after journal-keeper
+    complexity: low
+    scope:
+      - {path: skills/brrr/phases/review.md, op: modify}
+    depends: []
+    blocks: []
+    criteria:
+      - 'skills/brrr/phases/review.md emits a quality_summary event to metrics.jsonl after the journal-keeper step'
+      - 'The quality_summary event uses the same schema as skills/review/SKILL.md'
+      - 'The event includes last_cycle_findings (critical/significant/minor counts) and the cycle number'
+      - 'The quality_summary event is emitted before domain-curator is spawned'
+    notes: plan/notes/112.md
+  "113":
+    title: Fix quality_summary skill field — brrr must emit "brrr" not "review"
+    complexity: low
+    scope:
+      - {path: skills/brrr/phases/review.md, op: modify}
+    depends: []
+    blocks: []
+    criteria:
+      - 'skills/brrr/phases/review.md line containing the quality_summary JSON schema uses "skill":"brrr" not "skill":"review"'
+      - 'artifact-conventions.md:735 two-value enum <review|brrr> is satisfied — brrr emitter uses "brrr"'
+      - 'No other fields in the quality_summary JSON schema are modified'
+    notes: plan/notes/113.md
+  "114":
+    title: Fix report.sh — nested severity path and camelCase auto-discovery key
+    complexity: low
+    scope:
+      - {path: scripts/report.sh, op: modify}
+    depends: []
+    blocks: []
+    criteria:
+      - 'scripts/report.sh Per-Cycle Breakdown reads severity from findings.by_severity.{critical,significant,minor} not flat top-level keys'
+      - 'scripts/report.sh Quality Trends reads severity from findings.by_severity.{critical,significant,minor} not flat top-level keys'
+      - 'scripts/report.sh auto-discovery reads artifactDir from .ideate.json (with artifact_dir as fallback)'
+      - 'HELP string and error message reference artifactDir as the key name'
+      - 'No other functionality is modified'
+    notes: plan/notes/114.md
+  "115":
+    title: Add metrics.jsonl to artifact-conventions.md
+    complexity: low
+    scope:
+      - {path: specs/artifact-conventions.md, op: modify}
+    depends: []
+    blocks: []
+    criteria:
+      - 'specs/artifact-conventions.md directory tree includes metrics.jsonl as a root-level entry'
+      - 'specs/artifact-conventions.md has a metrics.jsonl section with Purpose, Format, Phases, and Semantics'
+      - 'The section includes the agent-spawn event schema'
+      - 'The section includes the quality_summary event schema with the <review|brrr> skill field enum'
+      - 'No other sections in artifact-conventions.md are modified'
+    notes: plan/notes/115.md
+  "116":
+    title: Fix stale reviews/final/ paths in skills/refine/SKILL.md
+    complexity: low
+    scope:
+      - {path: skills/refine/SKILL.md, op: modify}
+    depends: []
+    blocks: []
+    criteria:
+      - 'skills/refine/SKILL.md contains no references to reviews/final/'
+      - 'skills/refine/SKILL.md contains no references to reviews/incremental/'
+      - 'The legacy fallback block references archive/cycles/{NNN}/ with guidance on finding the latest cycle'
+      - 'Phase 5 references the correct path for the prior review summary'
+      - 'No other sections in refine/SKILL.md are modified'
+    notes: plan/notes/116.md
+  "117":
+    title: Dynamic testing guidance in code-reviewer agent
+    complexity: low
+    scope:
+      - {path: agents/code-reviewer.md, op: modify}
+    depends: []
+    blocks: ["118", "119"]
+    criteria:
+      - 'agents/code-reviewer.md contains a ### 6. Dynamic Testing section'
+      - 'The section describes testing model discovery (README, package.json, Makefile, pyproject.toml, CI config)'
+      - 'The section distinguishes incremental scope (smoke test + targeted tests) from comprehensive scope (full test suite)'
+      - 'Startup failure is explicitly identified as a Critical finding in incremental scope guidance'
+      - 'How to Review step 7 references the Dynamic Testing section'
+      - 'No other sections in code-reviewer.md are modified'
+    notes: plan/notes/117.md
+  "118":
+    title: Update incremental reviewer spawn prompts
+    complexity: low
+    scope:
+      - {path: skills/execute/SKILL.md, op: modify}
+      - {path: skills/brrr/phases/execute.md, op: modify}
+    depends: ["117"]
+    blocks: []
+    criteria:
+      - 'skills/execute/SKILL.md Phase 7 spawn prompt includes the dynamic testing instruction'
+      - 'skills/brrr/phases/execute.md incremental review spawn instruction includes the dynamic testing instruction'
+      - 'Both instructions reference incremental scope'
+      - 'Both instructions specify that startup failure is a Critical finding'
+      - 'No other sections in either file are modified'
+    notes: plan/notes/118.md
+  "119":
+    title: Update capstone reviewer spawn prompts
+    complexity: low
+    scope:
+      - {path: skills/review/SKILL.md, op: modify}
+      - {path: skills/brrr/phases/review.md, op: modify}
+    depends: ["117"]
+    blocks: []
+    criteria:
+      - 'skills/review/SKILL.md section 4.1 code-reviewer prompt includes the dynamic testing instruction'
+      - 'skills/brrr/phases/review.md code-reviewer prompt includes the dynamic testing instruction'
+      - 'Both instructions reference comprehensive scope'
+      - 'Both instructions reference the agent Dynamic Testing section added by WI-117'
+      - 'No other sections in either file are modified'
+    notes: plan/notes/119.md
+  "120":
+    title: Add startup-failure exception to execute finding-handling
+    complexity: low
+    scope:
+      - {path: skills/execute/SKILL.md, op: modify}
+      - {path: skills/brrr/phases/execute.md, op: modify}
+    depends: []
+    blocks: []
+    criteria:
+      - 'skills/execute/SKILL.md Phase 8 Critical Findings section contains an explicit exception for "Startup failure after ..." findings'
+      - 'The exception states the finding is always treated as scope-changing and always routes to Andon'
+      - 'The exception appears before the general fixable-within-scope rule'
+      - 'skills/brrr/phases/execute.md finding-handling block contains an equivalent exception as the first Critical finding bullet'
+      - 'No other sections in either file are modified'
+    notes: plan/notes/120.md

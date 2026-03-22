@@ -1,20 +1,20 @@
-# Execution Strategy — Cycle 008
+# Execution Strategy — Cycle 011
 
 ## Mode
 
-Full parallel — one work item, no dependencies.
+Sequential — one work item.
 
 ## Parallelism
 
-1 worker.
+N/A — single item.
 
 ## Worktree Configuration
 
-None required. All changes are to markdown/documentation files and one line of Python.
+None required. All changes are to markdown files.
 
 ## Review Cadence
 
-Standard incremental review after the work item completes.
+Standard incremental review after work item completes. Capstone review after completion.
 
 ## Work Item Groups
 
@@ -22,17 +22,15 @@ Standard incremental review after the work item completes.
 
 | Work Item | Title | Complexity | Files |
 |---|---|---|---|
-| WI-101 | Fix residual documentation inconsistencies | low | `skills/plan/SKILL.md`, `skills/execute/SKILL.md`, `skills/review/SKILL.md`, `scripts/report.sh`, `specs/artifact-conventions.md` |
+| WI-120 | Add startup-failure exception to execute finding-handling | low | `skills/execute/SKILL.md`, `skills/brrr/phases/execute.md` |
 
 ## Dependency Graph
 
 ```
-WI-101 ──▶ (capstone review)
+WI-120 ──▶ (capstone review)
 ```
-
-No dependencies.
 
 ## Agent Configuration
 
-- Workers: default model (sonnet)
-- Incremental reviewers: default model (sonnet)
+- Worker: default model (sonnet)
+- Incremental reviewer: default model (sonnet)

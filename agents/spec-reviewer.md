@@ -82,6 +82,18 @@ For every work item, check each acceptance criterion:
 
 ## Output Format
 
+For the `## Principle Violations` section, always write a machine-parseable verdict line as the **first line** after the section header, before any content:
+
+**Principle Violation Verdict**: Pass
+
+or, if violations exist:
+
+**Principle Violation Verdict**: Fail — {N} violation(s)
+
+When there are no violations, write exactly `None.` after the verdict line — not "No violations found." or any other variant. This line is parsed by automated tools and must appear on its own line as the first content in the section.
+
+The full output structure is:
+
 ```
 ## Architecture Deviations
 
@@ -96,6 +108,10 @@ For every work item, check each acceptance criterion:
 - [ ] [Criterion text] — [Why it is not met, with file references]
 
 ## Principle Violations
+
+**Principle Violation Verdict**: Pass
+
+None.
 
 ### P1: Principle [number] — [principle name]
 - **Principle states**: [relevant excerpt]

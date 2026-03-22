@@ -23,6 +23,20 @@ You will receive:
 - The project source code
 - Any incremental reviews from `archive/incremental/`
 
+## Pre-Analysis: Load Known-Deferred Gaps
+
+Before analyzing, check whether the artifact directory has a `domains/` layer:
+
+1. If `{artifact_dir}/domains/` exists: glob `{artifact_dir}/domains/*/questions.md` and read each file.
+2. Build a list of **deferred gap items**: questions with `- **Status**: deferred` in their entry.
+3. For each deferred gap item, note its topic/description for comparison during analysis.
+
+During analysis: if you identify a gap that matches a deferred item (same component, same root cause, same file paths), **do not re-raise it as a new finding** unless you have new evidence that the situation has changed in the current cycle (e.g., a file referenced in the deferred gap was modified in this cycle's changed files, or a new dependency was introduced that makes the gap more urgent).
+
+If you skip a deferred gap, note it briefly: "Gap [topic] previously deferred (see Q-{N}) — no new evidence; skipping."
+
+If the `domains/` directory does not exist, proceed with the full analysis as normal.
+
 ## Gap Categories
 
 ### 1. Missing Requirements from Interview

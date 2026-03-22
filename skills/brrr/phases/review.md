@@ -106,6 +106,8 @@ Spawn all three simultaneously. Do not wait for one before starting another.
   >
   > Write your findings to: {artifact_dir}/archive/cycles/{formatted_cycle_number}/code-quality.md
   >
+  > **Dynamic testing (comprehensive scope)**: After your static review, perform the dynamic checks defined in your agent instructions under "Dynamic Testing > Comprehensive review scope". Discover the project's test model and run the full test suite. Report test failures per the severity guidance in your agent instructions.
+  >
   > Verdict is Fail if there are any Critical or Significant findings or unmet acceptance criteria. Otherwise Pass.
 
 **spec-reviewer**
@@ -140,7 +142,7 @@ Spawn all three simultaneously. Do not wait for one before starting another.
   > **Shared context package** (inline — do not re-read architecture, principles, or constraints files individually):
   > {context_package}
   >
-  > **Interview transcript**: {artifact_dir}/steering/interview.md (read for original requirements).
+  > **Interview transcript**: Read `{artifact_dir}/steering/interview.md` if it exists. If not, check `{artifact_dir}/steering/interviews/` — read the most recent `_full.md` file found there (highest refine-NNN directory). If neither exists, proceed without interview context.
   >
   > **Module specs**: {artifact_dir}/plan/modules/*.md (if they exist).
   >
@@ -168,7 +170,7 @@ Wait for all three to complete. Verify their output files exist before proceedin
   >
   > **Journal**: read only the last 20 entries from {artifact_dir}/journal.md.
   >
-  > **Interview transcript**: {artifact_dir}/steering/interview.md
+  > **Interview transcript**: Read `{artifact_dir}/steering/interview.md` if it exists. If not, check `{artifact_dir}/steering/interviews/` — read the most recent `_full.md` file found there. If neither exists, proceed without interview context.
   >
   > **Plan overview**: {artifact_dir}/plan/overview.md
   >
@@ -197,6 +199,64 @@ Build `last_cycle_findings` for return to the controller:
 - `significant_count`: number of significant findings
 - `minor_count`: number of minor findings
 
+### Emit Quality Summary
+
+Best-effort: if any step below fails, skip it and continue without blocking.
+
+> **Note**: The brrr review phase does not produce a `summary.md` file (unlike standalone `/ideate:review`). Per-reviewer counts are derived directly from raw reviewer output files. The emitted JSON schema is structurally identical to `skills/review/SKILL.md` — the `by_reviewer` derivation method differs only because `summary.md` is not available at this point in the brrr execution flow.
+
+**Derive counts**:
+
+1. **Severity counts** — use `last_cycle_findings` already computed in "Collect Review Findings":
+   - `findings.by_severity.critical`: `last_cycle_findings.critical_count`
+   - `findings.by_severity.significant`: `last_cycle_findings.significant_count`
+   - `findings.by_severity.minor`: `last_cycle_findings.minor_count`
+   - `findings.by_severity.suggestion`: count `### Suggestion` headings across all three reviewer output files
+   - `findings.total`: sum of the four severity counts
+
+2. **Per-reviewer counts** — each reviewer uses different heading conventions; parse accordingly:
+   - `findings.by_reviewer.code-reviewer`: count `### C` (critical), `### S` (significant), `### M` (minor), `### Suggestion` (suggestion) headings in `{artifact_dir}/archive/cycles/{formatted_cycle_number}/code-quality.md`
+   - `findings.by_reviewer.spec-reviewer`: in `{artifact_dir}/archive/cycles/{formatted_cycle_number}/spec-adherence.md`, count `### D` headings as significant; count `### P` headings as significant if the `**Principle Violation Verdict**` line says `Fail`; count `### U` and `### N` headings as minor. Use 0 for suggestion.
+   - `findings.by_reviewer.gap-analyst`: in `{artifact_dir}/archive/cycles/{formatted_cycle_number}/gap-analysis.md`, count occurrences of `**Severity**: Critical` (critical), `**Severity**: Significant` (significant), `**Severity**: Minor` (minor). Use 0 for suggestion.
+   - If a file cannot be read, use `{"critical":0,"significant":0,"minor":0,"suggestion":0}` for that reviewer.
+
+3. **Category counts** — classify each finding into exactly one category using these rules (apply in order):
+   - `requirements_missed`: gap-analyst critical/significant findings with words "missing", "absent", "not implemented", "requirement", "not present", "never built", "no implementation", "omitted"
+   - `bugs_introduced`: code-reviewer critical and significant findings
+   - `principles_violated`: spec-reviewer findings (any severity) mentioning "principle", "violates", "violation", "constraint"
+   - `implementation_gaps`: gap-analyst minor findings, or gap-analyst findings with "incomplete", "partial", "not connected", "missing integration"
+   - `other`: anything else
+
+4. **work_items_reviewed**: Count distinct work item rows in `{artifact_dir}/archive/incremental/review-manifest.md`. Use `null` if the file is absent or cannot be parsed.
+
+5. **andon_events**: Read the last 20 entries of `{artifact_dir}/journal.md` (or the full file if shorter). Count entries for cycle `{cycle_number}` that mention "Andon" (case-insensitive). Default to 0 if the journal cannot be read.
+
+**Emit the event**: Append one JSON line to `{artifact_dir}/metrics.jsonl`:
+
+```json
+{"timestamp":"<ISO8601>","event_type":"quality_summary","skill":"brrr","cycle":<N>,"findings":{"total":<N>,"by_severity":{"critical":<N>,"significant":<N>,"minor":<N>,"suggestion":<N>},"by_reviewer":{"code-reviewer":{"critical":<N>,"significant":<N>,"minor":<N>,"suggestion":<N>},"spec-reviewer":{"critical":<N>,"significant":<N>,"minor":<N>,"suggestion":<N>},"gap-analyst":{"critical":<N>,"significant":<N>,"minor":<N>,"suggestion":<N>}},"by_category":{"requirements_missed":<N>,"bugs_introduced":<N>,"principles_violated":<N>,"implementation_gaps":<N>,"other":<N>}},"work_items_reviewed":<N>,"andon_events":<N>}
+```
+
+If the event cannot be written, log `quality_summary event skipped: {reason}` and continue. Do not retry.
+
+### Spawn Domain Curator (After Quality Summary Emitted)
+
+**domain-curator**
+- Model: opus
+- MaxTurns: 25
+- Tools: Read, Write, Glob
+- Prompt:
+  > Maintain the domain knowledge layer for this project.
+  >
+  > **Artifact directory**: {artifact_dir}
+  > **Review source**: {artifact_dir}/archive/cycles/{formatted_cycle_number}/ — code-quality.md, spec-adherence.md, gap-analysis.md, decision-log.md
+  > **Cycle number**: {cycle_number}
+  > **Review type**: cycle
+  >
+  > Follow the domain-curator agent instructions. Extract policy-grade, decision-grade, question-grade, and conflict-grade items from this cycle's review files and update the domains/ layer accordingly.
+
+After the domain-curator returns, record a metrics entry with `phase: "6b"`, `agent_type: "domain-curator"` (schema in controller SKILL.md).
+
 ### Update Journal
 
 Append a review summary to `{artifact_dir}/journal.md`:
@@ -220,44 +280,6 @@ Slowest agent: {agent_type} — {work_item or "N/A"} — {ms}ms
 
 If `metrics.jsonl` could not be written, note "metrics unavailable" and omit the breakdowns.
 
-### Emit Quality Summary
-
-Best-effort: if any step below fails, skip it and continue without blocking.
-
-**Derive counts**:
-
-1. **Severity counts** — use `last_cycle_findings` already computed in "Collect Review Findings":
-   - `findings.by_severity.critical`: `last_cycle_findings.critical_count`
-   - `findings.by_severity.significant`: `last_cycle_findings.significant_count`
-   - `findings.by_severity.minor`: `last_cycle_findings.minor_count`
-   - `findings.by_severity.suggestion`: 0
-   - `findings.total`: sum of the four severity counts
-
-2. **Per-reviewer counts** — read the three review output files and count finding headings:
-   - `findings.by_reviewer.code-reviewer`: count `### C` (critical), `### S` (significant), `### M` (minor), `### Suggestion` (suggestion) headings in `{artifact_dir}/archive/cycles/{formatted_cycle_number}/code-quality.md`
-   - `findings.by_reviewer.spec-reviewer`: same counts from `{artifact_dir}/archive/cycles/{formatted_cycle_number}/spec-adherence.md`
-   - `findings.by_reviewer.gap-analyst`: same counts from `{artifact_dir}/archive/cycles/{formatted_cycle_number}/gap-analysis.md`
-   - If a file cannot be read, use `{"critical":0,"significant":0,"minor":0,"suggestion":0}` for that reviewer.
-
-3. **Category counts** — classify each finding into exactly one category using these rules (apply in order):
-   - `requirements_missed`: gap-analyst critical/significant findings with words "missing", "absent", "not implemented", "requirement", "not present", "never built", "no implementation", "omitted"
-   - `bugs_introduced`: code-reviewer critical and significant findings
-   - `principles_violated`: spec-reviewer findings (any severity) mentioning "principle", "violates", "violation", "constraint"
-   - `implementation_gaps`: gap-analyst minor findings, or gap-analyst findings with "incomplete", "partial", "not connected", "missing integration"
-   - `other`: anything else
-
-4. **work_items_reviewed**: Count distinct work item rows in `{artifact_dir}/archive/incremental/review-manifest.md`. Use `null` if the file is absent or cannot be parsed.
-
-5. **andon_events**: Read the last 20 entries of `{artifact_dir}/journal.md`. Count entries for cycle `{cycle_number}` that mention "Andon" (case-insensitive). Default to 0 if the journal cannot be read.
-
-**Emit the event**: Append one JSON line to `{artifact_dir}/metrics.jsonl`:
-
-```json
-{"timestamp":"<ISO8601>","event_type":"quality_summary","skill":"brrr","cycle":<N>,"findings":{"total":<N>,"by_severity":{"critical":<N>,"significant":<N>,"minor":<N>,"suggestion":<N>},"by_reviewer":{"code-reviewer":{"critical":<N>,"significant":<N>,"minor":<N>,"suggestion":<N>},"spec-reviewer":{"critical":<N>,"significant":<N>,"minor":<N>,"suggestion":<N>},"gap-analyst":{"critical":<N>,"significant":<N>,"minor":<N>,"suggestion":<N>}},"by_category":{"requirements_missed":<N>,"bugs_introduced":<N>,"principles_violated":<N>,"implementation_gaps":<N>,"other":<N>}},"work_items_reviewed":<N>,"andon_events":<N>}
-```
-
-If the event cannot be written, log `quality_summary event skipped: {reason}` and continue. Do not retry.
-
 ## Exit Conditions
 
 - `{artifact_dir}/archive/cycles/{formatted_cycle_number}/` contains: code-quality.md, spec-adherence.md, gap-analysis.md, decision-log.md
@@ -276,3 +298,4 @@ Return to the controller with `last_cycle_findings`. The controller will run Pha
 - `{artifact_dir}/archive/incremental/review-manifest.md`
 - `{artifact_dir}/journal.md` — appended (review summary + metrics summary)
 - `{artifact_dir}/metrics.jsonl` — one entry per agent spawned; quality_summary event appended
+- `{artifact_dir}/domains/` — policies, decisions, and questions updated by domain-curator

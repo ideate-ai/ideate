@@ -119,11 +119,36 @@ Follow the format of existing entries in `policies.md`. If no entries exist yet,
    > _Conflict identified in cycle NNN: see Q-{N} and D-{M} for the contradicting finding._
    ```
 
+**Provisional policy review**: For each policy with `Status: provisional — under review`, check when it was set to provisional (look at the cycle number in the conflict comment). If the policy has been provisional for 2 or more cycles without resolution:
+1. Search existing questions.md entries for the policy ID P-{N} before creating a new entry. If a Q-N entry already references this policy, update its text rather than creating a duplicate.
+2. Add a `questions.md` entry if one does not already exist: "Provisional policy P-{N} unresolved after {N} cycles — requires user decision."
+3. Update the policy comment to: `> _Still provisional after cycle {N}. See Q-{M} for resolution request._`
+
+Do not auto-resolve or auto-retire provisional policies. Escalate only.
+
+**Dedup check**: Before writing a new policy entry, check whether an existing policy already covers this:
+1. First use the existing text check: does any active policy in the loaded policies.md cover this rule? If yes, amend the existing policy rather than creating a new one.
+2. If the MCP tool `ideate_artifact_semantic_search` is available in your tool list: call it with the proposed policy text as the query, scoped to `domains/*/policies.md`. If any result has similarity > 0.85, read the matching policy and determine whether it already covers this finding. If yes, amend the existing policy rather than creating a new one.
+3. Only create a new policy entry if neither check found a match.
+
 ### 4.3 questions.md
 
 **New questions**: Append one entry per question-grade item. Use sequential IDs continuing from the highest existing Q-N.
 
 Follow the format of existing entries in `questions.md`. If no entries exist yet, use: `## Q-{N}: {Title}` with fields: Question, Source, Impact, Status (open), Reexamination trigger.
+
+**Deferred gap findings**: When gap-analyst findings carry a "Defer" recommendation in the gap analysis output, write a questions.md entry with `status: deferred` explicitly in the entry body:
+
+```markdown
+## Q-{N}: {Title}
+- **Question**: {What is the gap}
+- **Source**: gap-analyst, cycle {N}
+- **Impact**: {What goes wrong without it}
+- **Status**: deferred
+- **Deferred rationale**: {The rationale from the gap-analyst's defer recommendation}
+```
+
+The `- **Status**: deferred` line must appear verbatim to be machine-readable by the gap-analyst's pre-analysis step.
 
 **Resolved questions**: If a review finding or decision directly answers an open question, update that question's entry:
 ```markdown

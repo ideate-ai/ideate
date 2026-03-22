@@ -661,3 +661,231 @@ Total items executed: 1
 ## [brrr] 2026-03-21 — Overall metrics summary
 Total agents spawned across all cycles: 7 (1 worker, 2 code-reviewers, 1 spec-reviewer, 1 gap-analyst, 1 journal-keeper, 1 proxy-human-skipped)
 Total wall-clock across all cycles: ~773768ms
+
+## [refine] 2026-03-21 — Refinement planning completed
+Trigger: Critical analysis of ideate plugin quality and token usage (technical-analyst review)
+Principles changed: none
+New work items: WI-102 through WI-108
+Cycle A of two-cycle improvement plan. Addresses quality improvements (gap-analyst deferred gaps, context digest in brrr execute, spec-reviewer verdict contract, domain curator in brrr review, unverifiable scrutiny) and structural risks (convergence check fragility, silent proxy-human deferrals in brrr, domain layer staleness). Token efficiency improvements (context package to file, lazy research loading, metrics schema dedup, refine architect skip, brrr refine work item dedup) deferred to Cycle B. All 7 work items are fully parallel (non-overlapping file scope). Andon behavior made mode-relative: interrupt in standalone execute, log-only in brrr. Domain-curator to use RAG semantic search for dedup before writing new policies.
+
+## [refine] 2026-03-21 — Metrics summary
+Agents spawned: 0 (architect survey skipped — technical-analyst completed equivalent survey in same session; MCP context package used for context loading)
+Total wall-clock: 0ms
+Models used: n/a
+
+## [brrr] 2026-03-21 — Cycle 1 — Work item 102: Spec-reviewer verdict contract + brrr convergence robustness
+Status: complete with rework
+Rework: 2 significant findings fixed from incremental review.
+S1: Moved verdict line instructions outside the output format code fence to prose — previously inside code fence where they appeared as template content rather than behavioral directives.
+S2: Anchored brrr Condition B verdict line match to line-start — previously unanchored substring match could produce false positives from cited text.
+
+## [brrr] 2026-03-21 — Cycle 1 — Work item 103: Gap-analyst deferred gap awareness + domain-curator deferred tagging
+Status: complete with rework
+Rework: 1 critical finding + 2 minor findings fixed from incremental review.
+C1: Fixed token mismatch between curator writer (`- **Status**: deferred`) and gap-analyst reader (`status: deferred`) — both now use identical string.
+M1: Moved Pre-Analysis section before Gap Categories for correct reading order.
+M2: Added explicit lookup instruction to provisional policy escalation step.
+
+## [brrr] 2026-03-21 — Cycle 1 — Work item 104: brrr phases/review.md — spawn domain-curator after journal-keeper
+Status: complete
+
+## [brrr] 2026-03-21 — Cycle 1 — Work item 105: brrr/phases/execute.md context digest + unverifiable scrutiny + mode-relative Andon
+Status: complete with rework
+Rework: 1 critical finding + 1 significant finding + 2 minor findings fixed from incremental review.
+C1: Restructured 150-line cap to exempt interface contracts entirely — interface contracts now always included uncapped; cap applies only to other content.
+S1: Added missing "of them" referent to unverifiable scrutiny instruction.
+M1: Removed redundant parenthetical that conflicted with the corrected cap rule.
+M2: Fixed "none" → "None." sentinel in reporting.md cycle-by-cycle summary template.
+
+## [brrr] 2026-03-21 — Cycle 1 — Work item 106: execute/SKILL.md — unverifiable self-check scrutiny
+Status: complete
+
+## [brrr] 2026-03-21 — Cycle 1 — Work item 107: journal-keeper.md — align with manifest-first instruction
+Status: complete with rework
+Rework: 1 significant finding fixed from incremental review.
+S1: Updated Input section to reference review manifest as primary index — previously only the How to Synthesize step was updated, leaving Input section still listing "All incremental reviews."
+
+## [brrr] 2026-03-21 — Cycle 1 — Work item 108: architecture.md — add domain-curator to agents table
+Status: complete with rework
+Rework: 3 significant findings fixed from incremental review.
+S1: Added ### domain-curator definition block to Section 4 with all required fields (purpose, responsibility, tools, model, MaxTurns, background, input/output contracts).
+S2: Added domain-curator to data flow diagram for review skill.
+S3: Added domain-curator spawn as step 6 in review process steps; added domains/* to output artifacts.
+Also fixed: Layer 2 capstone description in Section 7 updated to include domain-curator (post-synthesis).
+
+## [brrr] 2026-03-22 — Cycle 1 review complete
+Findings: critical=0, significant=1, minor=3
+Principle violations: None (Verdict: Pass)
+Convergence: No — Condition A fails (1 significant finding)
+S1: execute/SKILL.md Phase 4.5 context digest missing interface contracts cap exemption
+D1: specs/plan/architecture.md domain-curator MaxTurns 30 ≠ agent file maxTurns 25
+Proceeding to refinement phase.
+
+## [brrr] 2026-03-22 — Cycle 1 refinement
+Findings addressed: 0 critical, 1 significant (+ 1 arch deviation)
+New work items created: WI-109 (execute/SKILL.md Phase 4.5 interface contracts cap exemption), WI-110 (architecture.md domain-curator MaxTurns 30→25)
+Work items reset for rework: none
+
+## [brrr] 2026-03-22 — Cycle 2 — Work item 109: execute/SKILL.md — interface contracts cap exemption
+Status: complete
+
+## [brrr] 2026-03-22 — Cycle 2 — Work item 110: architecture.md — domain-curator MaxTurns fix
+Status: complete
+
+## [brrr] 2026-03-22 — Cycle 2 review complete
+Findings: critical=0, significant=2, minor=2
+Principle violations: None (Verdict: Pass)
+Convergence: No — Condition A fails (2 significant gap findings)
+II1: Three agent defs reference stale reviews/incremental/ path (Q-15, open since cycle 006)
+MI1: brrr/phases/review.md missing quality_summary emission (Q-14, open since cycle 006)
+Proceeding to refinement phase.
+
+## [brrr] 2026-03-22 — Cycle 2 refinement
+Findings addressed: 0 critical, 2 significant
+New work items created: WI-111 (fix stale reviews/incremental/ path in spec-reviewer/gap-analyst/journal-keeper), WI-112 (brrr/phases/review.md quality_summary emission)
+Work items reset for rework: none
+
+## [brrr] 2026-03-22 — Cycle 3 — Work item 111: Fix stale reviews/incremental/ path in spec-reviewer/gap-analyst/journal-keeper
+Status: complete (no changes needed — already correct)
+
+## [brrr] 2026-03-22 — Cycle 3 — Work item 112: brrr/phases/review.md quality_summary emission
+Status: complete with rework
+Rework: Changed skill field to "review" for schema parity; suggestion count derived from headings not hardcoded 0; andon_events guard added; documentation note on by_reviewer derivation divergence added.
+
+## [brrr] 2026-03-22 — Cycle 3 review complete
+Critical findings: 0
+Significant findings: 1
+Minor findings: 2
+
+## [brrr] 2026-03-22 — Cycle 3 metrics summary
+Agents spawned: 5 total (2 workers, 1 code-reviewer, 2 reviewers, 1 journal-keeper)
+Total wall-clock: ~600000ms
+Models used: sonnet, opus
+Slowest agent: journal-keeper — N/A — 219798ms
+
+## [brrr] 2026-03-22 — Cycle 3 refinement
+Findings addressed: 0 critical, 1 significant (II1: skill field wrong in quality_summary)
+New work items created: WI-113 (Fix quality_summary skill field — brrr must emit "brrr" not "review")
+Work items reset for rework: none
+
+## [brrr] 2026-03-22 — Cycle 4 — Work item 113: Fix quality_summary skill field — brrr must emit "brrr" not "review"
+Status: complete
+
+## [brrr] 2026-03-22 — Cycle 4 — Work item 113: Fix quality_summary skill field
+Status: complete
+
+## [brrr] 2026-03-22 — Cycle 4 review complete
+Critical findings: 2
+Significant findings: 4
+Minor findings: 6
+
+## [brrr] 2026-03-22 — Cycle 4 metrics summary
+Agents spawned: 4 total (1 worker, 3 reviewers, 1 journal-keeper)
+Total wall-clock: ~430000ms
+Models used: sonnet, opus
+Slowest agent: spec-reviewer — N/A — 150492ms
+
+## [brrr] 2026-03-22 — Cycle 4 refinement
+Findings addressed: 2 critical, 4 significant
+New work items created: WI-114 (Fix report.sh nested severity path and camelCase key), WI-115 (Add metrics.jsonl to artifact-conventions.md), WI-116 (Fix stale reviews/final/ paths in refine SKILL.md)
+Work items reset for rework: none
+
+## [brrr] 2026-03-22 — Cycle 5 — Work item 114: Fix report.sh — nested severity path and camelCase key
+Status: complete (no changes needed — already correct)
+
+## [brrr] 2026-03-22 — Cycle 5 — Work item 115: Add metrics.jsonl to artifact-conventions.md
+Status: complete (no changes needed — already correct)
+
+## [brrr] 2026-03-22 — Cycle 5 — Work item 116: Fix stale reviews/final/ paths in skills/refine/SKILL.md
+Status: complete with minor addition (cycle-number guidance added to Section 3.2)
+
+Cycle 5: differential diff returned empty (no commits made during brrr session — all hashes identical). Falling back to full review.
+
+## [brrr] 2026-03-22 — Cycle 5 — Work items 114, 115, 116
+Status: complete (WI-114: no changes needed — already correct; WI-115: no changes needed — already correct; WI-116: cycle-number guidance added to Section 3.2)
+
+## [brrr] 2026-03-22 — Cycle 5 review complete
+Critical findings: 0
+Significant findings: 0
+Minor findings: 3
+
+## [brrr] 2026-03-22 — Cycle 5 metrics summary
+Agents spawned: 6 total (3 workers, 3 reviewers, 1 journal-keeper)
+Total wall-clock: ~400000ms
+Models used: sonnet, opus
+Slowest agent: spec-reviewer — N/A — 135800ms
+
+## [brrr] 2026-03-22 — CONVERGENCE ACHIEVED
+Cycles completed: 5
+Total work items executed: 15 (WI-102 through WI-116)
+Final findings: critical=0, significant=0, minor=3
+Condition A: PASS (zero critical + significant)
+Condition B: PASS (Principle Violations: None)
+
+## [brrr] 2026-03-22 — Convergence achieved
+Cycles: 5
+Total items executed: 15
+
+## [brrr] 2026-03-22 — Overall metrics summary
+Total agents spawned across all cycles: ~45
+Total wall-clock across all cycles: ~2100000ms
+
+## [refine] 2026-03-22 — Refinement planning completed
+Trigger: Post-convergence observation that code reviewers perform only static analysis; a broken app startup is an egregious failure that must be caught at incremental review
+Principles changed: none
+New work items: WI-117 through WI-119
+Adds dynamic testing guidance to the code-reviewer agent (WI-117) and the incremental and capstone reviewer spawn prompts (WI-118, WI-119). Quality floor: startup failure after a work item is a Critical finding and routes to Andon. Capstone runs the full test suite.
+
+## [execute] 2026-03-22 — Work item 117: Dynamic testing guidance in code-reviewer agent
+Status: complete
+Added ### 6. Dynamic Testing section to agents/code-reviewer.md with testing model discovery, incremental scope (smoke test + targeted tests), and comprehensive scope (full test suite). Updated How to Review step 7 to reference the new section. Startup failure flagged as Critical finding.
+
+## [execute] 2026-03-22 — Work item 118: Update incremental reviewer spawn prompts
+Status: complete
+Added dynamic testing (incremental scope) instruction to incremental reviewer spawn prompts in skills/execute/SKILL.md and skills/brrr/phases/execute.md. Incremental review flagged S1 (AC5 — other sections modified), dismissed as false positive: flagged changes are pre-existing from WI-105/106 (uncommitted from prior brrr session), not introduced by this work item. Confirmed by git diff.
+
+## [execute] 2026-03-22 — Work item 119: Update capstone reviewer spawn prompts
+Status: complete
+Added dynamic testing (comprehensive scope) instruction to capstone reviewer spawn prompts in skills/review/SKILL.md and skills/brrr/phases/review.md.
+
+## [execute] 2026-03-22 — Metrics summary
+Agents spawned: 6 total (3 workers, 3 code-reviewers)
+Total wall-clock: ~626000ms
+Models used: sonnet
+Slowest agent: code-reviewer (WI-118) — 360366ms
+
+## [review] 2026-03-22 — Comprehensive review completed
+Critical findings: 0
+Significant findings: 1
+Minor findings: 5
+Suggestions: 0
+Items requiring user input: 0
+Curator: ran (P-22 added, D-33, Q-24, Q-25; current_cycle set to 7)
+
+## [review] 2026-03-22 — Metrics summary
+Agents spawned: 5 total (code-reviewer, spec-reviewer, gap-analyst, journal-keeper, domain-curator)
+Total wall-clock: ~1200000ms
+Models used: sonnet
+Slowest agent: code-reviewer — 653207ms
+
+## [refine] 2026-03-22 — Refinement planning completed
+Trigger: Cycle 007 review finding II1 (Significant) — startup failure Andon routing not unconditionally enforced
+Principles changed: none
+New work items: WI-120
+Adds explicit "Startup failure after ..." exception rule to Phase 8 of skills/execute/SKILL.md and the finding-handling block of skills/brrr/phases/execute.md. EC1/EC2 edge cases and M1 cross-reference format deferred.
+
+## [refine] 2026-03-22 — Metrics summary
+Agents spawned: 0 total (no agents needed — change fully defined by review findings and existing session context)
+Total wall-clock: 0ms
+Models used: none
+Slowest agent: N/A
+
+## [execute] 2026-03-22 — Work item 120: Add startup-failure exception to execute finding-handling
+Status: complete
+Added "Startup failure after ..." exception to Phase 8 of skills/execute/SKILL.md (before the general fixable-within-scope rule) and as the first Critical finding bullet in skills/brrr/phases/execute.md. Incremental review flagged S1-S4 (AC5: other sections modified) — dismissed as false positive, same pre-existing uncommitted changes from WI-105/106/118 pattern confirmed by git diff. This is the third consecutive false positive of this type in this session; the root cause is an uncommitted working tree from the entire brrr run.
+
+## [execute] 2026-03-22 — Metrics summary
+Agents spawned: 2 total (1 worker, 1 code-reviewer)
+Total wall-clock: ~492000ms
+Models used: sonnet
+Slowest agent: code-reviewer — 465239ms

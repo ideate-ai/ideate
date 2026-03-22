@@ -1,0 +1,35 @@
+# Cycle 002 Summary
+
+**Date**: 2026-03-22
+**Work items**: WI-109, WI-110 (2 items)
+**Focus**: Cross-cutting fixes from cycle 001 review
+
+## What Changed
+
+| Work Item | File | Change |
+|---|---|---|
+| WI-109 | skills/execute/SKILL.md | Phase 4.5 interface contracts now exempted from 150-line cap |
+| WI-110 | specs/plan/architecture.md | domain-curator MaxTurns corrected: 30 → 25 |
+
+## Review Findings
+
+| Reviewer | Verdict | Critical | Significant | Minor |
+|---|---|---|---|---|
+| code-quality | Pass | 0 | 0 | 1 |
+| spec-adherence | Pass | 0 | 0 | 0 |
+| gap-analysis | Fail | 0 | 2 | 1 |
+
+**Total**: 0 critical, 2 significant, 2 minor
+
+Significant findings (both carry-forwards from cycle 006, Q-14 and Q-15 in domains):
+- **II1**: Three agent definitions (spec-reviewer, gap-analyst, journal-keeper) still reference stale `reviews/incremental/` path — should be `archive/incremental/`
+- **MI1**: `brrr/phases/review.md` missing quality_summary emission — Quality Trends in report.sh always empty for brrr projects
+
+**Principle violations**: None (`**Principle Violation Verdict**: Pass`)
+
+Minor finding:
+- M1 (code-quality): execute/SKILL.md Phase 4.5 missing ≤200 line short-circuit present in brrr
+
+## Convergence Status
+
+Not converged — 2 significant findings (II1, MI1 from gap-analysis). Refinement required.

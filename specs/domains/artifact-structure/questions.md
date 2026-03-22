@@ -50,3 +50,32 @@
 - **Impact**: A user installing ideate has no documented path to discover the reporting script. The observability feature delivered by WI-094 is invisible at the user-facing entry point; the only reference is an internal citation in `specs/artifact-conventions.md`.
 - **Status**: open
 - **Reexamination trigger**: Next refinement cycle; additive README section, no design decision required.
+
+## Q-20: review-manifest.md written to different locations by brrr vs standalone review
+- **Question**: brrr writes review-manifest.md to `archive/incremental/review-manifest.md`; standalone review writes to `archive/cycles/{N}/review-manifest.md`. Should brrr copy the manifest to the cycle directory after reviewers complete so cycle directories are self-contained, or should the location difference be explicitly documented?
+- **Source**: archive/cycles/003/code-quality.md M2; archive/cycles/003/decision-log.md OQ3
+- **Impact**: brrr-produced cycle directories are not self-contained — the review manifest lives only in `archive/incremental/`. This creates confusion when inspecting cycle directories and may break consumers that expect the manifest at the cycle level.
+- **Status**: open
+- **Reexamination trigger**: Next refinement cycle; either a copy step or explicit documentation, no design decision required.
+
+## Q-21: report.sh fmt_ms(0) displays "0s" instead of "-" for missing timing data
+- **Question**: `fmt_ms(0)` returns `"0s"` because the zero value passes the truthy check. Entries with missing `wall_clock_ms` default to 0 via fallback, so missing timing appears as "0s" rather than "-". Should `fmt_ms` treat 0 as missing data?
+- **Source**: archive/cycles/004/code-quality.md M3; archive/cycles/004/decision-log.md OQ2
+- **Impact**: Display ambiguity only — "0s" looks like a sub-second operation rather than absent data. No functional impact on report correctness.
+- **Status**: resolved
+- **Resolution**: WI-095 changed `fmt_ms` to treat 0 as missing data, returning "-" instead of "0s".
+- **Resolved in**: cycle 005
+
+## Q-22: metrics.jsonl section uses wrong heading level in artifact-conventions.md
+- **Question**: The `metrics.jsonl` section added by WI-096 uses `####` heading level at `specs/artifact-conventions.md:710`, while every other top-level artifact section in the same document uses `###`. Should the heading be corrected to `###`?
+- **Source**: archive/cycles/005/spec-adherence.md M1; archive/cycles/005/decision-log.md OQ1
+- **Impact**: Document hierarchy is inconsistent. The `metrics.jsonl` section appears one level deeper than adjacent sections, which may confuse readers navigating by heading structure. No functional impact.
+- **Status**: open
+- **Reexamination trigger**: Next documentation-fix work item; single-line change.
+
+## Q-23: metrics.jsonl agent-spawn example uses literal values instead of placeholders
+- **Question**: `specs/artifact-conventions.md:720,724` shows `"cycle": null` and `"wall_clock_ms": 0` as literal values, while every other field in the same schema block uses `<placeholder>` notation. Should these be changed to `"cycle": "<N or null>"` and `"wall_clock_ms": <N>` to match the parameterized convention?
+- **Source**: archive/cycles/005/gap-analysis.md MG2; archive/cycles/005/code-quality.md M1; archive/cycles/005/decision-log.md OQ3
+- **Impact**: Readers scanning only the schema block may infer `cycle` is always null and `wall_clock_ms` is always 0 for agent-spawn entries. The semantics prose at line 768 clarifies intent, but the example is misleading in isolation.
+- **Status**: open
+- **Reexamination trigger**: Next documentation-fix work item; can be bundled with Q-22.

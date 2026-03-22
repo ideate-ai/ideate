@@ -1,55 +1,45 @@
-# Spec Adherence Review — Cycle 001 (brrr)
+# Spec Adherence Review — Cycle 001
 
-**Scope**: WI-101 (Fix residual documentation inconsistencies). Full review cycle.
+**Scope**: WI-102 through WI-108 — quality and structural risk improvements.
 
-## Verdict: Pass
+## Verdict: Fail
 
-All WI-098 through WI-101 acceptance criteria are satisfied. No principle violations. Two minor documentation items noted.
+One architecture deviation: `specs/plan/architecture.md` WI-108 added a domain-curator row specifying `MaxTurns: 30`, but the agent file (`agents/domain-curator.md`) and the brrr review phase spawn both use `maxTurns: 25`. The architecture document introduced by this cycle is inconsistent with the agent and skill that implement it.
 
 ## Architecture Deviations
 
-### D1: `domain-curator` agent absent from architecture agent table
-
-- **Expected**: `specs/plan/architecture.md` §1 (Agents table) lists eight agents: researcher, architect, decomposer, code-reviewer, spec-reviewer, gap-analyst, journal-keeper, proxy-human.
-- **Actual**: `agents/domain-curator.md` exists and is actively invoked by `skills/review/SKILL.md` after journal-keeper in cycle reviews. It maintains the `domains/` layer.
-- **Evidence**: `agents/domain-curator.md` defines the ninth agent. `specs/plan/architecture.md` has no mention of domain-curator.
-- **Assessment**: Known documentation lag — domain-curator was added after the original architecture was written. The README and skill descriptions document it correctly. The architecture document has not been updated. Minor.
+### D1: domain-curator MaxTurns inconsistency between architecture.md and agent file
+- **Expected**: `specs/plan/architecture.md` (added by WI-108): domain-curator row specifies `MaxTurns: 30`
+- **Actual**: `agents/domain-curator.md:10`: `maxTurns: 25`; `skills/brrr/phases/review.md:189`: `MaxTurns: 25`
+- **Evidence**: `specs/plan/architecture.md` → domain-curator row contains `MaxTurns: 30`. `agents/domain-curator.md` line 10 says `maxTurns: 25`. `skills/brrr/phases/review.md` line 189 spawns domain-curator with `MaxTurns: 25`.
+- **Assessment**: WI-108 introduced this inconsistency when writing the new domain-curator definition block. The value 30 was estimated rather than confirmed from the agent file. The authoritative value is the agent file (25). The architecture.md row should say `MaxTurns: 25`.
 
 ## Unmet Acceptance Criteria
 
-None. All WI-098–WI-101 acceptance criteria verified via incremental reviews:
-- WI-098: `archive/incremental/098-brrr-quality-summary.md` — Pass (after rework). All criteria confirmed.
-- WI-099: `archive/incremental/099-agent-paths.md` — Pass. All agent path fixes confirmed.
-- WI-100: `archive/incremental/100-docs-cluster.md` — Pass. All criteria confirmed.
-- WI-101: `archive/incremental/101-fix-residual-documentation-inconsistencies.md` — Pass. All five fixes confirmed.
+None. All per-work-item acceptance criteria verified via incremental reviews (all 7 items pass). D1 is a documentation inconsistency introduced during WI-108 execution.
 
 ## Principle Violations
 
+**Principle Violation Verdict**: Pass
+
 None.
+
+The MaxTurns inconsistency (D1) is a documentation error, not a principle violation. No guiding principle is contradicted.
 
 ## Principle Adherence Evidence
 
-- **P1 (Spec Sufficiency)**: WI-098–WI-101 each contain fully specified line-level changes with exact before/after text. Two independent LLM runs would produce identical edits.
-- **P2 (Minimal Inference at Execution)**: All four work items provide verbatim replacement text. No executor design decisions required.
-- **P3 (Guiding Principles Over Implementation Details)**: The `"cycle"` field ordering (between `"phase"` and `"agent_type"`) derives from the canonical schema — no user input needed.
-- **P4 (Parallel-First Design)**: WI-098, WI-099 had non-overlapping file scope and were designed for parallel execution.
-- **P5 (Continuous Review)**: All four work items have corresponding incremental reviews in `archive/incremental/`. Reviews produced during execution.
-- **P6 (Andon Cord)**: No Andon events. All four items were one-liner documentation fixes with no ambiguity.
-- **P7 (Recursive Decomposition)**: Not exercised — documentation-only changes.
-- **P8 (Durable Knowledge Capture)**: Agent-system domain documents the stale-path policy (P-19, D-20). Decisions persist across cycles.
-- **P9 (Domain Agnosticism)**: All fixes are neutral infrastructure — no domain-specific assumptions.
-- **P10 (Full SDLC Ownership)**: All five skills now have consistent `"cycle"` field placement and quality_summary emission parity.
-- **P11 (Honest and Critical Tone)**: Incremental reviews state findings directly. WI-098 rework event documented without softening.
-- **P12 (Refinement as Validation)**: WI-101 created because WI-100 incompletely fixed the metrics schema — requirements re-validated against actual implementation.
+- **P1 (Spec Sufficiency)**: WI-102 ensures the verdict line instruction is unambiguous prose outside the template — two LLM runs will produce the same verdict line format. P1 strengthened.
+- **P2 (Minimal Inference at Execution)**: WI-103 eliminates ambiguity for gap-analyst re: deferred gaps — the agent can now follow the token match mechanically. WI-107 eliminates "load all incremental reviews" decision.
+- **P4 (Parallel-First Design)**: All 7 work items had non-overlapping file scope, executed in parallel. Confirmed via incremental reviews.
+- **P5 (Continuous Review)**: All 7 items have incremental reviews. Five items required rework; rework was reviewed before comprehensive review ran.
+- **P6 (Andon Cord)**: No Andon events in this cycle. All items resolvable from specs.
+- **P8 (Durable Knowledge Capture)**: WI-104 ensures domain-curator runs in brrr cycles, not just standalone review. The domains/ layer is now maintained across all review paths.
+- **P11 (Honest and Critical Tone)**: Rework reviews stated defects directly and precisely. No softening.
 
 ## Undocumented Additions
 
-### U1: `domain-curator` agent (see D1 above)
-
-Present in `agents/domain-curator.md` and invoked by `skills/review/SKILL.md`. Not listed in `specs/plan/architecture.md`. Documentation lag — architecture document should be updated to include this agent.
+None. All changes documented by work items in `plan/work-items.yaml` and `plan/notes/`.
 
 ## Naming/Pattern Inconsistencies
 
-### N1: brrr inline schema uses `"cycle":<N>` while all other skills use `"cycle":null`
-
-`skills/brrr/SKILL.md` uses `"cycle":<N>` in its inline metrics schema (brrr always has a cycle number). All other skills (plan, execute, review, refine) use `"cycle":null` as the default placeholder. The canonical schema allows `<integer or null>`. This is intentional — brrr is always cycle-aware — but creates a surface inconsistency when reading the five skill schemas side by side. Not a defect.
+None.

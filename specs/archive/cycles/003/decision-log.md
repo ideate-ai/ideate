@@ -1,99 +1,106 @@
 # Decision Log — Cycle 003
 
+**Brrr run**: WI-102 through WI-112 (Cycles 1–3 of the Cycle A quality/structural-risk brrr run)
+**This cycle scope**: WI-111 and WI-112 (brrr Cycle 3)
+**Date**: 2026-03-22
+
+---
+
 ## Planning Phase
 
-### D1: Use manifest.json as the artifact directory schema version mechanism
-- **When**: refine-003 interview, 2026-03-13
-- **Decision**: Add `manifest.json` at the root of every artifact directory containing `{"schema_version": 1}`.
-- **Rationale**: Two prior breaking schema changes were resolved with ad-hoc scripts. A persistent version marker enables future migration scripts to detect the schema version and apply targeted upgrades.
+### D1: Cycle A (quality + structural risks) separated from Cycle B (token efficiency)
+- **When**: refine-008 interview, 2026-03-21
+- **Decision**: All 5 quality improvements and 3 structural risks (WI-102–108) addressed in one brrr run. Token efficiency improvements deferred to a separate Cycle B.
+- **Rationale**: Splitting avoids regressions and keeps each cycle's scope bounded.
+- **Implications**: Cycle B token efficiency work remains unscheduled.
 
-### D2: Scope versioning to the artifact directory schema only
-- **When**: refine-003 interview, Q2
-- **Decision**: Skills are not versioned and do not enforce version compatibility at invocation time.
-- **Rationale**: Skills don't need migration or quality gates yet. Keeping scope narrow reduces cycle complexity.
+### D2: Andon behavior made mode-relative
+- **When**: refine-008 interview, 2026-03-21
+- **Decision**: In brrr, proxy-human deferrals are logged visibly without interrupting the loop. In standalone execute, the existing interrupt-and-ask behavior is unchanged.
+- **Rationale**: brrr is designed for autonomy; interrupting for deferrals contradicts the autonomous loop design.
+- **Implications**: WI-105 implements the mode-relative rule in `skills/brrr/phases/execute.md`.
 
-### D3: Start at schema_version 1 (fresh start)
-- **When**: refine-003 interview, Q4
-- **Decision**: Current artifact directory schema is v1. Prior migrations are not retroactively numbered.
-- **Rationale**: User framing indicates fresh start; version numbers represent forward-looking migrations.
+### D3: Domain-curator to use RAG semantic search before writing new policies
+- **When**: refine-008 interview, 2026-03-21
+- **Decision**: Domain-curator uses MCP semantic search to detect near-duplicate policies before writing new entries to the domain layer.
+- **Implications**: WI-103 adds deferred-gap tagging to domain-curator and gap-analyst.
 
-### D4: No runtime enforcement — manifest is informational only
-- **When**: refine-003 interview, Q5
-- **Decision**: No skill checks or enforces `schema_version` at runtime. Migration scripts read the manifest; the workflow does not.
-
-### D5: Scope cycle 003 to three files only
-- **When**: refine-003 overview, Scope section
-- **Decision**: Only `specs/artifact-conventions.md`, `skills/plan/SKILL.md`, `specs/manifest.json` in scope. README.md, CLAUDE.md, architecture.md explicitly excluded.
-- **Implications**: Three documentation artifacts with artifact directory structure diagrams remain inconsistent after this cycle (OQ1–OQ3).
-
-### D6: Migration script removal deferred
-- **When**: refine-003 overview, Out of scope
-- **Decision**: `scripts/migrate-to-cycles.sh` and `scripts/migrate-to-domains.sh` not removed in cycle 003.
-- **Implications**: Interview stated scripts "will be removed." No work item was created. Scripts remain on disk (OQ4).
-
-### D7: WI-074 and WI-075 are parallelizable
-- **When**: refine-003 overview
-- **Decision**: Non-overlapping file scopes enable parallel execution, consistent with GP-4.
+### D4: WI-111 and WI-112 created from Cycle 2 review findings (Q-14 and Q-15 escalated)
+- **When**: brrr Cycle 2 refinement, 2026-03-22
+- **Decision**: Q-14 (missing quality_summary in brrr review phase) and Q-15 (stale `reviews/incremental/` path) escalated from open questions to work items.
+- **Rationale**: Both gaps had persisted through multiple cycles. A third deferral was not acceptable.
 
 ---
 
 ## Execution Phase
 
-### D8: Fix pre-existing stale directory diagram during WI-074
-- **When**: WI-074 incremental review, 2026-03-13
-- **Decision**: The legacy `reviews/incremental/` and `reviews/final/` entries in the `artifact-conventions.md` directory structure diagram were corrected to `archive/` + `domains/` during WI-074 rework.
-- **Implications**: Diagram is now current. Review Artifacts section headings (lines ~357–641) still use stale paths — outside WI-074 scope (OQ6).
+### D5: WI-111 confirmed as no-op — Q-15 already resolved
+- **When**: Execution — WI-111, 2026-03-22
+- **Decision**: Worker found all three agent files already used `archive/incremental/`. No changes made. WI-111 Pass, zero findings.
+- **Implications**: Q-15 is closed.
+
+### D6: WI-112 rework — `skill` field set to `"review"` instead of `"brrr"` for schema parity
+- **When**: Execution — WI-112 rework, 2026-03-22
+- **Decision**: The quality_summary event emitted by `skills/brrr/phases/review.md` uses `"skill":"review"` rather than `"skill":"brrr"`.
+- **Rationale**: Documented in `archive/incremental/112-brrr-review-quality-summary.md` as "for schema parity" with `skills/review/SKILL.md`.
+- **Alternatives considered**: Using `"skill":"brrr"` as specified by `artifact-conventions.md:735`.
+- **Implications**: This decision contradicts `artifact-conventions.md:735`. Gap-analyst flagged as significant finding II1. Q-14 remains open. See CR1.
 
 ---
 
 ## Review Phase
 
-### D9: Cycle verdict Fail — documentation propagation gaps
-- **When**: Cycle 003 capstone
-- **Decision**: Code-quality reviewer issued Fail despite all acceptance criteria passing. Fail is based on S1 and S2 (README.md and architecture.md omissions) — cross-cutting gaps outside stated work item scope.
+### D7: Cycle 003 not converged — one significant gap finding
+- **When**: Cycle 003 capstone review, 2026-03-22
+- **Decision**: Two minor findings (M1, M2 in code-quality.md) and one significant gap (II1 in gap-analysis.md) carried forward. Condition A fails (significant_count=1). Cycle 4 will execute a fix work item.
 
 ---
 
 ## Open Questions
 
-### OQ1: README.md artifact directory diagram omits manifest.json
-- **Source**: Code-quality S1; Gap-analysis II1, IR1
-- **Impact**: Users bootstrapping from README will not create `manifest.json`; migration scripts will fail silently.
-- **Priority**: High — one-line fix, no design decision required.
+### OQ1: quality_summary `skill` field value contradicts canonical spec
+- **Question**: `skills/brrr/phases/review.md:235` emits `"skill":"review"` but `specs/artifact-conventions.md:735` specifies brrr-driven events must use `"skill":"brrr"`.
+- **Source**: gap-analysis.md II1 (cycle 003)
+- **Impact**: `scripts/report.sh` quality trend attribution is silently wrong for any project mixing brrr and standalone review runs.
+- **Who answers**: Technical — one-word fix at `skills/brrr/phases/review.md:235`. No design decision required.
 
-### OQ2: CLAUDE.md artifact structure diagram omits manifest.json
-- **Source**: Gap-analysis II2, IR1
-- **Impact**: Agents operating on the ideate repository receive stale directory context, may omit `manifest.json` when scaffolding.
-- **Priority**: High — one-line fix.
+### OQ2: `### Suggestion` heading pattern has no producer in code-reviewer output format
+- **Question**: `skills/brrr/phases/review.md:212,216` counts `### Suggestion` headings, but `agents/code-reviewer.md` defines only `### C`, `### S`, `### M`. Should suggestion be hardcoded to 0, or should a `## Suggestions` section be added to the code-reviewer format?
+- **Source**: code-quality.md M1 (cycle 003)
+- **Impact**: `by_reviewer.code-reviewer.suggestion` is structurally impossible to be non-zero.
 
-### OQ3: Architecture.md permissions table omits manifest.json
-- **Source**: Code-quality S2 (Significant); Gap-analysis II3 (Minor/defer)
-- **Impact**: No normative phase-access record for manifest.json in architecture contract.
-- **Priority**: Low — defer; artifact-conventions.md is authoritative for reviewers.
+### OQ3: `review-manifest.md` ends up in different locations for brrr vs standalone review
+- **Question**: brrr writes the manifest to `archive/incremental/review-manifest.md`; standalone review writes to `archive/cycles/{N}/review-manifest.md`. brrr cycle directories are not self-contained.
+- **Source**: code-quality.md M2 (cycle 003)
+- **Who answers**: Technical — either copy the manifest to the cycle directory, or document the difference explicitly.
 
-### OQ4: Ad-hoc migration scripts not removed (user decision required)
-- **Source**: Gap-analysis MR1; refine-003 interview
-- **Impact**: Interview stated scripts will be removed. They remain present. README Migration section still documents `migrate-to-domains.sh`.
-- **Who answers**: User — confirm intent and scope of removal.
+---
 
-### OQ5: Schema version 1 is not defined
-- **Source**: Gap-analysis MR2, MI1
-- **Impact**: Manifest's stated purpose (enable targeted migration) cannot be fulfilled without a v1 definition.
-- **Priority**: Defer until first migration script is written.
+## Carry-Forward Open Questions
 
-### OQ6: Review Artifacts section headings in artifact-conventions.md use stale reviews/ paths
-- **Source**: Code-quality M1; Spec-adherence D1, N1
-- **Impact**: Internal inconsistency in artifact-conventions.md — diagram correct, section headings stale.
-- **Priority**: Low — pre-existing, address in next conventions-touching work item.
+- **Q-3** (spawn_session as primary path in plan/execute/review): `specs/domains/workflow/questions.md`
+- **Q-6** (proxy-human confidence level case inconsistency): `specs/domains/agent-system/questions.md`
+- **Q-7** (brrr fallback entry heading format for proxy-human-log.md): `specs/domains/agent-system/questions.md`
+- **Q-8** (no sub-subagents — recursive decomposition requires external tooling): `specs/domains/agent-system/questions.md`
+- **Q-13** (schema version 1 structural invariants not defined): `specs/domains/artifact-structure/questions.md`
+- **Q-16** (findings.by_reviewer.suggestion has no consumer): `specs/domains/artifact-structure/questions.md`
+- **Q-17** (skills/refine/SKILL.md inline metrics schema omits the cycle field): `specs/domains/artifact-structure/questions.md`
+- **Q-18** (report.sh absent from README.md and plugin manifests): `specs/domains/artifact-structure/questions.md`
 
 ---
 
 ## Cross-References
 
-**CR1** — README.md omission: Code-quality S1 + Gap-analysis II1/IR1 agree on same file/lines/fix → OQ1 is highest-priority finding this cycle.
+### CR1: Q-14 status — partially resolved, re-opened as OQ1
+- WI-112 incremental review returned Pass with zero findings — did not flag the `skill` field contradiction.
+- Capstone gap-analyst caught it as II1 (significant).
+- Fix required: replace `"review"` with `"brrr"` at `skills/brrr/phases/review.md:235`. Q-14 remains open until verified.
 
-**CR2** — CLAUDE.md omission: Gap-analysis II2 only (other reviewers did not scope to CLAUDE.md); structurally identical to CR1 → OQ2.
+### CR2: Q-15 status — confirmed resolved by WI-111 no-op
+- All three WI-111 acceptance criteria satisfied. Files already used correct path.
+- Q-15 closed.
 
-**CR3** — Architecture.md permissions gap: Code-quality S2 (Significant) vs. Gap-analysis II3 (Minor/defer). Not contradictory — gap-analysis explicitly defers rather than dismisses → OQ3 can be deferred.
-
-**CR4** — Stale section headings in artifact-conventions.md: Code-quality M1 + Spec-adherence D1/N1 agree (pre-existing); Gap-analysis silent → OQ6, low priority.
+### CR3: Suggestion count derivation — OQ2 and pre-existing Q-16
+- OQ2: missing producer (code-reviewer cannot emit `### Suggestion` headings per its output format).
+- Q-16: missing consumer (no downstream tool reads `by_reviewer.suggestion`).
+- Together these suggest the suggestion sub-field in `by_reviewer` may be vestigial — added for schema symmetry but neither reliably produced nor consumed.
