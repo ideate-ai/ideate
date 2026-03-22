@@ -21,7 +21,7 @@ You will receive:
 - Constraints
 - The full plan (architecture, module specs, work items)
 - The project source code
-- Any incremental reviews from `reviews/incremental/`
+- Any incremental reviews from `archive/incremental/`
 
 ## Gap Categories
 

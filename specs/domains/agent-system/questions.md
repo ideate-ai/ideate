@@ -20,3 +20,10 @@
 - **Impact**: Very large projects (requiring multiple levels of decomposition deeper than architecture → modules → work items) cannot be fully automated within ideate alone.
 - **Status**: open
 - **Reexamination trigger**: First project encountered that requires more than one level of module decomposition to reach atomic work items.
+
+## Q-15: Three agent definitions reference stale reviews/incremental/ path
+- **Question**: Should `agents/spec-reviewer.md:26`, `agents/gap-analyst.md:24`, and `agents/journal-keeper.md:20` replace `reviews/incremental/` with `archive/incremental/`?
+- **Source**: archive/cycles/006/gap-analysis.md SG2; archive/cycles/006/decision-log.md D16, OQ2
+- **Impact**: Agents following these definitions read from a non-existent directory and silently proceed without incremental review context. spec-reviewer's deduplication instruction and journal-keeper's synthesis both depend on this context. The problem compounds on every review cycle until fixed.
+- **Status**: open
+- **Reexamination trigger**: Next refinement cycle; three mechanical one-line fixes, no design decision required.

@@ -702,3 +702,232 @@ items:
       - 'The migration tool (085) is extended to convert existing per-file markdown work items to the new format'
     notes: plan/notes/087.md
 
+  "088":
+    title: README.md — add manifest.json, update migration section
+    complexity: low
+    scope:
+      - {path: README.md, op: modify}
+    depends: []
+    blocks: []
+    criteria:
+      - 'The artifact directory structure diagram in README.md includes `manifest.json` as a direct child of `{artifact-dir}/`, positioned before `steering/`'
+      - 'The `/ideate:plan` "What it writes" listing includes `manifest.json`'
+      - 'The Migration section no longer references `scripts/migrate-to-domains.sh`; the section either describes the `archive/` + `domains/` layout as the current default (no migration needed for new projects) or is removed entirely'
+      - 'The "Validation and Migration Tools" subsection for `migrate-to-domains.sh` is removed'
+      - 'The `scripts/` line in the Plugin structure diagram reads `scripts/         # Utility scripts (validate-specs.sh, migrate-to-optimized.sh)` — no mention of migrate-to-domains.sh'
+    notes: plan/notes/088.md
+
+  "089":
+    title: CLAUDE.md — add manifest.json to artifact structure diagram
+    complexity: low
+    scope:
+      - {path: CLAUDE.md, op: modify}
+    depends: []
+    blocks: []
+    criteria:
+      - 'The artifact structure diagram in CLAUDE.md includes `manifest.json` as a direct child of `specs/`, positioned before `steering/`'
+      - 'The `scripts/` line in the Plugin structure section reads `scripts/         # Utility scripts (validate-specs.sh, migrate-to-optimized.sh)` — no mention of migrate-to-domains.sh'
+    notes: plan/notes/089.md
+
+  "090":
+    title: architecture.md — add manifest.json to permissions table and Section 8
+    complexity: low
+    scope:
+      - {path: specs/plan/architecture.md, op: modify}
+    depends: []
+    blocks: []
+    criteria:
+      - 'The read/write permissions table in Section 2 includes a row for `manifest.json` with permissions: plan (write), execute (read), review (read), refine (read)'
+      - 'Section 8 (Artifact Directory Contract) includes a `#### manifest.json` subsection with Purpose, Format (`{"schema_version": 1}`), Semantics (written once during plan directory scaffolding, read-only thereafter), and Phases fields — matching the specification in `specs/artifact-conventions.md`'
+      - 'The permissions table rows for `reviews/incremental/*.md` and `reviews/final/*.md` are updated to `archive/incremental/*.md` and `archive/cycles/{NNN}/*.md` respectively'
+      - 'Section 8 subsections for review artifacts have their paths updated to use `archive/` prefixes consistent with the current layout'
+    notes: plan/notes/090.md
+
+  "091":
+    title: Delete stale migration scripts, fix artifact-conventions.md stale paths
+    complexity: low
+    scope:
+      - {path: scripts/migrate-to-cycles.sh, op: delete}
+      - {path: scripts/migrate-to-domains.sh, op: delete}
+      - {path: specs/artifact-conventions.md, op: modify}
+    depends: []
+    blocks: []
+    criteria:
+      - '`scripts/migrate-to-cycles.sh` does not exist'
+      - '`scripts/migrate-to-domains.sh` does not exist'
+      - 'All section headings and path references in `specs/artifact-conventions.md` that read `reviews/incremental/` are updated to `archive/incremental/`'
+      - 'All section headings and path references in `specs/artifact-conventions.md` that read `reviews/final/` are updated to `archive/cycles/{NNN}/`'
+      - 'The heading `### reviews/incremental/NNN-{name}.md` becomes `### archive/incremental/NNN-{name}.md`'
+      - 'The heading `### reviews/final/code-quality.md` becomes `### archive/cycles/{NNN}/code-quality.md`; same pattern for spec-adherence.md, gap-analysis.md, decision-log.md, summary.md'
+      - 'No occurrence of the string `reviews/` remains in `specs/artifact-conventions.md`'
+    notes: plan/notes/091.md
+
+  "092":
+    title: Extend metrics.jsonl schema with token and MCP fields in all skills
+    complexity: medium
+    scope:
+      - {path: skills/plan/SKILL.md, op: modify}
+      - {path: skills/execute/SKILL.md, op: modify}
+      - {path: skills/review/SKILL.md, op: modify}
+      - {path: skills/refine/SKILL.md, op: modify}
+      - {path: skills/brrr/SKILL.md, op: modify}
+      - {path: skills/brrr/phases/execute.md, op: modify}
+    depends: []
+    blocks: ["094"]
+    criteria:
+      - 'Each skill''s Metrics Instrumentation section''s entry schema JSON template includes five new fields after `context_files_read`: `input_tokens`, `output_tokens`, `cache_read_tokens`, `cache_write_tokens`, `mcp_tools_called`'
+      - 'Field documentation in each skill defines: `input_tokens` (integer | null) — input token count from agent response metadata; `output_tokens` (integer | null) — output token count; `cache_read_tokens` (integer | null) — prompt caching read tokens if available; `cache_write_tokens` (integer | null) — prompt caching write tokens if available; `mcp_tools_called` (array of strings) — names of MCP tools called to assemble context for this agent spawn, empty array if none'
+      - 'Each skill''s Metrics Instrumentation section includes an instruction: "Before each Agent tool call, record which MCP tool calls (if any) were made to assemble context for that spawn. Include the tool names in the `mcp_tools_called` array. If no MCP tools were called, use an empty array `[]`."'
+      - 'Token fields documentation includes: "Extract from agent response metadata if available. Set to null if token counts are not available in the response."'
+      - '`skills/brrr/phases/execute.md` metrics references are updated to include the new fields in any inline schema examples or field lists'
+    notes: plan/notes/092.md
+
+  "093":
+    title: Quality summary event emission from review skill
+    complexity: medium
+    scope:
+      - {path: skills/review/SKILL.md, op: modify}
+    depends: []
+    blocks: ["094"]
+    criteria:
+      - 'A new section exists in `skills/review/SKILL.md` between the domain curator phase and the final summary phase, titled "Quality Metrics Event"'
+      - 'The section instructs the skill to emit a `quality_summary` event to `{artifact_dir}/metrics.jsonl` after the domain curator completes and before presenting the final summary to the user'
+      - 'The documented event schema is: `{"timestamp":"<ISO8601>","event_type":"quality_summary","skill":"review","cycle":<N>,"findings":{"total":<N>,"by_severity":{"critical":<N>,"significant":<N>,"minor":<N>,"suggestion":<N>},"by_reviewer":{"code-reviewer":{...},"spec-reviewer":{...},"gap-analyst":{...}},"by_category":{"requirements_missed":<N>,"bugs_introduced":<N>,"principles_violated":<N>,"implementation_gaps":<N>,"other":<N>}},"work_items_reviewed":<N>,"andon_events":<N>}`'
+      - 'Category classification rules are documented: requirements_missed = gap-analyst findings tagged as missing requirements; bugs_introduced = code-reviewer critical and significant findings; principles_violated = spec-reviewer principle violation findings; implementation_gaps = gap-analyst minor findings and incomplete coverage findings; other = all findings not matching the above categories'
+      - 'The section includes a best-effort clause: if count derivation fails, skip the quality_summary event and continue without blocking the review'
+      - 'The section instructs the skill to derive counts from the synthesized summary it already produces in summary.md'
+    notes: plan/notes/093.md
+
+  "094":
+    title: Metrics report script
+    complexity: high
+    scope:
+      - {path: scripts/report.sh, op: create}
+    depends: ["092", "093"]
+    blocks: []
+    criteria:
+      - '`scripts/report.sh` exists and is executable'
+      - 'Running `scripts/report.sh --help` prints a usage message describing arguments and all report sections, then exits 0'
+      - 'Running `scripts/report.sh` with no arguments attempts auto-discovery via `.ideate.json` walk; if not found, prints error to stderr and exits 1'
+      - 'Running `scripts/report.sh path/to/metrics.jsonl` produces a markdown report to stdout'
+      - 'Report contains exactly these H2 sections in order: Executive Summary, Per-Cycle Breakdown, Per-Task Breakdown, Phase Analysis, Agent Performance, RAG vs Flat-File Usage, Quality Trends'
+      - 'Executive Summary includes: total agent spawns, total input+output tokens, total wall-clock time (human-readable), cycles completed, work items completed'
+      - 'Per-Cycle Breakdown table columns: Cycle, Tokens, Wall Clock, Work Items, Critical, Significant, Minor'
+      - 'Per-Task Breakdown table columns: Work Item, Tokens, Wall Clock, Spawns'
+      - 'Phase Analysis table: phase, tokens, wall clock, spawns — sorted by tokens descending'
+      - 'Agent Performance table: agent type, total tokens, avg tokens, total time, avg time, avg turns — sorted by total tokens descending'
+      - 'RAG vs Flat-File Usage section shows per-skill percentage of spawns with non-empty mcp_tools_called; top MCP tools by call count'
+      - 'Quality Trends section shows per-cycle finding counts by severity with trend indicator (improving/stable/degrading)'
+      - 'Null token values treated as 0 in all aggregations'
+      - 'Script uses Python 3 for JSON parsing; checks for python3 availability and exits with error if not found'
+      - 'Script handles empty or missing metrics.jsonl gracefully'
+    notes: plan/notes/094.md
+
+  "095":
+    title: Fix report.sh integration bugs (schema mismatch and key name)
+    complexity: low
+    scope:
+      - {path: scripts/report.sh, op: modify}
+    depends: []
+    blocks: []
+    criteria:
+      - 'Per-Cycle Breakdown table shows non-zero Critical, Significant, Minor values when quality_summary events exist in metrics.jsonl with non-zero findings'
+      - 'Quality Trends table shows non-zero severity counts and correct trend indicator when quality_summary events span two or more cycles'
+      - 'Auto-discovery reads `artifactDir` key from `.ideate.json`; falls back to `artifact_dir` for backwards compatibility'
+      - '`--help` output names `artifactDir` as the key expected in `.ideate.json`'
+      - 'fmt_ms returns "-" for missing or zero timing data (0ms)'
+    notes: plan/notes/095.md
+  "096":
+    title: Document metrics.jsonl in artifact-conventions.md
+    complexity: low
+    scope:
+      - {path: specs/artifact-conventions.md, op: modify}
+    depends: []
+    blocks: []
+    criteria:
+      - '`metrics.jsonl` appears in the directory tree listing in artifact-conventions.md'
+      - 'A schema section for `metrics.jsonl` exists documenting: purpose, agent-spawn event field list (referencing WI-092 fields), quality_summary event schema (referencing WI-093 structure), best-effort write semantics, and that report.sh is the consumer'
+      - 'quality_summary nested structure (`findings.by_severity.{critical,significant,minor}`) is documented'
+    notes: plan/notes/096.md
+  "097":
+    title: Fix stale reviews/final/ path references in skills/refine/SKILL.md
+    complexity: low
+    scope:
+      - {path: skills/refine/SKILL.md, op: modify}
+    depends: []
+    blocks: []
+    criteria:
+      - 'No occurrences of `reviews/final/` or `reviews/incremental/` remain in skills/refine/SKILL.md'
+      - 'Phase 3.2 legacy fallback references `archive/cycles/{NNN}/` for all review output files'
+      - 'Phase 5 references `archive/cycles/{NNN}/summary.md` and `archive/cycles/{NNN}/` correctly'
+    notes: plan/notes/097.md
+
+  "098":
+    title: Add quality_summary emission to brrr review phase
+    complexity: low
+    scope:
+      - {path: skills/brrr/phases/review.md, op: modify}
+    depends: []
+    blocks: []
+    criteria:
+      - 'After the journal-keeper step in skills/brrr/phases/review.md, a new "### Emit Quality Summary" section exists'
+      - 'The section appends a quality_summary event to metrics.jsonl using best-effort semantics (failure does not block exit)'
+      - 'The emitted event has `"skill":"brrr"` (not "review")'
+      - 'Severity counts in the event match the last_cycle_findings critical/significant/minor values already computed in "Collect Review Findings"'
+      - 'The event structure matches the quality_summary schema in specs/artifact-conventions.md (event_type, skill, cycle, findings.by_severity, findings.by_reviewer, findings.by_category, work_items_reviewed, andon_events)'
+      - 'No occurrence of summary.md is referenced in the new section (brrr review phase does not produce summary.md)'
+      - '"## Artifacts Written" section lists metrics.jsonl as updated with a quality_summary event'
+    notes: plan/notes/098.md
+
+  "099":
+    title: Fix stale archive path in three agent definitions
+    complexity: low
+    scope:
+      - {path: agents/spec-reviewer.md, op: modify}
+      - {path: agents/gap-analyst.md, op: modify}
+      - {path: agents/journal-keeper.md, op: modify}
+    depends: []
+    blocks: []
+    criteria:
+      - 'No occurrences of `reviews/incremental/` remain in agents/spec-reviewer.md, agents/gap-analyst.md, or agents/journal-keeper.md'
+      - 'Each file now references `archive/incremental/` where it previously referenced `reviews/incremental/`'
+      - '`grep -r "reviews/incremental" agents/` returns zero matches'
+    notes: plan/notes/099.md
+
+  "100":
+    title: Fix documentation cluster and README discoverability
+    complexity: low
+    scope:
+      - {path: specs/artifact-conventions.md, op: modify}
+      - {path: skills/refine/SKILL.md, op: modify}
+      - {path: README.md, op: modify}
+    depends: []
+    blocks: []
+    criteria:
+      - 'specs/artifact-conventions.md line containing `metrics.jsonl` section heading uses `###` not `####`'
+      - 'specs/artifact-conventions.md agent-spawn schema example uses `<integer or null>` for the cycle field (not literal `null`)'
+      - 'specs/artifact-conventions.md agent-spawn schema example uses `<integer>` for wall_clock_ms (not literal `0`)'
+      - 'skills/refine/SKILL.md inline metrics schema includes `"cycle":null` between the phase and agent_type fields'
+      - 'README.md contains a section documenting scripts/report.sh covering: purpose, usage syntax, output sections, and Python 3 requirement'
+      - 'README.md report.sh section is co-located with other utility script documentation'
+    notes: plan/notes/100.md
+
+  "101":
+    title: Fix residual documentation inconsistencies
+    complexity: low
+    scope:
+      - {path: skills/plan/SKILL.md, op: modify}
+      - {path: skills/execute/SKILL.md, op: modify}
+      - {path: skills/review/SKILL.md, op: modify}
+      - {path: scripts/report.sh, op: modify}
+      - {path: specs/artifact-conventions.md, op: modify}
+    depends: []
+    blocks: []
+    criteria:
+      - 'skills/plan/SKILL.md inline agent-spawn schema includes `"cycle":null` between the phase and agent_type fields'
+      - 'skills/execute/SKILL.md inline agent-spawn schema includes `"cycle":null` between the phase and agent_type fields'
+      - 'skills/review/SKILL.md inline agent-spawn schema includes `"cycle":null` between the phase and agent_type fields'
+      - '`grep -c "\"phase\":\"<id>\",\"agent_type\"" skills/plan/SKILL.md skills/execute/SKILL.md skills/review/SKILL.md` returns 0 (no occurrences of phase immediately followed by agent_type without cycle)'
+      - 'scripts/report.sh Quality Trends empty-state message references both /ideate:review and /ideate:brrr'
+      - 'specs/artifact-conventions.md quality_summary section includes a note explaining that quality_summary is a review-phase-only event and that plan/execute/refine do not emit it'
+    notes: plan/notes/101.md

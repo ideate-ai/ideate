@@ -489,3 +489,175 @@ Trigger: User request — artifact schema versioning
 Principles changed: none
 New work items: 074–075 (2 items, parallel)
 Adds manifest.json to the artifact directory schema (schema_version: 1). Plan skill creates it during scaffolding. Artifact-conventions.md documents it. Ideate's own specs/ gets the manifest retroactively. No skill enforcement — manifest is informational only, consumed by future migration scripts.
+
+## [refine] 2026-03-20 — Metrics summary
+Agents spawned: 2 (architect: 1, decomposer: 1)
+Total wall-clock: 404878ms
+Models used: claude-opus-4-6
+
+## [refine] 2026-03-20 — Refinement planning completed (Cycle 004)
+Trigger: Cycle 003 review findings (S1/S2/S3 — manifest.json documentation propagation) + new requirements (metrics schema extension, quality events, reporting script)
+Principles changed: none
+New work items: 088–094 (7 items)
+Addresses manifest.json documentation gaps across README.md, CLAUDE.md, and architecture.md. Removes stale migration scripts (migrate-to-cycles.sh, migrate-to-domains.sh) and fixes stale reviews/ path references in artifact-conventions.md. Extends metrics.jsonl schema with token fields (input_tokens, output_tokens, cache_read_tokens, cache_write_tokens) and mcp_tools_called tracking. Adds quality_summary event emission to the review skill. Introduces scripts/report.sh for actionable metrics reporting.
+
+## [brrr] 2026-03-20 — Cycle 1 — Work item 088: README.md — add manifest.json, update migration section
+Status: complete with rework
+Rework: 1 significant finding fixed — corrected broken cross-reference in Work Item Formats / Migration subsection (line 131 now links directly to migrate-to-optimized.sh flags instead of the wrong section).
+
+## [brrr] 2026-03-20 — Cycle 1 — Work item 089: CLAUDE.md — add manifest.json to artifact structure diagram
+Status: complete
+No deviations.
+
+## [brrr] 2026-03-20 — Cycle 1 — Work item 090: architecture.md — add manifest.json to permissions table and Section 8
+Status: complete with rework
+Rework: 4 significant findings fixed — 14 remaining stale `reviews/` path references in Sections 1, 2, 3, and 7 updated to `archive/` equivalents. Worker only updated permissions table and Section 8; sections 1/2/3/7 required a second pass.
+
+## [brrr] 2026-03-20 — Cycle 1 — Work item 091: Delete stale migration scripts, fix artifact-conventions.md stale paths
+Status: complete
+No deviations.
+
+## [brrr] 2026-03-20 — Cycle 1 — Work item 092: Extend metrics.jsonl schema with token and MCP fields in all skills
+Status: complete with rework
+Rework: 1 minor finding fixed — added `(Full schema including skill and cycle fields defined in controller SKILL.md.)` note to brrr/phases/execute.md code-reviewer metrics reference to clarify schema completeness.
+
+## [brrr] 2026-03-20 — Cycle 1 — Work item 093: Quality summary event emission from review skill
+Status: complete with rework
+Rework: 3 minor findings fixed — (M1) expanded requirements_missed keyword list to include "not present", "never built", "no implementation", "omitted"; (M2) added suggestion field to by_reviewer sub-objects and schema for full symmetry with by_severity; (M3) clarified work_items_reviewed fallback path to distinguish cycle vs ad-hoc review modes.
+
+## [brrr] 2026-03-20 — Cycle 1 — Work item 094: Metrics report script
+Status: complete with rework
+Rework: 1 significant finding fixed — cycle sort was lexicographic (wrong for cycle 10+); replaced with numeric sort separating '(none)' sentinel from real cycle values. Also fixed AC15: missing metrics file now returns empty data and exits 0 instead of error+exit 1. 2 minor findings cleaned up: removed dead None guard in sort key; cycles with no metric entries now show '-' for tokens/wall-clock instead of 0.
+
+## [review] 2026-03-20 — Cycle 004 comprehensive review
+Critical findings: 2
+Significant findings: 3
+Minor findings: 4
+Suggestions: 0
+Items requiring user input: 0
+Curator: skipped — findings are code/integration bugs, not policy-grade
+
+## [brrr/refine] 2026-03-20 — Cycle 1 refinement
+Trigger: cycle 004 review findings (2 critical, 3 significant)
+New work items: 095-097
+095: Fix report.sh integration bugs (schema mismatch C1/C2, key name S1, fmt_ms M3)
+096: Document metrics.jsonl in artifact-conventions.md (gap G-S1)
+097: Fix stale reviews/final/ paths in skills/refine/SKILL.md (minor M1)
+All three items are independent and can execute in parallel.
+
+## [execute] 2026-03-20 — Work item 095: Fix report.sh integration bugs
+Status: complete
+Changes: scripts/report.sh — fixed severity key path (findings.by_severity.*), artifactDir key name, fmt_ms(0) → "-"
+
+## [execute] 2026-03-20 — Work item 096: Document metrics.jsonl in artifact-conventions.md
+Status: complete
+Changes: specs/artifact-conventions.md — added metrics.jsonl to directory tree, added full schema section
+
+## [execute] 2026-03-20 — Work item 097: Fix stale reviews/final/ paths in skills/refine/SKILL.md
+Status: complete
+Changes: skills/refine/SKILL.md — Phase 3.2, Phase 4, Phase 5 stale path references updated to archive/cycles/{NNN}/
+
+## [review] 2026-03-20 — Cycle 005 comprehensive review
+Critical findings: 0
+Significant findings: 0
+Minor findings: 3
+Suggestions: 0
+Items requiring user input: 0
+Curator: skipped — minor documentation inconsistencies only
+
+## [brrr] 2026-03-20 — Convergence achieved
+Cycles: 2
+Total items executed: 10
+
+## [brrr] 2026-03-20 — Overall metrics summary
+Total agents spawned across all cycles: ~20 (metrics.jsonl was partially written; full count unavailable)
+Total wall-clock across all cycles: session-bound, not tracked to ms precision
+
+## [review] 2026-03-21 — Cycle 006 comprehensive review
+Critical findings: 0
+Significant findings: 2
+Minor findings: 5
+Suggestions: 0
+Items requiring user input: 0
+Curator: ran (domain-curator; model: sonnet — no conflict signals detected)
+
+## [review] 2026-03-21 — Metrics summary
+Agents spawned: 4 (code-reviewer, spec-reviewer, gap-analyst, journal-keeper, domain-curator)
+Total wall-clock: ~800000ms (session-bound; journal-keeper content extracted from agent response)
+Models used: sonnet
+Slowest agent: journal-keeper — ~260550ms
+
+## [refine] 2026-03-21 — Refinement planning completed
+Trigger: cycle 006 review findings (2 significant, 5 minor)
+Principles changed: Principle 1 (Spec Sufficiency) and Principle 2 (Minimal Inference at Execution) — both amended to require explicit UI/UX and visual identity coverage in specs
+New work items: WI-098 through WI-100
+Addresses SG1 (brrr review phase missing quality_summary emission), SG2 (stale agent definition paths), and the minor documentation cluster. All three items are independent with non-overlapping file scope.
+
+## [refine] 2026-03-21 — Metrics summary
+Agents spawned: 1 (architect)
+Total wall-clock: 169829ms
+Models used: claude-opus-4-6
+Slowest agent: architect — 169829ms
+
+## [brrr] 2026-03-21 — Cycle 3 — Work item 098: Add quality_summary emission to brrr review phase
+Status: complete with rework
+Rework: 1 significant finding fixed — artifact-conventions.md quality_summary schema not updated for brrr emitter. Fixed by updating line 735 to document "review" and "brrr" as valid skill values and changing inline example to `"skill": "<review|brrr>"`.
+
+## [brrr] 2026-03-21 — Cycle 3 — Work item 099: Fix stale archive path in three agent definitions
+Status: complete
+
+## [brrr] 2026-03-21 — Cycle 3 — Work item 100: Fix documentation cluster and README discoverability
+Status: complete
+
+## [brrr] 2026-03-21 — Cycle 3 review complete
+Critical findings: 0
+Significant findings: 0
+Minor findings: 3
+
+## [brrr] 2026-03-21 — Cycle 3 metrics summary
+Agents spawned: 10 (3 workers, 4 code-reviewers, 1 spec-reviewer, 1 gap-analyst, 1 journal-keeper)
+Total wall-clock: ~1001609ms
+Models used: sonnet
+Slowest agent: code-reviewer (capstone) — 213746ms
+
+## [brrr] 2026-03-21 — Convergence achieved
+Cycles: 3
+Total items executed: 13
+
+## [brrr] 2026-03-21 — Overall metrics summary
+Total agents spawned across all cycles: ~26
+Total wall-clock across all cycles: ~2400000ms
+
+## [refine] 2026-03-21 — Refinement planning completed
+Trigger: cycle 007 minor findings (OQ1, OQ2, OQ3)
+Principles changed: none
+New work items: WI-101
+Addresses three one-liner residual documentation fixes: cycle field in plan/execute/review SKILL.md inline schemas, report.sh empty-state message, quality_summary scoping note in artifact-conventions.md.
+
+## [refine] 2026-03-21 — Metrics summary
+Agents spawned: 1 (architect)
+Total wall-clock: 146951ms
+Models used: claude-opus-4-6
+Slowest agent: architect — 146951ms
+
+## [brrr] 2026-03-21 — Cycle 1 — Work item 101: Fix residual documentation inconsistencies
+Status: complete
+
+## [brrr] 2026-03-21 — Cycle 1 review complete
+Critical findings: 0
+Significant findings: 0
+Minor findings: 3
+
+## [brrr] 2026-03-21 — Cycle 1 metrics summary
+Agents spawned: 6 (1 worker, 1 code-reviewer incremental, 1 code-reviewer capstone, 1 spec-reviewer, 1 gap-analyst, 1 journal-keeper)
+Total wall-clock: ~773768ms
+Models used: sonnet
+Slowest agent: spec-reviewer — 193301ms
+
+## [brrr] 2026-03-21 — Convergence achieved
+Cycles: 1
+Total items executed: 1
+
+## [brrr] 2026-03-21 — Overall metrics summary
+Total agents spawned across all cycles: 7 (1 worker, 2 code-reviewers, 1 spec-reviewer, 1 gap-analyst, 1 journal-keeper, 1 proxy-human-skipped)
+Total wall-clock across all cycles: ~773768ms

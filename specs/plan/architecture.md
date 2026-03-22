@@ -7,8 +7,8 @@
 | Skill | Purpose | Invokes Agents | Key Artifacts |
 |-------|---------|---------------|---------------|
 | `/ideate:plan` | Interview → research → decompose → produce specs | researcher, architect, decomposer | steering/*, plan/* |
-| `/ideate:execute` | Build project following the plan | code-reviewer (incremental) | reviews/incremental/*, journal.md |
-| `/ideate:review` | Comprehensive multi-perspective evaluation | code-reviewer, spec-reviewer, gap-analyst, journal-keeper | reviews/final/* |
+| `/ideate:execute` | Build project following the plan | code-reviewer (incremental) | archive/incremental/*, journal.md |
+| `/ideate:review` | Comprehensive multi-perspective evaluation | code-reviewer, spec-reviewer, gap-analyst, journal-keeper | archive/cycles/{NNN}/* |
 | `/ideate:refine` | Plan changes to existing codebase | researcher, architect, decomposer | Updated steering/*, new plan/work-items/* |
 | `/ideate:brrr` | Autonomous SDLC loop until convergence (zero findings + zero violations) | spec-reviewer, code-reviewer, gap-analyst, proxy-human | brrr-state.md, proxy-human-log.md, journal.md |
 
@@ -55,7 +55,7 @@ USER IDEA
     ▼
 ┌─────────┐    reads      plan/*, steering/*
 │ execute  │    spawns     ┌───────────────┐
-│  skill   │──────────────▶│ code-reviewer │──▶ reviews/incremental/*.md
+│  skill   │──────────────▶│ code-reviewer │──▶ archive/incremental/*.md
 │          │──▶ journal.md (append per item)
 │          │──▶ PROJECT SOURCE CODE
 └─────────┘
@@ -63,11 +63,11 @@ USER IDEA
     ▼
 ┌─────────┐    reads      everything above
 │ review   │    spawns     ┌───────────────┐
-│  skill   │──────────────▶│ code-reviewer │──▶ reviews/final/code-quality.md
-│          │──────────────▶│ spec-reviewer │──▶ reviews/final/spec-adherence.md
-│          │──────────────▶│ gap-analyst   │──▶ reviews/final/gap-analysis.md
-│          │──────────────▶│ journal-keeper│──▶ reviews/final/decision-log.md
-│          │──▶ reviews/final/summary.md
+│  skill   │──────────────▶│ code-reviewer │──▶ archive/cycles/{NNN}/code-quality.md
+│          │──────────────▶│ spec-reviewer │──▶ archive/cycles/{NNN}/spec-adherence.md
+│          │──────────────▶│ gap-analyst   │──▶ archive/cycles/{NNN}/gap-analysis.md
+│          │──────────────▶│ journal-keeper│──▶ archive/cycles/{NNN}/decision-log.md
+│          │──▶ archive/cycles/{NNN}/summary.md
 │          │──▶ journal.md (append)
 └─────────┘
     │
@@ -99,8 +99,9 @@ Read/write permissions per phase:
 | plan/modules/*.md | write | read | read | update |
 | plan/execution-strategy.md | write | read | read | overwrite |
 | plan/work-items/*.md | write | read | read | write (new) |
-| reviews/incremental/*.md | — | write | read | read |
-| reviews/final/*.md | — | — | write | read |
+| manifest.json | write | read | read | read |
+| archive/incremental/*.md | — | write | read | read |
+| archive/cycles/{NNN}/*.md | — | — | write | read |
 | journal.md | init | append | append | append |
 
 ---
@@ -149,7 +150,7 @@ Read/write permissions per phase:
 8. Report status at milestones
 9. Final summary
 
-**Output artifacts**: Project source code, reviews/incremental/*.md, journal.md entries.
+**Output artifacts**: Project source code, archive/incremental/*.md, journal.md entries.
 
 **Decision points**: Confirmation before starting. Andon cord for unresolvable issues.
 
@@ -157,19 +158,19 @@ Read/write permissions per phase:
 
 **Trigger**: User runs `/ideate:review` with optional artifact directory path.
 
-**Input**: Reads everything — steering/*, plan/*, reviews/incremental/*, journal.md, project source code.
+**Input**: Reads everything — steering/*, plan/*, archive/incremental/*, journal.md, project source code.
 
 **Process**:
 1. Locate artifacts, read all context
 2. Survey project source code
 3. Spawn four reviewers in parallel
-4. Collect results, write to reviews/final/
-5. Synthesize into reviews/final/summary.md
+4. Collect results, write to archive/cycles/{NNN}/
+5. Synthesize into archive/cycles/{NNN}/summary.md
 6. Present findings, ask user about items requiring decisions
 7. Record answers in journal
 8. Suggest refine if warranted
 
-**Output artifacts**: reviews/final/*.md, journal.md entry.
+**Output artifacts**: archive/cycles/{NNN}/*.md, journal.md entry.
 
 **Decision points**: Findings requiring user input (not covered by steering docs).
 
@@ -375,14 +376,14 @@ Layer 1: INCREMENTAL (per work item, during execute)
   Trigger: work item completion
   Agent: code-reviewer
   Scope: files created/modified by that work item
-  Output: reviews/incremental/NNN-{name}.md
+  Output: archive/incremental/NNN-{name}.md
   Blocking: only if critical issues found
 
 Layer 2: CAPSTONE (end of cycle, during review)
   Trigger: user runs /ideate:review
   Agents: code-reviewer, spec-reviewer, gap-analyst, journal-keeper (parallel)
   Scope: entire project + all artifacts
-  Output: reviews/final/*.md + reviews/final/summary.md
+  Output: archive/cycles/{NNN}/*.md + archive/cycles/{NNN}/summary.md
   Purpose: cross-cutting concerns, full-picture assessment
 ```
 
@@ -392,7 +393,7 @@ When a work item completes (in any execution mode):
 
 1. The execute skill spawns `code-reviewer` with the work item spec and list of files touched
 2. Review runs while other work items continue (non-blocking for other items)
-3. Review result written to `reviews/incremental/NNN-{name}.md`
+3. Review result written to `archive/incremental/NNN-{name}.md`
 4. Finding handling:
    - **Minor**: Execute skill fixes immediately, notes rework in journal
    - **Significant within scope**: Execute skill fixes, notes in journal
@@ -421,7 +422,7 @@ User response options:
 ### Capstone Review Integration
 
 The capstone review (layer 2) accounts for incremental reviews:
-- spec-reviewer and gap-analyst read `reviews/incremental/` to know what was already caught
+- spec-reviewer and gap-analyst read `archive/incremental/` to know what was already caught
 - The capstone focuses on what per-item reviews CAN'T see: cross-module consistency, architectural coherence, integration completeness, overall principle adherence
 - Findings that duplicate incremental reviews are omitted
 
@@ -430,6 +431,12 @@ The capstone review (layer 2) accounts for incremental reviews:
 ## 8. Artifact Directory Contract
 
 ### Complete File Specification
+
+#### `manifest.json`
+- **Purpose**: Identifies the schema version of this artifact directory
+- **Format**: `{"schema_version": 1}`
+- **Semantics**: Written once during `/ideate:plan` directory scaffolding. Not read or checked by any skill at runtime. Updated only by migration scripts when the schema version advances.
+- **Phases**: plan (write), execute (read), review (read), refine (read)
 
 #### `steering/interview.md`
 - **Purpose**: Record of the planning conversation
@@ -490,29 +497,29 @@ The capstone review (layer 2) accounts for incremental reviews:
 - **Constraints**: Non-overlapping file scope between concurrent items. Dependencies form a DAG. Acceptance criteria machine-verifiable where possible.
 - **Phases**: plan (write), execute (read + mark criteria), review (read), refine (write new)
 
-#### `reviews/incremental/NNN-{name}.md`
+#### `archive/incremental/NNN-{name}.md`
 - **Purpose**: Per-work-item review results from execution phase
 - **Format**: Verdict (Pass/Fail), findings by severity with file:line references
 - **Naming**: Matches work item number and name
 - **Phases**: execute (write), review (read), refine (read)
 
-#### `reviews/final/code-quality.md`
+#### `archive/cycles/{NNN}/code-quality.md`
 - **Purpose**: Comprehensive code review findings
 - **Phases**: review (write), refine (read)
 
-#### `reviews/final/spec-adherence.md`
+#### `archive/cycles/{NNN}/spec-adherence.md`
 - **Purpose**: Architecture/principle/criteria adherence check
 - **Phases**: review (write), refine (read)
 
-#### `reviews/final/gap-analysis.md`
+#### `archive/cycles/{NNN}/gap-analysis.md`
 - **Purpose**: Missing requirements and blind spots
 - **Phases**: review (write), refine (read)
 
-#### `reviews/final/decision-log.md`
+#### `archive/cycles/{NNN}/decision-log.md`
 - **Purpose**: Synthesized history of decisions and open questions
 - **Phases**: review (write), refine (read)
 
-#### `reviews/final/summary.md`
+#### `archive/cycles/{NNN}/summary.md`
 - **Purpose**: Cross-reviewer synthesis with prioritized findings and refinement recommendations
 - **Format**: Findings by severity, mapped to principles/work items, user-input items separated, proposed refinement plan
 - **Phases**: review (write), refine (read)

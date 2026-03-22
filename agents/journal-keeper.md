@@ -17,7 +17,7 @@ You are a journal keeper. Your job is to synthesize the project's history into t
 You will receive:
 
 - `journal.md` — the running project journal
-- All incremental reviews from `reviews/incremental/`
+- All incremental reviews from `archive/incremental/`
 - All final reviews from the other review agents (code-reviewer, spec-reviewer, gap-analyst)
 - Guiding principles
 - Plan overview

@@ -1,6 +1,73 @@
-# Decision Log — Capstone (WI 052–062)
+# Decision Log — Cycle 001 (brrr, WI-101)
 
-## Decision Log
+**Brrr cycle**: 1 (new session, separate from prior brrr session which completed cycles 1-3)
+**Work items**: WI-101
+**Date**: 2026-03-21
+
+---
+
+## Planning Phase
+
+### D1: Bundle three deferred open questions into a single work item (WI-101)
+- **When**: refine-007 planning session, 2026-03-21
+- **Decision**: OQ1, OQ2, OQ3 from cycle 007 decision log are all one-liner documentation fixes with non-overlapping file scope. Bundled into a single work item WI-101 rather than three separate items.
+- **Rationale**: All three are mechanical and small enough to execute atomically. Splitting would add overhead with no benefit.
+- **Implications**: WI-101 touches five files total.
+
+### D2: No guiding principle changes in this cycle
+- **When**: refine-007 planning session, 2026-03-21
+- **Decision**: Principles P1-P12 all hold as-is.
+- **Rationale**: WI-101 addresses documentation inconsistencies identified as minor by cycle 007. No new requirements surfaced.
+
+---
+
+## Execution Phase
+
+### D3: WI-101 executed with no rework
+- **When**: brrr cycle 1, 2026-03-21
+- **Decision**: Worker completed all five fixes in a single pass. Incremental code-reviewer issued Pass with zero findings.
+- **Rationale**: All five changes had verbatim before/after text. No ambiguity.
+
+---
+
+## Review Phase
+
+### D4: Cycle 001 verdict Pass — 0 critical, 0 significant, 3 minor
+- **When**: Cycle 001 capstone, 2026-03-21
+- **Decision**: All three reviewers issued Pass. WI-101 acceptance criteria satisfied. Two minor documentation gaps noted (MG1, MG2). Minor notation observations (M1, N1). Minor findings do not block convergence.
+
+---
+
+## Open Questions
+
+### OQ1: `skills/brrr/phases/review.md` hardcodes `steering/interview.md` without `steering/interviews/` fallback
+- **Question**: Should both agent prompt blocks in `brrr/phases/review.md` (gap-analyst at line 143, journal-keeper at line 171) include the dual-path instruction used by `skills/review/SKILL.md:309`?
+- **Source**: Gap-analysis MG1 (cycle 001)
+- **Impact**: Projects that have migrated to `steering/interviews/` (including ideate's own `specs/`) will pass a non-existent file path to gap-analyst and journal-keeper during brrr review cycles.
+- **Who answers**: Technical — add or-clause matching review/SKILL.md:309 to both prompt blocks.
+- **Consequence of inaction**: brrr-driven gap analysis and journal synthesis may silently skip interview context for migrated projects.
+
+### OQ2: `specs/plan/architecture.md` agents table missing `domain-curator`
+- **Question**: Should architecture.md be updated to add domain-curator as the ninth agent?
+- **Source**: Gap-analysis MG2, spec-adherence D1/U1 (cycle 001)
+- **Impact**: Documentation lag — any developer reading only the architecture document will not know the domain-curator exists.
+- **Who answers**: Technical — add one row to the agents table.
+- **Consequence of inaction**: Architecture document remains inconsistent with the actual agent roster.
+
+---
+
+## Cross-References
+
+### CR1: Cycle 007 OQ1/OQ2/OQ3 now resolved
+- **Cycle 007 OQ1**: plan/execute/review inline schemas missing `"cycle"` field — resolved by WI-101
+- **Cycle 007 OQ2**: report.sh empty-state message naming only /ideate:review — resolved by WI-101
+- **Cycle 007 OQ3**: No rationale doc for quality_summary scoping — resolved by WI-101
+
+All three cycle 007 open questions closed. New OQ1 and OQ2 are independent documentation gaps.
+
+---
+
+## Original Capstone Archive (WI 052–062)
 
 ### D1 — Architectural Separation of SDLC from MCP Orchestration
 - **Date**: 2026-03-11

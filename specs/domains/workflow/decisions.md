@@ -25,3 +25,11 @@
 - **Rationale**: After the ideate/outpost split, ideate does not ship session-spawner; the Agent tool is always available in Claude Code and eliminates the MCP dependency for a core SDLC operation (archive/cycles/001/decision-log.md D2).
 - **Source**: archive/cycles/001/decision-log.md D2, specs/plan/work-items/057-update-brrr-proxy-human-invocation.md
 - **Status**: settled
+
+## D-19: brrr/phases/review.md is an independent reimplementation of review orchestration, not a delegate
+- **Decision**: `skills/brrr/phases/review.md` reimplements review orchestration in full; it does not delegate to `skills/review/SKILL.md`. Any feature added to the standalone review skill that should also apply in brrr-driven cycles must be added to both files independently.
+- **Rationale**: Cycle 006 gap analysis identified that the quality_summary emission (WI-093) was added only to `skills/review/SKILL.md`. Because brrr does not delegate, brrr-driven projects never emit quality_summary events and the Quality Trends section of report.sh is permanently empty for them. The planning phase did not identify brrr/phases/review.md as a required target.
+- **Assumes**: This architectural separation is intentional and will not be unified into a shared review orchestration layer.
+- **Source**: archive/cycles/006/decision-log.md D3, D4; archive/cycles/006/gap-analysis.md SG1
+- **Policy**: P-18
+- **Status**: settled

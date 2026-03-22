@@ -37,6 +37,7 @@ All artifacts live in one directory (conventionally `specs/` in the project root
 ```
 {artifact-dir}/
 │
+├── manifest.json                      # Artifact directory metadata and version marker
 ├── steering/                          # User intent and constraints — never auto-modified
 │   ├── guiding-principles.md          # Decision framework derived from planning interview
 │   ├── constraints.md                 # Hard non-negotiable boundaries
@@ -127,7 +128,7 @@ Convert existing per-file work items to the YAML format:
 ./scripts/migrate-to-optimized.sh path/to/specs
 ```
 
-See [Validation and Migration Tools](#validation-and-migration-tools) for details.
+See [Validation and Migration Tools](#validation-and-migration-tools) for `--dry-run` and `--verbose` flags.
 
 ---
 
@@ -164,9 +165,24 @@ Applies optimization-cycle migrations to an existing artifact directory: path no
 - `--verbose` — explains each action taken
 - Idempotent — safe to run multiple times
 
-### `migrate-to-domains.sh`
+### `report.sh`
 
-Migrates the older `reviews/` directory structure to the current `archive/` + `domains/` layout. See [Migration](#migration) for full details.
+Generates a markdown metrics report from `metrics.jsonl`. Requires Python 3.
+
+```bash
+bash scripts/report.sh [path/to/metrics.jsonl]
+```
+
+If no path is provided, the script walks up from the current directory looking for `.ideate.json` to auto-discover the artifact directory and locate `metrics.jsonl`.
+
+**Output sections**:
+- Executive Summary
+- Per-Cycle Breakdown
+- Per-Task Breakdown
+- Phase Analysis
+- Agent Performance
+- RAG vs Flat-File Usage
+- Quality Trends
 
 ---
 
@@ -376,6 +392,7 @@ After the first cycle review, the curator validates, amends, or confirms plan-ph
 **Context loaded**: User interview (conducted live). Background research (async). Guiding principles and constraints derived from interview.
 
 **What it writes**:
+- `manifest.json`
 - `steering/guiding-principles.md`
 - `steering/constraints.md`
 - `steering/research/{topic}.md`
@@ -529,37 +546,7 @@ Skills load accordingly:
 
 ## Migration
 
-If you have an existing ideate artifact directory using the old `reviews/` structure, use the migration script to move to the new `archive/` + `domains/` layout.
-
-```bash
-./scripts/migrate-to-domains.sh path/to/artifact-dir
-```
-
-**What it does**:
-1. Creates `archive/incremental/` and copies `reviews/incremental/*.md` there
-2. Creates `archive/cycles/001/` and copies `reviews/final/*.md` there
-3. Runs the domain curator (via `claude -p`) to bootstrap `domains/` from existing archive content
-4. Prints a summary of domains created, policies written, decisions recorded
-
-**What it does NOT do**:
-- Delete the original `reviews/` directory — verify the migration first, then delete manually
-- Modify any existing files — it only copies and creates
-
-### If you are running inside an active Claude Code session
-
-`claude -p` cannot run inside an active Claude Code session (nested sessions share runtime resources and will crash). The script detects this and skips step 3 automatically, printing a warning.
-
-In that case, run the domain bootstrap manually after the script completes. In your Claude Code session, send this prompt:
-
-> Bootstrap the domains layer for `path/to/artifact-dir` using the domain-curator agent.
-
-Claude Code will spawn the domain-curator agent directly, reading your archive content and writing the `domains/` structure. Wait for it to finish before proceeding.
-
-### After migration
-
-1. Review `domains/` to verify the bootstrap looks correct
-2. Delete `reviews/` if satisfied
-3. Move `steering/interview.md` to `steering/interviews/legacy.md` (optional, preserves history; future refine sessions use per-domain interview files)
+New projects automatically use the current `archive/` + `domains/` layout. No migration is needed for projects created with ideate v2+.
 
 ---
 

@@ -29,3 +29,9 @@ During execute, review, and brrr phases the user is not consulted for routine de
 - **Derived from**: GP-6 (Andon Cord Interaction Model)
 - **Established**: planning phase
 - **Status**: active
+
+## P-18: Work items for review-skill features must include skills/brrr/phases/review.md in scope
+When a feature is added to `skills/review/SKILL.md` that governs review orchestration behavior (event emission, agent sequencing, output format), the corresponding work item must also list `skills/brrr/phases/review.md` in its file scope, because brrr reimplements review orchestration independently and does not inherit changes to the standalone review skill.
+- **Derived from**: D-19 (brrr/phases/review.md is an independent reimplementation)
+- **Established**: cycle 006
+- **Status**: active

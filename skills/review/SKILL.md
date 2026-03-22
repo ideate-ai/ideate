@@ -503,6 +503,61 @@ archive/cycles/{N}/
 
 ---
 
+# Phase 7.6: Quality Metrics Event
+
+After the domain curator completes (and after Phase 7.5 archival for cycle reviews), emit a `quality_summary` event to `{artifact_dir}/metrics.jsonl`. This is a best-effort operation — if it fails for any reason, skip it and continue to Phase 8 without blocking.
+
+## 7.6.1 Derive Counts from summary.md
+
+Read `{output-dir}/summary.md` (already produced in Phase 6). Derive the following counts by parsing its contents:
+
+**Severity counts** — count bullet points under each severity heading:
+- `findings.by_severity.critical`: count items under `## Critical Findings`
+- `findings.by_severity.significant`: count items under `## Significant Findings`
+- `findings.by_severity.minor`: count items under `## Minor Findings`
+- `findings.by_severity.suggestion`: count items under `## Suggestions`
+- `findings.total`: sum of all four severity counts
+
+**Per-reviewer counts** — each finding line includes a `[reviewer-name]` prefix. Count findings per severity per reviewer:
+- `findings.by_reviewer.code-reviewer`: count lines prefixed `[code-reviewer]` in each severity section, separated into `critical`, `significant`, `minor`, `suggestion`
+- `findings.by_reviewer.spec-reviewer`: same for `[spec-reviewer]`
+- `findings.by_reviewer.gap-analyst`: same for `[gap-analyst]`
+
+**Category counts** — classify each finding into exactly one category using these rules, applied in order:
+- `requirements_missed`: gap-analyst findings (`[gap-analyst]` prefix) that are critical or significant and describe a missing requirement (look for words like "missing", "absent", "not implemented", "requirement", "not present", "never built", "no implementation", "omitted")
+- `bugs_introduced`: code-reviewer (`[code-reviewer]` prefix) critical and significant findings
+- `principles_violated`: spec-reviewer (`[spec-reviewer]` prefix) findings (any severity) that describe a principle violation (look for words like "principle", "violates", "violation", "constraint")
+- `implementation_gaps`: gap-analyst findings that are minor, or gap-analyst findings describing incomplete coverage or integration (look for words like "incomplete", "partial", "not connected", "missing integration")
+- `other`: all findings not matching any of the above categories
+
+**work_items_reviewed**: Count distinct work item numbers referenced in `{output-dir}/review-manifest.md` (the `#` column). If the manifest does not exist: for cycle reviews (Phase 7.5 already ran), count files in `{output-dir}/incremental/`; for ad-hoc, domain, or full-audit reviews (Phase 7.5 did not run), count files in `archive/incremental/`.
+
+**andon_events**: Read the last 20 entries of `{artifact_dir}/journal.md` (or the full file if shorter). Count entries for the current cycle number N that mention "Andon" (case-insensitive). Use 0 if the journal cannot be read.
+
+**cycle**: Use the cycle number N determined in Phase 1.2. If not a cycle review (ad-hoc, domain, or full audit), use `null`.
+
+## 7.6.2 Emit the Event
+
+Append one JSON line to `{artifact_dir}/metrics.jsonl`:
+
+```json
+{"timestamp":"<ISO8601>","event_type":"quality_summary","skill":"review","cycle":<N>,"findings":{"total":<N>,"by_severity":{"critical":<N>,"significant":<N>,"minor":<N>,"suggestion":<N>},"by_reviewer":{"code-reviewer":{"critical":<N>,"significant":<N>,"minor":<N>,"suggestion":<N>},"spec-reviewer":{"critical":<N>,"significant":<N>,"minor":<N>,"suggestion":<N>},"gap-analyst":{"critical":<N>,"significant":<N>,"minor":<N>,"suggestion":<N>}},"by_category":{"requirements_missed":<N>,"bugs_introduced":<N>,"principles_violated":<N>,"implementation_gaps":<N>,"other":<N>}},"work_items_reviewed":<N>,"andon_events":<N>}
+```
+
+- `timestamp`: ISO 8601 timestamp at the moment of emission.
+- `event_type`: the string `"quality_summary"` (constant).
+- `skill`: the string `"review"` (constant).
+- `cycle`: integer cycle number N, or `null` for non-cycle reviews.
+- All count fields: integers derived from 7.6.1.
+
+## 7.6.3 Best-Effort Clause
+
+If count derivation fails (e.g., summary.md is missing, cannot be parsed, or the format does not match expected headings), or if the event cannot be written to `metrics.jsonl`, skip the quality_summary event entirely and proceed to Phase 8 without interruption. Log `quality_summary event skipped: {reason}` in the output so the user is aware.
+
+Do not retry. Do not block the review on this step.
+
+---
+
 # Phase 8: Update Journal
 
 Append a review entry to `journal.md`. This is strictly append — do not modify any existing entries.
@@ -585,7 +640,7 @@ After each agent spawn (via the Agent tool), append one JSON entry to `{artifact
 
 **Entry schema (one JSON object per line):**
 
-    {"timestamp":"<ISO8601>","skill":"review","phase":"<id>","agent_type":"<type>","model":"<model>","work_item":null,"wall_clock_ms":<ms>,"turns_used":<N or null>,"context_files_read":["<path>",...]}
+    {"timestamp":"<ISO8601>","skill":"review","phase":"<id>","cycle":null,"agent_type":"<type>","model":"<model>","work_item":null,"wall_clock_ms":<ms>,"turns_used":<N or null>,"context_files_read":["<path>",...],"input_tokens":<N or null>,"output_tokens":<N or null>,"cache_read_tokens":<N or null>,"cache_write_tokens":<N or null>,"mcp_tools_called":["<tool_name>",...]}
 
 - `timestamp` — ISO 8601 when the agent was spawned.
 - `skill` — `"review"` (constant for this skill).
@@ -596,6 +651,15 @@ After each agent spawn (via the Agent tool), append one JSON entry to `{artifact
 - `wall_clock_ms` — elapsed ms between Agent tool invocation and return.
 - `turns_used` — from Agent response metadata if available; `null` otherwise.
 - `context_files_read` — absolute file paths explicitly provided in the agent's prompt.
+- `input_tokens` — integer or null. Input token count from agent response metadata. Null if not available.
+- `output_tokens` — integer or null. Output token count from agent response metadata. Null if not available.
+- `cache_read_tokens` — integer or null. Prompt caching read tokens if available. Null if not available.
+- `cache_write_tokens` — integer or null. Prompt caching write tokens if available. Null if not available.
+- `mcp_tools_called` — array of strings. Names of MCP tools called to assemble context for this agent spawn (e.g., `["ideate_get_context_package", "ideate_get_work_item_context"]`). Empty array `[]` if no MCP tools were called.
+
+Before each Agent tool call, record which MCP tool calls (if any) were made to assemble context for that spawn. Include the tool names in the `mcp_tools_called` array. If no MCP tools were called, use an empty array `[]`.
+
+Extract from agent response metadata if available. Set to null if token counts are not available in the response.
 
 Record timestamp immediately before the Agent tool call; compute `wall_clock_ms` after it returns.
 

@@ -220,6 +220,44 @@ Slowest agent: {agent_type} — {work_item or "N/A"} — {ms}ms
 
 If `metrics.jsonl` could not be written, note "metrics unavailable" and omit the breakdowns.
 
+### Emit Quality Summary
+
+Best-effort: if any step below fails, skip it and continue without blocking.
+
+**Derive counts**:
+
+1. **Severity counts** — use `last_cycle_findings` already computed in "Collect Review Findings":
+   - `findings.by_severity.critical`: `last_cycle_findings.critical_count`
+   - `findings.by_severity.significant`: `last_cycle_findings.significant_count`
+   - `findings.by_severity.minor`: `last_cycle_findings.minor_count`
+   - `findings.by_severity.suggestion`: 0
+   - `findings.total`: sum of the four severity counts
+
+2. **Per-reviewer counts** — read the three review output files and count finding headings:
+   - `findings.by_reviewer.code-reviewer`: count `### C` (critical), `### S` (significant), `### M` (minor), `### Suggestion` (suggestion) headings in `{artifact_dir}/archive/cycles/{formatted_cycle_number}/code-quality.md`
+   - `findings.by_reviewer.spec-reviewer`: same counts from `{artifact_dir}/archive/cycles/{formatted_cycle_number}/spec-adherence.md`
+   - `findings.by_reviewer.gap-analyst`: same counts from `{artifact_dir}/archive/cycles/{formatted_cycle_number}/gap-analysis.md`
+   - If a file cannot be read, use `{"critical":0,"significant":0,"minor":0,"suggestion":0}` for that reviewer.
+
+3. **Category counts** — classify each finding into exactly one category using these rules (apply in order):
+   - `requirements_missed`: gap-analyst critical/significant findings with words "missing", "absent", "not implemented", "requirement", "not present", "never built", "no implementation", "omitted"
+   - `bugs_introduced`: code-reviewer critical and significant findings
+   - `principles_violated`: spec-reviewer findings (any severity) mentioning "principle", "violates", "violation", "constraint"
+   - `implementation_gaps`: gap-analyst minor findings, or gap-analyst findings with "incomplete", "partial", "not connected", "missing integration"
+   - `other`: anything else
+
+4. **work_items_reviewed**: Count distinct work item rows in `{artifact_dir}/archive/incremental/review-manifest.md`. Use `null` if the file is absent or cannot be parsed.
+
+5. **andon_events**: Read the last 20 entries of `{artifact_dir}/journal.md`. Count entries for cycle `{cycle_number}` that mention "Andon" (case-insensitive). Default to 0 if the journal cannot be read.
+
+**Emit the event**: Append one JSON line to `{artifact_dir}/metrics.jsonl`:
+
+```json
+{"timestamp":"<ISO8601>","event_type":"quality_summary","skill":"brrr","cycle":<N>,"findings":{"total":<N>,"by_severity":{"critical":<N>,"significant":<N>,"minor":<N>,"suggestion":<N>},"by_reviewer":{"code-reviewer":{"critical":<N>,"significant":<N>,"minor":<N>,"suggestion":<N>},"spec-reviewer":{"critical":<N>,"significant":<N>,"minor":<N>,"suggestion":<N>},"gap-analyst":{"critical":<N>,"significant":<N>,"minor":<N>,"suggestion":<N>}},"by_category":{"requirements_missed":<N>,"bugs_introduced":<N>,"principles_violated":<N>,"implementation_gaps":<N>,"other":<N>}},"work_items_reviewed":<N>,"andon_events":<N>}
+```
+
+If the event cannot be written, log `quality_summary event skipped: {reason}` and continue. Do not retry.
+
 ## Exit Conditions
 
 - `{artifact_dir}/archive/cycles/{formatted_cycle_number}/` contains: code-quality.md, spec-adherence.md, gap-analysis.md, decision-log.md
@@ -237,4 +275,4 @@ Return to the controller with `last_cycle_findings`. The controller will run Pha
 - `{artifact_dir}/archive/cycles/{formatted_cycle_number}/decision-log.md`
 - `{artifact_dir}/archive/incremental/review-manifest.md`
 - `{artifact_dir}/journal.md` — appended (review summary + metrics summary)
-- `{artifact_dir}/metrics.jsonl` — one entry per agent spawned
+- `{artifact_dir}/metrics.jsonl` — one entry per agent spawned; quality_summary event appended

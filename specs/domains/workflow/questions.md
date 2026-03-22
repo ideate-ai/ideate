@@ -22,3 +22,10 @@
 - **Impact**: Skills attempt spawn_session first on every invocation, receive a tool-not-found error, then fall back; this produces visible noise inconsistent with brrr (which was correctly updated in WI-057).
 - **Status**: open
 - **Reexamination trigger**: Documentation pass; fallbacks exist so runtime behavior is correct but the noise degrades user experience.
+
+## Q-14: brrr review phase never emits quality_summary events
+- **Question**: Should `skills/brrr/phases/review.md` include a quality_summary emission block equivalent to `skills/review/SKILL.md` Phase 7.6? The `last_cycle_findings` dict is already in scope at the insertion point.
+- **Source**: archive/cycles/006/gap-analysis.md SG1; archive/cycles/006/decision-log.md D3, D4, OQ1
+- **Impact**: The Quality Trends section of `scripts/report.sh` produces no rows for any brrr-driven project. Because brrr is the primary path for multi-cycle runs, quality trend analysis is non-functional for the majority of ideate users.
+- **Status**: open
+- **Reexamination trigger**: Next refinement cycle; no design decision required — additive insertion after the journal-keeper step.

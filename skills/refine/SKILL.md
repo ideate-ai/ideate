@@ -84,12 +84,12 @@ Do NOT load all incremental reviews. The domain layer already distills what matt
 
 If `domains/` does not exist (pre-migration artifact directory), load the legacy review files:
 
-11. `reviews/final/summary.md` — review summary (if it exists)
-12. `reviews/final/code-quality.md` — code quality findings (if it exists)
-13. `reviews/final/spec-adherence.md` — spec adherence findings (if it exists)
-14. `reviews/final/gap-analysis.md` — gap analysis (if it exists)
-15. `reviews/final/decision-log.md` — decision log (if it exists)
-16. `reviews/incremental/*.md` — incremental review findings (if they exist)
+11. `archive/cycles/{NNN}/summary.md` — where NNN is the current cycle number from `domains/index.md` (if it exists)
+12. `archive/cycles/{NNN}/code-quality.md` — code quality findings (if it exists)
+13. `archive/cycles/{NNN}/spec-adherence.md` — spec adherence findings (if it exists)
+14. `archive/cycles/{NNN}/gap-analysis.md` — gap analysis (if it exists)
+15. `archive/cycles/{NNN}/decision-log.md` — decision log (if it exists)
+16. `archive/incremental/*.md` — incremental review findings (if they exist)
 
 If any artifact does not exist, note its absence and continue. The only required artifacts are `steering/guiding-principles.md` and `plan/overview.md`.
 
@@ -105,7 +105,7 @@ Assess what is driving this refinement. There are two primary modes:
 
 **Requirement evolution** — The user wants to change or extend what the project does. Prior review findings may or may not be relevant. In this mode, the user's stated intent drives the interview.
 
-If review findings exist (any file in `reviews/final/`), note this to the user and ask:
+If review findings exist (any file in `archive/cycles/`), note this to the user and ask:
 
 > Review findings exist from a previous cycle. Are you here to address those findings, to make other changes, or both?
 
@@ -121,7 +121,7 @@ The interview adapts based on the refinement mode. Ask 1-2 questions at a time. 
 
 1. **Do not re-ask questions that existing artifacts already answer.** The interview transcript, guiding principles, constraints, and architecture document contain decisions that were already made. Do not revisit them unless the user signals they want to change something.
 2. **Confirm whether guiding principles still hold.** Early in the interview, present the current guiding principles and ask: "Do these still apply, or do any need to change given what you're planning?" Accept a blanket "yes they still hold" — do not force principle-by-principle review unless the user wants it.
-3. **Walk through review findings if they exist.** For post-review corrections, present the critical and significant findings from `reviews/final/summary.md` (or synthesize from individual review files). For each finding or group of related findings, ask: address now, defer, or dismiss? Record the decision.
+3. **Walk through review findings if they exist.** For post-review corrections, present the critical and significant findings from `archive/cycles/{NNN}/summary.md` (or synthesize from individual review files). For each finding or group of related findings, ask: address now, defer, or dismiss? Record the decision.
 4. **Use the codebase analysis.** Do not ask about technology choices the code already makes. Do not ask about architectural patterns the code already uses. Ask about what is changing and what is new.
 5. **Flag conflicts.** If a proposed change contradicts an existing guiding principle, constraint, or architectural decision, state the conflict immediately. Do not silently accept contradictions. Ask the user to resolve them: change the principle, change the proposal, or accept the tension.
 
@@ -370,7 +370,7 @@ After each agent spawn (via the Agent tool), append one JSON entry to `{artifact
 
 **Entry schema (one JSON object per line):**
 
-    {"timestamp":"<ISO8601>","skill":"refine","phase":"<id>","agent_type":"<type>","model":"<model>","work_item":null,"wall_clock_ms":<ms>,"turns_used":<N or null>,"context_files_read":["<path>",...]}
+    {"timestamp":"<ISO8601>","skill":"refine","phase":"<id>","cycle":null,"agent_type":"<type>","model":"<model>","work_item":null,"wall_clock_ms":<ms>,"turns_used":<N or null>,"context_files_read":["<path>",...],"input_tokens":<N or null>,"output_tokens":<N or null>,"cache_read_tokens":<N or null>,"cache_write_tokens":<N or null>,"mcp_tools_called":["<tool_name>",...]}
 
 - `timestamp` — ISO 8601 when the agent was spawned.
 - `skill` — `"refine"` (constant for this skill).
@@ -381,6 +381,15 @@ After each agent spawn (via the Agent tool), append one JSON entry to `{artifact
 - `wall_clock_ms` — elapsed ms between Agent tool invocation and return.
 - `turns_used` — from Agent response metadata if available; `null` otherwise.
 - `context_files_read` — absolute file paths explicitly provided in the agent's prompt.
+- `input_tokens` — integer or null. Input token count from agent response metadata. Null if not available.
+- `output_tokens` — integer or null. Output token count from agent response metadata. Null if not available.
+- `cache_read_tokens` — integer or null. Prompt caching read tokens if available. Null if not available.
+- `cache_write_tokens` — integer or null. Prompt caching write tokens if available. Null if not available.
+- `mcp_tools_called` — array of strings. Names of MCP tools called to assemble context for this agent spawn (e.g., `["ideate_get_context_package", "ideate_get_work_item_context"]`). Empty array `[]` if no MCP tools were called.
+
+Before each Agent tool call, record which MCP tool calls (if any) were made to assemble context for that spawn. Include the tool names in the `mcp_tools_called` array. If no MCP tools were called, use an empty array `[]`.
+
+Extract from agent response metadata if available. Set to null if token counts are not available in the response.
 
 Record timestamp immediately before the Agent tool call; compute `wall_clock_ms` after it returns.
 

@@ -23,3 +23,9 @@ An agent's output is written to a specified artifact path; the invoking skill re
 - **Derived from**: GP-8 (Durable Knowledge Capture), constraint C-2 (File-based coordination)
 - **Established**: planning phase
 - **Status**: active
+
+## P-19: Agent definitions must reference the canonical archive/incremental/ path for incremental reviews
+Agent definition files that instruct the agent to read prior incremental reviews must use `archive/incremental/` as the path; the legacy `reviews/incremental/` path does not exist. When the artifact directory structure changes, all agent definitions that embed artifact paths must be updated in the same work item as the structural change.
+- **Derived from**: GP-8 (Durable Knowledge Capture) — stale paths cause silent data loss
+- **Established**: cycle 006
+- **Status**: active

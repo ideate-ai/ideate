@@ -73,7 +73,7 @@ Execute according to the mode in `{artifact_dir}/plan/execution-strategy.md`:
 
 **Worktree isolation**: If the execution strategy specifies worktrees, create a git worktree for each concurrent subagent before spawning it (`git worktree add` with branch `ideate/NNN-{name}`). After a work item's incremental review passes, merge back using `git merge --no-ff ideate/NNN-{name}`. Resolve trivial conflicts (whitespace, import ordering) automatically. For substantive merge conflicts, route to the Andon cord → proxy-human (see below). After a successful merge: `git worktree remove {path}` and `git branch -d ideate/NNN-{name}`.
 
-**Metrics**: After each worker agent returns, record a metrics entry with `phase: "6a"`, `agent_type: "worker"` (schema in controller SKILL.md).
+**Metrics**: After each worker agent returns, record a metrics entry with `phase: "6a"`, `agent_type: "worker"` (schema in controller SKILL.md). Include `input_tokens`, `output_tokens`, `cache_read_tokens`, `cache_write_tokens` from agent response metadata (null if unavailable), and `mcp_tools_called` (array of MCP tool names used to assemble context for the spawn, or `[]` if none). Before each Agent tool call, record which MCP tool calls (if any) were made to assemble context for that spawn.
 
 ### Incremental Review (Per Work Item)
 
@@ -86,7 +86,7 @@ When a work item completes, spawn the `code-reviewer` agent with:
 
 Instruct the code-reviewer: "Spot-check at least 2 `satisfied` claims. Prioritize investigation of `unverifiable` criteria."
 
-Write the result to `{artifact_dir}/archive/incremental/NNN-{name}.md`. After the code-reviewer returns, record a metrics entry with `phase: "6a"`, `agent_type: "code-reviewer"`.
+Write the result to `{artifact_dir}/archive/incremental/NNN-{name}.md`. After the code-reviewer returns, record a metrics entry with `phase: "6a"`, `agent_type: "code-reviewer"`. Include `input_tokens`, `output_tokens`, `cache_read_tokens`, `cache_write_tokens` from agent response metadata (null if unavailable), and `mcp_tools_called` (array of MCP tool names used to assemble context, or `[]` if none). (Full schema including `skill` and `cycle` fields defined in controller SKILL.md.)
 
 **Review format**:
 

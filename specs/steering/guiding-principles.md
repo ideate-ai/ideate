@@ -3,8 +3,14 @@
 ## 1. Spec Sufficiency
 A plan is not done until any reasonable question about the system can be answered from the specs alone. The test: two independent LLM runs given the same spec should produce functionally equivalent output. Anywhere they would diverge, the spec has an unresolved decision that must be made explicit.
 
+This extends to all system dimensions — including user-facing ones. Visual identity, interaction design, user flows, accessibility requirements, and UX patterns must be resolved in the plan with the same rigor as data models or API contracts. A spec that fully defines backend behavior but leaves UI/UX to the executor's discretion is incomplete. The planning interview must surface these decisions explicitly.
+
+> _Amended in refinement (2026-03-21): Added explicit requirement that specs cover UI/UX and visual identity decisions, not just technical architecture._
+
 ## 2. Minimal Inference at Execution
-The executor should not make subjective decisions. Every architectural choice, technology selection, interface contract, error handling strategy, and behavioral detail should be resolved during planning. The executor follows instructions; it does not design.
+The executor should not make subjective decisions. Every architectural choice, technology selection, interface contract, error handling strategy, user experience pattern, visual identity decision, and behavioral detail should be resolved during planning. The executor follows instructions; it does not design.
+
+> _Amended in refinement (2026-03-21): Expanded scope to include UX and visual identity decisions alongside technical choices. The plan phase — not the executor — is where visual and interaction design questions get answered._
 
 ## 3. Guiding Principles Over Implementation Details
 Users care about objectives, not every technical choice. The tool must determine what level of granularity requires user input versus what can be delegated. Guiding principles serve as the decision framework — if a question can be answered by the principles, it should be answered without asking the user.

@@ -1,6 +1,6 @@
 # Domain Registry
 
-current_cycle: 3
+current_cycle: 6
 
 ## Domains
 
@@ -26,4 +26,6 @@ Files: domains/project-boundaries/policies.md, decisions.md, questions.md
 
 **Duplicate work item numbers**: Q-4 (artifact-structure) is a latent defect that affects workflow execution (Q-4 cross-references the execute and brrr skills). Any future `/ideate:execute` or `/ideate:brrr` run encounters ambiguous ordering for five number prefixes.
 
-**Documentation propagation**: Cycle 003 identified that changes to artifact directory structure (manifest.json addition) were not propagated to README.md, CLAUDE.md, or architecture.md. These are implementation gaps tracked in the archive (cycles/003/decision-log.md OQ1-OQ3) rather than domain questions, as they require no design decision — only mechanical fixes.
+**brrr review phase architectural gap (cycle 006)**: Q-14 (workflow) and Q-15 (agent-system) are the two highest-priority open questions from cycle 006. Q-14 is the missing quality_summary emission in brrr/phases/review.md; Q-15 is the stale `reviews/incremental/` path in three agent definitions. Both should be addressed in the next refinement cycle as their first two work items (non-overlapping file scopes; can run in parallel).
+
+**metrics.jsonl documentation cluster**: Q-16, Q-17, Q-18 (artifact-structure) are lower-priority carry-forward items from cycle 006 that can be bundled into a single documentation work item alongside the two structural fixes above.

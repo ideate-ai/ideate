@@ -257,7 +257,7 @@ After each agent spawn (via the Agent tool), append one JSON entry to `{artifact
 
 **Entry schema (one JSON object per line):**
 
-    {"timestamp":"<ISO8601>","skill":"brrr","phase":"<id>","cycle":<N>,"agent_type":"<type>","model":"<model>","work_item":"<slug or null>","wall_clock_ms":<ms>,"turns_used":<N or null>,"context_files_read":["<path>",...]}
+    {"timestamp":"<ISO8601>","skill":"brrr","phase":"<id>","cycle":<N>,"agent_type":"<type>","model":"<model>","work_item":"<slug or null>","wall_clock_ms":<ms>,"turns_used":<N or null>,"context_files_read":["<path>",...],"input_tokens":<N or null>,"output_tokens":<N or null>,"cache_read_tokens":<N or null>,"cache_write_tokens":<N or null>,"mcp_tools_called":["<tool_name>",...]}
 
 - `timestamp` — ISO 8601 when the agent was spawned
 - `phase` — e.g., `"6a"`, `"6b"`
@@ -268,6 +268,15 @@ After each agent spawn (via the Agent tool), append one JSON entry to `{artifact
 - `wall_clock_ms` — elapsed ms between Agent tool invocation and return
 - `turns_used` — from Agent response metadata if available; `null` otherwise
 - `context_files_read` — absolute file paths explicitly provided in the agent's prompt
+- `input_tokens` — integer or null. Input token count from agent response metadata. Null if not available.
+- `output_tokens` — integer or null. Output token count from agent response metadata. Null if not available.
+- `cache_read_tokens` — integer or null. Prompt caching read tokens if available. Null if not available.
+- `cache_write_tokens` — integer or null. Prompt caching write tokens if available. Null if not available.
+- `mcp_tools_called` — array of strings. Names of MCP tools called to assemble context for this agent spawn (e.g., `["ideate_get_context_package", "ideate_get_work_item_context"]`). Empty array `[]` if no MCP tools were called.
+
+Before each Agent tool call, record which MCP tool calls (if any) were made to assemble context for that spawn. Include the tool names in the `mcp_tools_called` array. If no MCP tools were called, use an empty array `[]`.
+
+Extract from agent response metadata if available. Set to null if token counts are not available in the response.
 
 Record timestamp immediately before the Agent tool call; compute `wall_clock_ms` after it returns.
 

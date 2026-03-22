@@ -32,3 +32,16 @@
 - **Rationale**: Skills do not yet need migration or quality gates; keeping versioning scope narrow reduces complexity.
 - **Source**: archive/cycles/003/decision-log.md D2
 - **Status**: settled
+
+## D-21: The canonical key for artifact directory in .ideate.json is artifactDir (camelCase)
+- **Decision**: The `.ideate.json` configuration file uses `artifactDir` (camelCase) as the key for the artifact directory path. Any script, skill, or documentation that reads or documents this key must use camelCase. Snake_case (`artifact_dir`) is incorrect and caused two critical bugs in the cycle 004 capstone review of report.sh.
+- **Rationale**: WI-095 was created specifically to fix a snake_case/camelCase mismatch introduced in the WI-094 planning note. All skills consistently use `artifactDir`; the planning note for report.sh auto-discovery used `artifact_dir`, which was not caught during planning.
+- **Source**: archive/cycles/006/decision-log.md D6; archive/cycles/006/review-manifest.md (WI-095 entry)
+- **Status**: settled
+
+## D-22: quality_summary event stores severity counts at findings.by_severity, not at top level
+- **Decision**: The `quality_summary` event in `metrics.jsonl` stores per-severity counts nested under `findings.by_severity.{critical,significant,minor,suggestion}` and per-reviewer breakdowns under `findings.by_reviewer.{reviewer}.{severity}`. Severity counts are not present at the top level of the event object.
+- **Rationale**: The nested structure was specified in WI-093 and documented in `specs/artifact-conventions.md`. Consumers (e.g., report.sh) must read `findings.by_severity.*` — a top-level severity key will always be absent.
+- **Assumes**: The `by_reviewer` sub-objects include `suggestion` for schema symmetry; no current consumer parses `by_reviewer` (see Q-16).
+- **Source**: archive/cycles/006/decision-log.md D3, D10; archive/cycles/006/gap-analysis.md SG1
+- **Status**: settled

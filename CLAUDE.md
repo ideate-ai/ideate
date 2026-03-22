@@ -7,7 +7,7 @@ A Claude Code plugin providing a structured SDLC workflow. Ideate takes a rough 
 ```
 agents/          # Specialized agents (code-reviewer, architect, domain-curator, etc.)
 skills/          # User-invocable skills (plan, execute, review, refine, brrr)
-scripts/         # Utility scripts (migrate-to-domains.sh)
+scripts/         # Utility scripts (validate-specs.sh, migrate-to-optimized.sh)
 specs/           # Ideate's own artifact directory — uses the same structure it creates
 ```
 
@@ -27,6 +27,7 @@ Skills produce artifacts in a user-specified directory (conventionally `specs/`)
 
 ```
 specs/
+├── manifest.json           # Schema version identifier
 ├── steering/               # Guiding principles, constraints, research, interviews
 ├── plan/                   # Architecture, modules, work items, execution strategy
 ├── journal.md              # Append-only project history

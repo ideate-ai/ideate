@@ -35,7 +35,8 @@ This document defines the file formats, schemas, naming conventions, and semanti
 │       ├── policies.md
 │       ├── decisions.md
 │       └── questions.md
-└── journal.md
+├── journal.md
+└── metrics.jsonl
 ```
 
 ---
@@ -354,7 +355,7 @@ Permission mode: {acceptEdits | dontAsk}
 
 ## Review Artifacts
 
-### `reviews/incremental/NNN-{name}.md`
+### `archive/incremental/NNN-{name}.md`
 
 **Purpose**: Per-work-item review results produced during execution.
 
@@ -412,7 +413,7 @@ If a severity section has no findings, include the header with "None." underneat
 
 ---
 
-### `reviews/final/code-quality.md`
+### `archive/cycles/{NNN}/code-quality.md`
 
 **Purpose**: Comprehensive code review across the entire project.
 **Producer**: code-reviewer agent during review phase.
@@ -453,7 +454,7 @@ If a severity section has no findings, include the header with "None." underneat
 
 If a section has no findings, include the header with "None." underneath. Do not omit sections.
 
-### `reviews/final/spec-adherence.md`
+### `archive/cycles/{NNN}/spec-adherence.md`
 
 **Purpose**: Verification that implementation matches architecture, principles, and acceptance criteria.
 **Producer**: spec-reviewer agent.
@@ -501,7 +502,7 @@ Code that exists in the implementation but is not described in any spec, archite
 
 If a section has no findings, include the header with "None." underneath. Do not omit sections.
 
-### `reviews/final/gap-analysis.md`
+### `archive/cycles/{NNN}/gap-analysis.md`
 
 **Purpose**: Missing requirements, unhandled edge cases, blind spots.
 **Producer**: gap-analyst agent.
@@ -557,7 +558,7 @@ If a section has no findings, include the header with "None." underneath. Do not
 
 If a section has no findings, include the header with "None." underneath. Do not omit sections.
 
-### `reviews/final/decision-log.md`
+### `archive/cycles/{NNN}/decision-log.md`
 
 **Purpose**: Synthesized project history — decisions, open questions, and cross-references between reviewer findings.
 **Producer**: journal-keeper agent.
@@ -606,7 +607,7 @@ If a section has no findings, include the header with "None." underneath. Do not
 
 If a section has no findings, include the header with "None." underneath. Do not omit sections. Only include cross-references where the connection is substantive.
 
-### `reviews/final/summary.md`
+### `archive/cycles/{NNN}/summary.md`
 
 **Purpose**: Cross-reviewer synthesis with prioritized findings.
 **Producer**: review skill (synthesizes all reviewer outputs).
@@ -703,3 +704,70 @@ New work items: {NNN-NNN}
 **Semantics**: STRICTLY APPEND-ONLY. No phase ever edits or deletes existing entries. Entries are chronologically ordered.
 
 **Phases**: plan (init), execute (append), review (append), refine (append)
+
+---
+
+### `metrics.jsonl`
+- **Purpose**: Append-only telemetry log recording one entry per agent spawn across all skills, plus quality_summary events emitted by the review skill after each cycle
+- **Format**: One JSON object per line (JSONL). Two event types:
+
+  **Agent spawn entry** (written by all five skills after each Agent tool call):
+  ```json
+  {
+    "timestamp": "<ISO8601>",
+    "skill": "<skill-name>",
+    "phase": "<phase-id>",
+    "cycle": <integer or null>,
+    "agent_type": "<type>",
+    "model": "<model-string>",
+    "work_item": "<slug or null>",
+    "wall_clock_ms": <integer>,
+    "turns_used": null,
+    "context_files_read": [],
+    "input_tokens": null,
+    "output_tokens": null,
+    "cache_read_tokens": null,
+    "cache_write_tokens": null,
+    "mcp_tools_called": []
+  }
+  ```
+
+  **Quality summary event** (written by `review` skill at end of each review cycle via Phase 7.6, and by `brrr` skill at end of each brrr-driven review cycle; `skill` field is `"review"` or `"brrr"` depending on emitter):
+
+  This is a **review-phase-only event**. `plan`, `execute`, and `refine` do not emit `quality_summary` events because those phases do not produce severity-classified findings. Any skill or phase implementing review orchestration (spawning code-reviewer, spec-reviewer, and gap-analyst) should emit a `quality_summary` event.
+
+  ```json
+  {
+    "timestamp": "<ISO8601>",
+    "event_type": "quality_summary",
+    "skill": "<review|brrr>",
+    "cycle": 1,
+    "findings": {
+      "total": 0,
+      "by_severity": {
+        "critical": 0,
+        "significant": 0,
+        "minor": 0,
+        "suggestion": 0
+      },
+      "by_reviewer": {
+        "code-reviewer": {"critical": 0, "significant": 0, "minor": 0, "suggestion": 0},
+        "spec-reviewer":  {"critical": 0, "significant": 0, "minor": 0, "suggestion": 0},
+        "gap-analyst":    {"critical": 0, "significant": 0, "minor": 0, "suggestion": 0}
+      },
+      "by_category": {
+        "requirements_missed": 0,
+        "bugs_introduced": 0,
+        "principles_violated": 0,
+        "implementation_gaps": 0,
+        "other": 0
+      }
+    },
+    "work_items_reviewed": 0,
+    "andon_events": 0
+  }
+  ```
+
+- **Semantics**: Best-effort write — skills append entries and continue without interruption if the write fails. Token fields (`input_tokens`, `output_tokens`, `cache_read_tokens`, `cache_write_tokens`) are null when not available from agent metadata. `mcp_tools_called` is an empty array when no MCP tools were used. The `cycle` field in agent-spawn entries is null for skills that are not cycle-aware (plan, execute, refine).
+- **Consumer**: `scripts/report.sh` reads this file to generate markdown metrics reports.
+- **Phases**: plan (write), execute (write), review (write), refine (write), brrr (write)

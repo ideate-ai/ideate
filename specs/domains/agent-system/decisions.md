@@ -23,3 +23,11 @@
 - **Rationale**: WI-020 was created to fix the original design: without Write access, the researcher had to return content inline, which the plan skill then had to handle conditionally; direct write is simpler and more consistent with artifact-directory coordination (journal 2026-03-08 WI-020 entry).
 - **Source**: specs/plan/work-items/020-researcher-write-tool.md, journal.md [execute] 2026-03-08 WI-020
 - **Status**: settled
+
+## D-20: Stale artifact path references in agent definitions silently degrade every review cycle
+- **Decision**: Three agent definitions (`agents/spec-reviewer.md`, `agents/gap-analyst.md`, `agents/journal-keeper.md`) reference `reviews/incremental/`, the pre-archive-layer path. The correct path is `archive/incremental/`. The stale references were not caught during path-cleanup work items in cycles 002 and 006 (WI-091 fixed artifact-conventions.md; WI-097 fixed skills/refine/SKILL.md; agent definitions were out of scope both times).
+- **Rationale**: Cycle 006 gap-analyst elevated the finding to significant because the degradation compounds: every review cycle run by these three agents silently skips incremental review context, breaking the deduplication instruction in spec-reviewer and the synthesis instruction in journal-keeper.
+- **Assumes**: Path cleanup work items must be scoped to cover all files that embed artifact directory path strings, not just the primary target file.
+- **Source**: archive/cycles/006/gap-analysis.md SG2; archive/cycles/006/decision-log.md D16, OQ2
+- **Policy**: P-19
+- **Status**: settled

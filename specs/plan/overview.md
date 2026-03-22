@@ -1,34 +1,43 @@
-# Refinement Plan — Artifact Schema Versioning (Cycle 003)
+# Change Plan — Cycle 008
 
-## What Is Changing
+**Triggered by**: Cycle 007 minor findings OQ1, OQ2, OQ3 (residual documentation inconsistencies from WI-100's partial fix)
 
-Adding a `manifest.json` file to the artifact directory structure. The manifest contains a schema version number, enabling future migrations to detect the current schema version and apply targeted upgrades.
+---
 
-## Triggering Context
+## What is changing
 
-User request: ideate has had 2 breaking schema changes to date (ad-hoc migration scripts exist for both). Going forward, the user wants a version marker in every artifact directory so future schema migrations can be versioned (`v1→v2`, `v2→v3`) and applied non-destructively.
+### Group 1: Remaining documentation cluster (WI-101)
 
-## Scope
+Three one-liner fixes deferred from cycle 007:
 
-**Create:**
-- `{artifact-dir}/manifest.json` — new file, created by `/ideate:plan` during directory scaffolding
+1. **`skills/plan/SKILL.md:730`**, **`skills/execute/SKILL.md:575`**, **`skills/review/SKILL.md:643`** — Add `"cycle":null,` between `"phase":"<id>"` and `"agent_type":"<type>"` in each inline agent-spawn metrics schema. WI-100 fixed `skills/refine/SKILL.md` but not these three. The canonical schema in `specs/artifact-conventions.md:720` has the field; the three omissions are now an internal inconsistency among skill files.
 
-**Modify:**
-- `skills/plan/SKILL.md` — Phase 1.1 directory structure block: add `manifest.json` to the scaffold listing and creation step
-- `specs/artifact-conventions.md` — directory structure diagram and new `manifest.json` section
+2. **`scripts/report.sh`** — Update the Quality Trends empty-state message at the line containing "No quality data recorded" to reference both `/ideate:review` and `/ideate:brrr` instead of only `/ideate:review`. After WI-098 added quality_summary emission to the brrr review phase, users running brrr-only projects receive incorrect guidance when the Quality Trends section is empty.
 
-**Out of scope:**
-- No enforcement logic in skills (no version checks, no migration triggers)
-- No migration scripts for prior schema versions (the two existing scripts will be removed separately)
-- No changes to refine, execute, review, or brrr skills
+3. **`specs/artifact-conventions.md`** — Add a sentence to the `metrics.jsonl` → `quality_summary` schema section noting that `quality_summary` is emitted only by review-phase orchestrators (`skills/review/SKILL.md` and `skills/brrr/phases/review.md`) and briefly explaining why (only these phases produce severity-classified findings). This records the scoping rationale for future maintainers.
 
-## Expected Impact
+---
 
-After this cycle:
-- New artifact directories created by `/ideate:plan` include `manifest.json` with `{"schema_version": 1}`
-- The artifact convention document describes `manifest.json` as the canonical schema version marker
-- Ideate's own `specs/` directory has a `manifest.json`
+## What is NOT changing
 
-## New Work Items
+- All other skill, agent, or phase documents
+- All scripts other than `report.sh`
+- Architecture, modules, MCP server
+- Guiding principles (confirmed unchanged)
 
-WI-074 and WI-075 (2 items, parallelizable).
+---
+
+## Expected impact
+
+- After WI-101: all five skill inline schemas match the canonical `cycle` field structure. Report tooling that buckets by `cycle` will correctly handle entries from plan, execute, and review.
+- After WI-101: report.sh empty-state message gives correct guidance for both `/ideate:review` and `/ideate:brrr` users.
+- After WI-101: future maintainers have a written rationale for `quality_summary` scoping in the canonical schema document.
+
+---
+
+## Scope boundary
+
+File-level scope:
+- `skills/plan/SKILL.md`, `skills/execute/SKILL.md`, `skills/review/SKILL.md`
+- `scripts/report.sh`
+- `specs/artifact-conventions.md`

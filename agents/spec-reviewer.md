@@ -23,7 +23,7 @@ You will receive:
 - Constraints
 - The project source code
 
-You may also receive incremental review results from `reviews/incremental/`. Read these to avoid duplicating findings already caught.
+You may also receive incremental review results from `archive/incremental/`. Read these to avoid duplicating findings already caught.
 
 ## Review Checklist
 
