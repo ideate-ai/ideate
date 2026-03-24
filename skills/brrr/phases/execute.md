@@ -171,7 +171,7 @@ When an Andon event occurs (scope-changing finding, merge conflict, spec ambigui
 
    ```
    subagent_type: "proxy-human"
-   model: "claude-opus-4-6"
+   model: "opus"
    prompt: "[Andon Event for proxy-human agent]
 
    Artifact directory: {artifact_dir}

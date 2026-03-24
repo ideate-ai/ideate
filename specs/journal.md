@@ -1072,3 +1072,145 @@ Agents spawned: 5 (code-reviewer, spec-reviewer, gap-analyst, journal-keeper, do
 Total wall-clock: ~511000ms
 Models used: sonnet (reviewers), opus (curator)
 Slowest agent: domain-curator — ~219000ms
+
+## [refine] 2026-03-22 — Refinement planning completed
+Trigger: new requirements (custom model/Ollama support investigation)
+Principles changed: none
+New work items: 130-131
+User investigated adding custom model support (Ollama) via `.ideate.json` model tier mapping. Technical analysis (researcher + technical-analyst agents) determined that Claude Code's existing `ANTHROPIC_DEFAULT_*_MODEL` env vars already provide this capability, and building a `.ideate.json` config layer would duplicate existing functionality while depending on undocumented model string passthrough behavior. Decision: documentation-only approach. WI-130 replaces hardcoded `claude-opus-4-6` strings with the `opus` tier alias so the env var mechanism works correctly. WI-131 adds custom model documentation to the README.
+
+## [refine] 2026-03-22 — Metrics summary
+Agents spawned: 2 total (architect x1, researcher x1)
+Total wall-clock: ~405000ms
+Models used: opus (architect), sonnet (researcher)
+Slowest agent: architect — ~227000ms
+
+## [execute] 2026-03-22 — Work item 130: Replace hardcoded claude-opus-4-6 with opus tier alias
+Status: complete
+No deviations. 12 string replacements across 5 files. Incremental review: Pass, no findings.
+
+## [execute] 2026-03-22 — Work item 131: Add custom model documentation to README
+Status: complete with rework
+Rework: 1 significant finding fixed from incremental review. The `settings.json` env block bug description inverted the precedence direction — rewritten to accurately describe the bug. Added missing GitHub issue #13827 reference.
+
+## [execute] 2026-03-22 — Metrics summary
+Agents spawned: 2 (2 code-reviewers)
+Total wall-clock: ~58000ms
+Models used: sonnet
+Slowest agent: code-reviewer — 131-add-custom-model-documentation — ~58000ms
+
+## [review] 2026-03-22 — Comprehensive review completed
+Critical findings: 0
+Significant findings: 0
+Minor findings: 4
+Suggestions: 0
+Items requiring user input: 0
+Curator: ran (sonnet — no conflict signals detected)
+
+## [review] 2026-03-22 — Metrics summary
+Agents spawned: 5 (code-reviewer, spec-reviewer, gap-analyst, journal-keeper, domain-curator)
+Total wall-clock: ~749000ms
+Models used: sonnet
+Slowest agent: domain-curator — ~264000ms
+
+## [refine] 2026-03-22 — Refinement planning completed
+Trigger: new requirements (benchmark system for measuring ideate quality output)
+Principles changed: none
+New work items: 132-139
+User wants a benchmarking system to continuously measure and improve ideate's code quality output. System measures both quantitative (cost, time, autonomy) and qualitative (architecture quality, code idiomaticity, problem anticipation, human engagement) dimensions. Key design: workspace isolation for opacity (executing LLMs can't see evaluation criteria), pre-scripted Q&A for reproducible interviews, LLM-as-judge with human evaluation mode for calibration alignment. Framework lives in benchmarks/ with TypeScript and Python benchmark cases. Runner uses claude -p. Reporting supports comparison and trend analysis across runs.
+
+## [refine] 2026-03-22 — Metrics summary
+Agents spawned: 1 total (decomposer x1)
+Total wall-clock: ~167000ms
+Models used: opus
+Slowest agent: decomposer — ~167000ms
+
+## [execute] 2026-03-22 — Work item 132: Benchmark framework and runner
+Status: complete with rework
+Rework: 2 significant findings fixed (timeout binary check added, yq path interpolation fixed). Q&A injection into brief.md confirmed as by-design per spec.
+
+## [execute] 2026-03-22 — Work item 133: Benchmark case format and Q&A template
+Status: complete with rework
+Rework: 1 significant finding fixed (README multi-step skill values clarified to single enum). 2 minor fixed (brrr description added, Context section optionality clarified).
+
+## [execute] 2026-03-22 — Work item 134: Scoring rubric definition
+Status: complete with rework
+Rework: 3 minor findings fixed (exact phrases "error handling style" and "question relevance" added to descriptors, fields key documented).
+
+## [execute] 2026-03-22 — Work item 135: LLM-as-judge evaluator
+Status: complete with rework
+Rework: 2 critical findings fixed (unsafe heredoc string injection replaced with temp file passing). 2 significant fixed (hardcoded /tmp paths replaced with mktemp, set -e added). 2 minor fixed (MULTILINE flag, unused import).
+
+## [execute] 2026-03-22 — Work item 136: Human evaluation mode
+Status: complete
+No deviations.
+
+## [execute] 2026-03-22 — Work item 137: TypeScript benchmark cases
+Status: complete with rework
+Rework: Spoiling comment removed from paginate.ts (S1), 2 additional Q&A responses added (S2), expected_work_items fields added to config (S3).
+
+## [execute] 2026-03-22 — Work item 138: Python benchmark cases
+Status: complete with rework
+Rework: expected_work_items fields added to py-refactor config (S3).
+
+## [execute] 2026-03-22 — Work item 139: Reporting script
+Status: complete
+No deviations.
+
+## [execute] 2026-03-22 — Metrics summary
+Agents spawned: 16 total (8 workers, 8 code-reviewers)
+Total wall-clock: ~1700000ms
+Models used: sonnet
+Slowest agent: worker — 138-python-benchmark-cases — ~201000ms
+
+## [review] 2026-03-22 — Comprehensive review completed
+Critical findings: 0
+Significant findings: 0
+Minor findings: 6
+Suggestions: 0
+Items requiring user input: 0
+Curator: ran (sonnet — no conflict signals detected)
+
+## [review] 2026-03-22 — Metrics summary
+Agents spawned: 5 (code-reviewer, spec-reviewer, gap-analyst, journal-keeper, domain-curator)
+Total wall-clock: ~487000ms
+Models used: sonnet
+Slowest agent: gap-analyst — ~182000ms
+
+## [review] 2026-03-23 — Comprehensive review completed (cycle 015)
+Critical findings: 0
+Significant findings: 0
+Minor findings: 3 (all carry-forward from prior cycles)
+Suggestions: 0
+Items requiring user input: 0
+Curator: ran (sonnet — no conflict signals detected)
+Note: Cycle 015 covers 17 previously-executed work items (098-116) that had not received a capstone review.
+
+## [review] 2026-03-23 — Metrics summary
+Agents spawned: 5 (code-reviewer, spec-reviewer, gap-analyst, journal-keeper, domain-curator)
+Total wall-clock: ~600000ms
+Models used: sonnet
+Slowest agent: gap-analyst — ~171000ms
+
+## [refine] 2026-03-23 — Refinement planning completed
+Trigger: requirement evolution (benchmark system extracted to plan-benchmark project)
+Principles changed: none
+New work items: 140-142
+Benchmark system moved to ~/code/plan-benchmark/. WI-140 removes stale work items 132-139 from work-items.yaml. WI-141 removes the benchmarking domain. WI-142 bumps version from 2.1.0 to 3.0.0.
+
+## [refine] 2026-03-23 — v3.0 architecture research (in progress)
+Trigger: requirement evolution (structured backend, MCP-first data access, context optimization)
+Status: research complete, interview paused before work item production
+Architectural direction decided: YAML files as source of truth, SQLite runtime index (gitignored, rebuilt on startup), Personalized PageRank for context assembly with semantic search fallback, 18 MCP tools, code-generated reports. 5-phase implementation planned. 7 research reports produced in specs/steering/research/. WI-140-142 (cleanup + version bump) ready for execution. Detailed work items for phases 1-5 to be produced in a follow-up session.
+
+## [execute] 2026-03-23 — Work item 140: Remove benchmark work items from work-items.yaml
+Status: complete
+Removed items 132-139 from work-items.yaml and deleted plan/notes/132-139.md.
+
+## [execute] 2026-03-23 — Work item 141: Remove benchmarking domain
+Status: complete
+Deleted specs/domains/benchmarking/ directory and removed entry from domains/index.md.
+
+## [execute] 2026-03-23 — Work item 142: Major version bump to 3.0.0
+Status: complete
+Updated plugin.json and marketplace.json from 2.1.0 to 3.0.0.

@@ -1,6 +1,6 @@
 # Domain Registry
 
-current_cycle: 12
+current_cycle: 15
 
 ## Domains
 
@@ -32,7 +32,7 @@ Files: domains/project-boundaries/policies.md, decisions.md, questions.md
 
 **Suggestion field vestigial cluster (cycle 003)**: Q-19 (agent-system, no producer) and Q-16 (artifact-structure, no consumer) together indicate the `suggestion` sub-field in `by_reviewer` may be vestigial — added for schema symmetry but neither reliably produced nor consumed. These should be evaluated together.
 
-**brrr vs standalone review divergence**: Q-20 (artifact-structure, review-manifest location) and D-19/P-18 (workflow, independent reimplementation) reflect ongoing divergence between the two review paths. Any future work that touches review orchestration should audit both paths.
+**brrr vs standalone review divergence**: Q-20 (artifact-structure, review-manifest location) and D-19/P-18 (workflow, independent reimplementation) reflect ongoing divergence between the two review paths. Cycle 013 adds Q-36 (agent-system, domain-curator model selection) — brrr unconditionally uses opus while standalone review conditionally selects sonnet/opus. Any future work that touches review orchestration should audit both paths.
 
 **Cross-item spec consistency (cycle 004)**: D-28 and D-29 (artifact-structure) document two bugs caused by independently-planned work items (WI-093 and WI-094) that shared a data contract but described it inconsistently. P-21 (workflow) codifies the mitigation: consumer planning notes must cite the producer's schema definition by file and section.
 
@@ -41,3 +41,5 @@ Files: domains/project-boundaries/policies.md, decisions.md, questions.md
 **Startup failure protocol consistency (cycles 007-012)**: The startup-failure protocol is fully described in P-22 (amended through cycle 011). The context-appropriate smoke test generalization (D-44/WI-126) extended P-22 to cover library, CLI, e2e, and documentation-only projects. The infrastructure-failure regression-determination protocol is captured in P-23 (D-45/WI-128). Cycle 012 closed the two remaining follow-ups: Q-33 (inline prompt fragments updated by WI-129) and Q-34 (brrr label qualifier added by WI-129). The smoke test generalization is now complete across all locations.
 
 **Smoke test inline prompt inconsistency (cycle 011)**: Resolved in cycle 012. Q-33 and Q-34 both closed by WI-129 (D-48). All inline prompts and labels now use language consistent with the generalized agent definition.
+
+**Model configuration and tier aliases (cycle 013)**: D-49 (project-boundaries) established that custom model configuration belongs in Claude Code env vars, not ideate. D-50 (agent-system) replaced hardcoded model IDs with tier aliases to make env var overrides work. Three open questions remain: Q-35 (README table conflation), Q-36 (brrr unconditional opus), Q-37 (missing CLAUDE_CODE_SUBAGENT_MODEL documentation).

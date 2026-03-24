@@ -294,7 +294,7 @@ Constraints are non-negotiable boundaries. If the user said "must use Python 3.1
 
 ## 4.1 Spawn the Architect
 
-Spawn the `architect` agent in **design** mode with `model: claude-opus-4-6`. This overrides the agent's default model for this task. Provide it with:
+Spawn the `architect` agent in **design** mode with `model: opus`. This overrides the agent's default model for this task. Provide it with:
 
 - The full interview transcript (`steering/interview.md`)
 - Guiding principles (`steering/guiding-principles.md`)
@@ -365,7 +365,7 @@ Decompose to work items yourself, in the main session. For each module (or for t
 
 ### Large projects (5 or more modules)
 
-Spawn one `decomposer` agent per module, in parallel, each with `model: claude-opus-4-6`. This overrides the agent's default model for this task. Provide each with:
+Spawn one `decomposer` agent per module, in parallel, each with `model: opus`. This overrides the agent's default model for this task. Provide each with:
 
 - The module spec (`plan/modules/{name}.md`)
 - The architecture doc (`plan/architecture.md`)
@@ -733,7 +733,7 @@ After each agent spawn (via the Agent tool), append one JSON entry to `{artifact
 - `skill` — `"plan"` (constant for this skill).
 - `phase` — phase identifier (e.g., `"2.4"`, `"4.1"`, `"5.1"`).
 - `agent_type` — the agent definition name (e.g., `"researcher"`, `"architect"`, `"decomposer"`).
-- `model` — model string passed to Agent tool (e.g., `"sonnet"`, `"claude-opus-4-6"`).
+- `model` — model string passed to Agent tool (e.g., `"sonnet"`, `"opus"`).
 - `work_item` — `null` (plan skill agents are not tied to individual work items).
 - `wall_clock_ms` — elapsed ms between Agent tool invocation and return.
 - `turns_used` — from Agent response metadata if available; `null` otherwise.

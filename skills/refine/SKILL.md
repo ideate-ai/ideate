@@ -33,7 +33,7 @@ Store the project source root separately from the artifact directory.
 
 # Phase 2: Survey Existing Codebase
 
-Before interviewing the user, spawn the `architect` agent in **analyze** mode with `model: claude-opus-4-6`. This overrides the agent's default model for this task. Spawn it to survey the current state of the project source code.
+Before interviewing the user, spawn the `architect` agent in **analyze** mode with `model: opus`. This overrides the agent's default model for this task. Spawn it to survey the current state of the project source code.
 
 Prompt for the architect:
 
@@ -264,7 +264,7 @@ If the refinement changes the architecture (new modules, changed interfaces, new
 
 If architecture is unchanged, do not modify this file. State in the refinement summary that architecture remains unchanged.
 
-If changes are significant enough to warrant a full redesign of a section, spawn the `architect` agent in **design** mode with `model: claude-opus-4-6` and the updated context to produce the revised sections. This overrides the agent's default model for this task.
+If changes are significant enough to warrant a full redesign of a section, spawn the `architect` agent in **design** mode with `model: opus` and the updated context to produce the revised sections. This overrides the agent's default model for this task.
 
 ## 7f. plan/modules/*.md — UPDATE only if changed
 
@@ -296,7 +296,7 @@ For refinement work items, follow the same format as defined in the artifact con
 - **Reference existing code.** Implementation notes should reference existing functions, classes, modules, and patterns found in the codebase analysis. The executor needs to know what exists so it can integrate changes correctly.
 - **Scope narrowly.** Each work item addresses a specific change. Do not bundle unrelated changes into a single work item.
 
-For large refinements (5+ work items), spawn `decomposer` agent(s) with `model: claude-opus-4-6` to break down the changes into atomic work items. This overrides the agent's default model for this task:
+For large refinements (5+ work items), spawn `decomposer` agent(s) with `model: opus` to break down the changes into atomic work items. This overrides the agent's default model for this task:
 
 > Decompose the following changes into atomic work items. Start numbering from {next available number}.
 >
@@ -376,7 +376,7 @@ After each agent spawn (via the Agent tool), append one JSON entry to `{artifact
 - `skill` — `"refine"` (constant for this skill).
 - `phase` — phase identifier (e.g., `"2"`, `"6"`, `"7h"`).
 - `agent_type` — the agent definition name (e.g., `"architect"`, `"researcher"`, `"decomposer"`).
-- `model` — model string passed to Agent tool (e.g., `"sonnet"`, `"claude-opus-4-6"`).
+- `model` — model string passed to Agent tool (e.g., `"sonnet"`, `"opus"`).
 - `work_item` — `null` (refine skill agents are not tied to individual work items).
 - `wall_clock_ms` — elapsed ms between Agent tool invocation and return.
 - `turns_used` — from Agent response metadata if available; `null` otherwise.

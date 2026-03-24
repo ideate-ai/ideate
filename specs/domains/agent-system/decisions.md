@@ -56,3 +56,9 @@
 - **Assumes**: The code-reviewer determines the appropriate smoke test from context at review time; the five listed examples are illustrative, not exhaustive.
 - **Source**: archive/cycles/011/decision-log.md D-44; archive/cycles/011/review-manifest.md WI-126
 - **Status**: settled
+
+## D-50: Hardcoded `claude-opus-4-6` model IDs replaced with tier alias `opus` across all skill files
+- **Decision**: WI-130 replaced all 12 occurrences of the hardcoded model string `claude-opus-4-6` with the tier alias `opus` in 5 files (skills/plan/SKILL.md, skills/refine/SKILL.md, skills/review/SKILL.md, skills/brrr/phases/execute.md, specs/plan/architecture.md). This makes `ANTHROPIC_DEFAULT_OPUS_MODEL` env var work correctly for version pinning and custom model routing.
+- **Rationale**: Hardcoded model IDs bypass Claude Code's env var mechanism for model selection. P-11 already establishes that model defaults are set in frontmatter and overrides are applied at spawn time — but the override values themselves were specific model IDs rather than tier aliases, defeating the env var indirection.
+- **Source**: archive/cycles/013/decision-log.md D-47; archive/cycles/013/review-manifest.md WI-130
+- **Status**: settled

@@ -715,6 +715,77 @@ The server is read-only and watches for file changes, invalidating cached entrie
 
 ---
 
+## Custom Models
+
+Ideate uses three model tiers for agent tasks:
+
+| Tier | Default alias | Used for |
+|------|--------------|----------|
+| Lightweight | `haiku` | Not currently used by ideate agents |
+| Default | `sonnet` | Most agents — workers, reviewers, researchers |
+| Capable | `opus` | Architect, decomposer, domain-curator, proxy-human |
+
+Agent definitions declare a default tier in their frontmatter (`model: sonnet` or `model: opus`). Skills override at spawn time when a task needs more capability.
+
+### Version Pinning
+
+To pin a specific model version for a tier, set the corresponding environment variable:
+
+```bash
+export ANTHROPIC_DEFAULT_SONNET_MODEL=claude-sonnet-4-6
+export ANTHROPIC_DEFAULT_OPUS_MODEL=claude-opus-4-6
+export ANTHROPIC_DEFAULT_HAIKU_MODEL=claude-haiku-4-5-20251001
+```
+
+All ideate agents using that tier will resolve to the pinned version.
+
+### Custom Endpoints (Ollama)
+
+To run ideate against Ollama or another Anthropic-compatible endpoint, set the base URL and remap the tier aliases to local model names:
+
+```bash
+# Point Claude Code at Ollama
+export ANTHROPIC_BASE_URL=http://localhost:11434
+export ANTHROPIC_API_KEY=ollama
+
+# Map tiers to Ollama models
+export ANTHROPIC_DEFAULT_SONNET_MODEL=qwen3:30b
+export ANTHROPIC_DEFAULT_OPUS_MODEL=qwen3:235b
+export ANTHROPIC_DEFAULT_HAIKU_MODEL=qwen3:8b
+```
+
+These can also be set per-project in `.claude/settings.json`:
+
+```json
+{
+  "env": {
+    "ANTHROPIC_BASE_URL": "http://localhost:11434",
+    "ANTHROPIC_API_KEY": "ollama",
+    "ANTHROPIC_DEFAULT_SONNET_MODEL": "qwen3:30b",
+    "ANTHROPIC_DEFAULT_OPUS_MODEL": "qwen3:235b",
+    "ANTHROPIC_DEFAULT_HAIKU_MODEL": "qwen3:8b"
+  }
+}
+```
+
+### Minimum Model Requirements
+
+Ideate's prompts are instruction-dense (skill definitions total ~2,900 lines across 5 skills). Models must meet these minimums:
+
+- **Context window**: 64k+ tokens recommended. Models below this threshold receive truncated prompts and produce degraded output.
+- **Tool-use support**: All agents use Claude Code's tool system (Read, Write, Grep, Glob, Bash). The model must support Anthropic-compatible tool-use responses.
+- **Instruction-following**: Multi-phase workflows with conditional branching, specific output formats, and cross-artifact consistency requirements. Weak instruction-following produces structurally wrong artifacts.
+
+### Known Limitations
+
+- **Session-global endpoint**: `ANTHROPIC_BASE_URL` applies to the entire Claude Code session. All agents in a session route to one endpoint — you cannot mix Anthropic and Ollama agents within a single run.
+- **`settings.json` env block reliability**: In some Claude Code versions (v2.0.1+), the `env` block in `settings.json` may be silently ignored — variables set there are not injected into the session even when no shell override exists ([GitHub #8500](https://github.com/anthropics/claude-code/issues/8500), [#13827](https://github.com/anthropics/claude-code/issues/13827)). If custom model configuration appears to have no effect when using `settings.json`, set the variables in your shell instead.
+- **Ollama API compatibility**: Ollama v0.14.0+ implements the Anthropic Messages API, but coverage of tool-use edge cases, streaming, and extended thinking is not guaranteed to be complete. Agent-intensive workflows may encounter undocumented incompatibilities.
+
+For deeper analysis, see `specs/steering/research/claude-code-custom-models.md`.
+
+---
+
 ## Design Notes
 
 The design rationale for this system is documented in `specs/steering/research/domain-knowledge-layer.md`. That document covers the problem statement, the archive/domain separation rationale, the interview structure design, and the open questions that shaped the final implementation.

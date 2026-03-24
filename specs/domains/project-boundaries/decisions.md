@@ -30,3 +30,15 @@
 - **Rationale**: Independent evolution requires independent principles; co-locating outpost principles in ideate's steering directory would re-entangle the concerns that were just separated (archive/cycles/001/decision-log.md D8).
 - **Source**: archive/cycles/001/decision-log.md D8, specs/plan/work-items/060-init-outpost-principles.md
 - **Status**: settled
+
+## D-49: Custom model configuration not built into ideate — Claude Code env vars are sufficient
+- **Decision**: Ideate will not build a model configuration layer (e.g., tier mapping in `.ideate.json`). Claude Code's existing `ANTHROPIC_DEFAULT_*_MODEL` env vars and `ANTHROPIC_BASE_URL` provide custom model routing without ideate-specific code. Per-agent model routing to different endpoints is not possible without a proxy due to session-global endpoint lock-in.
+- **Rationale**: The feature would depend on undocumented model string passthrough behavior, require touching every skill file, and duplicate functionality already provided by the host environment. The implementation cost is high relative to value.
+- **Source**: archive/cycles/013/decision-log.md D-46; specs/steering/research/claude-code-custom-models.md
+- **Status**: settled
+
+## D-51: Custom model documentation added to README
+- **Decision**: A "Custom Models" section was added to README.md covering model tiers, version pinning env vars, Ollama endpoint configuration, minimum model requirements, and known limitations.
+- **Rationale**: No user-facing documentation existed for model configuration. The research output from the refine-013 interview provided the content basis.
+- **Source**: archive/cycles/013/decision-log.md D-48; archive/cycles/013/review-manifest.md WI-131
+- **Status**: settled

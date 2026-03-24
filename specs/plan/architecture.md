@@ -220,7 +220,7 @@ Read/write permissions per phase:
 - **Purpose**: Analyze codebases and design technical architecture with module decomposition
 - **Responsibility boundary**: Architecture and structure — does not implement code
 - **Tools**: Read, Grep, Glob, Bash
-- **Model**: sonnet (complex multi-factor reasoning). Note: plan and refine skills override to claude-opus-4-6 at spawn time.
+- **Model**: sonnet (complex multi-factor reasoning). Note: plan and refine skills override to opus at spawn time.
 - **MaxTurns**: 40
 - **Background**: no
 - **Input contract**: Interview context + research findings + guiding principles + constraints. Mode: "analyze" (existing codebase) or "design" (new system).
@@ -231,7 +231,7 @@ Read/write permissions per phase:
 - **Purpose**: Break module specs into atomic work items
 - **Responsibility boundary**: Decomposition only — works within the architecture defined by the architect
 - **Tools**: Read, Grep, Glob
-- **Model**: sonnet (design decisions about task boundaries). Note: plan and refine skills override to claude-opus-4-6 at spawn time.
+- **Model**: sonnet (design decisions about task boundaries). Note: plan and refine skills override to opus at spawn time.
 - **MaxTurns**: 25
 - **Background**: no
 - **Input contract**: Module spec + architecture doc + guiding principles + constraints + relevant research

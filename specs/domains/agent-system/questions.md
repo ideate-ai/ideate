@@ -50,3 +50,17 @@
 - **Status**: resolved
 - **Resolution**: WI-122 replaced the stale phrase with language describing the diagnose-and-fix protocol at `agents/code-reviewer.md:91`.
 - **Resolved in**: cycle 010
+
+## Q-35: README model tier table conflates frontmatter default with spawn-time override
+- **Question**: The README "Custom Models" section lists architect, decomposer, domain-curator, and proxy-human under the opus tier, but only domain-curator has `model: opus` in its agent frontmatter. The other three default to sonnet and are overridden to opus at spawn time by skills. Should the table distinguish "opus by default" from "opus at spawn time"?
+- **Source**: archive/cycles/013/code-quality.md M1; archive/cycles/013/decision-log.md OQ-10
+- **Impact**: Documentation accuracy. Users reading the table may incorrectly assume all four agents always use opus, which affects expectations when overriding `ANTHROPIC_DEFAULT_OPUS_MODEL`.
+- **Status**: open
+- **Reexamination trigger**: Next documentation pass touching README.md or agent model configuration.
+
+## Q-36: brrr/phases/review.md unconditionally uses opus for domain-curator while standalone review uses conditional logic
+- **Question**: `skills/review/SKILL.md:437-442` conditionally selects sonnet or opus for the domain-curator based on conflict signal detection. `skills/brrr/phases/review.md:245-246` unconditionally uses opus. Should brrr adopt the conditional logic, or is unconditional opus intentional for autonomous operation where stronger reasoning is preferred?
+- **Source**: archive/cycles/013/code-quality.md M2; archive/cycles/013/decision-log.md OQ-11
+- **Impact**: Behavioral divergence between brrr and standalone review for domain-curator model selection. Relates to the broader brrr vs standalone review divergence tracked in Q-20 (artifact-structure).
+- **Status**: open
+- **Reexamination trigger**: Next work item touching brrr/phases/review.md or review/SKILL.md model selection logic.
