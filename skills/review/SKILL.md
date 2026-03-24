@@ -438,7 +438,7 @@ Read the summary file to make this determination. If no such findings exist, ski
       - A finding references the same file path as a path mentioned in an existing policy
       - A finding's domain name matches an existing policy's domain name
       - A finding explicitly recommends changing or removing behavior that a policy prescribes
-   d. If any conflict signal is detected: use `model: claude-opus-4-6` (full reasoning needed).
+   d. If any conflict signal is detected: use `model: opus` (full reasoning needed).
    e. If no conflict signals detected: use `model: sonnet` (default for non-conflict curation).
 
 3. Log the model selection decision in the journal entry for this review: which model was chosen and why (conflict detected / no conflict / first cycle).
@@ -648,7 +648,7 @@ After each agent spawn (via the Agent tool), append one JSON entry to `{artifact
 - `skill` — `"review"` (constant for this skill).
 - `phase` — phase identifier (e.g., `"4a"`, `"4b"`, `"7.2"`).
 - `agent_type` — the agent definition name (e.g., `"code-reviewer"`, `"spec-reviewer"`, `"gap-analyst"`, `"journal-keeper"`, `"domain-curator"`).
-- `model` — model string passed to Agent tool (e.g., `"sonnet"`, `"claude-opus-4-6"`).
+- `model` — model string passed to Agent tool (e.g., `"sonnet"`, `"opus"`).
 - `work_item` — `null` (review skill agents are not tied to individual work items).
 - `wall_clock_ms` — elapsed ms between Agent tool invocation and return.
 - `turns_used` — from Agent response metadata if available; `null` otherwise.

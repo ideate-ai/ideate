@@ -1337,3 +1337,93 @@ items:
       - 'skills/brrr/phases/execute.md line 160 reads "**Critical findings fixable within scope (non-startup-failure, non-infrastructure-failure)**:" (qualifier added)'
       - 'No other lines in either file are modified'
     notes: plan/notes/129.md
+
+  "130":
+    title: Replace hardcoded claude-opus-4-6 with opus tier alias
+    complexity: low
+    scope:
+      - {path: skills/plan/SKILL.md, op: modify}
+      - {path: skills/refine/SKILL.md, op: modify}
+      - {path: skills/review/SKILL.md, op: modify}
+      - {path: skills/brrr/phases/execute.md, op: modify}
+      - {path: specs/plan/architecture.md, op: modify}
+    depends: []
+    blocks: []
+    criteria:
+      - 'skills/plan/SKILL.md contains zero occurrences of the string "claude-opus-4-6"'
+      - 'skills/refine/SKILL.md contains zero occurrences of the string "claude-opus-4-6"'
+      - 'skills/review/SKILL.md contains zero occurrences of the string "claude-opus-4-6"'
+      - 'skills/brrr/phases/execute.md contains zero occurrences of the string "claude-opus-4-6"'
+      - 'specs/plan/architecture.md contains zero occurrences of the string "claude-opus-4-6"'
+      - 'Every location that previously referenced claude-opus-4-6 now references opus'
+      - 'No other lines in any of the five files are modified'
+    notes: plan/notes/130.md
+
+  "131":
+    title: Add custom model documentation to README
+    complexity: low
+    scope:
+      - {path: README.md, op: modify}
+    depends: []
+    blocks: []
+    criteria:
+      - 'README.md contains a "Custom Models" section (or equivalent heading)'
+      - 'Section documents ANTHROPIC_DEFAULT_SONNET_MODEL, ANTHROPIC_DEFAULT_OPUS_MODEL, ANTHROPIC_DEFAULT_HAIKU_MODEL env vars'
+      - 'Section documents ANTHROPIC_BASE_URL for custom endpoint routing'
+      - 'Section includes minimum model requirements (context window, tool-use)'
+      - 'Section includes known limitations (session-global endpoint, settings.json env block bugs)'
+      - 'Section includes at least one example configuration block'
+      - 'No existing README sections are removed or reordered'
+    notes: plan/notes/131.md
+
+
+  "140":
+    title: Remove benchmark work items from work-items.yaml
+    complexity: low
+    scope:
+      - {path: specs/plan/work-items.yaml, op: modify}
+      - {path: specs/plan/notes/132.md, op: delete}
+      - {path: specs/plan/notes/133.md, op: delete}
+      - {path: specs/plan/notes/134.md, op: delete}
+      - {path: specs/plan/notes/135.md, op: delete}
+      - {path: specs/plan/notes/136.md, op: delete}
+      - {path: specs/plan/notes/137.md, op: delete}
+      - {path: specs/plan/notes/138.md, op: delete}
+      - {path: specs/plan/notes/139.md, op: delete}
+    depends: []
+    blocks: []
+    criteria:
+      - 'work-items.yaml contains no entries with IDs 132 through 139'
+      - 'plan/notes/ contains no files named 132.md through 139.md'
+      - 'All other work items in work-items.yaml are unchanged'
+    notes: plan/notes/140.md
+
+  "141":
+    title: Remove benchmarking domain
+    complexity: low
+    scope:
+      - {path: specs/domains/benchmarking/, op: delete}
+      - {path: specs/domains/index.md, op: modify}
+    depends: []
+    blocks: []
+    criteria:
+      - 'specs/domains/benchmarking/ directory does not exist'
+      - 'domains/index.md does not contain a benchmarking domain entry'
+      - 'All other domains in index.md are unchanged'
+      - 'domains/index.md cross-cutting concerns section does not reference benchmarking'
+    notes: plan/notes/141.md
+
+  "142":
+    title: Major version bump to 3.0.0
+    complexity: low
+    scope:
+      - {path: .claude-plugin/plugin.json, op: modify}
+      - {path: .claude-plugin/marketplace.json, op: modify}
+    depends: []
+    blocks: []
+    criteria:
+      - 'plugin.json version field reads "3.0.0"'
+      - 'marketplace.json metadata.version field reads "3.0.0"'
+      - 'marketplace.json plugins[0].version field reads "3.0.0"'
+      - 'No other fields in either file are modified'
+    notes: plan/notes/142.md

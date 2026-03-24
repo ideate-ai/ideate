@@ -1,8 +1,8 @@
-# Execution Strategy — Cycle 012
+# Execution Strategy — Cycle 016
 
 ## Mode
 
-Sequential — one work item, no parallelism needed.
+Sequential — three small work items.
 
 ## Parallelism
 
@@ -14,19 +14,21 @@ Disabled.
 
 ## Review Cadence
 
-Incremental review after WI-129 completes, then capstone review.
+Incremental review after each item, then capstone review.
 
 ## Work Item Groups
 
 ### Group A (Sequential)
 
-1. WI-129: Fix inline prompt smoke test condition and brrr label consistency
+1. WI-140: Remove benchmark work items from work-items.yaml
+2. WI-141: Remove benchmarking domain
+3. WI-142: Major version bump to 3.0.0
 
-No dependencies. Single item.
+No dependencies between items. Sequential for simplicity.
 
 ## Dependency Graph
 
-WI-129 has no dependencies.
+No dependencies.
 
 ## Agent Configuration
 

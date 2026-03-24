@@ -20,3 +20,10 @@
 - **Impact**: Future outpost users will encounter a naming inconsistency between the session-spawner (OUTPOST_*) and the remote-worker (IDEATE_*); this creates confusion in configuration documentation.
 - **Status**: open
 - **Reexamination trigger**: When outpost reaches its first public release or when a coordinated env-var rename becomes practical.
+
+## Q-37: README Custom Models section omits CLAUDE_CODE_SUBAGENT_MODEL env var
+- **Question**: The research document identifies `CLAUDE_CODE_SUBAGENT_MODEL` as a global override that sets the model for all subagents in a session. The README documents per-tier `ANTHROPIC_DEFAULT_*_MODEL` vars but omits this simpler mechanism. Should it be mentioned for users who want a single model for all agents (e.g., single-model Ollama configurations)?
+- **Source**: archive/cycles/013/gap-analysis.md MG1; archive/cycles/013/decision-log.md OQ-12
+- **Impact**: Users who want the simplest Ollama configuration must set three separate env vars instead of one. The omission affects discoverability, not functionality.
+- **Status**: open
+- **Reexamination trigger**: Next documentation pass touching README.md Custom Models section.
