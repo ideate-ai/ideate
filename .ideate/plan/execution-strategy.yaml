@@ -1,39 +1,29 @@
 id: execution-strategy
 type: execution_strategy
-title: Execution Strategy — Cycle 029
-content: |
-  # Execution Strategy — Cycle 029
+title: Execution Strategy — Cycle 032
+content: |-
+  # Execution Strategy — Cycle 032
 
   ## Mode
-  Batched parallel — 2 dependency layers.
+  Batched parallel — 1 group (no dependencies).
 
   ## Parallelism
-  Max concurrent workers: 4
-  Worktrees: disabled (beepboop plugin hook issue — use non-worktree execution)
-  Review cadence: incremental review per item
+  Max concurrent workers: 2
+  Worktrees: disabled
+  Review cadence: incremental per item
 
   ## Work Item Groups
 
-  ### Group 1 (parallel — no dependencies)
-  - WI-234: Fix ID auto-assignment in write.ts
-  - WI-235: ARCHITECTURE.md tool count update
-  - WI-236: CLAUDE.md v3 structure update
-  - WI-237: Remove artifact_dir from MCP tool schemas and handlers
-
-  ### Group 2 (depends on WI-237)
-  - WI-238: Comprehensive skills/agents audit (depends on 237 — needs to know new tool interface)
+  ### Group 1 (parallel)
+  - WI-249: Review skill MCP writes
+  - WI-250: Brrr review phase MCP writes
 
   ## Dependency Graph
-
-  ```
-  234
-  235
-  236
-  237 → 238
-  ```
+  No dependencies. Both items parallel.
 
   ## Agent Configuration
   - Workers: sonnet
   - Incremental reviewers: sonnet
-content_hash: ""
-token_count: 0
+content_hash: f430586308117253c0d4022fb7af4d30c1597eb6584a5c165d4096ee96d1aedd
+token_count: 142
+file_path: .ideate/plan/execution-strategy.yaml

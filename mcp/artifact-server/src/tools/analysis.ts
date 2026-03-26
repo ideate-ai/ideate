@@ -19,7 +19,7 @@ function readFileSafe(filePath: string): string | null {
 }
 
 /**
- * Parse current_cycle from domains/index.md.
+ * Parse current_cycle from domains/index.yaml (or index.md).
  * Looks for a line matching `current_cycle: N`.
  */
 function parseCycleFromIndex(indexMd: string): number | null {
@@ -185,9 +185,10 @@ export async function handleGetDomainState(
   // artifact_dir is now always ctx.ideateDir — resolved at server startup
   const domainsFilter = Array.isArray(args.domains) ? (args.domains as string[]) : null;
 
-  // Read cycle number from domains/index.md
-  const indexPath = path.join(ctx.ideateDir, "domains", "index.md");
-  const indexContent = readFileSafe(indexPath);
+  // Read cycle number from domains/index.yaml (fall back to index.md for backward compatibility)
+  const indexYamlPath = path.join(ctx.ideateDir, "domains", "index.yaml");
+  const indexMdPath = path.join(ctx.ideateDir, "domains", "index.md");
+  const indexContent = readFileSafe(indexYamlPath) ?? readFileSafe(indexMdPath);
   const cycleNumber = indexContent !== null ? parseCycleFromIndex(indexContent) : null;
 
   // Query domain_policies (active: status not deprecated/superseded)
@@ -282,9 +283,10 @@ export async function handleGetProjectStatus(
   // artifact_dir is now always ctx.ideateDir — resolved at server startup
   void args; // args unused now
 
-  // Read cycle number from domains/index.md
-  const indexPath = path.join(ctx.ideateDir, "domains", "index.md");
-  const indexContent = readFileSafe(indexPath);
+  // Read cycle number from domains/index.yaml (fall back to index.md for backward compatibility)
+  const indexYamlPath = path.join(ctx.ideateDir, "domains", "index.yaml");
+  const indexMdPath = path.join(ctx.ideateDir, "domains", "index.md");
+  const indexContent = readFileSafe(indexYamlPath) ?? readFileSafe(indexMdPath);
   const cycleNumber = indexContent !== null ? parseCycleFromIndex(indexContent) : null;
 
   // Work item counts by status

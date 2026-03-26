@@ -1,25 +1,20 @@
 id: overview
 type: overview
-title: Change Plan — Cycle 029
-content: |
-  # Change Plan — Cycle 029
+title: Change Plan — Cycle 032
+content: |-
+  # Change Plan — Cycle 032
 
-  **Trigger**: Post-review correction from cycle 028 plus requirement evolution (artifact_dir removal, specs/ audit).
+  **Trigger**: Remaining direct Write tool calls to .ideate/ files in review skill and brrr review phase. GP-8 requires all artifact writes go through MCP tools.
 
   **What is changing**:
 
-  1. **Fix ID auto-assignment** (WI-234) — Strip `WI-` prefix before CAST in write.ts to correctly compute max existing ID.
+  1. **Review skill MCP writes** (WI-249) — Reviewer agents return findings in their response instead of writing directly. Skill captures output and writes via ideate_write_artifact. Summary, review-manifest, and domain curator output all written via MCP.
 
-  2. **ARCHITECTURE.md tool count** (WI-235) — Update Section 5 from "11 tools in 5 categories" to 13 tools. Update source files table to include new files.
+  2. **Brrr review phase MCP writes** (WI-250) — Same pattern for the brrr autonomous loop's review phase.
 
-  3. **CLAUDE.md v3 structure** (WI-236) — Replace old `specs/` artifact structure diagram with `.ideate/` v3 structure.
+  **What is NOT changing**: MCP server code, agent definitions, guiding principles, constraints, other skills.
 
-  4. **Remove artifact_dir from MCP tools** (WI-237) — Remove `artifact_dir` parameter from all 13 MCP tool input schemas. Handlers use `ctx.ideateDir` exclusively. Tests updated.
-
-  5. **Comprehensive skills/agents audit** (WI-238) — All 6 skills, 4 brrr phase files, and 9 agents audited. Remove `specs/` path references, remove `artifact_dir` from MCP tool call examples, remove markdown artifact creation patterns, ensure v3 `.ideate/` paths throughout.
-
-  **What is NOT changing**: Core SDLC workflow, guiding principles, constraints, MCP server architecture (additive tool changes only), agent responsibility boundaries.
-
-  **Scope boundary**: 5 work items (WI-234–238). Touches mcp/artifact-server/src/tools/, ARCHITECTURE.md, CLAUDE.md, all skills/*.md, all agents/*.md.
-content_hash: ""
-token_count: 0
+  **Scope boundary**: 2 work items (WI-249–250). Touches review/SKILL.md and brrr/phases/review.md only.
+content_hash: 6b83b9854a68b1a4bfdba51fdab9d87ea30a4f0ede44a2e0fc285fa7643e0997
+token_count: 217
+file_path: .ideate/plan/overview.yaml

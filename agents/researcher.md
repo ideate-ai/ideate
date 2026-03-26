@@ -13,7 +13,7 @@ tools:
   - Write
 model: sonnet
 background: true
-maxTurns: 20
+maxTurns: 40
 ---
 
 You are a research agent. You have been spawned to investigate a specific topic for a software planning session.

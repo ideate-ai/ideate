@@ -8,7 +8,7 @@ tools:
   - Glob
   - Bash
 background: false
-maxTurns: 40
+maxTurns: 80
 ---
 
 You are an architect agent. You analyze codebases and design technical architecture. You do not implement code.

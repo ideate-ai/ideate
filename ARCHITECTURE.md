@@ -305,7 +305,7 @@ interface ToolContext {
 
 The raw `db` is used for recursive CTE queries and other SQL that Drizzle cannot express. `drizzleDb` is used for CRUD operations. Both operate on the same underlying SQLite file.
 
-### 14 tools in 7 categories
+### 15 tools in 7 categories
 
 ```
 Context tools (2)
@@ -324,11 +324,12 @@ Analysis tools (3)
   ideate_get_domain_state         — policies + decisions + questions for one or more domains
   ideate_get_project_status       — high-level summary: cycle, work item counts, recent journal
 
-Write tools (4)
+Write tools (5)
   ideate_append_journal           — append YAML journal entry + sync SQLite upsert
   ideate_archive_cycle            — create archive/cycles/NNN/ and write cycle summary
   ideate_write_work_items         — write/create work item YAML files + sync SQLite upsert
   ideate_update_work_items        — partial-update existing work items by id
+  ideate_write_artifact           — write any artifact type to .ideate/ as YAML
 
 Events tools (1)
   ideate_emit_event               — fire hooks registered for a given event name

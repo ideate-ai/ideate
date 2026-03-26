@@ -22,18 +22,17 @@ Available from controller context:
 
 Call it — returns the pre-assembled context package. Hold the result as `{context_package}`.
 
-If `ideate_get_context_package` is unavailable, assemble inline:
+If `ideate_get_context_package` is unavailable, assemble inline using other MCP tools:
 
-1. Read `{project_root}/.ideate/modules/architecture.yaml`. If ≤300 lines, include in full. If >300 lines, include only the component map section and interface contracts section.
-2. Read `{project_root}/.ideate/principles/GP-*.yaml` in full.
-3. Read `{project_root}/.ideate/constraints/C-*.yaml` in full.
+1. Call `ideate_artifact_query({type: "architecture"})` — if the result is ≤300 lines, include in full. If >300 lines, include only the component map section and interface contracts section.
+2. Call `ideate_get_context_package()` is unavailable, so call `ideate_artifact_query({type: "guiding_principle"})` to load all principles.
+3. Call `ideate_artifact_query({type: "constraint"})` to load all constraints.
 4. Build source code index: Glob source files (exclude test files, generated files, node_modules, .git, dist, build, __pycache__). For each file, detect language from extension and grep for key exports (first 5 per file). Format as a markdown table: `| File | Language | Key Exports |`.
 5. Compose as a single markdown document with sections in this order:
    - `## Architecture`
    - `## Guiding Principles`
    - `## Constraints`
    - `## Source Code Index`
-   - `## Full Document Paths` (absolute paths to architecture.yaml, principles/GP-*.yaml, constraints/C-*.yaml)
 
 Hold as `{context_package}` in memory. Pass inline to all reviewer and journal-keeper prompts. Do not provide file paths to reviewers — pass the assembled content directly.
 
@@ -102,11 +101,11 @@ Spawn all three simultaneously. Do not wait for one before starting another.
   >
   > Focus on cross-cutting concerns: consistency across modules, patterns spanning multiple work items, integration between components, systemic issues no single-item review could see.
   >
-  > Write your findings to: {project_root}/.ideate/cycles/{formatted_cycle_number}/code-quality.md
-  >
   > **Dynamic testing (comprehensive scope)**: After your static review, perform the dynamic checks defined in your agent instructions under "Dynamic Testing > Comprehensive review scope". Discover the project's test model and run the full test suite. Report test failures per the severity guidance in your agent instructions.
   >
   > Verdict is Fail if there are any Critical or Significant findings or unmet acceptance criteria. Otherwise Pass.
+  >
+  > Return your complete findings as the final section of your response. Use the standard review output format. Do NOT use the Write tool — return the content in your response.
 
 **spec-reviewer**
 - Model: sonnet
@@ -118,7 +117,7 @@ Spawn all three simultaneously. Do not wait for one before starting another.
   > **Shared context package** (inline — do not re-read architecture, principles, or constraints files individually):
   > {context_package}
   >
-  > **Module specs**: {project_root}/.ideate/modules/*.yaml (if they exist).
+  > **Module specs**: Call `ideate_artifact_query({type: "module_spec"})` to retrieve all module specs (if they exist).
   >
   > **Review manifest**: {project_root}/.ideate/cycles/{NNN}/review-manifest.md — use as an index. Read individual work items and incremental reviews only when investigating specific findings in their file scope.
   >
@@ -128,7 +127,7 @@ Spawn all three simultaneously. Do not wait for one before starting another.
   >
   > For each guiding principle, state whether it is satisfied or violated. The `## Principle Violations` and `## Principle Adherence Evidence` sections of your output are used for automated convergence checking — ensure both sections are present even if empty.
   >
-  > Write your findings to: {project_root}/.ideate/cycles/{formatted_cycle_number}/spec-adherence.md
+  > Return your complete findings as the final section of your response. Use the standard review output format. Do NOT use the Write tool — return the content in your response.
 
 **gap-analyst**
 - Model: sonnet
@@ -140,9 +139,9 @@ Spawn all three simultaneously. Do not wait for one before starting another.
   > **Shared context package** (inline — do not re-read architecture, principles, or constraints files individually):
   > {context_package}
   >
-  > **Interview transcript**: Read the most recent interview YAML from `{project_root}/.ideate/interviews/`. If no interviews exist, proceed without interview context.
+  > **Interview transcript**: Call `ideate_artifact_query({type: "interview"})` to retrieve the most recent interview YAML. If no interviews exist, proceed without interview context.
   >
-  > **Module specs**: {project_root}/.ideate/modules/*.yaml (if they exist).
+  > **Module specs**: Call `ideate_artifact_query({type: "module_spec"})` to retrieve all module specs (if they exist).
   >
   > **Review manifest**: {project_root}/.ideate/cycles/{NNN}/review-manifest.md — use as an index. Read individual work items and incremental reviews only when investigating specific gaps in their file scope.
   >
@@ -150,9 +149,15 @@ Spawn all three simultaneously. Do not wait for one before starting another.
   >
   > Focus on gaps spanning the full project: missing requirements from the interview, integration gaps between components, implicit requirements the project as a whole should meet.
   >
-  > Write your findings to: {project_root}/.ideate/cycles/{formatted_cycle_number}/gap-analysis.md
+  > Return your complete findings as the final section of your response. Use the standard review output format. Do NOT use the Write tool — return the content in your response.
 
-Wait for all three to complete. Verify their output files exist before proceeding. After each reviewer returns, record a metrics entry with `phase: "6b"` (schema in controller SKILL.md). For reviewer entries (`code-reviewer`, `spec-reviewer`, `gap-analyst`), also set `finding_count` to the total findings from the reviewer's output file (null if unparseable) and `finding_severities` to `{"critical": N, "significant": N, "minor": N}` (null if unparseable). Set `outcome`, `first_pass_accepted`, and `rework_count` to `null` for all phase `"6b"` entries.
+Wait for all three to complete. After each reviewer returns, extract the findings from the agent's response and write them via MCP:
+
+- After **code-reviewer** returns: call `ideate_write_artifact({type: "cycle_review", id: "code-quality", content: {cycle: {cycle_number}, reviewer: "code-reviewer", content: <findings from response>}})`.
+- After **spec-reviewer** returns: call `ideate_write_artifact({type: "cycle_review", id: "spec-adherence", content: {cycle: {cycle_number}, reviewer: "spec-reviewer", content: <findings from response>}})`.
+- After **gap-analyst** returns: call `ideate_write_artifact({type: "cycle_review", id: "gap-analysis", content: {cycle: {cycle_number}, reviewer: "gap-analyst", content: <findings from response>}})`.
+
+After writing all three artifacts, verify the writes succeeded before proceeding. Record a metrics entry with `phase: "6b"` (schema in controller SKILL.md). For each reviewer (`code-reviewer`, `spec-reviewer`, `gap-analyst`): extract `turns_used` from the `tool_uses` field in the Agent response `<usage>` block (integer; `null` if not available — do NOT leave as `null` if the usage block is present). The maxTurns budgets are: `code-reviewer`: 40, `spec-reviewer`: 50, `gap-analyst`: 50. If `turns_used` is non-null and `turns_used / maxTurns > 0.80`, append to the cycle review journal entry: `Agent {agent_type} used {turns_used}/{maxTurns} turns ({pct}%) — near budget limit`. Also set `finding_count` to the total findings from the reviewer's output (null if unparseable) and `finding_severities` to `{"critical": N, "significant": N, "minor": N}` (null if unparseable). Set `outcome`, `first_pass_accepted`, and `rework_count` to `null` for all phase `"6b"` entries.
 
 ### Spawn Journal-Keeper (After Reviewers Complete)
 
@@ -166,29 +171,25 @@ Wait for all three to complete. Verify their output files exist before proceedin
   > **Shared context package** (inline — do not re-read architecture, principles, or constraints files individually):
   > {context_package}
   >
-  > **Journal**: read the most recent journal entries from {project_root}/.ideate/cycles/*/journal/J-*.yaml (last 20 entries).
+  > **Journal**: Call `ideate_artifact_query({type: "journal_entry"})` to retrieve the most recent journal entries (last 20 entries).
   >
-  > **Interview transcript**: Read the most recent interview YAML from `{project_root}/.ideate/interviews/`. If no interviews exist, proceed without interview context.
+  > **Interview transcript**: Call `ideate_artifact_query({type: "interview"})` to retrieve the most recent interview YAML. If no interviews exist, proceed without interview context.
   >
-  > **Plan overview**: {project_root}/.ideate/modules/overview.yaml
+  > **Plan overview**: Call `ideate_artifact_query({type: "overview"})` to retrieve the plan overview.
   >
   > **Review manifest**: {project_root}/.ideate/cycles/{NNN}/review-manifest.md — use as an index. Read individual incremental reviews only when cross-referencing specific findings.
   >
-  > - Code quality review: {project_root}/.ideate/cycles/{formatted_cycle_number}/code-quality.md
-  > - Spec adherence review: {project_root}/.ideate/cycles/{formatted_cycle_number}/spec-adherence.md
-  > - Gap analysis: {project_root}/.ideate/cycles/{formatted_cycle_number}/gap-analysis.md
+  > **Review findings** (read via MCP — call `ideate_artifact_query({type: "cycle_review", cycle: {cycle_number}})` to retrieve the code-quality, spec-adherence, and gap-analysis review artifacts for this cycle).
   >
-  > Write your output to: {project_root}/.ideate/cycles/{formatted_cycle_number}/decision-log.md
+  > Return your complete output as the final section of your response. Do NOT use the Write tool — return the content in your response.
 
-After the journal-keeper returns, record a metrics entry with `phase: "6b"`, `agent_type: "journal-keeper"` (schema in controller SKILL.md). Set `finding_count`, `finding_severities`, `outcome`, `first_pass_accepted`, and `rework_count` to `null` for journal-keeper entries.
+After the journal-keeper returns, extract the output from the agent's response and write it via MCP: call `ideate_write_artifact({type: "cycle_review", id: "decision-log", content: {cycle: {cycle_number}, reviewer: "journal-keeper", content: <output from response>}})`.
+
+Then record a metrics entry with `phase: "6b"`, `agent_type: "journal-keeper"` (schema in controller SKILL.md). Extract `turns_used` from the `tool_uses` field in the Agent response `<usage>` block (integer; `null` if not available). The maxTurns budget for `journal-keeper` is 30. If `turns_used` is non-null and `turns_used / 30 > 0.80`, append to the cycle review journal entry: `Agent journal-keeper used {turns_used}/30 turns ({pct}%) — near budget limit`. Set `finding_count`, `finding_severities`, `outcome`, `first_pass_accepted`, and `rework_count` to `null` for journal-keeper entries.
 
 ### Collect Review Findings
 
-Read all four output files:
-- `{project_root}/.ideate/cycles/{formatted_cycle_number}/code-quality.md`
-- `{project_root}/.ideate/cycles/{formatted_cycle_number}/spec-adherence.md`
-- `{project_root}/.ideate/cycles/{formatted_cycle_number}/gap-analysis.md`
-- `{project_root}/.ideate/cycles/{formatted_cycle_number}/decision-log.md`
+Retrieve all four review artifacts via MCP: call `ideate_artifact_query({type: "cycle_review", cycle: {cycle_number}})` to retrieve code-quality, spec-adherence, gap-analysis, and decision-log artifacts for this cycle.
 
 Walk all findings and classify into: Critical, Significant, Minor, Suggestion.
 
@@ -220,11 +221,11 @@ Best-effort: if any step below fails, skip it and continue without blocking.
    - `findings.by_severity.suggestion`: count `### Suggestion` headings across all three reviewer output files
    - `findings.total`: sum of the four severity counts
 
-2. **Per-reviewer counts** — each reviewer uses different heading conventions; parse accordingly:
-   - `findings.by_reviewer.code-reviewer`: count `### C` (critical), `### S` (significant), `### M` (minor), `### Suggestion` (suggestion) headings in `{project_root}/.ideate/cycles/{formatted_cycle_number}/code-quality.md`
-   - `findings.by_reviewer.spec-reviewer`: in `{project_root}/.ideate/cycles/{formatted_cycle_number}/spec-adherence.md`, count `### D` headings as significant; count `### P` headings as significant if the `**Principle Violation Verdict**` line says `Fail`; count `### U` and `### N` headings as minor. Use 0 for suggestion.
-   - `findings.by_reviewer.gap-analyst`: in `{project_root}/.ideate/cycles/{formatted_cycle_number}/gap-analysis.md`, count occurrences of `**Severity**: Critical` (critical), `**Severity**: Significant` (significant), `**Severity**: Minor` (minor). Use 0 for suggestion.
-   - If a file cannot be read, use `{"critical":0,"significant":0,"minor":0,"suggestion":0}` for that reviewer.
+2. **Per-reviewer counts** — each reviewer uses different heading conventions; parse accordingly from the in-memory artifact content already retrieved in "Collect Review Findings":
+   - `findings.by_reviewer.code-reviewer`: count `### C` (critical), `### S` (significant), `### M` (minor), `### Suggestion` (suggestion) headings in the code-quality artifact content.
+   - `findings.by_reviewer.spec-reviewer`: in the spec-adherence artifact content, count `### D` headings as significant; count `### P` headings as significant if the `**Principle Violation Verdict**` line says `Fail`; count `### U` and `### N` headings as minor. Use 0 for suggestion.
+   - `findings.by_reviewer.gap-analyst`: in the gap-analysis artifact content, count occurrences of `**Severity**: Critical` (critical), `**Severity**: Significant` (significant), `**Severity**: Minor` (minor). Use 0 for suggestion.
+   - If an artifact cannot be retrieved, use `{"critical":0,"significant":0,"minor":0,"suggestion":0}` for that reviewer.
 
 3. **Category counts** — classify each finding into exactly one category using these rules (apply in order):
    - `requirements_missed`: gap-analyst critical/significant findings with words "missing", "absent", "not implemented", "requirement", "not present", "never built", "no implementation", "omitted"
@@ -235,7 +236,7 @@ Best-effort: if any step below fails, skip it and continue without blocking.
 
 4. **work_items_reviewed**: Count distinct work item rows in `{project_root}/.ideate/cycles/{NNN}/review-manifest.md`. Use `null` if the file is absent or cannot be parsed.
 
-5. **andon_events**: Read the most recent journal entries from `{project_root}/.ideate/cycles/*/journal/J-*.yaml` (last 20 entries). Count entries for cycle `{cycle_number}` that mention "Andon" (case-insensitive). Default to 0 if journal entries cannot be read.
+5. **andon_events**: Call `ideate_artifact_query({type: "journal_entry"})` to retrieve the most recent journal entries (last 20 entries). Count entries for cycle `{cycle_number}` that mention "Andon" (case-insensitive). Default to 0 if journal entries cannot be retrieved.
 
 **Emit the event**: Append one JSON line to `{project_root}/.ideate/metrics.jsonl`:
 
@@ -250,18 +251,19 @@ If the event cannot be written, log `quality_summary event skipped: {reason}` an
 **domain-curator**
 - Model: opus
 - MaxTurns: 50
-- Tools: Read, Write, Glob
+- Tools: Read, Glob
 - Prompt:
   > Maintain the domain knowledge layer for this project.
   >
   > **Project root**: {project_root}
-  > **Review source**: {project_root}/.ideate/cycles/{formatted_cycle_number}/ — code-quality.md, spec-adherence.md, gap-analysis.md, decision-log.md
   > **Cycle number**: {cycle_number}
   > **Review type**: cycle
   >
-  > Follow the domain-curator agent instructions. Extract policy-grade, decision-grade, question-grade, and conflict-grade items from this cycle's review files and update the domains/ layer accordingly.
+  > **Review source**: Call `ideate_artifact_query({type: "cycle_review", cycle: {cycle_number}})` to retrieve the code-quality, spec-adherence, gap-analysis, and decision-log review artifacts for this cycle.
+  >
+  > Follow the domain-curator agent instructions. Extract policy-grade, decision-grade, question-grade, and conflict-grade items from this cycle's review artifacts. Write all domain layer updates (policies, decisions, questions) using `ideate_write_artifact` — do NOT use the Write tool for any .ideate/ files. Return a summary of updates made as the final section of your response.
 
-After the domain-curator returns, record a metrics entry with `phase: "6b"`, `agent_type: "domain-curator"` (schema in controller SKILL.md). Set `finding_count`, `finding_severities`, `outcome`, `first_pass_accepted`, and `rework_count` to `null` for domain-curator entries.
+After the domain-curator returns, record a metrics entry with `phase: "6b"`, `agent_type: "domain-curator"` (schema in controller SKILL.md). Extract `turns_used` from the `tool_uses` field in the Agent response `<usage>` block (integer; `null` if not available). The maxTurns budget for `domain-curator` is 50. If `turns_used` is non-null and `turns_used / 50 > 0.80`, append to the cycle review journal entry: `Agent domain-curator used {turns_used}/50 turns ({pct}%) — near budget limit`. Set `finding_count`, `finding_severities`, `outcome`, `first_pass_accepted`, and `rework_count` to `null` for domain-curator entries.
 
 ### Archive Cycle (After Domain Curator)
 

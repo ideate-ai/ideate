@@ -39,17 +39,15 @@ Store as `{project_source_root}`.
 
 # Phase 3: Read and Validate Plan
 
-Read artifacts in this order:
+Load all plan artifacts via MCP tools:
 
-1. `.ideate/modules/execution-strategy.yaml`
-2. `.ideate/modules/overview.yaml` (if exists)
-3. `.ideate/modules/architecture.yaml`
-4. `.ideate/principles/GP-*.yaml`
-5. `.ideate/constraints/C-*.yaml`
-6. `.ideate/modules/*.yaml` (if they exist)
-7. Work items — glob `.ideate/work-items/WI-*.yaml`
-8. `.ideate/research/*.yaml` (if they exist)
-9. `.ideate/cycles/*/journal/J-*.yaml` (if exist)
+1. Call `ideate_get_context_package()` — returns architecture, guiding principles, and constraints as a single assembled package. Hold the result as `{context_package}`.
+2. Call `ideate_artifact_query({type: "execution_strategy"})` — returns the execution strategy.
+3. Call `ideate_artifact_query({type: "overview"})` — returns the project overview (if it exists). If absent, note and continue.
+4. Call `ideate_artifact_query({type: "module_spec"})` — returns all module specs (if they exist).
+5. Call `ideate_artifact_query({type: "work_item"})` — returns all work items.
+6. Call `ideate_artifact_query({type: "research"})` — returns all research findings (if they exist).
+7. Call `ideate_artifact_query({type: "journal_entry"})` — returns project history (if it exists). If absent, note and continue.
 
 Verify: every work item has an objective, acceptance criteria, file scope, and dependencies. Every dependency reference points to an existing work item.
 
@@ -274,7 +272,7 @@ After each agent spawn (via the Agent tool), append one JSON entry to `.ideate/m
 - `model` — model string passed to Agent tool
 - `work_item` — work item slug for workers and their paired code-reviewer; `null` for reviewers
 - `wall_clock_ms` — elapsed ms between Agent tool invocation and return
-- `turns_used` — from Agent response metadata if available; `null` otherwise
+- `turns_used` — integer extracted from `tool_uses` in the Agent response `<usage>` block. This is the proxy for turns used. Extract it after each Agent tool call returns. If not available, set to `null`. Do NOT leave as `null` if the usage block is present — extract the integer value.
 - `context_files_read` — absolute file paths explicitly provided in the agent's prompt
 - `input_tokens` — integer or null. Input token count from agent response metadata. Null if not available.
 - `output_tokens` — integer or null. Output token count from agent response metadata. Null if not available.
@@ -292,6 +290,12 @@ Before each Agent tool call, record which MCP tool calls (if any) were made to a
 Extract from agent response metadata if available. Set to null if token counts are not available in the response.
 
 Record timestamp immediately before the Agent tool call; compute `wall_clock_ms` after it returns.
+
+**Turns tracking and budget warning**: After each Agent tool call returns, extract `tool_uses` from the response `<usage>` block as `turns_used`. Use the following maxTurns budget per agent type: `code-reviewer`: 40, `spec-reviewer`: 50, `gap-analyst`: 50, `journal-keeper`: 30, `domain-curator`: 50, `architect`: 80, `researcher`: 40, `proxy-human`: 80. After recording the metrics entry, if `turns_used` is non-null and the agent's maxTurns is known, compute the utilization: `turns_used / maxTurns`. If utilization > 0.80, append a warning to the current journal entry (via `ideate_append_journal`):
+
+> Agent {agent_type} used {turns_used}/{maxTurns} turns ({pct}%) — near budget limit
+
+where `{pct}` is `round(turns_used / maxTurns * 100)`. This warning is best-effort — if the journal call fails, continue without interruption.
 
 Phase documents contain per-cycle and overall journal summary instructions. If `metrics.jsonl` could not be written, note "metrics unavailable" in the journal summary.
 

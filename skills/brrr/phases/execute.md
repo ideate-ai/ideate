@@ -11,24 +11,26 @@ Called by the brrr loop controller at the start of each cycle. The following var
 
 ## Instructions
 
-Execute all pending work items following the execution strategy from `{project_root}/.ideate/modules/execution-strategy.yaml`.
+Execute all pending work items following the execution strategy (loaded by the controller via `ideate_artifact_query({type: "execution_strategy"})`).
 
 ### Prepare Context Digest
 
 Before spawning workers, prepare a filtered context digest for this cycle's pending work items. This reduces context sent to each worker without losing relevant information.
 
+Call `ideate_get_context_package()` — returns the architecture document, guiding principles, and constraints as a single pre-assembled package. Hold the result as `{context_package}`.
+
 For each pending work item:
-1. Read `{project_root}/.ideate/modules/architecture.yaml`. Check its total line count.
-   - If architecture.yaml is ≤200 lines total, skip digest preparation for that item and pass the full file.
-   - If architecture.yaml is >200 lines, extract:
+1. Use the architecture section from `{context_package}`. Check its total line count.
+   - If the architecture content is ≤200 lines total, skip digest preparation for that item and pass the full content.
+   - If >200 lines, extract:
      - The full `## Interface Contracts` section — always included in full, uncapped (contracts span modules and must not be truncated regardless of length)
      - Sections mentioning any file path in the work item's `file_scope`
      - The component map entry for the relevant component
      - Cap all non-interface-contracts content at 150 lines total; if over this limit, include the component map entry first, then file-scope sections. If the interface contracts section alone exceeds 150 lines, include only the interface contracts section.
-2. Read `{project_root}/.ideate/principles/GP-*.yaml` in full (typically short enough to include entirely)
-3. Read `{project_root}/.ideate/constraints/C-*.yaml` in full
+2. Include guiding principles from `{context_package}` in full (typically short enough to include entirely).
+3. Include constraints from `{context_package}` in full.
 
-Store as `{work_item_context_digest[item_id]}`. Pass to the worker instead of the raw architecture file path. Include the full paths to the original files so workers can read them if more detail is needed: "Full architecture at `{project_root}/.ideate/modules/architecture.yaml`, full principles at `{project_root}/.ideate/principles/`, full constraints at `{project_root}/.ideate/constraints/` — read these if you need detail beyond what the digest provides."
+Store as `{work_item_context_digest[item_id]}`. Pass to the worker instead of the raw architecture content. Include a note that the full documents are available via MCP tools if more detail is needed.
 
 ### Context for Every Worker
 
@@ -38,14 +40,14 @@ Call it with `({work_item_id})` — returns pre-assembled context including work
 
 Every worker subagent receives:
 
-1. The work item spec — read `{project_root}/.ideate/work-items/WI-{NNN}.yaml` (includes inline implementation notes in the `notes` field).
-2. _(Implementation notes are inline in the work item YAML `notes` field.)_
-3. The context digest — `{work_item_context_digest[item_id]}` prepared in the "Prepare Context Digest" step above. Includes paths to the full architecture, principles, and constraints documents for reference.
-4. The relevant module spec — from `{project_root}/.ideate/modules/` if it exists and matches the work item's scope; otherwise the full architecture doc
+1. The work item context — from `ideate_get_work_item_context({work_item_id})`, which returns the work item spec (including inline implementation notes), module spec, domain policies, and relevant research as a single pre-assembled package.
+2. _(Implementation notes are inline in the work item YAML `notes` field, included in the response above.)_
+3. The context digest — `{work_item_context_digest[item_id]}` prepared in the "Prepare Context Digest" step above, derived from `{context_package}`. Includes a note that full documents are available via MCP tools if more detail is needed.
+4. The relevant module spec — included in the `ideate_get_work_item_context` response if applicable; otherwise the full architecture doc from `{context_package}`.
 5. _(Included in context digest)_
 6. _(Included in context digest)_
-7. Relevant research — any files from `{project_root}/.ideate/research/` referenced in the work item
-8. Project source root — the absolute path `{project_source_root}`
+7. Relevant research — included in the `ideate_get_work_item_context` response.
+8. Project source root — the absolute path `{project_source_root}`.
 
 All paths provided to workers must be absolute.
 
@@ -91,7 +93,7 @@ Where `{review_verdict}` is `"pass"` if the review passed without rework, `"rewo
 
 ### Execution Modes
 
-Execute according to the mode in `{project_root}/.ideate/modules/execution-strategy.yaml`:
+Execute according to the mode in the execution strategy (loaded by the controller via `ideate_artifact_query({type: "execution_strategy"})`):
 
 **Sequential**: Execute one work item at a time in dependency order. Select the next item whose dependencies are all complete. Build it. Trigger incremental review. Handle findings. Update journal. Repeat.
 
@@ -101,7 +103,7 @@ Execute according to the mode in `{project_root}/.ideate/modules/execution-strat
 
 **Worktree isolation**: If the execution strategy specifies worktrees, create a git worktree for each concurrent subagent before spawning it (`git worktree add` with branch `ideate/NNN-{name}`). After a work item's incremental review passes, merge back using `git merge --no-ff ideate/NNN-{name}`. Resolve trivial conflicts (whitespace, import ordering) automatically. For substantive merge conflicts, route to the Andon cord → proxy-human (see below). After a successful merge: `git worktree remove {path}` and `git branch -d ideate/NNN-{name}`.
 
-**Metrics**: After each worker agent returns, record a metrics entry with `phase: "6a"`, `agent_type: "worker"` (schema in controller SKILL.md). Include `input_tokens`, `output_tokens`, `cache_read_tokens`, `cache_write_tokens` from agent response metadata (null if unavailable), and `mcp_tools_called` (array of MCP tool names used to assemble context for the spawn, or `[]` if none). Before each Agent tool call, record which MCP tool calls (if any) were made to assemble context for that spawn. Set `outcome`, `finding_count`, `finding_severities`, `first_pass_accepted` to `null` for worker entries. Set `rework_count` to the number of fix-and-re-review cycles completed for this work item (0 if first review passed without rework).
+**Metrics**: After each worker agent returns, record a metrics entry with `phase: "6a"`, `agent_type: "worker"` (schema in controller SKILL.md). Extract `turns_used` from the `tool_uses` field in the Agent response `<usage>` block (integer; `null` if not available — do NOT leave as `null` if the usage block is present). Include `input_tokens`, `output_tokens`, `cache_read_tokens`, `cache_write_tokens` from agent response metadata (null if unavailable), and `mcp_tools_called` (array of MCP tool names used to assemble context for the spawn, or `[]` if none). Before each Agent tool call, record which MCP tool calls (if any) were made to assemble context for that spawn. Set `outcome`, `finding_count`, `finding_severities`, `first_pass_accepted` to `null` for worker entries. Set `rework_count` to the number of fix-and-re-review cycles completed for this work item (0 if first review passed without rework). If `turns_used` is non-null and the worker's maxTurns is known, and `turns_used / maxTurns > 0.80`, append to the journal entry for this work item: `Agent worker used {turns_used}/{maxTurns} turns ({pct}%) — near budget limit`.
 
 ### Incremental Review (Per Work Item)
 
@@ -123,7 +125,7 @@ Include the following in the code-reviewer's prompt:
   >
   > **Dynamic testing (incremental scope)**: After your static review, perform the dynamic checks defined in your agent instructions under "Dynamic Testing > Incremental review scope". Discover the project's test model, run the smoke test, and run tests scoped to the changed files. If the smoke test fails, report a Critical finding titled "Startup failure after [work item name]".
 
-Write the result to `{project_root}/.ideate/cycles/{NNN}/findings/F-{WI}-{SEQ}.yaml`. After the code-reviewer returns, record a metrics entry with `phase: "6a"`, `agent_type: "code-reviewer"`. Include `input_tokens`, `output_tokens`, `cache_read_tokens`, `cache_write_tokens` from agent response metadata (null if unavailable), and `mcp_tools_called` (array of MCP tool names used to assemble context, or `[]` if none). Also set: `outcome` to `"pass"`, `"rework"`, or `"fail"` based on the review verdict and whether rework was required; `finding_count` to the total number of findings across all severities from the review (null if output cannot be parsed); `finding_severities` to `{"critical": N, "significant": N, "minor": N}` (null if output cannot be parsed); `first_pass_accepted` to `true` if the review passes with no rework required, `false` otherwise; `rework_count` to `null`. (Full schema including `skill` and `cycle` fields defined in controller SKILL.md.)
+Write the result to `{project_root}/.ideate/cycles/{NNN}/findings/F-{WI}-{SEQ}.yaml`. After the code-reviewer returns, record a metrics entry with `phase: "6a"`, `agent_type: "code-reviewer"`. Extract `turns_used` from the `tool_uses` field in the Agent response `<usage>` block (integer; `null` if not available — do NOT leave as `null` if the usage block is present). The maxTurns budget for `code-reviewer` is 40. If `turns_used` is non-null and `turns_used / 40 > 0.80`, append to the journal entry for this work item: `Agent code-reviewer used {turns_used}/40 turns ({pct}%) — near budget limit`. Include `input_tokens`, `output_tokens`, `cache_read_tokens`, `cache_write_tokens` from agent response metadata (null if unavailable), and `mcp_tools_called` (array of MCP tool names used to assemble context, or `[]` if none). Also set: `outcome` to `"pass"`, `"rework"`, or `"fail"` based on the review verdict and whether rework was required; `finding_count` to the total number of findings across all severities from the review (null if output cannot be parsed); `finding_severities` to `{"critical": N, "significant": N, "minor": N}` (null if output cannot be parsed); `first_pass_accepted` to `true` if the review passes with no rework required, `false` otherwise; `rework_count` to `null`. (Full schema including `skill` and `cycle` fields defined in controller SKILL.md.)
 
 **Review format**:
 
@@ -211,7 +213,7 @@ When an Andon event occurs (scope-changing finding, merge conflict, spec ambigui
    ```
    Do NOT interrupt the loop or ask the user. This is logging only.
 
-**If the Agent tool is not available**: Handle the event yourself — read the guiding principles and constraints YAML files, apply them to the event, make the best decision, and record it in `{project_root}/.ideate/proxy-human-log.md` with heading: `## [brrr-fallback] {ISO date} — Cycle {cycle_number}` followed by the same Event/Decision/Confidence/Rationale fields.
+**If the Agent tool is not available**: Handle the event yourself — use the guiding principles and constraints from `{context_package}` (loaded via `ideate_get_context_package()` in the Prepare Context Digest step), apply them to the event, make the best decision, and record it in `{project_root}/.ideate/proxy-human-log.md` with heading: `## [brrr-fallback] {ISO date} — Cycle {cycle_number}` followed by the same Event/Decision/Confidence/Rationale fields.
 
 ### Worker Agent Failure
 

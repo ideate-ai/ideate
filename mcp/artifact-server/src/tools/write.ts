@@ -760,19 +760,25 @@ export async function handleUpdateWorkItems(
       const existingContent = fs.readFileSync(filePath, "utf8");
       const existingObj = parseYaml(existingContent) as Record<string, unknown>;
 
-      // Determine current cycle for cycle_modified
+      // Determine current cycle for cycle_modified (try .yaml first, fall back to .md)
       let cycleNumber: number | null = null;
-      const indexMdPath = path.join(
-        path.dirname(ctx.ideateDir),
-        "domains",
-        "index.md"
-      );
-      if (fs.existsSync(indexMdPath)) {
-        const indexContent = fs.readFileSync(indexMdPath, "utf8");
-        const match = indexContent.match(/current_cycle:\s*(\d+)/);
-        if (match) {
-          cycleNumber = parseInt(match[1], 10);
+      try {
+        const indexYamlPath = path.join(ctx.ideateDir, "domains", "index.yaml");
+        const indexMdPath = path.join(ctx.ideateDir, "domains", "index.md");
+        let indexContent: string | null = null;
+        if (fs.existsSync(indexYamlPath)) {
+          indexContent = fs.readFileSync(indexYamlPath, "utf8");
+        } else if (fs.existsSync(indexMdPath)) {
+          indexContent = fs.readFileSync(indexMdPath, "utf8");
         }
+        if (indexContent) {
+          const match = indexContent.match(/current_cycle:\s*(\d+)/);
+          if (match) {
+            cycleNumber = parseInt(match[1], 10);
+          }
+        }
+      } catch {
+        // cycle_modified remains null if index cannot be read
       }
 
       // Merge provided fields (skip immutable fields)

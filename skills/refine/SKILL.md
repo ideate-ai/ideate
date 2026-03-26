@@ -55,9 +55,9 @@ Call `ideate_get_context_package()` — returns architecture, guiding principles
 
 Then load remaining context via MCP tools:
 
-1. Call `ideate_artifact_query({type: "overview"})` — retrieves `.ideate/modules/overview.yaml`.
+1. Call `ideate_artifact_query({type: "overview"})` — retrieves `.ideate/plan/overview.yaml`.
 2. Call `ideate_artifact_query({type: "modules"})` — retrieves `.ideate/modules/*.yaml` specs (if they exist).
-3. Call `ideate_artifact_query({type: "execution-strategy"})` — retrieves `.ideate/modules/execution-strategy.yaml`.
+3. Call `ideate_artifact_query({type: "execution-strategy"})` — retrieves `.ideate/plan/execution-strategy.yaml`.
 4. Call `ideate_artifact_query({type: "work-items"})` — retrieves current work items from `.ideate/work-items/WI-*.yaml`. If prior cycles have been archived, note their existence but do not load them unless the user's changes specifically reference prior work.
 5. Call `ideate_artifact_query({type: "interview"})` — retrieves the original interview transcript from `.ideate/interviews/`.
 6. Call `ideate_artifact_query({type: "research"})` — retrieves all research findings from `.ideate/research/`.
@@ -201,7 +201,7 @@ If nothing changed, do not modify these files.
 
 ## 7d. Overview — OVERWRITE with Change Plan
 
-Use `ideate_write_artifact` to overwrite `.ideate/modules/overview.yaml` with a **change plan** focused on the delta. This is NOT a full project description. It describes:
+Use `ideate_write_artifact` to overwrite `.ideate/plan/overview.yaml` with a **change plan** focused on the delta. This is NOT a full project description. It describes:
 
 - What is changing and why
 - Summary of the triggering context (review findings addressed, new requirements, etc.)
@@ -213,7 +213,7 @@ The previous overview content is already captured in the git history and in the 
 
 ## 7e. Architecture — UPDATE only if changed
 
-If the refinement changes the architecture (new modules, changed interfaces, new components, modified data flow), update the relevant sections of `.ideate/modules/architecture.yaml`. Preserve unchanged sections exactly.
+If the refinement changes the architecture (new modules, changed interfaces, new components, modified data flow), update the relevant sections of `.ideate/plan/architecture.yaml`. Preserve unchanged sections exactly.
 
 If architecture is unchanged, do not modify this file. State in the refinement summary that architecture remains unchanged.
 
@@ -227,7 +227,7 @@ If modules are unchanged, do not modify these files.
 
 ## 7g. Execution Strategy — OVERWRITE with New Strategy
 
-Use `ideate_write_artifact` to write a new execution strategy to `.ideate/modules/execution-strategy.yaml`. The strategy covers only the new work items produced by this refinement. It follows the same format as the original execution strategy:
+Use `ideate_write_artifact` to write a new execution strategy to `.ideate/plan/execution-strategy.yaml`. The strategy covers only the new work items produced by this refinement. It follows the same format as the original execution strategy:
 
 - Mode (sequential, batched parallel, full parallel)
 - Parallelism settings
@@ -340,7 +340,7 @@ After each agent spawn (via the Agent tool), append one JSON entry to `.ideate/m
 - `model` — model string passed to Agent tool (e.g., `"sonnet"`, `"opus"`).
 - `work_item` — `null` (refine skill agents are not tied to individual work items).
 - `wall_clock_ms` — elapsed ms between Agent tool invocation and return.
-- `turns_used` — from Agent response metadata if available; `null` otherwise.
+- `turns_used` — integer extracted from `tool_uses` in the Agent response `<usage>` block. This is the proxy for turns used. Extract it after each Agent tool call returns. If not available, set to `null`. Do NOT leave as `null` if the usage block is present — extract the integer value.
 - `context_files_read` — absolute file paths explicitly provided in the agent's prompt.
 - `input_tokens` — integer or null. Input token count from agent response metadata. Null if not available.
 - `output_tokens` — integer or null. Output token count from agent response metadata. Null if not available.
@@ -353,6 +353,12 @@ Before each Agent tool call, record which MCP tool calls (if any) were made to a
 Extract from agent response metadata if available. Set to null if token counts are not available in the response.
 
 Record timestamp immediately before the Agent tool call; compute `wall_clock_ms` after it returns.
+
+**Turns tracking and budget warning**: After each Agent tool call returns, extract `tool_uses` from the response `<usage>` block as `turns_used`. Use the following maxTurns budget per agent type: `architect`: 80, `researcher`: 40, `decomposer`: 50. After recording the metrics entry, if `turns_used` is non-null and the agent's maxTurns is known, compute the utilization: `turns_used / maxTurns`. If utilization > 0.80, append a warning to the journal entry for this refinement cycle (via `ideate_append_journal`):
+
+> Agent {agent_type} used {turns_used}/{maxTurns} turns ({pct}%) — near budget limit
+
+where `{pct}` is `round(turns_used / maxTurns * 100)`. This warning is best-effort — if the journal call fails, continue without interruption.
 
 **Journal summary**: At the end of Phase 8 (after presenting the refinement summary), append via `ideate_append_journal`:
 

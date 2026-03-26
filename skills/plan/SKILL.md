@@ -315,19 +315,18 @@ Constraints are non-negotiable boundaries. If the user said "must use Python 3.1
 
 Spawn the `architect` agent in **design** mode with `model: opus`. This overrides the agent's default model for this task. Provide it with:
 
-- The full interview YAML (`.ideate/interviews/interview-plan-001.yaml`)
-- Guiding principles (`.ideate/principles/GP-*.yaml`)
-- Constraints (`.ideate/constraints/C-*.yaml`)
-- All research findings (`.ideate/research/*.yaml`)
+- The full interview YAML — call `ideate_artifact_query({type: "interview"})` to retrieve it
+- Guiding principles and constraints — call `ideate_get_context_package()` to retrieve them as an assembled package
+- All research findings — call `ideate_artifact_query({type: "research"})` to retrieve them
 - Clear instruction to operate in **design** mode
 - The full absolute paths where output should be written:
-  - `.ideate/modules/architecture.yaml`
+  - `.ideate/plan/architecture.yaml`
   - `.ideate/modules/{name}.yaml` (one per module)
 
 **Note:** If the architect agent lacks Write tool access and returns its output inline in its response, you (the plan skill) must write the response content to the target paths above using an MCP write tool or the Write tool.
 
 The architect will produce:
-- `.ideate/modules/architecture.yaml` — component map, data flow, module specifications, interface contracts, execution order, design tensions
+- `.ideate/plan/architecture.yaml` — component map, data flow, module specifications, interface contracts, execution order, design tensions
 - `.ideate/modules/{name}.yaml` — one file per module with Scope, Provides, Requires, Boundary Rules, Internal Design Notes
 
 **Wait for the architect to complete.** The architect runs in the foreground because its output is required before decomposition can begin. After it returns, record a metrics entry (see Metrics Instrumentation).
@@ -348,7 +347,7 @@ After the architect completes, read the architecture document and module specs. 
 
 ## 4.3 Write overview.yaml
 
-Write the project overview to `.ideate/modules/overview.yaml` (or as a human-readable summary; this file is for human reference). The content:
+Write the project overview to `.ideate/plan/overview.yaml` (or as a human-readable summary; this file is for human reference). The content:
 
 ```yaml
 id: overview
@@ -386,11 +385,9 @@ Decompose to work items yourself, in the main session. For each module (or for t
 
 Spawn one `decomposer` agent per module, in parallel, each with `model: opus`. This overrides the agent's default model for this task. Provide each with:
 
-- The module spec (`.ideate/modules/{name}.yaml`)
-- The architecture doc (`.ideate/modules/architecture.yaml`)
-- Guiding principles (`.ideate/principles/GP-*.yaml`)
-- Constraints (`.ideate/constraints/C-*.yaml`)
-- Relevant research findings from `.ideate/research/`
+- The module spec — call `ideate_artifact_query({type: "module_spec"})` to retrieve all module specs, then pass the relevant one
+- The architecture doc, guiding principles, and constraints — from `ideate_get_context_package()` (call once, reuse for all decomposers)
+- Relevant research findings — call `ideate_artifact_query({type: "research"})` to retrieve them
 - The starting work item number for that module's range (coordinate numbering across modules to avoid collisions)
 
 Each decomposer produces work items with placeholder numbers. After each decomposer returns, record a metrics entry (see Metrics Instrumentation). After all decomposers complete, you reconcile: assign final sequential numbers, resolve cross-module dependencies (replacing interface references with concrete work item numbers), and run the full validation suite.
@@ -509,7 +506,7 @@ If any work item fails this test, add more detail until it passes.
 
 ## 6.1 Write Execution Strategy
 
-Write `.ideate/modules/execution-strategy.yaml` based on the process track answers from the interview and the structure of the work item dependency graph:
+Write `.ideate/plan/execution-strategy.yaml` based on the process track answers from the interview and the structure of the work item dependency graph:
 
 ```yaml
 id: execution-strategy
@@ -588,10 +585,10 @@ Verify that the following files exist and are complete:
 - `.ideate/principles/GP-{NN}.yaml` (one per principle)
 - `.ideate/constraints/C-{NN}.yaml` (one per constraint)
 - `.ideate/research/*.yaml` (any files produced by researchers)
-- `.ideate/modules/overview.yaml`
-- `.ideate/modules/architecture.yaml`
+- `.ideate/plan/overview.yaml`
+- `.ideate/plan/architecture.yaml`
 - `.ideate/modules/{name}.yaml` (if applicable — projects with 5+ modules)
-- `.ideate/modules/execution-strategy.yaml`
+- `.ideate/plan/execution-strategy.yaml`
 - `.ideate/work-items/WI-{NNN}.yaml` (one per work item)
 - `.ideate/cycles/000/journal/J-000-001.yaml`
 - `.ideate/domains/index.yaml` (created in Phase 8)

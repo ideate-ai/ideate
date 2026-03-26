@@ -33,21 +33,19 @@ Store the project source root separately from the project root. Both paths are u
 
 # Phase 2: Read and Validate Plan
 
-Read every artifact in the artifact directory, in this order:
+Load all plan artifacts via MCP tools:
 
-1. `.ideate/modules/execution-strategy.yaml` — how to execute
-2. `.ideate/modules/overview.yaml` — what we are building
-3. `.ideate/modules/architecture.yaml` — technical architecture, component map, data flow
-4. `.ideate/principles/GP-*.yaml` — decision framework
-5. `.ideate/constraints/C-*.yaml` — hard boundaries
-6. `.ideate/modules/*.yaml` — all module specs (if they exist)
-7. Work items — glob `.ideate/work-items/WI-*.yaml`
-8. `.ideate/research/*.yaml` — all research findings (if they exist)
-9. `.ideate/cycles/*/journal/J-*.yaml` — project history (if it exists)
+1. Call `ideate_get_context_package()` — returns architecture, guiding principles, and constraints as a single assembled package. Hold the result as `{context_package}`.
+2. Call `ideate_artifact_query({type: "execution_strategy"})` — returns the execution strategy.
+3. Call `ideate_artifact_query({type: "overview"})` — returns the project overview (if it exists). If absent, note and continue.
+4. Call `ideate_artifact_query({type: "module_spec"})` — returns all module specs (if they exist).
+5. Call `ideate_artifact_query({type: "work_item"})` — returns all work items.
+6. Call `ideate_artifact_query({type: "research"})` — returns all research findings (if they exist).
+7. Call `ideate_artifact_query({type: "journal_entry"})` — returns project history (if it exists). If absent, note and continue.
 
-**Work Item Format**: Each work item is an individual YAML file at `.ideate/work-items/WI-{NNN}.yaml` containing structured fields (id, title, complexity, scope, depends, blocks, criteria) plus inline implementation notes in the `notes` field.
+**Work Item Format**: Each work item is a YAML artifact containing structured fields (id, title, complexity, scope, depends, blocks, criteria) plus inline implementation notes in the `notes` field.
 
-If `overview.yaml` or journal entries do not exist, note the absence and continue. All other artifacts listed in step 1 verification are required.
+All artifacts except overview and journal entries are required.
 
 After reading, verify:
 
@@ -128,7 +126,7 @@ If the execution strategy specifies worktree isolation, verify git worktree is a
 
 Before spawning workers, create a **context digest** — a filtered subset of architecture, principles, and constraints relevant to the current batch. This replaces loading the full documents for every worker.
 
-1. Read the full architecture document, guiding principles, and constraints.
+1. Use the `{context_package}` loaded in Phase 2 (from `ideate_get_context_package()`), which contains the full architecture document, guiding principles, and constraints.
 2. For each module in the current batch (as determined by the execution strategy groups):
    - Extract architecture sections relevant to this module's file scope
    - Extract guiding principles that apply to this module's domain
@@ -181,14 +179,14 @@ If the ideate MCP artifact server is not available, stop and report: "The ideate
 
 Regardless of execution mode, every worker (subagent, teammate, or the main session in sequential mode) receives:
 
-1. **The work item spec** — the item's `.ideate/work-items/WI-{NNN}.yaml` file (includes inline implementation notes in the `notes` field).
-2. **Context digest** — the filtered architecture, principles, and constraints prepared in Phase 4.5 for the current batch. Includes paths to the full documents if the worker needs more detail.
-3. **The relevant module spec** — if `.ideate/modules/` contains module specs, identify which module the work item belongs to (by matching file scope or explicit module reference) and include that module's spec. If the work item spans modules or no modules exist, include the full architecture doc instead (already provided).
+1. **The work item context** — from `ideate_get_work_item_context({work_item_id})`, which returns the work item spec (including inline implementation notes), module spec, domain policies, and relevant research as a single pre-assembled package.
+2. **Context digest** — the filtered architecture, principles, and constraints prepared in Phase 4.5 for the current batch, derived from the `{context_package}` loaded in Phase 2. Includes paths to the full documents if the worker needs more detail.
+3. **The relevant module spec** — included in the `ideate_get_work_item_context` response if applicable. If the work item spans modules or no modules exist, the full architecture doc from the context package is used instead.
 4. _(Included in context digest)_
 5. _(Included in context digest)_
-6. **Relevant research** — any files from `.ideate/research/` referenced in the work item's implementation notes or relevant to its scope
-7. **Project source root** — the absolute path to the project source root derived in Phase 1, so workers know where to create and modify source files
-8. **Relevant domain policies** — if `.ideate/domains/` exists, identify which domain(s) are relevant to the work item based on its file scope. Load `.ideate/domains/{relevant-domain}/policies/*.yaml` for each relevant domain. If no clear domain mapping exists, skip this step. Domain policies supplement the guiding principles — they are more specific rules derived from prior review cycles.
+6. **Relevant research** — included in the `ideate_get_work_item_context` response for research referenced in the work item's implementation notes or relevant to its scope.
+7. **Project source root** — the absolute path to the project source root derived in Phase 1, so workers know where to create and modify source files.
+8. **Relevant domain policies** — included in the `ideate_get_work_item_context` response. Domain policies supplement the guiding principles — they are more specific rules derived from prior review cycles.
 
 All paths provided to workers must be absolute. Do not use relative paths that depend on the worker's current working directory matching the artifact directory.
 
@@ -299,10 +297,9 @@ If the Agent tool is not available but the session-spawner MCP server (from exte
 When a work item completes (in any execution mode), spawn the `code-reviewer` agent immediately.
 
 Provide the code-reviewer with:
-- The work item spec (`.ideate/work-items/WI-{NNN}.yaml`)
+- The work item spec (from the `ideate_get_work_item_context` response used in Phase 6)
 - The list of files created or modified by the worker
-- The architecture document (`.ideate/modules/architecture.yaml`)
-- The guiding principles (`.ideate/principles/GP-*.yaml`)
+- The architecture document and guiding principles (from the `{context_package}` loaded in Phase 2)
 - The worker's self-check results (the `## Self-Check` section from the worker's completion report)
 
 Instruct the code-reviewer:
@@ -525,6 +522,9 @@ After all work items are complete (or after execution is stopped), present the f
 ```
 ## Execution Complete
 
+### Work Items
+Processed: {N} / {total pending}
+
 ### Items
 Total: {N}
 Completed: {N}
@@ -606,7 +606,7 @@ After each agent spawn (via the Agent tool), append one JSON entry to `.ideate/m
 - `model` — model string passed to Agent tool (e.g., `"sonnet"`).
 - `work_item` — work item slug (e.g., `"005-auth-middleware"`) for workers and their paired code-reviewer; `null` for other agents.
 - `wall_clock_ms` — elapsed ms between Agent tool invocation and return.
-- `turns_used` — from Agent response metadata if available; `null` otherwise.
+- `turns_used` — integer extracted from `tool_uses` in the Agent response `<usage>` block. This is the proxy for turns used. Extract it after each Agent tool call returns. If not available, set to `null`. Do NOT leave as `null` if the usage block is present — extract the integer value.
 - `context_files_read` — absolute file paths explicitly provided in the agent's prompt.
 - `input_tokens` — integer or null. Input token count from agent response metadata. Null if not available.
 - `output_tokens` — integer or null. Output token count from agent response metadata. Null if not available.
@@ -624,6 +624,12 @@ Before each Agent tool call, record which MCP tool calls (if any) were made to a
 Extract from agent response metadata if available. Set to null if token counts are not available in the response.
 
 Record timestamp immediately before the Agent tool call; compute `wall_clock_ms` after it returns.
+
+**Turns tracking and budget warning**: After each Agent tool call returns, extract `tool_uses` from the response `<usage>` block as `turns_used`. Use the following maxTurns budget per agent type: `code-reviewer`: 40, `worker`: (use the maxTurns value passed to that agent spawn, or null if unspecified). After recording the metrics entry, if `turns_used` is non-null and the agent's maxTurns is known, compute the utilization: `turns_used / maxTurns`. If utilization > 0.80, append a warning to the journal entry for this work item (via `ideate_append_journal`):
+
+> Agent {agent_type} used {turns_used}/{maxTurns} turns ({pct}%) — near budget limit
+
+where `{pct}` is `round(turns_used / maxTurns * 100)`. This warning is best-effort — if the journal call fails, continue without interruption.
 
 **Journal summary**: At the end of Phase 12 (before presenting the final summary), append via `ideate_append_journal`:
 
