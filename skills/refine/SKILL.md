@@ -171,7 +171,7 @@ After each researcher agent returns, record a metrics entry (see Metrics Instrum
 
 Integrate research findings into the refinement plan. If a finding contradicts an assumption from the interview, note the contradiction and resolve it (ask the user if the resolution is unclear).
 
-Research files follow the naming convention in the artifact conventions. If research on this topic already exists, create a new file with a distinguishing suffix (e.g., `oauth2-providers-v2.md`), not overwrite the original.
+Research files follow the naming convention in the artifact conventions. If research on this topic already exists, create a new file with a distinguishing suffix (e.g., `oauth2-providers-v2.yaml`), not overwrite the original.
 
 ---
 

@@ -1,29 +1,39 @@
 id: execution-strategy
 type: execution_strategy
-title: Execution Strategy — Cycle 032
+title: Execution Strategy — Cycle 033
 content: |-
-  # Execution Strategy — Cycle 032
+  # Execution Strategy — Cycle 033
 
   ## Mode
-  Batched parallel — 1 group (no dependencies).
+  Batched parallel — 2 dependency layers.
 
   ## Parallelism
-  Max concurrent workers: 2
+  Max concurrent workers: 3
   Worktrees: disabled
   Review cadence: incremental per item
 
   ## Work Item Groups
 
-  ### Group 1 (parallel)
-  - WI-249: Review skill MCP writes
-  - WI-250: Brrr review phase MCP writes
+  ### Group 1 (parallel — no dependencies)
+  - WI-251: Cycle-scoped path routing in ideate_write_artifact
+  - WI-252: Convert brrr-state.md and proxy-human-log.md to YAML via MCP
+  - WI-255: Research file suffix fix
+
+  ### Group 2 (depends on WI-251)
+  - WI-253: Review skill output files .md → .yaml
+  - WI-254: Brrr review phase output files .md → .yaml
 
   ## Dependency Graph
-  No dependencies. Both items parallel.
+  ```
+  251 → 253
+  251 → 254
+  252
+  255
+  ```
 
   ## Agent Configuration
   - Workers: sonnet
   - Incremental reviewers: sonnet
-content_hash: f430586308117253c0d4022fb7af4d30c1597eb6584a5c165d4096ee96d1aedd
-token_count: 142
+content_hash: edec4e567ab7d590c6f8c5185f17af28b46e6f04479a896ef3607f3001d00fb1
+token_count: 206
 file_path: .ideate/plan/execution-strategy.yaml

@@ -73,17 +73,17 @@ Build the dependency graph. Perform depth-first traversal for cycle detection. I
 
 # Phase 4: Check for Existing brrr Session
 
-If `{project_root}/.ideate/brrr-state.md` exists, read it. Extract `cycles_completed`, `convergence_achieved`, and `started_at`.
+If `{project_root}/.ideate/brrr-state.yaml` exists, read it. Extract `cycles_completed`, `convergence_achieved`, and `started_at`.
 
 Present:
 > A previous brrr session exists ({cycles_completed} cycles completed, convergence: {convergence_achieved}, started: {started_at}). Resume or start fresh?
 
 - **Resume**: Load state. Set `cycles_completed` from file. Skip Phase 5.
-- **Start fresh**: Delete `brrr-state.md` and proceed.
+- **Start fresh**: Delete `brrr-state.yaml` and proceed.
 
 ## Initialize brrr State
 
-Create or reset `{project_root}/.ideate/brrr-state.md`:
+Create or reset `{project_root}/.ideate/brrr-state.yaml`:
 
 ```markdown
 # brrr Session State
@@ -150,13 +150,13 @@ Record `{pending_count_start_of_cycle}` = current number of pending items.
 
 ### 6a: Execute Phase
 
-**Record cycle start commit**: Run `git rev-parse HEAD` in `{project_source_root}`. If successful, store as `{cycle_start_commit}` and append `cycle_{cycle_number}_start_commit: {hash}` to `{project_root}/.ideate/brrr-state.md`. If the command fails (not a git repo), set `{cycle_start_commit}` = null.
+**Record cycle start commit**: Run `git rev-parse HEAD` in `{project_source_root}`. If successful, store as `{cycle_start_commit}` and append `cycle_{cycle_number}_start_commit: {hash}` to `{project_root}/.ideate/brrr-state.yaml`. If the command fails (not a git repo), set `{cycle_start_commit}` = null.
 
 Read `{phases_dir}/execute.md`. Follow all instructions in that document.
 
 Continue here after all pending work items have been attempted.
 
-**Record cycle end commit**: Run `git rev-parse HEAD` in `{project_source_root}`. Store as `{cycle_end_commit}`. Append `cycle_{cycle_number}_end_commit: {hash}` to `{project_root}/.ideate/brrr-state.md`.
+**Record cycle end commit**: Run `git rev-parse HEAD` in `{project_source_root}`. Store as `{cycle_end_commit}`. Append `cycle_{cycle_number}_end_commit: {hash}` to `{project_root}/.ideate/brrr-state.yaml`.
 
 ### 6b: Comprehensive Review Phase
 
@@ -168,7 +168,7 @@ Continue here after the four output files exist in `{project_root}/.ideate/cycle
 
 **Call `ideate_get_convergence_status`**: Look in your tool list for a tool whose name ends in `ideate_get_convergence_status` (it will be prefixed, e.g. `mcp__ideate_artifact_server__ideate_get_convergence_status` or `mcp__plugin_ideate_ideate_artifact_server__ideate_get_convergence_status`). If not found, stop and report: "The ideate MCP artifact server is required but not available. Verify .mcp.json configuration."
 
-Call it with `({cycle_number})` — parses `spec-adherence.md` and `{last_cycle_findings}` and returns a convergence status object with `converged: true|false`, `condition_a: true|false` (zero critical/significant findings), and `condition_b: true|false` (principle adherence verdict).
+Call it with `({cycle_number})` — parses `spec-adherence.yaml` and `{last_cycle_findings}` and returns a convergence status object with `converged: true|false`, `condition_a: true|false` (zero critical/significant findings), and `condition_b: true|false` (principle adherence verdict).
 
 Use the returned `converged` flag to drive the convergence decision. If `converged` is true, set `{convergence_achieved}` = true, call `ideate_emit_event` with:
 - event: "cycle.converged"
@@ -188,17 +188,17 @@ Minor findings do not block convergence.
 
 **Condition B: Guiding Principles Adherence**
 
-Read `{project_root}/.ideate/cycles/{formatted_cycle_number}/spec-adherence.md`:
+Read `{project_root}/.ideate/cycles/{formatted_cycle_number}/spec-adherence.yaml`:
 
-1. File missing → Condition B fails. Log: "spec-adherence.md not found — treating as non-converged."
-2. No section matching `## Principle Violation` (case-insensitive, with or without trailing "s") → fails. Log: "spec-adherence.md missing Principle Violations section."
+1. File missing → Condition B fails. Log: "spec-adherence.yaml not found — treating as non-converged."
+2. No section matching `## Principle Violation` (case-insensitive, with or without trailing "s") → fails. Log: "spec-adherence.yaml missing Principle Violations section."
 3. Check for machine-parseable verdict line first:
    - Section contains a line beginning with `**Principle Violation Verdict**: Pass` → **passes**.
    - Section contains a line beginning with `**Principle Violation Verdict**: Fail` → **fails**.
 4. Fallback (no verdict line present):
    - Section contains only "None." or "None" (case-insensitive, whitespace-tolerant) → **passes**.
    - Section contains lines starting with `###` or `- ` → **fails**.
-   - Section is present but matches neither pattern → log: "spec-adherence.md Principle Violations section has unexpected format — treating as non-converged." and **fails**.
+   - Section is present but matches neither pattern → log: "spec-adherence.yaml Principle Violations section has unexpected format — treating as non-converged." and **fails**.
 
 **Convergence Decision**
 
@@ -210,7 +210,7 @@ Both conditions must pass simultaneously.
   This call is best-effort — if it fails, continue without interruption. Then exit the loop. Proceed to Phases 7–9.
 - If either fails: proceed to Phase 6d.
 
-Update `{project_root}/.ideate/brrr-state.md`:
+Update `{project_root}/.ideate/brrr-state.yaml`:
 ```
 convergence_achieved: {true | false}
 last_cycle_findings: {critical: N, significant: N, minor: N}
@@ -224,7 +224,7 @@ Continue here after new work items are created and the journal is updated.
 
 ### 6e: Cycle Limit Check
 
-Increment `cycles_completed` in `{project_root}/.ideate/brrr-state.md`.
+Increment `cycles_completed` in `{project_root}/.ideate/brrr-state.yaml`.
 
 If `cycles_completed >= max_cycles` without convergence, exit the loop and proceed to Phases 7–9 (Phase 8 path).
 
@@ -301,7 +301,7 @@ Phase documents contain per-cycle and overall journal summary instructions. If `
 
 **Convergence summary fields**: When the loop exits (converged or max-cycles reached), the activity report and final journal entry must include the following summary fields derived from `metrics.jsonl`:
 
-- `convergence_cycles` — integer. The number of cycles completed before convergence (or before the cycle limit was reached). Equal to `cycles_completed` from `brrr-state.md`.
+- `convergence_cycles` — integer. The number of cycles completed before convergence (or before the cycle limit was reached). Equal to `cycles_completed` from `brrr-state.yaml`.
 - `cycle_total_tokens` — integer or null. Sum of all `input_tokens` + `output_tokens` + `cache_read_tokens` + `cache_write_tokens` across every entry in `metrics.jsonl` for this brrr session (where `skill` = `"brrr"`). Null if `metrics.jsonl` is unavailable or token fields are all null.
 - `cycle_total_cost_estimate` — string or null. A human-readable cost estimate string (e.g., `"~$4.20"`) derived from `cycle_total_tokens` using current published model pricing for the models used. Null if token data is unavailable or pricing cannot be determined.
 
@@ -315,7 +315,7 @@ These three fields are optional (null if not available). Include them in the Pha
 - You do not skip incremental reviews. Every completed work item gets reviewed before the cycle's comprehensive review runs.
 - You do not present minor review findings to the user. Handle them silently.
 - You do not make design decisions. If the proxy-human defers, note the deferral and continue where possible.
-- You do not modify steering artifacts. You have read-only access to `.ideate/principles/` and `.ideate/constraints/`. You write to `.ideate/cycles/{NNN}/findings/`, `.ideate/brrr-state.md`, and `.ideate/proxy-human-log.md` (via proxy-human) — all through MCP tools.
+- You do not modify steering artifacts. You have read-only access to `.ideate/principles/` and `.ideate/constraints/`. You write to `.ideate/cycles/{NNN}/findings/`, `.ideate/brrr-state.yaml`, and `.ideate/proxy-human-log.yaml` (via proxy-human) — all through MCP tools.
 - You do not declare convergence unless both Condition A and Condition B pass simultaneously in the same cycle.
 - You do not re-plan from scratch. New work items in the refinement phase address specific findings. They do not replace the original plan.
 - You do not use filler phrases, encouragement, or enthusiasm. State facts.
