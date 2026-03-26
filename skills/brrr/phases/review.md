@@ -88,7 +88,7 @@ Spawn all three simultaneously. Do not wait for one before starting another.
 
 **code-reviewer**
 - Model: sonnet
-- MaxTurns: 20
+- MaxTurns: 40
 - Tools: Read, Grep, Glob, Bash
 - Prompt:
   > You are conducting a comprehensive code review of the entire project.
@@ -110,7 +110,7 @@ Spawn all three simultaneously. Do not wait for one before starting another.
 
 **spec-reviewer**
 - Model: sonnet
-- MaxTurns: 25
+- MaxTurns: 50
 - Tools: Read, Grep, Glob
 - Prompt:
   > Verify that the implementation matches the plan, architecture, and guiding principles.
@@ -132,7 +132,7 @@ Spawn all three simultaneously. Do not wait for one before starting another.
 
 **gap-analyst**
 - Model: sonnet
-- MaxTurns: 25
+- MaxTurns: 50
 - Tools: Read, Grep, Glob
 - Prompt:
   > Find what is missing from the implementation — things that should exist but do not.
@@ -158,7 +158,7 @@ Wait for all three to complete. Verify their output files exist before proceedin
 
 **journal-keeper**
 - Model: sonnet
-- MaxTurns: 15
+- MaxTurns: 30
 - Tools: Read, Grep, Glob
 - Prompt:
   > Synthesize the project history into a decision log and open questions list.
@@ -250,7 +250,7 @@ If the event cannot be written, log `quality_summary event skipped: {reason}` an
 
 **domain-curator**
 - Model: opus
-- MaxTurns: 25
+- MaxTurns: 50
 - Tools: Read, Write, Glob
 - Prompt:
   > Maintain the domain knowledge layer for this project.

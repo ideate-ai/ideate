@@ -169,7 +169,7 @@ All three agents run in parallel. Do not wait for one to finish before starting 
 
 **Agent**: code-reviewer
 **Model**: sonnet
-**MaxTurns**: 20
+**MaxTurns**: 40
 **Tools**: Read, Grep, Glob, Bash
 
 **Prompt** (adapt paths to the actual artifact directory and project source location):
@@ -197,7 +197,7 @@ After this agent returns, record a metrics entry (see Metrics Instrumentation).
 
 **Agent**: spec-reviewer
 **Model**: sonnet
-**MaxTurns**: 25
+**MaxTurns**: 50
 **Tools**: Read, Grep, Glob
 
 **Prompt**:
@@ -225,7 +225,7 @@ After this agent returns, record a metrics entry (see Metrics Instrumentation).
 
 **Agent**: gap-analyst
 **Model**: sonnet
-**MaxTurns**: 25
+**MaxTurns**: 50
 **Tools**: Read, Grep, Glob
 
 **Prompt**:
@@ -263,7 +263,7 @@ Spawn the journal-keeper only AFTER all three reviewers from Phase 4a have compl
 
 **Agent**: journal-keeper
 **Model**: sonnet
-**MaxTurns**: 15
+**MaxTurns**: 30
 **Tools**: Read, Grep, Glob
 
 **Prompt** (adapt paths to the actual artifact directory):
