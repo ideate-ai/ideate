@@ -156,17 +156,24 @@ export async function handleGetExecutionStatus(
 
   // Categorise each work item
   const completedSet = new Set<string>();
+  const obsoleteSet = new Set<string>();
   const pendingSet = new Set<string>();
   const readySet = new Set<string>();
   const blockedMap = new Map<string, string[]>(); // id → unsatisfied dep IDs
 
-  // First pass: determine completed items
+  // First pass: determine completed and obsolete items
   // An item is completed if:
   //   - DB status is "done" or "complete", OR
   //   - incremental review verdict is "Pass", OR
   //   - journal entry records it as complete
+  // An item is obsolete if:
+  //   - DB status is "obsolete"
   for (const row of rows) {
     const status = (row.status ?? "").toLowerCase();
+    if (status === "obsolete") {
+      obsoleteSet.add(row.id);
+      continue;
+    }
     const review = reviews.get(row.id);
     const isComplete =
       status === "done" ||
@@ -181,9 +188,10 @@ export async function handleGetExecutionStatus(
   // Second pass: categorise remaining items
   for (const row of rows) {
     if (completedSet.has(row.id)) continue;
+    if (obsoleteSet.has(row.id)) continue;
 
     const deps = dependsMap.get(row.id) ?? [];
-    const unsatisfied = deps.filter((dep) => !completedSet.has(dep));
+    const unsatisfied = deps.filter((dep) => !completedSet.has(dep) && !obsoleteSet.has(dep));
 
     if (unsatisfied.length === 0) {
       // No unsatisfied deps — ready to execute
@@ -194,11 +202,12 @@ export async function handleGetExecutionStatus(
     }
   }
 
-  // Any remaining items that are neither completed, ready, nor blocked are pending
+  // Any remaining items that are neither completed, obsolete, ready, nor blocked are pending
   // (this handles items with empty deps that were missed, shouldn't happen but guard anyway)
   for (const row of rows) {
     if (
       completedSet.has(row.id) ||
+      obsoleteSet.has(row.id) ||
       readySet.has(row.id) ||
       blockedMap.has(row.id)
     ) {
@@ -209,12 +218,14 @@ export async function handleGetExecutionStatus(
 
   const total = rows.length;
   const completedList = [...completedSet].sort();
+  const obsoleteList = [...obsoleteSet].sort();
   const pendingList = [...pendingSet].sort();
   const readyList = [...readySet].sort();
 
   const lines: string[] = [
     "## Execution Status",
     `Completed: ${completedSet.size} (${completedList.join(", ") || "none"})`,
+    `Obsolete: ${obsoleteSet.size} (${obsoleteList.join(", ") || "none"})`,
     `Pending: ${pendingSet.size} (${pendingList.join(", ") || "none"})`,
     `Ready to execute: ${readySet.size} (${readyList.join(", ") || "none"})`,
     `Blocked: ${blockedMap.size}`,

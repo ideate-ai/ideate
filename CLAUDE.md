@@ -44,13 +44,15 @@ specs/
 
 ## Development workflow
 
-Ideate uses its own workflow to develop itself. The `specs/` directory is the artifact directory for ideate's own planning and review.
+Ideate uses its own workflow to develop itself. The `.ideate/` directory is the artifact directory for ideate's own planning and review.
 
-- Work items: `specs/plan/work-items/NNN-{name}.md`
-- Cycle reviews: `specs/archive/cycles/{NNN}/`
-- Domain knowledge: `specs/domains/` (4 domains: workflow, artifact-structure, agent-system, project-boundaries)
+- Work items: `.ideate/work-items/WI-{NNN}.yaml`
+- Cycle reviews: `.ideate/cycles/{NNN}/`
+- Domain knowledge: `.ideate/policies/`, `.ideate/decisions/`, `.ideate/questions/` (4 domains: workflow, artifact-structure, agent-system, project-boundaries)
 
-To run a review cycle on ideate itself: `/ideate:review specs/`
+To run a review cycle on ideate itself: `/ideate:review`
+
+**Changes to ideate must go through the refinement cycle** (`/ideate:refine` → `/ideate:execute`), not direct code edits. Ideate uses its own structured SDLC workflow for self-development.
 
 ## Key conventions
 

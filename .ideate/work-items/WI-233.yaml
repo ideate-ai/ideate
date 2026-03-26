@@ -1,0 +1,29 @@
+id: WI-233
+type: work_item
+title: "Fix ideate_write_work_items to produce v3 per-file YAML format"
+status: done
+complexity: medium
+scope:
+  - {path: mcp/artifact-server/src/tools/write.ts, op: modify}
+  - {path: mcp/artifact-server/src/__tests__/tools.test.ts, op: modify}
+depends: []
+blocks: [WI-225, WI-226]
+criteria:
+  - "Creates individual YAML at work-items/{id}.yaml"
+  - All fields in YAML including inline notes
+  - No plan/notes/*.md created
+  - SQLite file_path points to YAML
+  - resolution field included
+  - Tests updated
+  - Backward compatible
+module: null
+domain: artifact-structure
+notes: |
+  # WI-233: Fix Write Tool
+
+  Rewrote handleWriteWorkItems write phase. Individual YAML to {ideateDir}/work-items/{id}.yaml. Notes inline. No plan/notes/*.md. No plan/work-items.yaml. 8 new tests, 257 total pass.
+cycle_created: 28
+cycle_modified: null
+content_hash: ""
+token_count: 0
+file_path: .ideate/work-items/WI-233.yaml

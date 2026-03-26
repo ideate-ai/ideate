@@ -627,7 +627,6 @@ function extractListField(body: string, label: string): string[] {
 function migratePolicies(ctx: MigrationContext, domain: string, filePath: string): void {
   const content = readFile(filePath);
   if (!content) {
-    warn(ctx, `policies.md not found at ${filePath}`);
     return;
   }
 
@@ -685,7 +684,6 @@ function migratePolicies(ctx: MigrationContext, domain: string, filePath: string
 function migrateDecisions(ctx: MigrationContext, domain: string, filePath: string): void {
   const content = readFile(filePath);
   if (!content) {
-    warn(ctx, `decisions.md not found at ${filePath}`);
     return;
   }
 
@@ -745,7 +743,6 @@ function migrateDecisions(ctx: MigrationContext, domain: string, filePath: strin
 function migrateQuestions(ctx: MigrationContext, domain: string, filePath: string): void {
   const content = readFile(filePath);
   if (!content) {
-    warn(ctx, `questions.md not found at ${filePath}`);
     return;
   }
 
@@ -813,6 +810,13 @@ function migrateDomains(ctx: MigrationContext): void {
     if (!entry.isDirectory()) continue;
     const domain = entry.name;
     const domainPath = path.join(domainsDir, domain);
+
+    const hasFiles = ["policies.md", "decisions.md", "questions.md"]
+      .some(f => fs.existsSync(path.join(domainPath, f)));
+    if (!hasFiles) {
+      console.log(`Skipping empty domain: ${domain}`);
+      continue;
+    }
 
     migratePolicies(ctx, domain, path.join(domainPath, "policies.md"));
     migrateDecisions(ctx, domain, path.join(domainPath, "decisions.md"));

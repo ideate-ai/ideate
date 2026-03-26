@@ -308,6 +308,7 @@ export async function handleGetProjectStatus(
   const wiPending = (wiByStatus["pending"] ?? 0) + (wiByStatus["not_started"] ?? 0);
   const wiBlocked = wiByStatus["blocked"] ?? 0;
   const wiInProgress = wiByStatus["in_progress"] ?? 0;
+  const wiObsolete = wiByStatus["obsolete"] ?? 0;
 
   // Finding counts from latest cycle summary.md (if cycle is known)
   let criticalCount = 0;
@@ -353,9 +354,10 @@ export async function handleGetProjectStatus(
   lines.push(`- In progress: ${wiInProgress}`);
   lines.push(`- Pending: ${wiPending}`);
   lines.push(`- Blocked: ${wiBlocked}`);
+  lines.push(`- Obsolete: ${wiObsolete}`);
   // Include any other statuses not covered above
   for (const [status, count] of Object.entries(wiByStatus)) {
-    if (!["done", "pending", "not_started", "blocked", "in_progress"].includes(status)) {
+    if (!["done", "pending", "not_started", "blocked", "in_progress", "obsolete"].includes(status)) {
       lines.push(`- ${status}: ${count}`);
     }
   }

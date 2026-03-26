@@ -14,6 +14,8 @@ Deep technical reference for the Ideate MCP artifact server. For installation an
 6. [Graph Model](#6-graph-model)
 7. [YAML Source of Truth](#7-yaml-source-of-truth)
 8. [File Watcher](#8-file-watcher)
+9. [Context Assembly Algorithm](#9-context-assembly-algorithm)
+10. [Source files](#10-source-files)
 
 ---
 
@@ -506,7 +508,119 @@ Multiple directories can be watched concurrently. Each directory has its own `FS
 
 ---
 
-## Source files
+## 9. Context Assembly Algorithm
+
+### 9.1 Overview
+
+The MCP artifact server assembles context via deterministic graph traversal from seed nodes. It does not use embedding-based search or similarity ranking. Context is assembled at query time by walking typed edges in the SQLite index, loading exactly the artifacts reachable by the prescribed traversal pattern, and truncating sections that exceed per-section line budgets.
+
+Two primary tools handle context assembly:
+
+- **`ideate_get_work_item_context`** — per-item context for execution workers: the work item itself, implementation notes, module spec, domain policies, and relevant research.
+- **`ideate_get_context_package`** — base context shared across all workers: architecture document, guiding principles, constraints, and source code index.
+
+Skills call both tools before spawning workers. The context package provides project-wide scaffolding. The work item context provides item-specific detail. The execute skill then further filters the context package into a per-batch digest (see Section 9.4).
+
+The current approach reflects the graph-traversal-first direction from the PPR research (see `context-assembly-strategies.yaml`): explicit, typed edge traversal produces precise, predictable context at low latency. PPR and spreading activation are identified as future enhancements once the query-log infrastructure accumulates sufficient usage signal to calibrate edge weights adaptively.
+
+### 9.2 ideate_get_work_item_context
+
+Source: `mcp/artifact-server/src/tools/context.ts`, `handleGetWorkItemContext`.
+
+The function accepts `artifact_dir` and `work_item_id`. IDs are normalized to handle both `WI-185` and `185` forms.
+
+**Assembly order** (sections joined with `---` dividers):
+
+1. **Work item** — loaded from the `nodes` + `work_items` JOIN. Includes: id, title, status, complexity, domain, module, file path, cycle created, depends/blocks lists, scope entries (file paths and operations), and acceptance criteria.
+
+2. **Implementation notes** — if the work item row has a `notes` field, the notes file is read from disk. Capped at 200 lines; shows truncation notice if exceeded.
+
+3. **Module spec** — resolved by following the `belongs_to_module` edge from the work item. The query is:
+   ```sql
+   SELECT ms.* FROM edges e
+   JOIN nodes n ON n.id = e.target_id
+   JOIN module_specs ms ON ms.id = n.id
+   WHERE e.source_id = ? AND e.edge_type = 'belongs_to_module'
+   LIMIT 1
+   ```
+   If found, the section includes module name, scope, provides list, requires list, and boundary rules.
+
+4. **Domain policies** — loaded by matching `domain_policies.domain = work_item.domain`. This is a direct column filter, not edge traversal. All policies for the domain are included, ordered by id. Each policy description is capped at 30 lines.
+
+5. **Relevant research** — all `research_findings` rows are loaded and filtered by topic: entries whose `topic` contains the work item's domain name or module name (case-insensitive substring match) are included. If neither domain nor module is set, the first 3 research entries are included as a fallback. Research section has a global 150-line budget; entries that would exceed it are omitted with a count notice.
+
+**Final truncation**: the assembled result is capped at 500 lines. If exceeded, the last section (research) is cut first by the line limit.
+
+**Edge types followed**: `belongs_to_module` (outgoing, depth 1). Domain policies are found by column value match, not edge traversal. Research is found by topic substring match, not edge traversal.
+
+**What is not included**: architecture document, guiding principles, constraints, source code index, other work items, cycle summaries, findings from prior reviews. These are either in the context package or excluded entirely for execution tasks.
+
+### 9.3 ideate_get_context_package
+
+Source: `mcp/artifact-server/src/tools/context.ts`, `handleGetContextPackage`.
+
+The function accepts `artifact_dir` and returns project-wide context. It does not accept a work item id — the same package is returned for all queries against a given artifact directory.
+
+**Assembly order** (sections joined with `---` dividers):
+
+1. **Architecture document** — found by `WHERE n.type = 'architecture' LIMIT 1`. If the document is 300 lines or fewer, it is included in full. If longer, a summary is extracted: all headings (`#`, `##`, `###`) and up to 3 non-empty lines following each heading are included, capped at 150 summary lines. The full document path is also emitted in the Full Document Paths section.
+
+2. **Guiding principles** — all rows from `guiding_principles` joined with `nodes`, ordered by id. Each description is capped at 20 lines. All principles are included regardless of count.
+
+3. **Constraints** — all rows from `constraints` joined with `nodes`, ordered by `category, id`. Each description is capped at 10 lines. Constraints are grouped under their category as subheadings.
+
+4. **Source code index** — derived at query time by walking the filesystem (not the SQLite index). The project root is computed as `dirname(dirname(ideateDir))`. The directories `src`, `lib`, `agents`, `skills`, `scripts`, `mcp` are walked recursively (max depth 8) for `.ts`, `.js`, `.py` files. For each file, exports are extracted via regex patterns (TypeScript: `export function/const/class/interface/type/enum`, Python: `def`/`class` at module scope). Results are rendered as a Markdown table capped at 80 files.
+
+5. **Full document paths** — all paths collected during assembly (architecture, principles, constraints) plus all `document_artifacts` rows from the DB, deduplicated. Formatted as a bullet list of label → path pairs.
+
+**Final truncation**: capped at 800 lines.
+
+**Edge types followed**: none. The context package is assembled entirely from type-based DB queries and filesystem walks.
+
+**What is not included**: work item specs, domain policies, research findings, module specs, findings from prior reviews. These are assembled per-item by `ideate_get_work_item_context`.
+
+### 9.4 Context digest (skill-side filtering)
+
+Source: `skills/execute/SKILL.md`, Phase 4.5.
+
+Before spawning workers, the execute skill creates a **context digest** — a filtered subset of the context package relevant to the current execution batch. The digest is ephemeral (never written to disk) and passed directly in the worker prompt.
+
+**Composition rules**:
+
+- The full `## Interface Contracts` section from `architecture.md` — always included in full, uncapped. Interface contracts span modules and must not be truncated regardless of length.
+- Sections from `architecture.md` that mention any file path in the work item's `file_scope`.
+- The component map entry for the relevant architecture component.
+- All other content from the context package is capped at **150 lines total** for the digest. If over this limit, the component map entry is included first, then file-scope sections. If the interface contracts section alone exceeds 150 lines, only the interface contracts section is included.
+
+Workers receive the digest plus paths to the full documents (`"Full architecture at {path} — read if you need detail beyond what the digest provides"`). This allows workers to access the full context on demand without it being pre-loaded into every worker prompt.
+
+### 9.5 Minimum viable context by task type
+
+Based on the context assembly research (`context-assembly-strategies.yaml`, Question 6).
+
+| Task | Primary context | Secondary | Exclude |
+|------|----------------|-----------|---------|
+| Execute work item | Work item spec + dependencies' interface contracts + module spec + domain policies | Source code index | Research notes, full architecture, prior findings |
+| Review completed work | Acceptance criteria + diff/changes + architecture constraints + domain policies | Recent findings (1-2 cycles) | All history, other work items, research notes |
+| Plan changes (refine) | Latest cycle summary + all domain policies + open questions | Research relevant to change direction | Incremental reviews, prior work items, old interview transcripts |
+
+**Note on research inclusion**: the current `handleGetWorkItemContext` includes research matching the work item's domain or module. The research paper identifies this as potentially over-inclusive for execution tasks — research should already be distilled into domain policies by the time execution begins. Research is most valuable during planning, not execution.
+
+**Ordering within context**: the work item spec is placed first and domain policies last within `ideate_get_work_item_context` output. Both positions benefit from the primacy/recency effect documented in "Lost in the Middle" (TACL 2024), which shows LLM performance degrades when relevant information is placed in the middle of a long context.
+
+### 9.6 Future direction
+
+**Current approach**: deterministic graph traversal with hand-tuned inclusion rules. Edge following is typed but not weighted — `belongs_to_module` is always followed exactly once; domain policies are always loaded by column match. There is no adaptive component.
+
+**Research direction**: the `context-assembly-strategies.yaml` research identifies Personalized PageRank (PPR) from seed nodes as the theoretically optimal traversal method for this use case. PPR from a work-item seed node naturally surfaces the module (direct edge, high weight), domain policies (two hops), and prior findings (three hops) in a single computation pass. Spreading activation achieves similar goals with a simulation-based approach that weights nodes reached by multiple short paths more highly than nodes reached by one long path.
+
+**Edge-type weighting by task type** is a concrete near-term improvement. The research proposes hand-tuned weights (not empirically validated for this domain) that reflect the observation that `governed_by` (domain policies) has high value for all tasks, `depends_on` has high value for execution but lower for planning, and `informed_by` (research) has high value for planning but lower for execution.
+
+**Adaptive weighting via query log analysis**: the `query-log.jsonl` infrastructure logs which artifacts were returned per query, but not which were used by the LLM in its output. Adding a `used_chunk_ids` field to log entries — populated after each task completion via citation parsing or text-overlap analysis — would provide the signal needed to calibrate edge weights from historical data rather than hand-tuning.
+
+---
+
+## 10. Source files
 
 | File | Purpose |
 |------|---------|

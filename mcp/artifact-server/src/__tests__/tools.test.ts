@@ -22,7 +22,7 @@ import { handleGetWorkItemContext, handleGetContextPackage } from "../tools/cont
 import { handleArtifactQuery } from "../tools/query.js";
 import { handleGetExecutionStatus, handleGetReviewManifest } from "../tools/execution.js";
 import { handleGetConvergenceStatus, handleGetDomainState, handleGetProjectStatus } from "../tools/analysis.js";
-import { handleAppendJournal, handleArchiveCycle, handleWriteWorkItems } from "../tools/write.js";
+import { handleAppendJournal, handleArchiveCycle, handleWriteWorkItems, handleUpdateWorkItems } from "../tools/write.js";
 
 // ---------------------------------------------------------------------------
 // Setup / teardown
@@ -680,7 +680,7 @@ describe("handleArchiveCycle", () => {
 // ---------------------------------------------------------------------------
 
 describe("handleWriteWorkItems", () => {
-  it("happy path: creates work item YAML and SQLite row", async () => {
+  it("happy path: creates individual YAML file at .ideate/work-items/{id}.yaml", async () => {
     const result = await handleWriteWorkItems(ctx, {
       artifact_dir: artifactDir,
       items: [
@@ -693,15 +693,181 @@ describe("handleWriteWorkItems", () => {
       ],
     });
 
-    // YAML response with id
+    // YAML response with id and file_path
     expect(result).toContain("created");
+    expect(result).toContain("WI-100");
 
-    // Check SQLite row was inserted
+    // Individual YAML file must exist at {ideateDir}/work-items/WI-100.yaml
+    const yamlPath = path.join(artifactDir, "work-items", "WI-100.yaml");
+    expect(fs.existsSync(yamlPath)).toBe(true);
+
+    // No plan/notes file should be created
+    const notesPath = path.join(artifactDir, "plan", "notes", "WI-100.md");
+    expect(fs.existsSync(notesPath)).toBe(false);
+
+    // No plan/work-items.yaml should be created
+    const consolidatedPath = path.join(artifactDir, "plan", "work-items.yaml");
+    expect(fs.existsSync(consolidatedPath)).toBe(false);
+
+    // Check SQLite row was inserted with correct file_path
     const row = db
-      .prepare(`SELECT id FROM nodes WHERE id = 'WI-100'`)
-      .get() as { id: string } | undefined;
+      .prepare(`SELECT id, file_path, status FROM nodes WHERE id = 'WI-100'`)
+      .get() as { id: string; file_path: string; status: string } | undefined;
     expect(row).toBeDefined();
     expect(row!.id).toBe("WI-100");
+    expect(row!.file_path).toContain("work-items");
+    expect(row!.file_path).toContain("WI-100.yaml");
+    expect(row!.status).toBe("pending");
+  });
+
+  it("happy path: YAML file contains all required fields", async () => {
+    await handleWriteWorkItems(ctx, {
+      artifact_dir: artifactDir,
+      items: [
+        {
+          id: "WI-101",
+          title: "Full fields test",
+          complexity: "medium",
+          scope: [{ path: "src/foo.ts", op: "modify" }],
+          depends: [],
+          blocks: [],
+          criteria: ["Criterion A", "Criterion B"],
+          notes_content: "# Implementation Notes\nDo the thing.",
+          domain: "workflow",
+          status: "pending",
+          resolution: null,
+          cycle_created: 2,
+        },
+      ],
+    });
+
+    const yamlPath = path.join(artifactDir, "work-items", "WI-101.yaml");
+    expect(fs.existsSync(yamlPath)).toBe(true);
+
+    const content = fs.readFileSync(yamlPath, "utf8");
+    // All required fields must be present
+    expect(content).toContain("id:");
+    expect(content).toContain("WI-101");
+    expect(content).toContain("type:");
+    expect(content).toContain("work_item");
+    expect(content).toContain("title:");
+    expect(content).toContain("Full fields test");
+    expect(content).toContain("status:");
+    expect(content).toContain("pending");
+    expect(content).toContain("complexity:");
+    expect(content).toContain("medium");
+    expect(content).toContain("scope:");
+    expect(content).toContain("src/foo.ts");
+    expect(content).toContain("depends:");
+    expect(content).toContain("blocks:");
+    expect(content).toContain("criteria:");
+    expect(content).toContain("Criterion A");
+    expect(content).toContain("domain:");
+    expect(content).toContain("workflow");
+    // notes field must contain inline content (not a path to a .md file)
+    expect(content).toContain("notes:");
+    expect(content).toContain("Implementation Notes");
+    expect(content).not.toContain("plan/notes");
+    // resolution, cycle fields
+    expect(content).toContain("resolution:");
+    expect(content).toContain("cycle_created:");
+    // computed fields
+    expect(content).toContain("content_hash:");
+    expect(content).toContain("token_count:");
+    expect(content).toContain("file_path:");
+  });
+
+  it("happy path: notes content is stored inline in YAML (not as a .md path)", async () => {
+    await handleWriteWorkItems(ctx, {
+      artifact_dir: artifactDir,
+      items: [
+        {
+          id: "WI-102",
+          title: "Notes inline test",
+          notes_content: "# My Notes\nSome implementation detail.",
+        },
+      ],
+    });
+
+    const yamlPath = path.join(artifactDir, "work-items", "WI-102.yaml");
+    const content = fs.readFileSync(yamlPath, "utf8");
+
+    // notes field contains the actual content, not a file path reference
+    expect(content).toContain("My Notes");
+    expect(content).toContain("Some implementation detail");
+    // must NOT contain a path to a separate notes file
+    expect(content).not.toContain("plan/notes/WI-102.md");
+    // no separate .md file should be created
+    expect(fs.existsSync(path.join(artifactDir, "plan", "notes", "WI-102.md"))).toBe(false);
+  });
+
+  it("happy path: resolution field is included when provided", async () => {
+    await handleWriteWorkItems(ctx, {
+      artifact_dir: artifactDir,
+      items: [
+        {
+          id: "WI-103",
+          title: "Obsolete item",
+          status: "obsolete",
+          resolution: "Superseded by WI-200",
+        },
+      ],
+    });
+
+    const yamlPath = path.join(artifactDir, "work-items", "WI-103.yaml");
+    const content = fs.readFileSync(yamlPath, "utf8");
+
+    expect(content).toContain("resolution:");
+    expect(content).toContain("Superseded by WI-200");
+    expect(content).toContain("status:");
+    expect(content).toContain("obsolete");
+  });
+
+  it("happy path: SQLite file_path points to the .yaml file", async () => {
+    await handleWriteWorkItems(ctx, {
+      artifact_dir: artifactDir,
+      items: [
+        {
+          id: "WI-104",
+          title: "SQLite path test",
+        },
+      ],
+    });
+
+    const row = db
+      .prepare(`SELECT file_path FROM nodes WHERE id = 'WI-104'`)
+      .get() as { file_path: string } | undefined;
+    expect(row).toBeDefined();
+    // file_path must end in .yaml, not .md
+    expect(row!.file_path).toMatch(/WI-104\.yaml$/);
+    expect(row!.file_path).not.toMatch(/\.md$/);
+    // file_path must not reference plan/notes
+    expect(row!.file_path).not.toContain("plan/notes");
+    // file_path must reference work-items directory
+    expect(row!.file_path).toContain("work-items");
+  });
+
+  it("happy path: status from input is used (not hardcoded 'pending')", async () => {
+    await handleWriteWorkItems(ctx, {
+      artifact_dir: artifactDir,
+      items: [
+        {
+          id: "WI-105",
+          title: "Custom status test",
+          status: "in-progress",
+        },
+      ],
+    });
+
+    const row = db
+      .prepare(`SELECT status FROM nodes WHERE id = 'WI-105'`)
+      .get() as { status: string } | undefined;
+    expect(row).toBeDefined();
+    expect(row!.status).toBe("in-progress");
+
+    const yamlPath = path.join(artifactDir, "work-items", "WI-105.yaml");
+    const content = fs.readFileSync(yamlPath, "utf8");
+    expect(content).toContain("in-progress");
   });
 
   it("happy path: returns items: [] for empty items array", async () => {
@@ -731,6 +897,164 @@ describe("handleWriteWorkItems", () => {
     });
     // Should return an error string (not throw), mentioning DAG cycle
     expect(result).toContain("cycle");
+  });
+
+  it("backward compat: writes individual files even when plan/work-items.yaml exists", async () => {
+    // Pre-create the consolidated file
+    const consolidatedPath = path.join(artifactDir, "plan", "work-items.yaml");
+    fs.writeFileSync(consolidatedPath, "items:\n  WI-OLD:\n    title: Old item\n", "utf8");
+
+    await handleWriteWorkItems(ctx, {
+      artifact_dir: artifactDir,
+      items: [
+        {
+          id: "WI-106",
+          title: "Backward compat test",
+        },
+      ],
+    });
+
+    // Individual YAML file must be created
+    const yamlPath = path.join(artifactDir, "work-items", "WI-106.yaml");
+    expect(fs.existsSync(yamlPath)).toBe(true);
+
+    // The consolidated file should still exist but NOT be modified (new item not appended)
+    const consolidatedContent = fs.readFileSync(consolidatedPath, "utf8");
+    expect(consolidatedContent).not.toContain("WI-106");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 12. handleUpdateWorkItems
+// ---------------------------------------------------------------------------
+
+describe("handleUpdateWorkItems", () => {
+  /** Helper: create a work item file via handleWriteWorkItems and return its path */
+  async function createWorkItem(id: string, overrides: Record<string, unknown> = {}): Promise<string> {
+    await handleWriteWorkItems(ctx, {
+      artifact_dir: artifactDir,
+      items: [
+        {
+          id,
+          title: `Test item ${id}`,
+          complexity: "small",
+          status: "pending",
+          domain: "workflow",
+          criteria: ["Initial criterion"],
+          notes_content: `# Notes for ${id}`,
+          ...overrides,
+        },
+      ],
+    });
+    return path.join(artifactDir, "work-items", `${id}.yaml`);
+  }
+
+  it("single-field update: status only", async () => {
+    const filePath = await createWorkItem("WI-U01");
+
+    const beforeContent = fs.readFileSync(filePath, "utf8");
+    const beforeObj = JSON.parse(JSON.stringify(
+      (await import("yaml")).parse(beforeContent)
+    ));
+
+    const result = await handleUpdateWorkItems(ctx, {
+      updates: [{ id: "WI-U01", status: "done" }],
+    });
+
+    // Summary reports 1 updated, 0 failed
+    expect(result).toContain("updated: 1");
+    expect(result).toContain("failed: 0");
+
+    // Read updated file
+    const afterContent = fs.readFileSync(filePath, "utf8");
+    const afterObj = (await import("yaml")).parse(afterContent);
+
+    // Status changed
+    expect(afterObj.status).toBe("done");
+
+    // Other fields preserved
+    expect(afterObj.title).toBe(beforeObj.title);
+    expect(afterObj.complexity).toBe(beforeObj.complexity);
+    expect(afterObj.domain).toBe(beforeObj.domain);
+    expect(afterObj.id).toBe(beforeObj.id);
+    expect(afterObj.type).toBe("work_item");
+    expect(afterObj.cycle_created).toBe(beforeObj.cycle_created);
+
+    // SQLite updated
+    const row = db
+      .prepare(`SELECT status FROM nodes WHERE id = 'WI-U01'`)
+      .get() as { status: string } | undefined;
+    expect(row).toBeDefined();
+    expect(row!.status).toBe("done");
+  });
+
+  it("multi-field update: status + resolution", async () => {
+    const filePath = await createWorkItem("WI-U02");
+
+    const result = await handleUpdateWorkItems(ctx, {
+      updates: [
+        { id: "WI-U02", status: "obsolete", resolution: "Superseded by WI-U10" },
+      ],
+    });
+
+    expect(result).toContain("updated: 1");
+    expect(result).toContain("failed: 0");
+
+    const afterContent = fs.readFileSync(filePath, "utf8");
+    const afterObj = (await import("yaml")).parse(afterContent);
+
+    expect(afterObj.status).toBe("obsolete");
+    expect(afterObj.resolution).toBe("Superseded by WI-U10");
+
+    // Immutable fields preserved
+    expect(afterObj.id).toBe("WI-U02");
+    expect(afterObj.type).toBe("work_item");
+
+    // Other fields still present
+    expect(afterObj.title).toBe("Test item WI-U02");
+    expect(afterObj.domain).toBe("workflow");
+
+    // SQLite reflects new status
+    const row = db
+      .prepare(`SELECT status FROM nodes WHERE id = 'WI-U02'`)
+      .get() as { status: string } | undefined;
+    expect(row).toBeDefined();
+    expect(row!.status).toBe("obsolete");
+  });
+
+  it("nonexistent ID returns error and continues processing others", async () => {
+    // Create one real work item
+    await createWorkItem("WI-U03");
+
+    const result = await handleUpdateWorkItems(ctx, {
+      updates: [
+        { id: "WI-NONEXISTENT", status: "done" },
+        { id: "WI-U03", status: "in-progress" },
+      ],
+    });
+
+    // 1 updated (WI-U03), 1 failed (WI-NONEXISTENT)
+    expect(result).toContain("updated: 1");
+    expect(result).toContain("failed: 1");
+    expect(result).toContain("WI-NONEXISTENT");
+
+    // The real item was still updated
+    const filePath = path.join(artifactDir, "work-items", "WI-U03.yaml");
+    const afterContent = fs.readFileSync(filePath, "utf8");
+    const afterObj = (await import("yaml")).parse(afterContent);
+    expect(afterObj.status).toBe("in-progress");
+  });
+
+  it("empty updates array returns zeroed summary", async () => {
+    const result = await handleUpdateWorkItems(ctx, { updates: [] });
+    expect(result).toContain("updated: 0");
+    expect(result).toContain("failed: 0");
+  });
+
+  it("throws when updates param is missing", async () => {
+    await expect(
+      handleUpdateWorkItems(ctx, {})
+    ).rejects.toThrow(/updates/i);
   });
 });
 

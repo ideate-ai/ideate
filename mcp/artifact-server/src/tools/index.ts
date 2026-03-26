@@ -6,7 +6,7 @@ import { handleGetWorkItemContext, handleGetContextPackage } from "./context.js"
 import { handleArtifactQuery } from "./query.js";
 import { handleGetExecutionStatus, handleGetReviewManifest } from "./execution.js";
 import { handleGetConvergenceStatus, handleGetDomainState, handleGetProjectStatus } from "./analysis.js";
-import { handleAppendJournal, handleArchiveCycle, handleWriteWorkItems } from "./write.js";
+import { handleAppendJournal, handleArchiveCycle, handleWriteWorkItems, handleUpdateWorkItems } from "./write.js";
 import { handleEmitEvent } from "./events.js";
 import { handleGetMetrics } from "./metrics.js";
 
@@ -266,7 +266,7 @@ export const TOOLS: Tool[] = [
   {
     name: "ideate_write_work_items",
     description:
-      "Writes or updates work item YAML files in the plan/work-items/ directory. Creates new files for new IDs and overwrites existing files for updates.",
+      "Writes or updates work item YAML files in the .ideate/work-items/ directory. Creates one {id}.yaml file per work item. Each file contains all fields inline including notes content.",
     inputSchema: {
       type: "object",
       properties: {
@@ -280,10 +280,104 @@ export const TOOLS: Tool[] = [
           items: {
             type: "object",
             description: "Work item definition.",
+            properties: {
+              id: {
+                type: "string",
+                description: "Work item identifier (e.g. 'WI-224'). Auto-assigned if omitted.",
+              },
+              title: { type: "string", description: "Short title for the work item." },
+              complexity: {
+                type: "string",
+                enum: ["low", "small", "medium", "large", "high"],
+                description: "Complexity estimate.",
+              },
+              scope: {
+                type: "array",
+                items: {
+                  type: "object",
+                  properties: {
+                    path: { type: "string" },
+                    op: { type: "string" },
+                  },
+                  required: ["path", "op"],
+                },
+                description: "Files this work item touches.",
+              },
+              depends: {
+                type: "array",
+                items: { type: "string" },
+                description: "Work item IDs this item depends on.",
+              },
+              blocks: {
+                type: "array",
+                items: { type: "string" },
+                description: "Work item IDs this item blocks.",
+              },
+              criteria: {
+                type: "array",
+                items: { type: "string" },
+                description: "Acceptance criteria.",
+              },
+              notes_content: {
+                type: "string",
+                description: "Implementation notes content (stored inline in the YAML).",
+              },
+              domain: {
+                type: "string",
+                description: "Domain this work item belongs to.",
+              },
+              status: {
+                type: "string",
+                description: "Work item status (default: 'pending').",
+              },
+              resolution: {
+                type: ["string", "null"],
+                description: "Resolution note when item is closed/obsolete.",
+              },
+              cycle_created: {
+                type: ["integer", "null"],
+                description: "Cycle number when this work item was created.",
+              },
+            },
           },
         },
       },
       required: ["artifact_dir", "items"],
+    },
+  },
+  {
+    name: "ideate_update_work_items",
+    description:
+      "Updates specific fields on existing work items without overwriting the full definition. Pass an array of partial update objects, each with an id and the fields to change.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        artifact_dir: {
+          type: "string",
+          description: "Path to artifact directory",
+        },
+        updates: {
+          type: "array",
+          items: {
+            type: "object",
+            properties: {
+              id: { type: "string" },
+              status: { type: "string" },
+              resolution: { type: "string" },
+              title: { type: "string" },
+              complexity: { type: "string" },
+              depends: { type: "array", items: { type: "string" } },
+              blocks: { type: "array", items: { type: "string" } },
+              criteria: { type: "array", items: { type: "string" } },
+              domain: { type: "string" },
+              notes: { type: "string" },
+              scope: { type: "array", items: { type: "object" } },
+            },
+            required: ["id"],
+          },
+        },
+      },
+      required: ["updates"],
     },
   },
   {
@@ -400,6 +494,9 @@ export async function handleTool(
 
     case "ideate_write_work_items":
       return handleWriteWorkItems(ctx, _args);
+
+    case "ideate_update_work_items":
+      return handleUpdateWorkItems(ctx, _args);
 
     case "ideate_emit_event":
       return handleEmitEvent(ctx, _args);

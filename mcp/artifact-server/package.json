@@ -1,6 +1,6 @@
 {
   "name": "@ideate/artifact-server",
-  "version": "0.1.0",
+  "version": "3.0.1",
   "description": "MCP server that serves ideate artifact content on demand",
   "type": "module",
   "main": "dist/index.js",
