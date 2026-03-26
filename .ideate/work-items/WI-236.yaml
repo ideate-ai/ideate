@@ -1,0 +1,25 @@
+id: WI-236
+type: work_item
+title: CLAUDE.md — update artifact structure to v3 .ideate/ format
+status: pending
+complexity: low
+scope:
+  - path: CLAUDE.md
+    op: modify
+depends: []
+blocks: []
+criteria:
+  - Artifact structure diagram shows .ideate/ directory not specs/
+  - No references to manifest.json, archive/incremental/, or old specs/ hierarchy
+  - Development workflow section uses .ideate/ paths
+domain: project-boundaries
+notes: |-
+  # WI-236: CLAUDE.md Structure Update
+
+  Replace old specs/ layout with v3 .ideate/ structure.
+resolution: null
+cycle_created: 29
+cycle_modified: null
+content_hash: 3c081576ebd6c8e97b3ab9d3e26d139fa4ba24884cf4aae6a296d64b14c29852
+token_count: 148
+file_path: .ideate/work-items/WI-236.yaml

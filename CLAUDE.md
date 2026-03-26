@@ -8,7 +8,7 @@ A Claude Code plugin providing a structured SDLC workflow. Ideate takes a rough 
 agents/          # Specialized agents (code-reviewer, architect, domain-curator, etc.)
 skills/          # User-invocable skills (plan, execute, review, refine, brrr)
 scripts/         # Utility scripts (validate-specs.sh, migrate-to-optimized.sh)
-specs/           # Ideate's own artifact directory — uses the same structure it creates
+.ideate/          # Ideate's own artifact directory — uses the same structure it creates
 ```
 
 ## Skills
@@ -24,23 +24,26 @@ specs/           # Ideate's own artifact directory — uses the same structure i
 
 ## Artifact structure
 
-Skills produce artifacts in a user-specified directory (conventionally `specs/`):
+Skills produce YAML artifacts in `.ideate/`, accessed exclusively through MCP tools:
 
 ```
-specs/
-├── manifest.json           # Schema version identifier
-├── steering/               # Guiding principles, constraints, research, interviews
-├── plan/                   # Architecture, modules, work items, execution strategy
-├── journal.md              # Append-only project history
-├── archive/
-│   ├── incremental/        # Per work-item reviews (written by execute)
-│   └── cycles/{NNN}/       # Capstone review suites (written by review)
-└── domains/
-    ├── index.md            # Domain registry + current cycle number
-    └── {name}/             # policies.md, decisions.md, questions.md per domain
+.ideate/
+├── config.json              # Schema version
+├── plan/                    # architecture.yaml, overview.yaml, execution-strategy.yaml
+├── steering/                # guiding-principles.yaml, constraints.yaml, research/
+├── work-items/              # WI-{NNN}.yaml per work item
+├── principles/              # GP-{NN}.yaml per guiding principle
+├── constraints/             # C-{NN}.yaml per constraint
+├── policies/                # P-{NN}.yaml per domain policy
+├── decisions/               # D-{NN}.yaml per domain decision
+├── questions/               # Q-{NN}.yaml per domain question
+├── interviews/              # refine-{NNN}/ per cycle
+├── cycles/                  # {NNN}/ per cycle (findings, journal entries, summaries)
+├── modules/                 # Module specs (if used)
+└── research/                # RF-*.yaml research findings
 ```
 
-`archive/` is immutable once written. `domains/` is maintained by the domain-curator agent after each review cycle — it distills policies, decisions, and open questions from the archive with citations back to source files.
+All artifacts are YAML files with one file per artifact. The domain layer (policies, decisions, questions) is maintained by the domain-curator agent after each review cycle. `cycles/` contains immutable cycle-scoped artifacts (findings, journal entries, summaries).
 
 ## Development workflow
 
@@ -56,8 +59,6 @@ To run a review cycle on ideate itself: `/ideate:review`
 
 ## Key conventions
 
-- All archive paths are absolute in skill prompts — never relative
-- Incremental reviews go to `archive/incremental/`, not `reviews/incremental/`
 - The domain curator uses opus; all other agents default to sonnet unless overridden
 - `spawn_session` (outpost) is an optional enhancement; Agent tool is the primary spawning mechanism
 - `DEFER` (not `DEFERRED`) is the proxy-human deferral signal that brrr checks for

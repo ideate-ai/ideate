@@ -14,14 +14,14 @@ Your tone is neutral and factual. Report status plainly. No encouragement, no en
 
 Determine the **project root** — the directory containing `.ideate/config.json`. Use this precedence:
 
-1. If the user provided a path argument, resolve it. If it points to a directory containing `.ideate/config.json`, use it as the project root. If it points to a subdirectory (e.g., `specs/`), walk up to find `.ideate/config.json` in an ancestor.
+1. If the user provided a path argument, resolve it. If it points to a directory containing `.ideate/config.json`, use it as the project root. If it points to a subdirectory, walk up to find `.ideate/config.json` in an ancestor.
 2. Check the current working directory and walk up to find `.ideate/config.json`.
 3. Check for `.ideate.json` in the current working directory — if found, use its `artifactDir` value (resolved relative to that file's location) to locate the project root.
 4. Otherwise ask: "Where is the project root? (The directory containing `.ideate/`)"
 
 Validate by calling `ideate_get_project_status` with the resolved path. If the MCP server cannot find artifacts, stop and report the error. Do not proceed without a valid `.ideate/` directory.
 
-Store the project root path. All MCP tool calls use this as the base for `artifact_dir`.
+Store the project root path. All MCP tool calls use this implicitly — the server resolves paths from `.ideate/config.json`.
 
 ## Derive Project Source Root
 
@@ -35,21 +35,19 @@ Store the project source root separately from the project root. Both paths are u
 
 Read every artifact in the artifact directory, in this order:
 
-1. `plan/execution-strategy.md` — how to execute
-2. `plan/overview.md` — what we are building
-3. `plan/architecture.md` — technical architecture, component map, data flow
-4. `steering/guiding-principles.md` — decision framework
-5. `steering/constraints.md` — hard boundaries
-6. `plan/modules/*.md` — all module specs (if they exist)
-7. Work items — read using this precedence:
-   - If `plan/work-items.yaml` exists: read it (consolidated format; see Work Item Format below)
-   - Otherwise: glob and read `plan/work-items/*.md` (legacy per-file format)
-8. `steering/research/*.md` — all research findings (if they exist)
-9. `journal.md` — project history (if it exists)
+1. `.ideate/modules/execution-strategy.yaml` — how to execute
+2. `.ideate/modules/overview.yaml` — what we are building
+3. `.ideate/modules/architecture.yaml` — technical architecture, component map, data flow
+4. `.ideate/principles/GP-*.yaml` — decision framework
+5. `.ideate/constraints/C-*.yaml` — hard boundaries
+6. `.ideate/modules/*.yaml` — all module specs (if they exist)
+7. Work items — glob `.ideate/work-items/WI-*.yaml`
+8. `.ideate/research/*.yaml` — all research findings (if they exist)
+9. `.ideate/cycles/*/journal/J-*.yaml` — project history (if it exists)
 
-**Work Item Format**: `plan/work-items.yaml` stores structured fields (id, title, complexity, scope, depends, blocks, criteria) for all work items. Implementation notes for each item are in `plan/notes/{id}.md` — load these per-item when building the worker prompt, not all at once.
+**Work Item Format**: Each work item is an individual YAML file at `.ideate/work-items/WI-{NNN}.yaml` containing structured fields (id, title, complexity, scope, depends, blocks, criteria) plus inline implementation notes in the `notes` field.
 
-If `plan/overview.md` or `journal.md` do not exist, note the absence and continue. All other artifacts listed in step 1 verification are required.
+If `overview.yaml` or journal entries do not exist, note the absence and continue. All other artifacts listed in step 1 verification are required.
 
 After reading, verify:
 
@@ -63,7 +61,7 @@ If validation fails, report the specific issues and stop. Do not execute a broke
 
 Before validating dependencies, check whether any work items were already completed in a previous execution run. This enables resuming execution after a partial run or user-initiated stop.
 
-Call `ideate_get_execution_status` with `({artifact_dir})` — returns completed, pending, and blocked work item sets derived from incremental reviews and journal entries.
+Call `ideate_get_execution_status()` — returns completed, pending, and blocked work item sets derived from incremental reviews and journal entries.
 
 If the ideate MCP artifact server is not available, stop and report: "The ideate MCP artifact server is required but not available. Verify .mcp.json configuration."
 
@@ -112,7 +110,7 @@ Worktrees: {enabled | disabled}
 Review cadence: {from execution strategy}
 
 ### Work Item Groups
-{Groups from execution-strategy.md with ordering}
+{Groups from execution-strategy.yaml with ordering}
 
 ### Prerequisites
 {Any environment requirements — worktree support, agent teams flag, MCP server, etc.}
@@ -136,8 +134,8 @@ Before spawning workers, create a **context digest** — a filtered subset of ar
    - Extract guiding principles that apply to this module's domain
    - Extract constraints that affect this module's technology or boundaries
 3. Compose the context digest with the following priority and caps:
-   - The full `## Interface Contracts` section from architecture.md — always include in full, uncapped (contracts span modules and must not be truncated regardless of length)
-   - Sections from architecture.md mentioning any file path in the work item's `file_scope`
+   - The full `## Interface Contracts` section from architecture.yaml — always include in full, uncapped (contracts span modules and must not be truncated regardless of length)
+   - Sections from architecture.yaml mentioning any file path in the work item's `file_scope`
    - The component map entry for the relevant component
    - Cap all non-interface-contracts content at 150 lines total; if over this limit, include the component map entry first, then file-scope sections. If the interface contracts section alone exceeds 150 lines, include only the interface contracts section.
 
@@ -164,35 +162,33 @@ Execute according to the mode specified in the execution strategy.
 **Skipping completed items**: In all execution modes, before starting a work item, check whether its number appears in the `completed_items` set built during the Completed Items Scan. If it does, skip the item and report: "Skipping work item NNN: {title} — already completed." Treat skipped items as having satisfied dependencies for downstream work items.
 
 **Hook: work_item.started**: Before spawning the worker for each work item (after the skip check passes), call `ideate_emit_event` with:
-- artifact_dir: {artifact_dir}
 - event: "work_item.started"
-- variables: { "ARTIFACT_DIR": "{artifact_dir}", "WORK_ITEM_ID": "{work_item_id}", "WORK_ITEM_TITLE": "{work_item_title}" }
+- variables: { "WORK_ITEM_ID": "{work_item_id}", "WORK_ITEM_TITLE": "{work_item_title}" }
 
 This call is best-effort — if it fails, continue without interruption.
 
 **Hook: work_item.completed**: After each work item passes incremental review (findings handled, rework complete if any), call `ideate_emit_event` with:
-- artifact_dir: {artifact_dir}
 - event: "work_item.completed"
-- variables: { "ARTIFACT_DIR": "{artifact_dir}", "WORK_ITEM_ID": "{work_item_id}", "VERDICT": "{review_verdict}" }
+- variables: { "WORK_ITEM_ID": "{work_item_id}", "VERDICT": "{review_verdict}" }
 
 Where `{review_verdict}` is `"pass"` if the review passed without rework, `"rework"` if it passed after rework, or `"fail"` if unresolvable. This call is best-effort — if it fails, continue without interruption.
 
 ## Context for Every Worker
 
-Call `ideate_get_work_item_context` with `({artifact_dir}, {work_item_id})` — returns pre-assembled context including work item spec, module spec, domain policies, and research. Also provide the project source root path and relevant domain policies (if not already included).
+Call `ideate_get_work_item_context({work_item_id})` — returns pre-assembled context including work item spec, module spec, domain policies, and research. Also provide the project source root path and relevant domain policies (if not already included).
 
 If the ideate MCP artifact server is not available, stop and report: "The ideate MCP artifact server is required but not available. Verify .mcp.json configuration."
 
 Regardless of execution mode, every worker (subagent, teammate, or the main session in sequential mode) receives:
 
-1. **The work item spec** — if using `work-items.yaml`: the item's entry from that file plus `{artifact_dir}/plan/notes/{id}.md` (implementation notes). If using legacy format: `{artifact_dir}/plan/work-items/NNN-{name}.md`.
+1. **The work item spec** — the item's `.ideate/work-items/WI-{NNN}.yaml` file (includes inline implementation notes in the `notes` field).
 2. **Context digest** — the filtered architecture, principles, and constraints prepared in Phase 4.5 for the current batch. Includes paths to the full documents if the worker needs more detail.
-3. **The relevant module spec** — if `{artifact_dir}/plan/modules/` contains module specs, identify which module the work item belongs to (by matching file scope or explicit module reference) and include that module's spec. If the work item spans modules or no modules exist, include the full architecture doc instead (already provided).
+3. **The relevant module spec** — if `.ideate/modules/` contains module specs, identify which module the work item belongs to (by matching file scope or explicit module reference) and include that module's spec. If the work item spans modules or no modules exist, include the full architecture doc instead (already provided).
 4. _(Included in context digest)_
 5. _(Included in context digest)_
-6. **Relevant research** — any files from `{artifact_dir}/steering/research/` referenced in the work item's implementation notes or relevant to its scope
+6. **Relevant research** — any files from `.ideate/research/` referenced in the work item's implementation notes or relevant to its scope
 7. **Project source root** — the absolute path to the project source root derived in Phase 1, so workers know where to create and modify source files
-8. **Relevant domain policies** — if `{artifact_dir}/domains/` exists, identify which domain(s) are relevant to the work item based on its file scope. Load `{artifact_dir}/domains/{relevant-domain}/policies.md` for each relevant domain. If no clear domain mapping exists, skip this step. Domain policies supplement the guiding principles — they are more specific rules derived from prior review cycles.
+8. **Relevant domain policies** — if `.ideate/domains/` exists, identify which domain(s) are relevant to the work item based on its file scope. Load `.ideate/domains/{relevant-domain}/policies/*.yaml` for each relevant domain. If no clear domain mapping exists, skip this step. Domain policies supplement the guiding principles — they are more specific rules derived from prior review cycles.
 
 All paths provided to workers must be absolute. Do not use relative paths that depend on the worker's current working directory matching the artifact directory.
 
@@ -303,10 +299,10 @@ If the Agent tool is not available but the session-spawner MCP server (from exte
 When a work item completes (in any execution mode), spawn the `code-reviewer` agent immediately.
 
 Provide the code-reviewer with:
-- The work item spec (`plan/work-items/NNN-{name}.md`)
+- The work item spec (`.ideate/work-items/WI-{NNN}.yaml`)
 - The list of files created or modified by the worker
-- The architecture document (`plan/architecture.md`)
-- The guiding principles (`steering/guiding-principles.md`)
+- The architecture document (`.ideate/modules/architecture.yaml`)
+- The guiding principles (`.ideate/principles/GP-*.yaml`)
 - The worker's self-check results (the `## Self-Check` section from the worker's completion report)
 
 Instruct the code-reviewer:
@@ -466,9 +462,9 @@ After resolving all presented issues, resume execution.
 
 # Phase 10: Journal Updates
 
-After each work item completes (and after any rework from review findings), append an entry to `journal.md`.
+After each work item completes (and after any rework from review findings), append a journal entry via `ideate_append_journal`.
 
-Call `ideate_append_journal` with `({artifact_dir}, "execute", {date}, {entry_type}, {body})` — appends a structured journal entry atomically.
+Call `ideate_append_journal("execute", {date}, {entry_type}, {body})` — appends a structured journal entry atomically.
 
 If the ideate MCP artifact server is not available, stop and report: "The ideate MCP artifact server is required but not available. Verify .mcp.json configuration."
 
@@ -502,7 +498,7 @@ Report status to the user at these milestones:
 - **Andon cord presentation**: When presenting issues (Phase 9), include current progress.
 - **Halfway point**: When approximately half the work items are complete, report overall progress.
 
-Call `ideate_get_project_status` with `({artifact_dir})` — returns a structured project status summary including completed, in-progress, remaining, rework, and Andon cord item counts. Use the response directly to populate the status report below.
+Call `ideate_get_project_status()` — returns a structured project status summary including completed, in-progress, remaining, rework, and Andon cord item counts. Use the response directly to populate the status report below.
 
 If the ideate MCP artifact server is not available, stop and report: "The ideate MCP artifact server is required but not available. Verify .mcp.json configuration."
 
@@ -597,7 +593,7 @@ The user can re-run `/ideate:execute` to resume. The skill should detect already
 
 # Metrics Instrumentation
 
-After each agent spawn (via the Agent tool), append one JSON entry to `{artifact_dir}/metrics.jsonl`. Best-effort only: if writing fails, continue without interruption.
+After each agent spawn (via the Agent tool), append one JSON entry to `.ideate/metrics.jsonl`. Best-effort only: if writing fails, continue without interruption.
 
 **Entry schema (one JSON object per line):**
 
@@ -629,7 +625,7 @@ Extract from agent response metadata if available. Set to null if token counts a
 
 Record timestamp immediately before the Agent tool call; compute `wall_clock_ms` after it returns.
 
-**Journal summary**: At the end of Phase 12 (before presenting the final summary), append to `journal.md`:
+**Journal summary**: At the end of Phase 12 (before presenting the final summary), append via `ideate_append_journal`:
 
 > ## [execute] {date} — Metrics summary
 > Agents spawned: {N total} ({N} workers, {N} code-reviewers)
@@ -647,7 +643,7 @@ If `metrics.jsonl` could not be written, note "metrics unavailable" and omit the
 - You do not skip incremental reviews. Every completed work item gets reviewed.
 - You do not present minor review findings to the user. Fix them silently.
 - You do not interrupt the user for routine decisions. The Andon cord is for issues that guiding principles cannot resolve.
-- You do not modify steering artifacts. You have read-only access to `steering/`. You append to `journal.md` and write findings to `.ideate/cycles/{NNN}/findings/`.
+- You do not modify steering artifacts. You have read-only access to `.ideate/principles/` and `.ideate/constraints/`. You append journal entries and write findings to `.ideate/cycles/{NNN}/findings/`.
 - You do not re-plan. If the plan has problems (cycles, missing items, contradictions), you stop and tell the user to fix the plan or run `/ideate:refine`.
 - You do not praise work. Absence of findings means the work is acceptable.
 - You do not use filler phrases, encouragement, or enthusiasm. State facts.

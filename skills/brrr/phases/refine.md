@@ -5,7 +5,7 @@
 Called only when Phase 6c (convergence check, inline in the controller) determines the cycle did not converge.
 
 Available from controller context:
-- `{artifact_dir}` — absolute path to the artifact directory
+- `{project_root}` — absolute path to the project root
 - `{cycle_number}` — current 1-based cycle counter
 - `{last_cycle_findings}` — dict with `critical_count`, `significant_count`, `minor_count`
 - `{pending_count_start_of_cycle}` — the number of pending work items at the start of this cycle (for divergence detection)
@@ -15,18 +15,17 @@ Available from controller context:
 
 Produce new work items that address all critical and significant findings from the comprehensive review.
 
-For each critical or significant finding from `{artifact_dir}/archive/cycles/{formatted_cycle_number}/`:
+For each critical or significant finding from `{project_root}/.ideate/cycles/{formatted_cycle_number}/`:
 
 1. Determine whether an existing work item covers the fix, or whether a new work item is needed.
 2. If a new work item is needed, create it.
 
    **Call `ideate_write_work_items`**: Look in your tool list for a tool whose name ends in `ideate_write_work_items` (it will be prefixed, e.g. `mcp__ideate_artifact_server__ideate_write_work_items` or `mcp__plugin_ideate_ideate_artifact_server__ideate_write_work_items`). If not found, stop and report: "The ideate MCP artifact server is required but not available. Verify .mcp.json configuration."
 
-   Call it with `({artifact_dir}, {items_array})` — atomically appends the new work items to `plan/work-items.yaml` (or creates per-item files in the legacy format). Skip the manual create steps below.
+   Call it with `({items_array})` — atomically creates individual `.ideate/work-items/WI-{NNN}.yaml` files for each new work item. Skip the manual create steps below.
 
    If `ideate_write_work_items` is unavailable, create manually:
-   - If `{artifact_dir}/plan/work-items.yaml` exists: add a new entry to the `items:` mapping using the next available NNN id, following the existing schema (`title`, `complexity`, `scope`, `depends`, `blocks`, `criteria`).
-   - Otherwise: create `{artifact_dir}/plan/work-items/{NNN}-{name}.md` with: objective, acceptance criteria, file scope, dependencies.
+   - Create `{project_root}/.ideate/work-items/WI-{NNN}.yaml` for each new work item with: id, title, status, complexity, scope, depends, blocks, criteria, notes.
 
 3. If an existing work item needs rework, append a rework note to its spec and remove it from `{completed_items}`.
 
@@ -36,9 +35,9 @@ For each critical or significant finding from `{artifact_dir}/archive/cycles/{fo
 
 **Call `ideate_append_journal`**: Look in your tool list for a tool whose name ends in `ideate_append_journal` (it will be prefixed, e.g. `mcp__ideate_artifact_server__ideate_append_journal` or `mcp__plugin_ideate_ideate_artifact_server__ideate_append_journal`). If not found, stop and report: "The ideate MCP artifact server is required but not available. Verify .mcp.json configuration."
 
-Call it with `({artifact_dir}, "brrr", {date}, "refinement", {body})` — appends a structured journal entry atomically.
+Call it with `("brrr", {date}, "refinement", {body})` — appends a structured journal entry atomically.
 
-Write a refinement summary to `{artifact_dir}/journal.md`:
+Write a refinement summary:
 
 ```markdown
 ## [brrr] {date} — Cycle {N} refinement
@@ -59,5 +58,5 @@ Return to the controller. The controller will run Phase 6e (cycle limit check) a
 
 ## Artifacts Written
 
-- `{artifact_dir}/plan/work-items.yaml` (modified — new items added) **or** `{artifact_dir}/plan/work-items/{NNN}-{name}.md` (new files created)
-- `{artifact_dir}/journal.md` — refinement summary appended
+- `{project_root}/.ideate/work-items/WI-{NNN}.yaml` (new files created)
+- `{project_root}/.ideate/cycles/{NNN}/journal/` — refinement summary appended

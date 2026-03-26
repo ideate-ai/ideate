@@ -1,10 +1,11 @@
 id: WI-018
 type: work_item
 title: Plan Skill Fixes
-status: pending
+status: done
 complexity: low
 scope:
-  - {path: skills/plan/SKILL.md, op: modify}
+  - path: skills/plan/SKILL.md
+    op: modify
 depends: []
 blocks: []
 criteria:
@@ -15,16 +16,17 @@ module: null
 domain: null
 notes: |
   # Implementation Notes: 018
-  
+
   For architect paths: In Phase 4.1, change the instruction from "The artifact directory path for writing output" to explicitly listing the full absolute paths where output should go.
-  
+
   For researcher inline handling: After Phase 2.4's "How to integrate findings" section, add a "Handling researcher output" subsection:
   - If the researcher agent writes directly to the output path, read and integrate.
   - If the researcher returns output in its response (because it returned inline), write the response content to `{artifact_dir}/steering/research/{topic-slug}.md` using the Write tool.
-  
+
   For architect Write fallback: Same pattern — if architect returns output in response, write it to the target paths.
 cycle_created: 1
 cycle_modified: null
-content_hash: "68796358ee06038e56a7739c711db5f853fcb86c864bfae353932f14bf28bdfd"
-token_count: 421
+content_hash: 1105f404f378c6072e13151627f51f66775b07f14901889193eab86bcc3b1a06
+token_count: 414
 file_path: .ideate/work-items/WI-018.yaml
+resolution: Implemented during v3 migration

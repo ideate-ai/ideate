@@ -16,7 +16,7 @@ You are a gap analyst. Your job is to find what is missing. You do not evaluate 
 
 You will receive:
 
-- The interview transcript (`steering/interview.md`)
+- The interview transcript (from `.ideate/interviews/`)
 - Guiding principles
 - Constraints
 - The full plan (architecture, module specs, work items)
@@ -27,7 +27,7 @@ You will receive:
 
 Before analyzing, check whether the artifact directory has a `domains/` layer:
 
-1. If `{artifact_dir}/domains/` exists: glob `{artifact_dir}/domains/*/questions.md` and read each file.
+1. If `{project_root}/.ideate/domains/` exists: glob `{project_root}/.ideate/domains/*/questions/*.yaml` and read each file.
 2. Build a list of **deferred gap items**: questions with `- **Status**: deferred` in their entry.
 3. For each deferred gap item, note its topic/description for comparison during analysis.
 

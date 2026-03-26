@@ -1,0 +1,25 @@
+id: WI-235
+type: work_item
+title: ARCHITECTURE.md — update tool count and source files table
+status: pending
+complexity: low
+scope:
+  - path: ARCHITECTURE.md
+    op: modify
+depends: []
+blocks: []
+criteria:
+  - Section 5 header updated to reflect current tool count
+  - Tool list includes ideate_update_work_items and ideate_write_artifact
+  - Source files table updated
+domain: artifact-structure
+notes: |-
+  # WI-235: ARCHITECTURE.md Tool Count
+
+  Section 5 says '11 tools in 5 categories'. Update to current count after cycle 028-029 additions.
+resolution: null
+cycle_created: 29
+cycle_modified: null
+content_hash: bfacb42578156418653286b31dec7628848c241921ce653f8aba9305c0effc00
+token_count: 150
+file_path: .ideate/work-items/WI-235.yaml

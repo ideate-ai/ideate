@@ -1,29 +1,25 @@
 id: overview
 type: overview
-title: Change Plan — Cycle 028
+title: Change Plan — Cycle 029
 content: |
-  # Change Plan — Cycle 028
+  # Change Plan — Cycle 029
 
-  **Trigger**: Pre-v3 work item audit revealed 48 stale items with no way to mark them as obsolete, plus still-valid documentation gaps and a migration script bug.
+  **Trigger**: Post-review correction from cycle 028 plus requirement evolution (artifact_dir removal, specs/ audit).
 
   **What is changing**:
 
-  1. **Obsolete status + resolution field** (WI-224) — Add `obsolete` as a recognized terminal status in execution.ts and analysis.ts. Add optional `resolution` field to work item YAML for human-readable rationale. Obsolete items are excluded from execution (like done) and reported separately in project status.
+  1. **Fix ID auto-assignment** (WI-234) — Strip `WI-` prefix before CAST in write.ts to correctly compute max existing ID.
 
-  2. **ideate_update_work_items MCP tool** (WI-225) — New tool for partial field updates on existing work items. Reads existing YAML, merges specified fields, writes back. Enables bulk status changes without overwriting full work item definitions.
+  2. **ARCHITECTURE.md tool count** (WI-235) — Update Section 5 from "11 tools in 5 categories" to 13 tools. Update source files table to include new files.
 
-  3. **Bulk status cleanup** (WI-226) — Use the new update tool to mark 40 pre-v3 items as `done` (with resolution: "Implemented during v3 migration") and 11 items as `obsolete` (with item-specific resolution reasons). Depends on WI-224 + WI-225.
+  3. **CLAUDE.md v3 structure** (WI-236) — Replace old `specs/` artifact structure diagram with `.ideate/` v3 structure.
 
-  4. **Migration script fix** (WI-227) — Handle empty domain directories in migrate-to-v3.ts. Change WARNING to info-level log for domains with no policies/decisions/questions files. Empty domain directories are a valid v2 state.
+  4. **Remove artifact_dir from MCP tools** (WI-237) — Remove `artifact_dir` parameter from all 13 MCP tool input schemas. Handlers use `ctx.ideateDir` exclusively. Tests updated.
 
-  5. **README comprehensive update** (WI-228) — Addresses WI-070 + WI-131. Add: worked example tracing a full cycle with real file snippets, interview structure section, context loading table, custom models section (ANTHROPIC_DEFAULT_HAIKU_MODEL, minimum model requirements, known limitations).
+  5. **Comprehensive skills/agents audit** (WI-238) — All 6 skills, 4 brrr phase files, and 9 agents audited. Remove `specs/` path references, remove `artifact_dir` from MCP tool call examples, remove markdown artifact creation patterns, ensure v3 `.ideate/` paths throughout.
 
-  **Dropped from plan**: RAG-based artifact retrieval (WI-229, WI-230, WI-231) removed. The v3 PPR-based MCP server with structured graph queries and explicit typed edges supersedes the embedding-based approach. The corpus is <1000 artifacts with explicit relationships — deterministic graph queries are faster and more precise than semantic search. Future PPR enhancements (edge-type weighting, usage tracking) are separate cycle work.
+  **What is NOT changing**: Core SDLC workflow, guiding principles, constraints, MCP server architecture (additive tool changes only), agent responsibility boundaries.
 
-  **What is NOT changing**: Core SDLC workflow, existing 13 MCP tools (additive only), guiding principles, constraints, agent definitions, skill logic.
-
-  **Scope boundary**: 5 work items (WI-224–228). Touches mcp/artifact-server/src/ (execution.ts, analysis.ts, tools/write.ts, tools/index.ts), scripts/migrate-to-v3.ts, README.md.
-
-  **Cycle 027 minor findings**: metrics tool reads SQLite instead of JSONL (not addressed this cycle), no tests for metrics/events tools (not addressed this cycle). These remain as known issues.
+  **Scope boundary**: 5 work items (WI-234–238). Touches mcp/artifact-server/src/tools/, ARCHITECTURE.md, CLAUDE.md, all skills/*.md, all agents/*.md.
 content_hash: ""
 token_count: 0

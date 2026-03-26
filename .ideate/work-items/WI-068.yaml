@@ -1,10 +1,11 @@
 id: WI-068
 type: work_item
 title: Update review skill with mode selector and curator phase
-status: pending
+status: done
 complexity: high
 scope:
-  - {path: skills/review/SKILL.md, op: modify}
+  - path: skills/review/SKILL.md
+    op: modify
 depends:
   - "063"
 blocks:
@@ -26,6 +27,7 @@ domain: null
 notes: null
 cycle_created: 1
 cycle_modified: null
-content_hash: "6e6e3fbb632ddb0cfc65f80e3667a39a8b2827ffbd7fa609083acd75a3a5b320"
+content_hash: f7391219b0970327f0740d6204593a6a5edc45332dff8237ec155f7d94c85455
 token_count: 364
 file_path: .ideate/work-items/WI-068.yaml
+resolution: Implemented during v3 migration

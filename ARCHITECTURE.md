@@ -305,29 +305,36 @@ interface ToolContext {
 
 The raw `db` is used for recursive CTE queries and other SQL that Drizzle cannot express. `drizzleDb` is used for CRUD operations. Both operate on the same underlying SQLite file.
 
-### 11 tools in 5 categories
+### 14 tools in 7 categories
 
 ```
-Context tools
+Context tools (2)
   ideate_get_work_item_context    — work item + notes + module spec + domain policies + research
   ideate_get_context_package      — architecture + principles + constraints + source code index
 
-Query tools
+Query tools (1)
   ideate_artifact_query           — filter by type/domain/status/cycle + graph traversal
 
-Execution tools
+Execution tools (2)
   ideate_get_execution_status     — work item counts by status, dependency-resolved ready list
   ideate_get_review_manifest      — review manifest for a given cycle
 
-Analysis tools
+Analysis tools (3)
   ideate_get_convergence_status   — open findings by severity, convergence verdict
   ideate_get_domain_state         — policies + decisions + questions for one or more domains
   ideate_get_project_status       — high-level summary: cycle, work item counts, recent journal
 
-Write tools
+Write tools (4)
   ideate_append_journal           — append YAML journal entry + sync SQLite upsert
   ideate_archive_cycle            — create archive/cycles/NNN/ and write cycle summary
-  ideate_write_work_items         — write/update work item YAML files + sync SQLite upsert
+  ideate_write_work_items         — write/create work item YAML files + sync SQLite upsert
+  ideate_update_work_items        — partial-update existing work items by id
+
+Events tools (1)
+  ideate_emit_event               — fire hooks registered for a given event name
+
+Metrics tools (1)
+  ideate_get_metrics              — aggregated metrics from metrics_events table
 ```
 
 ### Hybrid query pattern
@@ -630,9 +637,12 @@ Based on the context assembly research (`context-assembly-strategies.yaml`, Ques
 | `mcp/artifact-server/src/indexer.ts` | `rebuildIndex`, row builders, edge extraction, cycle detection |
 | `mcp/artifact-server/src/config.ts` | `.ideate/config.json` read/write, `resolveArtifactDir`, `createIdeateDir` |
 | `mcp/artifact-server/src/watcher.ts` | `ArtifactWatcher` class (chokidar wrapper with debounce) |
-| `mcp/artifact-server/src/tools/index.ts` | `ToolContext`, TOOLS array (11 definitions), `handleTool` dispatcher |
+| `mcp/artifact-server/src/hooks.ts` | Hook registry loading, execution, variable substitution |
+| `mcp/artifact-server/src/tools/index.ts` | `ToolContext`, TOOLS array (14 definitions), `handleTool` dispatcher |
 | `mcp/artifact-server/src/tools/context.ts` | `ideate_get_work_item_context`, `ideate_get_context_package` |
 | `mcp/artifact-server/src/tools/query.ts` | `ideate_artifact_query` (filter mode + recursive CTE traversal) |
 | `mcp/artifact-server/src/tools/execution.ts` | `ideate_get_execution_status`, `ideate_get_review_manifest` |
 | `mcp/artifact-server/src/tools/analysis.ts` | `ideate_get_convergence_status`, `ideate_get_domain_state`, `ideate_get_project_status` |
-| `mcp/artifact-server/src/tools/write.ts` | `ideate_append_journal`, `ideate_archive_cycle`, `ideate_write_work_items` |
+| `mcp/artifact-server/src/tools/write.ts` | `ideate_append_journal`, `ideate_archive_cycle`, `ideate_write_work_items`, `ideate_update_work_items` |
+| `mcp/artifact-server/src/tools/events.ts` | `ideate_emit_event` (hook dispatch) |
+| `mcp/artifact-server/src/tools/metrics.ts` | `ideate_get_metrics` (agent/work_item/cycle aggregations) |

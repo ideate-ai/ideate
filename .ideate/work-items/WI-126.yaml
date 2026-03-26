@@ -1,13 +1,17 @@
 id: WI-126
 type: work_item
 title: Generalize smoke test concept beyond startup command
-status: pending
+status: done
 complexity: medium
 scope:
-  - {path: agents/code-reviewer.md, op: modify}
-  - {path: skills/execute/SKILL.md, op: modify}
-  - {path: skills/brrr/phases/execute.md, op: modify}
-  - {path: specs/domains/workflow/policies.md, op: modify}
+  - path: agents/code-reviewer.md
+    op: modify
+  - path: skills/execute/SKILL.md
+    op: modify
+  - path: skills/brrr/phases/execute.md
+    op: modify
+  - path: specs/domains/workflow/policies.md
+    op: modify
 depends: []
 blocks:
   - "127"
@@ -23,14 +27,14 @@ module: null
 domain: null
 notes: |
   # WI-126: Generalize smoke test concept beyond startup command
-  
+
   ## Context
-  
+
   Q-27 (Cycle 007/008, deferred): P-22 and both skill files assume every project has a startup command. Library projects, CLI tools, build-only artifacts, and pure documentation projects may not have a meaningful startup command. The smoke test concept must be generalized.
-  
+
   **Design decision (recorded in refine-011 interview)**:
   The heuristic for selecting an appropriate smoke test is: *what would a reasonable person be expected to do to demo the work they just did?*
-  
+
   Examples of appropriate smoke tests by context:
   - Web application: run the startup command and verify the app responds
   - CLI tool: run `--help` or a basic invocation
@@ -38,15 +42,15 @@ notes: |
   - e2e feature: run a representative user flow or end-to-end test
   - Documentation-only: validate structure/syntax (no code smoke test required)
   - Pure config change: run the build to confirm no config errors
-  
+
   The code-reviewer selects the appropriate smoke test based on the work item's nature and the project's context.
-  
+
   ## Changes
-  
+
   ### File 1: `agents/code-reviewer.md`
-  
+
   **Location**: Dynamic Testing, Step 2, lines 86–91.
-  
+
   Current text (lines 86–91):
   ```
   1. Smoke test: verify the project still builds or starts after the work item's changes.
@@ -56,7 +60,7 @@ notes: |
   2. Run tests targeted to the changed files: ...
   3. **If the smoke test fails (the project cannot build or start), report this as a Critical finding** ...
   ```
-  
+
   Replace step 1 with:
   ```
   1. Select and run a context-appropriate smoke test. The heuristic: **what would a reasonable person be expected to do to demo the work they just did?**
@@ -67,37 +71,37 @@ notes: |
      - Documentation or config change: validate syntax/structure (no code smoke test required).
      - If no obvious smoke test applies: note this in findings and skip dynamic testing.
   ```
-  
+
   Update step 3 to generalize the failure title:
   ```
   3. **If the smoke test fails, report this as a Critical finding** with title "Startup failure after [work item name]". The executor will diagnose the root cause and attempt a surgical fix before routing to Andon if the cause is unfixable.
   ```
-  
+
   ### File 2: `skills/execute/SKILL.md`
-  
+
   **Location**: Phase 8 Critical Findings, startup-failure exception header (line 400).
-  
+
   Change "confirm the app starts" language to "confirm the smoke test passes" throughout the startup-failure block (lines 400–403). The key phrases to generalize:
   - "Re-run the smoke test to confirm the app starts" → "Re-run the smoke test to confirm it passes"
   - Any reference to "startup" in the smoke-test-execution context (NOT in the finding title — the title "Startup failure after [work item name]" is preserved for backward compatibility)
-  
+
   ### File 3: `skills/brrr/phases/execute.md`
-  
+
   **Location**: finding-handling Critical bullet (line 158).
-  
+
   Same generalization as File 2: replace "app starts" references in the smoke-test re-run context with "smoke test passes."
-  
+
   ### File 4: `specs/domains/workflow/policies.md`
-  
+
   **Location**: P-22 body (line 52).
-  
+
   Amend P-22 to:
   1. Replace "startup command" / "app starts" with "context-appropriate smoke test" / "smoke test passes"
   2. Add a sentence noting the heuristic: "The appropriate smoke test is determined by the code-reviewer based on the work item's context — startup command, build, e2e test, or other contextual check as appropriate."
   3. Update `Amended` field to include `cycle 011`
-  
+
   ## Acceptance Criteria
-  
+
   1. `agents/code-reviewer.md` Dynamic Testing step 1 describes the context-appropriate smoke test selection heuristic
   2. `agents/code-reviewer.md` lists startup command, CLI invocation, library build/test, e2e test as example types
   3. `skills/execute/SKILL.md` Phase 8 startup-failure exception uses "smoke test passes" rather than "app starts" in the re-run context
@@ -107,6 +111,7 @@ notes: |
   7. No other sections in any of the four files are modified
 cycle_created: 1
 cycle_modified: null
-content_hash: ffcd2d4d822abc06828bc364f6b5beaadaebc0f76c2f07441f9cf3c7458da7bb
-token_count: 1539
+content_hash: 922b25cb1a97c575308f09dc1328d1fec1815a3a8ee02889561fac0250e01e76
+token_count: 1535
 file_path: .ideate/work-items/WI-126.yaml
+resolution: Implemented during v3 migration

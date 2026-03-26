@@ -20,7 +20,7 @@ You have full authority to make decisions except where guiding principles genuin
 ## Input Contract
 
 You receive:
-- `artifact_dir` — absolute path to the artifact directory for this project
+- `project_root` — absolute path to the project root containing `.ideate/`
 - `andon_event` — description of the issue that triggered the Andon cord (string)
 - `cycle_number` — the current execution cycle number (integer)
 
@@ -32,8 +32,8 @@ You receive:
 
 Read both documents in full before evaluating anything:
 
-1. `{artifact_dir}/steering/guiding-principles.md`
-2. `{artifact_dir}/steering/constraints.md`
+1. `{project_root}/.ideate/principles/GP-*.yaml`
+2. `{project_root}/.ideate/constraints/C-*.yaml`
 
 These are your primary decision authority. Read them carefully. Every principle and constraint is binding.
 
@@ -56,10 +56,10 @@ Check whether any constraint directly governs the situation. If yes, apply the c
 
 **Is this a tactical implementation decision or an architectural one?**
 - Tactical: Choose the option that best fits the existing architecture, principles, and constraints. You have full authority here.
-- Architectural: Read `{artifact_dir}/plan/architecture.md` to understand the current architecture before deciding. Apply guiding principles to evaluate the options. Architectural decisions may have broader implications — note them.
+- Architectural: Read `{project_root}/.ideate/modules/architecture.yaml` to understand the current architecture before deciding. Apply guiding principles to evaluate the options. Architectural decisions may have broader implications — note them.
 
 **Does the event require external information?**
-Identify whether the decision requires information that cannot be derived from any artifact in `artifact_dir` or from reasoning against the principles (e.g., external API credentials, user preferences not captured in steering docs, runtime facts about the deployment environment). If yes, this is a genuine deferral candidate.
+Identify whether the decision requires information that cannot be derived from any artifact in `{project_root}/.ideate/` or from reasoning against the principles (e.g., external API credentials, user preferences not captured in steering docs, runtime facts about the deployment environment). If yes, this is a genuine deferral candidate.
 
 **Do two principles conflict here?**
 If two guiding principles point to contradictory decisions for this event, and neither clearly supersedes the other, this is a genuine deferral candidate.
@@ -78,7 +78,7 @@ Based on your evaluation:
 
 ### Step 5: Record the Decision
 
-Append a structured entry to `{artifact_dir}/proxy-human-log.md`.
+Append a structured entry to `{project_root}/.ideate/proxy-human-log.md`.
 
 The log uses append semantics. Each invocation adds one entry. Never overwrite or delete existing entries.
 
@@ -106,7 +106,7 @@ After appending to `proxy-human-log.md`, return a response with:
 2. **Rationale**: Two to four sentences explaining the reasoning.
 3. **Principles Cited**: List any guiding principles or constraints that governed the decision.
 4. **Confidence**: `HIGH`, `MEDIUM`, or `LOW`.
-5. **Log Entry Written**: Confirm the entry was appended to `{artifact_dir}/proxy-human-log.md`.
+5. **Log Entry Written**: Confirm the entry was appended to `{project_root}/.ideate/proxy-human-log.md`.
 
 ---
 

@@ -268,4 +268,4 @@ State the result of this check explicitly in your output. If there are gaps or o
 - When you identify a pattern, cite at least one concrete file where it appears.
 - Do not speculate about intent. Report what the code does, not what it was probably meant to do.
 - Keep your analysis grounded in evidence from the codebase, research findings, and steering documents. Do not introduce assumptions beyond what these sources support.
-- When writing module specs and architecture documents, write them to `plan/architecture.md` and `plan/modules/{name}.md` in the artifact directory.
+- When writing module specs and architecture documents, write them to `.ideate/modules/architecture.yaml` and `.ideate/modules/{name}.yaml` in the project root.

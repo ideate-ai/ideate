@@ -1,10 +1,11 @@
 id: WI-067
 type: work_item
 title: Update plan skill with domain bootstrap phase
-status: pending
+status: done
 complexity: medium
 scope:
-  - {path: skills/plan/SKILL.md, op: modify}
+  - path: skills/plan/SKILL.md
+    op: modify
 depends:
   - "063"
 blocks:
@@ -18,6 +19,7 @@ domain: null
 notes: null
 cycle_created: 1
 cycle_modified: null
-content_hash: cd570fe9a45a5ca140f5f5b4bd9e30e395781c6f3b55f4acb445c6f306ef4168
-token_count: 219
+content_hash: d7895daefae2fa7904980d981e84d7ddf9f89280d12b2bcdce5b14ab5cf39453
+token_count: 215
 file_path: .ideate/work-items/WI-067.yaml
+resolution: Implemented during v3 migration

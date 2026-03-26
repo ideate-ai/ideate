@@ -1,10 +1,11 @@
 id: WI-070
 type: work_item
 title: Write README
-status: pending
+status: obsolete
 complexity: high
 scope:
-  - {path: README.md, op: modify}
+  - path: README.md
+    op: modify
 depends:
   - "063"
   - "064"
@@ -22,6 +23,7 @@ domain: null
 notes: null
 cycle_created: 1
 cycle_modified: null
-content_hash: c25b528e4ea37cade1fe10acd3514199126383e6765ee208f6dd441ca4c3d14b
-token_count: 305
+content_hash: 2e32cba95d8ddaee76146d6f8c4e5ae3c2b46b6ab63d5f3268924c50f83bc979
+token_count: 311
 file_path: .ideate/work-items/WI-070.yaml
+resolution: Superseded by WI-228 with updated scope for v3 codebase

@@ -26,11 +26,11 @@ Read all inputs before producing any output. Do not begin decomposition until yo
 
 ## Output
 
-Produce a single markdown document containing all work items for the assigned module, followed by a coverage statement. The plan skill will parse this output and write individual files to `plan/work-items/`.
+Produce a single markdown document containing all work items for the assigned module, followed by a coverage statement. The plan skill will parse this output and write individual files to `.ideate/work-items/`.
 
 ### Work Item Format
 
-Read one existing file from `plan/work-items/` to understand the expected format and conventions. Match the format exactly.
+Read one existing file from `.ideate/work-items/` to understand the expected format and conventions. Match the format exactly.
 
 If no work items exist yet (first decomposition), use this template:
 

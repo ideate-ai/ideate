@@ -118,7 +118,7 @@ describe("handleGetExecutionStatus — obsolete items", () => {
     insertNode("WI-003", "work_item", { status: "done" });
     insertWorkItem("WI-003", "Done item");
 
-    const result = await handleGetExecutionStatus(ctx, { artifact_dir: artifactDir });
+    const result = await handleGetExecutionStatus(ctx, {});
 
     // WI-001 should appear in the Obsolete count, not in pending/ready/blocked
     expect(result).toContain("Obsolete: 1");
@@ -144,7 +144,7 @@ describe("handleGetExecutionStatus — obsolete items", () => {
     insertNode("WI-B", "work_item", { status: "pending" });
     insertWorkItem("WI-B", "Downstream item", { depends: ["WI-A"] });
 
-    const result = await handleGetExecutionStatus(ctx, { artifact_dir: artifactDir });
+    const result = await handleGetExecutionStatus(ctx, {});
 
     // WI-B's dependency on WI-A is satisfied because WI-A is obsolete
     // So WI-B should appear as ready, not blocked

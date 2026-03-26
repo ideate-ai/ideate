@@ -118,12 +118,12 @@ export async function handleGetConvergenceStatus(
   ctx: ToolContext,
   args: Record<string, unknown>
 ): Promise<string> {
-  const artifactDir = args.artifact_dir as string;
+  // artifact_dir is now always ctx.ideateDir — resolved at server startup
   const cycleNumber = args.cycle_number as number;
   const cyclePad = padCycle(cycleNumber);
 
   // Read spec-adherence.md
-  const adherencePath = path.join(artifactDir, "archive", "cycles", cyclePad, "spec-adherence.md");
+  const adherencePath = path.join(ctx.ideateDir, "archive", "cycles", cyclePad, "spec-adherence.md");
   const adherenceContent = readFileSafe(adherencePath);
 
   let principleResult: PrincipleResult;
@@ -134,7 +134,7 @@ export async function handleGetConvergenceStatus(
   }
 
   // Read summary.md for finding counts
-  const summaryPath = path.join(artifactDir, "archive", "cycles", cyclePad, "summary.md");
+  const summaryPath = path.join(ctx.ideateDir, "archive", "cycles", cyclePad, "summary.md");
   const summaryContent = readFileSafe(summaryPath);
 
   let criticalCount = 0;
@@ -182,11 +182,11 @@ export async function handleGetDomainState(
   ctx: ToolContext,
   args: Record<string, unknown>
 ): Promise<string> {
-  const artifactDir = args.artifact_dir as string;
+  // artifact_dir is now always ctx.ideateDir — resolved at server startup
   const domainsFilter = Array.isArray(args.domains) ? (args.domains as string[]) : null;
 
   // Read cycle number from domains/index.md
-  const indexPath = path.join(artifactDir, "domains", "index.md");
+  const indexPath = path.join(ctx.ideateDir, "domains", "index.md");
   const indexContent = readFileSafe(indexPath);
   const cycleNumber = indexContent !== null ? parseCycleFromIndex(indexContent) : null;
 
@@ -279,10 +279,11 @@ export async function handleGetProjectStatus(
   ctx: ToolContext,
   args: Record<string, unknown>
 ): Promise<string> {
-  const artifactDir = args.artifact_dir as string;
+  // artifact_dir is now always ctx.ideateDir — resolved at server startup
+  void args; // args unused now
 
   // Read cycle number from domains/index.md
-  const indexPath = path.join(artifactDir, "domains", "index.md");
+  const indexPath = path.join(ctx.ideateDir, "domains", "index.md");
   const indexContent = readFileSafe(indexPath);
   const cycleNumber = indexContent !== null ? parseCycleFromIndex(indexContent) : null;
 
@@ -318,7 +319,7 @@ export async function handleGetProjectStatus(
 
   if (cycleNumber !== null) {
     const cyclePad = padCycle(cycleNumber);
-    const summaryPath = path.join(artifactDir, "archive", "cycles", cyclePad, "summary.md");
+    const summaryPath = path.join(ctx.ideateDir, "archive", "cycles", cyclePad, "summary.md");
     const summaryContent = readFileSafe(summaryPath);
     if (summaryContent !== null) {
       criticalCount = countBulletsUnderSection(summaryContent, "Critical Findings");

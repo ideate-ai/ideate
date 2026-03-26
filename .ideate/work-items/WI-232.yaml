@@ -1,10 +1,11 @@
 id: WI-232
 type: work_item
-title: "ARCHITECTURE.md — document context assembly algorithm"
+title: ARCHITECTURE.md — document context assembly algorithm
 status: done
 complexity: medium
 scope:
-  - {path: ARCHITECTURE.md, op: modify}
+  - path: ARCHITECTURE.md
+    op: modify
 depends: []
 blocks: []
 criteria:
@@ -22,6 +23,6 @@ notes: |
   Added Section 9 to ARCHITECTURE.md documenting both context tools, edge traversal, minimum viable context by task type, Phase 4.5 digest, and PPR future direction.
 cycle_created: 28
 cycle_modified: null
-content_hash: ""
-token_count: 0
+content_hash: 65dda23f0829259b73085258ea9e8b3e03334ba2a84e8de8ff092b064570b286
+token_count: 181
 file_path: .ideate/work-items/WI-232.yaml

@@ -1,10 +1,11 @@
 id: WI-069
 type: work_item
 title: Update refine skill for domain context loading
-status: pending
+status: done
 complexity: low
 scope:
-  - {path: skills/refine/SKILL.md, op: modify}
+  - path: skills/refine/SKILL.md
+    op: modify
 depends: []
 blocks:
   - "071"
@@ -18,6 +19,7 @@ domain: null
 notes: null
 cycle_created: 1
 cycle_modified: null
-content_hash: aaf7179d3066b08ffae4937b47c03dc2e1987abc9d2c869019b21b380fad06c7
-token_count: 240
+content_hash: 757a67edf8d480f8cb2d72bfa72f8a4777b1389d78f3c8d0f42a7863c68e2a73
+token_count: 235
 file_path: .ideate/work-items/WI-069.yaml
+resolution: Implemented during v3 migration

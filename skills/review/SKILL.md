@@ -22,7 +22,7 @@ Tone: neutral, factual. No encouragement, no validation, no hedging qualifiers. 
 
 Parse the invocation for:
 
-1. **Project root** — Determine the directory containing `.ideate/config.json`. If a positional argument is provided, resolve it: if it points to a directory containing `.ideate/config.json`, use it; if it points to a subdirectory (e.g., `specs/`), walk up to find `.ideate/config.json` in an ancestor. If no argument, check the current working directory and walk up. If `.ideate.json` exists, use its `artifactDir` to locate the project root. If none found, ask: "Where is the project root? (The directory containing `.ideate/`)"
+1. **Project root** — Determine the directory containing `.ideate/config.json`. If a positional argument is provided, resolve it: if it points to a directory containing `.ideate/config.json`, use it; if it points to a subdirectory, walk up to find `.ideate/config.json` in an ancestor. If no argument, check the current working directory and walk up. If `.ideate.json` exists, use its `artifactDir` to locate the project root. If none found, ask: "Where is the project root? (The directory containing `.ideate/`)"
 
 2. **Review mode flags and arguments**:
    - No arguments (beyond project root): **cycle review** (default)
@@ -31,7 +31,7 @@ Parse the invocation for:
    - `--scope "{description}"`: combined with `--domain`, narrows the focus further
    - Any other argument (natural language): **ad-hoc review** — classify intent and select agent set
 
-Store the project root path. All MCP tool calls use this as the base for `artifact_dir`.
+Store the project root path. All MCP tool calls use this implicitly — the server resolves paths from `.ideate/config.json`.
 
 Validate by calling `ideate_get_project_status` with the resolved path. If the MCP server cannot find artifacts, stop and report the error.
 
@@ -41,16 +41,16 @@ Based on parsed arguments:
 
 | Arguments | Mode | Output location | Curator runs |
 |---|---|---|---|
-| None | Cycle review | `archive/cycles/{N}/` | Always |
-| `--domain {name}` | Domain review | `archive/adhoc/{date}-domain-{name}/` | If policy/question/conflict-grade findings |
-| `--full` | Full audit | `archive/adhoc/{date}-full-audit/` | If policy/question/conflict-grade findings |
-| Natural language string | Ad-hoc (feature-fit or retrospective) | `archive/adhoc/{date}-{slug}/` | If policy/question/conflict-grade findings |
+| None | Cycle review | `.ideate/cycles/{NNN}/` | Always |
+| `--domain {name}` | Domain review | `.ideate/cycles/adhoc/{date}-domain-{name}/` | If policy/question/conflict-grade findings |
+| `--full` | Full audit | `.ideate/cycles/adhoc/{date}-full-audit/` | If policy/question/conflict-grade findings |
+| Natural language string | Ad-hoc (feature-fit or retrospective) | `.ideate/cycles/adhoc/{date}-{slug}/` | If policy/question/conflict-grade findings |
 
 **Slug generation for ad-hoc**: lowercase the natural language argument, replace spaces with hyphens, truncate to 40 characters. E.g., "how does auth fit the current model" → `how-does-auth-fit-the-current-model`.
 
 **Date format**: `YYYYMMDD` using today's date.
 
-**Cycle number for cycle reviews**: If `domains/index.md` exists, read `current_cycle` from it and add 1. If the file does not exist, use `001`.
+**Cycle number for cycle reviews**: If `.ideate/domains/index.yaml` exists, read `current_cycle` from it and add 1. If the file does not exist, use `001`.
 
 Store the determined mode, output directory path, and cycle number (if applicable).
 
@@ -60,31 +60,28 @@ Store the determined mode, output directory path, and cycle number (if applicabl
 
 ## 2.1 Always load
 
-1. `steering/guiding-principles.md`
-2. `steering/constraints.md`
-3. `plan/architecture.md`
-4. `plan/overview.md`
+1. `.ideate/principles/GP-*.yaml`
+2. `.ideate/constraints/C-*.yaml`
+3. `.ideate/modules/architecture.yaml`
+4. `.ideate/modules/overview.yaml`
 
 ## 2.2 Cycle review context
 
 For cycle reviews, additionally load:
 
-5. All domain policies: `domains/*/policies.md` (glob all domains, if `domains/` exists)
+5. All domain policies: `.ideate/domains/*/policies/*.yaml` (glob all domains, if `.ideate/domains/` exists)
 6. Current-cycle findings: call `ideate_artifact_query` with `type: "finding"` and `filters: { cycle: N }` to load findings from the current cycle. Do NOT load findings from prior cycles — the domain layer already distills them.
-7. Work items — if `plan/work-items.yaml` exists, read it; otherwise glob `plan/work-items/*.md`. The manifest (Phase 3.5) will index these for reviewers.
+7. Work items — glob `.ideate/work-items/WI-*.yaml`. The manifest (Phase 3.5) will index these for reviewers.
 
 Do NOT load all prior cycle archives — the domain layer already distills history.
-
-Legacy fallback (no archive/, no domains/):
-- Load `reviews/incremental/*.md` and `steering/interview.md`
 
 ## 2.3 Domain review context
 
 For `--domain {name}` reviews:
 
-5. `domains/{name}/policies.md`
-6. `domains/{name}/decisions.md`
-7. `domains/{name}/questions.md`
+5. `.ideate/domains/{name}/policies/*.yaml`
+6. `.ideate/domains/{name}/decisions/*.yaml`
+7. `.ideate/domains/{name}/questions/*.yaml`
 8. Source files associated with that domain (derive from the domain's `decisions.md` — look at file paths mentioned in decision sources and implementation notes)
 9. Relevant incremental reviews for those source files
 
@@ -92,9 +89,9 @@ For `--domain {name}` reviews:
 
 For `--full` reviews:
 
-5. All domain policies: `domains/*/policies.md`
-6. All domain questions: `domains/*/questions.md`
-7. Latest cycle summary: `archive/cycles/{N}/summary.md`
+5. All domain policies: `.ideate/domains/*/policies/*.yaml`
+6. All domain questions: `.ideate/domains/*/questions/*.yaml`
+7. Latest cycle summary: `.ideate/cycles/{NNN}/summary.yaml`
 8. Source code (survey via Glob)
 
 Do NOT re-read all raw archive — the domain layer already distills the history.
@@ -103,9 +100,9 @@ Do NOT re-read all raw archive — the domain layer already distills the history
 
 For natural language scope:
 
-5. All domain policies: `domains/*/policies.md`
-6. All domain questions: `domains/*/questions.md`
-7. `plan/architecture.md` (already loaded in 2.1)
+5. All domain policies: `.ideate/domains/*/policies/*.yaml`
+6. All domain questions: `.ideate/domains/*/questions/*.yaml`
+7. `.ideate/modules/architecture.yaml` (already loaded in 2.1)
 8. Source files relevant to the described scope (derive from the description + domain decisions)
 
 ## 2.6 Survey Project Source Code
@@ -124,12 +121,12 @@ At any point during context loading or review, if you need to search across arti
 
 Create the output directory based on the review mode determined in Phase 1:
 
-- **Cycle review**: `{artifact-dir}/archive/cycles/{N}/`
-- **Domain review**: `{artifact-dir}/archive/adhoc/{date}-domain-{name}/`
-- **Full audit**: `{artifact-dir}/archive/adhoc/{date}-full-audit/`
-- **Ad-hoc**: `{artifact-dir}/archive/adhoc/{date}-{slug}/`
+- **Cycle review**: `{artifact-dir}/.ideate/cycles/{NNN}/`
+- **Domain review**: `{artifact-dir}/.ideate/cycles/adhoc/{date}-domain-{name}/`
+- **Full audit**: `{artifact-dir}/.ideate/cycles/adhoc/{date}-full-audit/`
+- **Ad-hoc**: `{artifact-dir}/.ideate/cycles/adhoc/{date}-{slug}/`
 
-Also ensure `{artifact-dir}/archive/adhoc/` exists as a parent directory.
+Also ensure `{artifact-dir}/.ideate/cycles/adhoc/` exists as a parent directory.
 
 Store the output directory path. All reviewer output goes here.
 
@@ -139,7 +136,7 @@ Store the output directory path. All reviewer output goes here.
 
 For **cycle reviews only**, generate a lightweight manifest that reviewers use as an index instead of reading all work items and incremental reviews upfront.
 
-Call the tool whose name ends in `ideate_get_review_manifest` (it will be prefixed, e.g. `mcp__ideate_artifact_server__ideate_get_review_manifest` or `mcp__plugin_ideate_ideate_artifact_server__ideate_get_review_manifest`) with `({artifact_dir})`. It returns a pre-built manifest table matching work items to incremental reviews with verdicts and finding counts. Use the response as the manifest content and write it directly to `{output-dir}/review-manifest.md`.
+Call the tool whose name ends in `ideate_get_review_manifest` (it will be prefixed, e.g. `mcp__ideate_artifact_server__ideate_get_review_manifest` or `mcp__plugin_ideate_ideate_artifact_server__ideate_get_review_manifest`). It returns a pre-built manifest table matching work items to incremental reviews with verdicts and finding counts. Use the response as the manifest content and write it directly to `{output-dir}/review-manifest.md`.
 
 If this tool call fails, stop and report: "The ideate MCP artifact server is required but not available. Verify .mcp.json configuration."
 
@@ -151,7 +148,7 @@ The manifest is ~2-3 lines per work item. For 50 items, this is ~150 lines vs re
 
 Before spawning reviewers, assemble a single context package document and hold it in memory. This replaces the pattern where each reviewer independently reads the same architecture, principles, and constraints files.
 
-Call the tool whose name ends in `ideate_get_context_package` (it will be prefixed, e.g. `mcp__ideate_artifact_server__ideate_get_context_package` or `mcp__plugin_ideate_ideate_artifact_server__ideate_get_context_package`) with `({artifact_dir})`. It returns the pre-assembled context package. Hold the result as `{context_package}` — it is passed inline to all reviewer prompts.
+Call the tool whose name ends in `ideate_get_context_package` (it will be prefixed, e.g. `mcp__ideate_artifact_server__ideate_get_context_package` or `mcp__plugin_ideate_ideate_artifact_server__ideate_get_context_package`). It returns the pre-assembled context package. Hold the result as `{context_package}` — it is passed inline to all reviewer prompts.
 
 If this tool call fails, stop and report: "The ideate MCP artifact server is required but not available. Verify .mcp.json configuration."
 
@@ -207,7 +204,7 @@ After this agent returns, record a metrics entry (see Metrics Instrumentation).
 > **Shared context package** (inline — do not re-read architecture, principles, or constraints files individually):
 > {context_package}
 >
-> **Module specs**: {artifact-dir}/plan/modules/*.md (if they exist — read these for interface contracts).
+> **Module specs**: {artifact-dir}/.ideate/modules/*.yaml (if they exist — read these for interface contracts).
 >
 > **Review manifest**: {output-dir}/review-manifest.md — use as an index. Read individual work items and incremental reviews only when investigating specific findings in their file scope.
 >
@@ -235,9 +232,9 @@ After this agent returns, record a metrics entry (see Metrics Instrumentation).
 > **Shared context package** (inline — do not re-read architecture, principles, or constraints files individually):
 > {context_package}
 >
-> **Interview transcript**: {artifact-dir}/steering/interview.md (read to identify requirements from the original interview).
+> **Interview transcript**: {artifact-dir}/.ideate/interviews/ (read the most recent interview YAML to identify requirements from the original interview).
 >
-> **Module specs**: {artifact-dir}/plan/modules/*.md (if they exist).
+> **Module specs**: {artifact-dir}/.ideate/modules/*.yaml (if they exist).
 >
 > **Review manifest**: {output-dir}/review-manifest.md — use as an index. Read individual work items and incremental reviews only when investigating specific gaps in their file scope.
 >
@@ -275,11 +272,11 @@ Spawn the journal-keeper only AFTER all three reviewers from Phase 4a have compl
 >
 > **Review manifest**: {output-dir}/review-manifest.md — use as an index of all work items and their review status. Read individual incremental reviews only when cross-referencing specific findings.
 >
-> **Journal**: read only the last 20 entries from {artifact-dir}/journal.md (not the full file if it is long).
+> **Journal**: read the most recent journal entries from {artifact-dir}/.ideate/cycles/*/journal/J-*.yaml (last 20 entries).
 >
-> **Plan overview**: {artifact-dir}/plan/overview.md
+> **Plan overview**: {artifact-dir}/.ideate/modules/overview.yaml
 >
-> For cycle reviews, also read `{artifact-dir}/steering/interview.md` or the latest refine interview file from `{artifact-dir}/steering/interviews/` if that directory exists.
+> For cycle reviews, also read the latest interview YAML from `{artifact-dir}/.ideate/interviews/`.
 >
 > The following three review files have been completed by the other reviewers. Read all three for cross-referencing:
 > - Code quality review: {output-dir}/code-quality.md
@@ -382,9 +379,8 @@ Write `{output-dir}/summary.md` in this format:
 Omit severity sections that have no findings. Include the "Findings Requiring User Input" section even if empty (state "None — all findings can be resolved from existing context.").
 
 After writing the summary file, call `ideate_emit_event` with:
-- artifact_dir: {artifact_dir}
 - event: "review.complete"
-- variables: { "ARTIFACT_DIR": "{artifact_dir}", "CYCLE_NUMBER": "{cycle_number}", "FINDING_COUNT": "{total_finding_count}" }
+- variables: { "CYCLE_NUMBER": "{cycle_number}", "FINDING_COUNT": "{total_finding_count}" }
 
 Where `{total_finding_count}` is the sum of all findings across all severity levels derived from the summary (Critical + Significant + Minor + Suggestions). For ad-hoc and domain reviews where cycle number is not applicable, use `"0"` for `CYCLE_NUMBER`. This call is best-effort — if it fails, continue without interruption.
 
@@ -407,10 +403,10 @@ Read the summary file to make this determination. If no such findings exist, ski
 
 **Pre-screening for conflict signals** (determines model to use):
 
-1. If `{artifact-dir}/domains/` does not exist (first cycle), skip pre-screening. Use `model: sonnet`.
+1. If `{artifact-dir}/.ideate/domains/` does not exist (first cycle), skip pre-screening. Use `model: sonnet`.
 
 2. Otherwise:
-   a. Glob `{artifact-dir}/domains/*/policies.md`. For each policy file, extract: policy IDs (P-N pattern), domain names (from directory name), and file paths mentioned in the policy body.
+   a. Glob `{artifact-dir}/.ideate/domains/*/policies/*.yaml`. For each policy file, extract: policy IDs (P-N pattern), domain names (from directory name), and file paths mentioned in the policy body.
    b. Read `{output-dir}/summary.md`. For each Critical or Significant finding, extract: the domain name (if stated) and any file paths referenced.
    c. Check for conflict signals — any of:
       - A finding references the same file path as a path mentioned in an existing policy
@@ -441,8 +437,8 @@ Provide:
 
 After the curator completes a cycle review:
 
-1. Update `domains/index.md`: set `current_cycle` to the current cycle number N.
-2. Verify that the curator wrote at least one file to at least one `domains/` subdirectory. If not, note the failure in the journal.
+1. Update `.ideate/domains/index.yaml`: set `current_cycle` to the current cycle number N.
+2. Verify that the curator wrote at least one file to at least one `.ideate/domains/` subdirectory. If not, note the failure in the journal.
 
 ---
 
@@ -450,21 +446,21 @@ After the curator completes a cycle review:
 
 For **cycle reviews only**, after the domain curator completes, archive the current cycle's work items and incremental reviews into the cycle directory. This keeps `plan/work-items/` containing only active/pending items.
 
-Call `ideate_archive_cycle` with `({artifact_dir}, {cycle_number})`. It archives completed work items and findings into the cycle directory.
+Call `ideate_archive_cycle({cycle_number})`. It archives completed work items and findings into the cycle directory.
 
 If this tool call fails, stop and report: "The ideate MCP artifact server is required but not available. Verify .mcp.json configuration."
 
 Verify:
    - `{output-dir}/work-items/` contains the archived work items
    - `{output-dir}/findings/` contains the archived findings
-   - `plan/work-items/` contains only items not completed this cycle (if any)
+   - `.ideate/work-items/` contains only items not completed this cycle (if any)
 
 After archival, the cycle directory structure is:
 ```
-archive/cycles/{N}/
+.ideate/cycles/{NNN}/
   review-manifest.md     # Generated in Phase 3.5
   work-items/            # Completed work items from this cycle
-  incremental/           # Incremental reviews from this cycle
+  findings/              # Findings from this cycle
   code-quality.md        # From Phase 4a
   spec-adherence.md      # From Phase 4a
   gap-analysis.md        # From Phase 4a
@@ -476,7 +472,7 @@ archive/cycles/{N}/
 
 # Phase 7.6: Quality Metrics Event
 
-After the domain curator completes (and after Phase 7.5 archival for cycle reviews), emit a `quality_summary` event to `{artifact_dir}/metrics.jsonl`. This is a best-effort operation — if it fails for any reason, skip it and continue to Phase 8 without blocking.
+After the domain curator completes (and after Phase 7.5 archival for cycle reviews), emit a `quality_summary` event to `.ideate/metrics.jsonl`. This is a best-effort operation — if it fails for any reason, skip it and continue to Phase 8 without blocking.
 
 ## 7.6.1 Derive Counts from summary.md
 
@@ -503,13 +499,13 @@ Read `{output-dir}/summary.md` (already produced in Phase 6). Derive the followi
 
 **work_items_reviewed**: Count distinct work item numbers referenced in `{output-dir}/review-manifest.md` (the `#` column). If the manifest does not exist: for cycle reviews (Phase 7.5 already ran), count files in `{output-dir}/incremental/`; for ad-hoc, domain, or full-audit reviews (Phase 7.5 did not run), query findings via `ideate_artifact_query`.
 
-**andon_events**: Read the last 20 entries of `{artifact_dir}/journal.md` (or the full file if shorter). Count entries for the current cycle number N that mention "Andon" (case-insensitive). Use 0 if the journal cannot be read.
+**andon_events**: Read the most recent journal entries from `.ideate/cycles/*/journal/J-*.yaml` (last 20 entries). Count entries for the current cycle number N that mention "Andon" (case-insensitive). Use 0 if journal entries cannot be read.
 
 **cycle**: Use the cycle number N determined in Phase 1.2. If not a cycle review (ad-hoc, domain, or full audit), use `null`.
 
 ## 7.6.2 Emit the Event
 
-Append one JSON line to `{artifact_dir}/metrics.jsonl`:
+Append one JSON line to `.ideate/metrics.jsonl`:
 
 ```json
 {"timestamp":"<ISO8601>","event_type":"quality_summary","skill":"review","cycle":<N>,"findings":{"total":<N>,"by_severity":{"critical":<N>,"significant":<N>,"minor":<N>,"suggestion":<N>},"by_reviewer":{"code-reviewer":{"critical":<N>,"significant":<N>,"minor":<N>,"suggestion":<N>},"spec-reviewer":{"critical":<N>,"significant":<N>,"minor":<N>,"suggestion":<N>},"gap-analyst":{"critical":<N>,"significant":<N>,"minor":<N>,"suggestion":<N>}},"by_category":{"requirements_missed":<N>,"bugs_introduced":<N>,"principles_violated":<N>,"implementation_gaps":<N>,"other":<N>}},"work_items_reviewed":<N>,"andon_events":<N>}
@@ -531,9 +527,9 @@ Do not retry. Do not block the review on this step.
 
 # Phase 8: Update Journal
 
-Append a review entry to `journal.md`. This is strictly append — do not modify any existing entries.
+Append a review journal entry via `ideate_append_journal`. This is strictly append — do not modify any existing entries.
 
-Call the tool whose name ends in `ideate_append_journal` (it will be prefixed, e.g. `mcp__ideate_artifact_server__ideate_append_journal` or `mcp__plugin_ideate_ideate_artifact_server__ideate_append_journal`) with `({artifact_dir}, "review", {date}, {entry_type}, {body})`. It appends a structured journal entry atomically.
+Call the tool whose name ends in `ideate_append_journal` (it will be prefixed, e.g. `mcp__ideate_artifact_server__ideate_append_journal` or `mcp__plugin_ideate_ideate_artifact_server__ideate_append_journal`) with `("review", {date}, {entry_type}, {body})`. It appends a structured journal entry atomically.
 
 If this tool call fails, stop and report: "The ideate MCP artifact server is required but not available. Verify .mcp.json configuration."
 
@@ -582,7 +578,7 @@ Wait for the user to respond to each decision point. Record their answers.
 
 ## 9.4 Record User Decisions in Journal
 
-After the user has responded to decision points, append their decisions to `journal.md`:
+After the user has responded to decision points, append their decisions via `ideate_append_journal`:
 
 ```markdown
 ## [review] {today's date} — User decisions recorded
@@ -611,7 +607,7 @@ If no refinement is needed:
 
 # Metrics Instrumentation
 
-After each agent spawn (via the Agent tool), append one JSON entry to `{artifact_dir}/metrics.jsonl`. Best-effort only: if writing fails, continue without interruption.
+After each agent spawn (via the Agent tool), append one JSON entry to `.ideate/metrics.jsonl`. Best-effort only: if writing fails, continue without interruption.
 
 **Entry schema (one JSON object per line):**
 
@@ -640,7 +636,7 @@ Extract from agent response metadata if available. Set to null if token counts a
 
 Record timestamp immediately before the Agent tool call; compute `wall_clock_ms` after it returns.
 
-**Journal summary**: In Phase 8 (Update Journal), append to `journal.md` after the review entry:
+**Journal summary**: In Phase 8 (Update Journal), append via `ideate_append_journal` after the review entry:
 
 > ## [review] {date} — Metrics summary
 > Agents spawned: {N total} (code-reviewer, spec-reviewer, gap-analyst, journal-keeper, {curator if run})
@@ -672,7 +668,7 @@ If a reviewer session fails or times out:
 
 - Missing findings for the current cycle: proceed without them. The capstone review does not depend on incremental findings existing — it accounts for them when they do.
 - Missing work items: this suggests execution was incomplete. Note this in the summary as a significant finding.
-- Missing steering documents (beyond the required guiding-principles.md and overview.md): note the absence and review against whatever context is available.
+- Missing steering documents (beyond the required principles/GP-*.yaml and modules/overview.yaml): note the absence and review against whatever context is available.
 
 ## Curator fails
 

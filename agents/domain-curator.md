@@ -31,15 +31,15 @@ You will receive in your prompt:
 
 ## Phase 1: Load Existing Domain State
 
-1. Read `{artifact-dir}/domains/index.md`. If it does not exist, this is a bootstrap run — create it after Phase 3.
+1. Read `{artifact-dir}/.ideate/domains/index.yaml`. If it does not exist, this is a bootstrap run — create it after Phase 3.
 
-2. Glob `{artifact-dir}/domains/*/policies.md` and read each file.
+2. Glob `{artifact-dir}/.ideate/domains/*/policies/*.yaml` and read each file.
 
-3. Glob `{artifact-dir}/domains/*/decisions.md` and read each file.
+3. Glob `{artifact-dir}/.ideate/domains/*/decisions/*.yaml` and read each file.
 
-4. Glob `{artifact-dir}/domains/*/questions.md` and read each file.
+4. Glob `{artifact-dir}/.ideate/domains/*/questions/*.yaml` and read each file.
 
-5. Read `{artifact-dir}/steering/guiding-principles.md`.
+5. Read `{artifact-dir}/.ideate/principles/GP-*.yaml`.
 
 Build a working model of:
 - What domains exist and their scope
@@ -85,7 +85,7 @@ For each policy-grade, decision-grade, question-grade, and conflict-grade item:
 
 2. If the item does not fit any existing domain and represents a distinct cluster of concerns (different change cadence, different decision authority, different conceptual language from other domains), create a new domain. Choose a short, noun-phrase name (e.g., `data-model`, `api-contracts`, `testing`). New domains start with sparse files — do not back-fill; only record what this cycle's review produced.
 
-3. For items spanning all domains or belonging to none specifically, route to the closest domain or note them in `domains/index.md` as cross-cutting.
+3. For items spanning all domains or belonging to none specifically, route to the closest domain or note them in `.ideate/domains/index.yaml` as cross-cutting.
 
 ---
 
@@ -173,32 +173,29 @@ If Phase 3 identified a new domain:
 3. Create `decisions.md` with the first decision entry
 4. Create `questions.md` with any questions
 
-5. Update `domains/index.md` to register the new domain (see Phase 6).
+5. Update `.ideate/domains/index.yaml` to register the new domain (see Phase 6).
 
 ---
 
-## Phase 6: Update domains/index.md
+## Phase 6: Update domains/index.yaml
 
-After all domain files are updated, update `domains/index.md`.
+After all domain files are updated, update `.ideate/domains/index.yaml`.
 
 If the file does not exist (bootstrap run), create it:
 
-```markdown
-# Domain Registry
-
+```yaml
+id: domain-index
+type: domain_index
 current_cycle: {N}
-
-## Domains
-
-### {domain-name}
-{One-sentence description of what this domain covers.}
-Files: domains/{domain-name}/policies.md, decisions.md, questions.md
-
-### {domain-name-2}
-...
-
-## Cross-Cutting Concerns
-{Any concerns that span multiple domains and are tracked here rather than in a specific domain.}
+domains:
+  - name: "{domain-name}"
+    description: "{One-sentence description of what this domain covers.}"
+    files:
+      policies: domains/{domain-name}/policies/
+      decisions: domains/{domain-name}/decisions/
+      questions: domains/{domain-name}/questions/
+cross_cutting_concerns: |
+  {Any concerns that span multiple domains and are tracked here rather than in a specific domain.}
 ```
 
 If the file exists, update:

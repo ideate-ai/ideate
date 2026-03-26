@@ -1,11 +1,13 @@
 id: WI-102
 type: work_item
 title: Spec-reviewer verdict contract + brrr convergence robustness
-status: pending
+status: done
 complexity: medium
 scope:
-  - {path: agents/spec-reviewer.md, op: modify}
-  - {path: skills/brrr/SKILL.md, op: modify}
+  - path: agents/spec-reviewer.md
+    op: modify
+  - path: skills/brrr/SKILL.md
+    op: modify
 depends: []
 blocks: []
 criteria:
@@ -18,46 +20,46 @@ module: null
 domain: null
 notes: |
   # WI-102: Spec-reviewer verdict contract + brrr convergence robustness
-  
+
   ## Context
-  
+
   The brrr convergence check (Condition B, `skills/brrr/SKILL.md` lines 192-203) reads `spec-adherence.md` and checks whether the `## Principle Violations` section contains only "None." to determine pass/fail. The spec-reviewer has no instruction to write that exact string — it may write "No violations found." or similar, blocking convergence indefinitely. Additionally, the check logic is fragile: it relies on `### ` or `- ` line prefixes to detect violations, which could misfire.
-  
+
   ---
-  
+
   ## Fix 1: `agents/spec-reviewer.md` — add Principle Violation Verdict line
-  
+
   After the existing output format instructions in `agents/spec-reviewer.md`, in the section describing the `## Principle Violations` output block, add:
-  
+
   **Current** (find the `## Principle Violations` section instruction):
   The spec-reviewer currently has no requirement for a specific format for the empty-violations case.
-  
+
   **Add** the following instruction in the output format section (near where `## Principle Violations` is described):
-  
+
   ```
   At the top of the `## Principle Violations` section, always write a machine-parseable verdict line:
-  
+
   **Principle Violation Verdict**: Pass
-  
+
   or, if violations exist:
-  
+
   **Principle Violation Verdict**: Fail — {N} violation(s)
-  
+
   When there are no violations, write `None.` after the verdict line. Do not write "No violations found." or other variants — write exactly `None.`
   ```
-  
+
   ---
-  
+
   ## Fix 2: `skills/brrr/SKILL.md` — update convergence Condition B check
-  
+
   Locate the Condition B convergence check (lines ~192-203). Current logic:
   ```
   3. Matched section contains only "None." or "None" (case-insensitive, whitespace-tolerant) → passes.
   4. Matched section contains lines starting with `###` or `- ` → fails.
   ```
-  
+
   Replace with:
-  
+
   ```
   3. Check for machine-parseable verdict line first:
      - If section contains `**Principle Violation Verdict**: Pass` → passes.
@@ -67,17 +69,18 @@ notes: |
      - Section contains lines starting with `###` or `- ` → fails.
      - Section is present but matches neither pattern → log: "spec-adherence.md Principle Violations section has unexpected format — treating as non-converged." and fail.
   ```
-  
+
   ---
-  
+
   ## Acceptance Criteria
-  
+
   1. `agents/spec-reviewer.md` output format section instructs spec-reviewer to write `**Principle Violation Verdict**: Pass` or `**Principle Violation Verdict**: Fail — {N} violation(s)` as the first line of the `## Principle Violations` section
   2. `agents/spec-reviewer.md` instructs spec-reviewer to write exactly `None.` when no violations (not "No violations found." or other variants)
   3. `skills/brrr/SKILL.md` convergence Condition B checks for `**Principle Violation Verdict**: Pass` first, falls back to "None." detection, and logs an error for unrecognized formats
   4. `skills/brrr/SKILL.md` Condition B still correctly fails when `**Principle Violation Verdict**: Fail` is present
 cycle_created: 1
 cycle_modified: null
-content_hash: "6c49e216859cf113d989fb8f0e249340f901e21b08fca3cad7a93e5f67d35eb5"
-token_count: 1079
+content_hash: 0ec429e98c3b239135bb9fdd53da6ae23b125588ac40b69b7dc620ac5d3ada34
+token_count: 1075
 file_path: .ideate/work-items/WI-102.yaml
+resolution: Implemented during v3 migration

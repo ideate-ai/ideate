@@ -1,7 +1,6 @@
 import * as fs from "fs";
 import * as path from "path";
 import { ToolContext } from "./index.js";
-import { resolveArtifactDir } from "../config.js";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -136,10 +135,11 @@ export async function handleGetExecutionStatus(
   ctx: ToolContext,
   args: Record<string, unknown>
 ): Promise<string> {
-  const artifactDir = resolveArtifactDir(args, ctx.ideateDir);
+  // artifact_dir is now always ctx.ideateDir — resolved at server startup
+  void args; // args unused now
 
   const rows = queryAllWorkItems(ctx);
-  const reviews = scanIncrementalReviews(artifactDir);
+  const reviews = scanIncrementalReviews(ctx.ideateDir);
   const journalCompleted = buildJournalCompletedSet(ctx);
 
   // Build dependency map: id → array of dependency IDs
@@ -250,10 +250,11 @@ export async function handleGetReviewManifest(
 ): Promise<string> {
   // cycle_number is reserved for future use — accepted but not yet applied
   // const cycleNumber = typeof args.cycle_number === "number" ? args.cycle_number : null;
+  // artifact_dir is now always ctx.ideateDir — resolved at server startup
+  void args; // args unused now
 
-  const artifactDir = resolveArtifactDir(args, ctx.ideateDir);
   const rows = queryAllWorkItems(ctx);
-  const reviews = scanIncrementalReviews(artifactDir);
+  const reviews = scanIncrementalReviews(ctx.ideateDir);
 
   // Build table header
   const header = "| # | Title | File Scope | Incremental Verdict | Findings (C/S/M) | Work Item Path | Review Path |";

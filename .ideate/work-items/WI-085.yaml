@@ -1,10 +1,11 @@
 id: WI-085
 type: work_item
 title: Optimization Migration Tool
-status: pending
+status: done
 complexity: medium
 scope:
-  - {path: scripts/migrate-to-optimized.sh, op: create}
+  - path: scripts/migrate-to-optimized.sh
+    op: create
 depends: []
 blocks: []
 criteria:
@@ -42,16 +43,17 @@ module: null
 domain: null
 notes: |
   # Implementation Notes: 085
-  
+
   ### Review path discrepancy
-  
+
   Review skill uses `archive/incremental/` (line 73), brrr uses `reviews/incremental/` (line 232). Normalize to `archive/incremental/`, symlink for backward compat. Flag for 076 to fix in the brrr skill.
-  
+
   ### Structure
-  
+
   One function per migration. Main loop checks need, runs or reports (dry-run). New migrations added as new functions.
 cycle_created: 1
 cycle_modified: null
-content_hash: b764c99a9d6bef3588018bf8c76c9298cd714233a274be0f44dc77550a3296c1
-token_count: 810
+content_hash: 35f2ab78c09bd8a2f4a0261334f84883d1a5ff71c6ceb85126902e9cc539e57b
+token_count: 822
 file_path: .ideate/work-items/WI-085.yaml
+resolution: Implemented during v3 migration

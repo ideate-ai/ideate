@@ -435,11 +435,7 @@ export async function handleGetMetrics(
   ctx: ToolContext,
   args: Record<string, unknown>
 ): Promise<string> {
-  const artifactDir = args.artifact_dir as string | undefined;
-  if (!artifactDir) {
-    throw new Error("artifact_dir is required");
-  }
-
+  // artifact_dir is now always ctx.ideateDir — resolved at server startup
   const scope = args.scope as MetricsScope | undefined;
   const filterRaw = args.filter as Record<string, unknown> | undefined;
 

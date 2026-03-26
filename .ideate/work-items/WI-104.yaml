@@ -1,10 +1,11 @@
 id: WI-104
 type: work_item
 title: brrr/phases/review.md — domain curator invocation + interview path fallback
-status: pending
+status: done
 complexity: medium
 scope:
-  - {path: skills/brrr/phases/review.md, op: modify}
+  - path: skills/brrr/phases/review.md
+    op: modify
 depends: []
 blocks: []
 criteria:
@@ -18,26 +19,26 @@ module: null
 domain: null
 notes: |
   # WI-104: brrr/phases/review.md — domain curator invocation + interview path fallback
-  
+
   ## Context
-  
+
   Three gaps in `skills/brrr/phases/review.md`:
-  
+
   1. **Domain curator never runs in brrr**: A project built entirely through brrr never updates `domains/`. The domain-curator is only invoked by `skills/review/SKILL.md`. After convergence, the domain layer remains in its plan-bootstrap state. Future `/ideate:refine` invocations load a stale domain layer.
-  
+
   2. **Interview path hardcoded without fallback**: Lines 143 and 171 pass `{artifact_dir}/steering/interview.md` to the gap-analyst and journal-keeper. For projects using the `steering/interviews/` directory structure (including ideate's own `specs/`), this file does not exist. The agents silently skip interview context.
-  
+
   3. Note: context package-to-file (token efficiency) is deferred to Cycle B. Only the two structural gaps above are addressed here.
-  
+
   ---
-  
+
   ## Fix 1: Add domain-curator invocation after journal-keeper
-  
+
   In `skills/brrr/phases/review.md`, in the `### Spawn Journal-Keeper (After Reviewers Complete)` section, add a new section after it:
-  
+
   ```markdown
   ### Spawn Domain Curator (After Journal-Keeper Completes)
-  
+
   **domain-curator**
   - Model: opus
   - MaxTurns: 25
@@ -51,43 +52,43 @@ notes: |
     > **Review type**: cycle
     >
     > Follow the domain-curator agent instructions. Extract policy-grade, decision-grade, question-grade, and conflict-grade items from this cycle's review files and update the domains/ layer accordingly.
-  
+
   After the domain-curator returns, record a metrics entry with `phase: "6b"`, `agent_type: "domain-curator"` (schema in controller SKILL.md).
   ```
-  
+
   Also update `## Artifacts Written` at the bottom of the file to add:
   ```
   - `{artifact_dir}/domains/` — policies, decisions, and questions updated by domain-curator
   ```
-  
+
   ---
-  
+
   ## Fix 2: Interview path fallback in gap-analyst and journal-keeper prompts
-  
+
   **Current** (line ~143, gap-analyst prompt):
   ```
     > **Interview transcript**: {artifact_dir}/steering/interview.md (read for original requirements).
   ```
-  
+
   **Replace with**:
   ```
     > **Interview transcript**: Read `{artifact_dir}/steering/interview.md` if it exists. If not, check `{artifact_dir}/steering/interviews/` — read the most recent `_full.md` file found there (highest refine-NNN directory). If neither exists, proceed without interview context.
   ```
-  
+
   **Current** (line ~171, journal-keeper prompt):
   ```
     > **Interview transcript**: {artifact_dir}/steering/interview.md
   ```
-  
+
   **Replace with**:
   ```
     > **Interview transcript**: Read `{artifact_dir}/steering/interview.md` if it exists. If not, check `{artifact_dir}/steering/interviews/` — read the most recent `_full.md` file found there. If neither exists, proceed without interview context.
   ```
-  
+
   ---
-  
+
   ## Acceptance Criteria
-  
+
   1. `skills/brrr/phases/review.md` contains a `### Spawn Domain Curator` section after the journal-keeper section
   2. The domain-curator is spawned with artifact_dir, review source path, cycle number, and review type
   3. A metrics entry is recorded after the domain-curator returns
@@ -96,6 +97,7 @@ notes: |
   6. The journal-keeper prompt in `brrr/phases/review.md` includes the `steering/interviews/` fallback
 cycle_created: 1
 cycle_modified: null
-content_hash: "0152bf2a63d4085b0dd08db783d87a07e8e9d4d2ade68a934c67be2f25074503"
-token_count: 1166
+content_hash: 021f76a7c86a8409ea134f0f35b936fff1f9a0880bba71c0d1ae74f638cf0618
+token_count: 1168
 file_path: .ideate/work-items/WI-104.yaml
+resolution: Implemented during v3 migration

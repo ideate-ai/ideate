@@ -208,12 +208,9 @@ export async function handleGetWorkItemContext(
   ctx: ToolContext,
   args: Record<string, unknown>
 ): Promise<string> {
-  const artifactDir = args.artifact_dir;
+  // artifact_dir is now always ctx.ideateDir — resolved at server startup
   const workItemIdRaw = args.work_item_id;
 
-  if (typeof artifactDir !== "string" || artifactDir.trim() === "") {
-    throw new Error('Required argument "artifact_dir" is missing or empty.');
-  }
   if (typeof workItemIdRaw !== "string" || workItemIdRaw.trim() === "") {
     throw new Error('Required argument "work_item_id" is missing or empty.');
   }
@@ -526,11 +523,8 @@ export async function handleGetContextPackage(
   ctx: ToolContext,
   args: Record<string, unknown>
 ): Promise<string> {
-  const artifactDir = args.artifact_dir;
-
-  if (typeof artifactDir !== "string" || artifactDir.trim() === "") {
-    throw new Error('Required argument "artifact_dir" is missing or empty.');
-  }
+  // artifact_dir is now always ctx.ideateDir — resolved at server startup
+  void args; // args unused now
 
   const sections: string[] = [];
   const fullDocPaths: Array<{ label: string; path: string }> = [];

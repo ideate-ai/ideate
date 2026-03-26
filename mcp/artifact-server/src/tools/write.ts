@@ -32,19 +32,19 @@ export async function handleAppendJournal(
   ctx: ToolContext,
   args: Record<string, unknown>
 ): Promise<string> {
-  const artifactDir = args.artifact_dir as string;
+  // artifact_dir is now always ctx.ideateDir — resolved at server startup
   const skill = args.skill as string;
   const date = args.date as string;
   const entryType = args.entry_type as string;
   const body = args.body as string;
 
-  if (!artifactDir || !skill || !date || !entryType || !body) {
-    throw new Error("Missing required parameters: artifact_dir, skill, date, entry_type, body");
+  if (!skill || !date || !entryType || !body) {
+    throw new Error("Missing required parameters: skill, date, entry_type, body");
   }
 
   // 1. Determine cycle number from domains/index.md
   let cycleNumber = 0;
-  const indexMdPath = path.join(artifactDir, "domains", "index.md");
+  const indexMdPath = path.join(ctx.ideateDir, "domains", "index.md");
   if (fs.existsSync(indexMdPath)) {
     const indexContent = fs.readFileSync(indexMdPath, "utf8");
     const match = indexContent.match(/current_cycle:\s*(\d+)/);
@@ -133,16 +133,16 @@ export async function handleArchiveCycle(
   ctx: ToolContext,
   args: Record<string, unknown>
 ): Promise<string> {
-  const artifactDir = args.artifact_dir as string;
+  // artifact_dir is now always ctx.ideateDir — resolved at server startup
   const cycleNumber = args.cycle_number as number;
 
-  if (!artifactDir || cycleNumber === undefined || cycleNumber === null) {
-    throw new Error("Missing required parameters: artifact_dir, cycle_number");
+  if (cycleNumber === undefined || cycleNumber === null) {
+    throw new Error("Missing required parameters: cycle_number");
   }
 
   const cycleStr = String(cycleNumber).padStart(3, "0");
-  const incrementalDir = path.join(artifactDir, "archive", "incremental");
-  const cycleDir = path.join(artifactDir, "archive", "cycles", cycleStr);
+  const incrementalDir = path.join(ctx.ideateDir, "archive", "incremental");
+  const cycleDir = path.join(ctx.ideateDir, "archive", "cycles", cycleStr);
   const cycleWorkItemsDir = path.join(cycleDir, "work-items");
   const cycleIncrementalDir = path.join(cycleDir, "incremental");
 
@@ -164,7 +164,7 @@ export async function handleArchiveCycle(
 
   // Identify work item files referenced by the incremental reviews
   // Parse each review to find the work item ID, then find the work item file
-  const workItemsDir = path.join(artifactDir, "plan", "work-items");
+  const workItemsDir = path.join(ctx.ideateDir, "plan", "work-items");
   const workItemFiles: { src: string; name: string }[] = [];
   const seenWorkItems = new Set<string>();
 
@@ -284,11 +284,11 @@ export async function handleWriteWorkItems(
   ctx: ToolContext,
   args: Record<string, unknown>
 ): Promise<string> {
-  const artifactDir = args.artifact_dir as string;
+  // artifact_dir is now always ctx.ideateDir — resolved at server startup
   const items = args.items as WorkItemInput[];
 
-  if (!artifactDir || !items || !Array.isArray(items)) {
-    throw new Error("Missing required parameters: artifact_dir, items");
+  if (!items || !Array.isArray(items)) {
+    throw new Error("Missing required parameters: items");
   }
 
   if (items.length === 0) {
@@ -297,7 +297,7 @@ export async function handleWriteWorkItems(
 
   // Determine next available ID from SQLite
   const maxIdRow = ctx.db.prepare(
-    `SELECT MAX(CAST(n.id AS INTEGER)) as max_id FROM nodes n WHERE n.type = 'work_item'`
+    `SELECT MAX(CAST(REPLACE(n.id, 'WI-', '') AS INTEGER)) as max_id FROM nodes n WHERE n.type = 'work_item'`
   ).get() as { max_id: number | null };
   let nextId = (maxIdRow?.max_id ?? 0) + 1;
 
@@ -306,7 +306,7 @@ export async function handleWriteWorkItems(
     if (item.id) {
       return { ...item, resolvedId: item.id };
     }
-    const assigned = String(nextId).padStart(3, "0");
+    const assigned = `WI-${String(nextId).padStart(3, "0")}`;
     nextId++;
     return { ...item, resolvedId: assigned };
   });
@@ -586,6 +586,118 @@ export async function handleWriteWorkItems(
   // Format compact YAML response
   const responseYaml = stringifyYaml(results);
   return responseYaml;
+}
+
+// ---------------------------------------------------------------------------
+// handleWriteArtifact — generic artifact write tool
+// ---------------------------------------------------------------------------
+
+/**
+ * Determine the output path for an artifact based on its type and id.
+ * Returns the absolute file path.
+ */
+function resolveArtifactPath(ideateDir: string, type: string, id: string): string {
+  switch (type) {
+    case "overview":
+    case "execution_strategy":
+    case "architecture":
+      return path.join(ideateDir, "plan", `${id}.yaml`);
+    case "guiding_principles":
+    case "constraints":
+      return path.join(ideateDir, "steering", `${id}.yaml`);
+    case "interview":
+      // id may include path segments like "refine-029/_general"
+      return path.join(ideateDir, "interviews", `${id}.yaml`);
+    case "research":
+      return path.join(ideateDir, "steering", "research", `${id}.yaml`);
+    default:
+      return path.join(ideateDir, type, `${id}.yaml`);
+  }
+}
+
+export async function handleWriteArtifact(
+  ctx: ToolContext,
+  args: Record<string, unknown>
+): Promise<string> {
+  const type = args.type as string;
+  const id = args.id as string;
+  const content = args.content as Record<string, unknown>;
+
+  if (!type || !id) {
+    throw new Error("Missing required parameters: type, id");
+  }
+  if (!content || typeof content !== "object" || Array.isArray(content)) {
+    throw new Error("Missing required parameter: content (must be an object)");
+  }
+
+  // Redirect specialized types to existing handlers
+  if (type === "work_item") {
+    return handleWriteWorkItems(ctx, { items: [{ id, ...content }] });
+  }
+  if (type === "journal_entry") {
+    return handleAppendJournal(ctx, content);
+  }
+
+  // Resolve output path
+  const absoluteFilePath = resolveArtifactPath(ctx.ideateDir, type, id);
+  ensureDir(path.dirname(absoluteFilePath));
+
+  // Compute relative file_path from the .ideate/ directory name
+  // e.g., if ideateDir = /project/.ideate, file_path = .ideate/plan/overview.yaml
+  const ideateDirName = path.basename(ctx.ideateDir);
+  const relativeFilePath = path.join(
+    ideateDirName,
+    path.relative(ctx.ideateDir, absoluteFilePath)
+  );
+
+  // Build YAML object: merge content with id and type
+  const yamlObj: Record<string, unknown> = {
+    id,
+    type,
+    ...content,
+  };
+
+  // Remove computed fields before hashing so hash is stable
+  const forHash: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(yamlObj)) {
+    if (k !== "content_hash" && k !== "token_count" && k !== "file_path") {
+      forHash[k] = v;
+    }
+  }
+
+  const yamlForHash = stringifyYaml(forHash, { lineWidth: 0 });
+  const contentHash = sha256(yamlForHash);
+  const tokens = tokenCount(yamlForHash);
+
+  // Add computed fields
+  yamlObj.content_hash = contentHash;
+  yamlObj.token_count = tokens;
+  yamlObj.file_path = relativeFilePath;
+
+  const finalYaml = stringifyYaml(yamlObj, { lineWidth: 0 });
+
+  // Write the YAML file
+  fs.writeFileSync(absoluteFilePath, finalYaml, "utf8");
+
+  // Upsert into SQLite (GP-8 write pattern)
+  const nodeRow = {
+    id,
+    type,
+    cycle_created: (content.cycle_created as number | null) ?? null,
+    cycle_modified: (content.cycle_modified as number | null) ?? null,
+    content_hash: contentHash,
+    token_count: tokens,
+    file_path: absoluteFilePath,
+    status: (content.status as string | null) ?? null,
+  };
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  ctx.drizzleDb.insert(nodes as any).values(nodeRow as any).onConflictDoUpdate({
+    target: (nodes as any).id,
+    set: nodeRow as any,
+  }).run();
+
+  return `Wrote ${type} artifact ${id} to ${absoluteFilePath}.`;
 }
 
 // ---------------------------------------------------------------------------

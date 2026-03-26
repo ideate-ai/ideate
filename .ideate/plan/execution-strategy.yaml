@@ -1,43 +1,35 @@
 id: execution-strategy
 type: execution_strategy
-title: Execution Strategy — Cycle 028
+title: Execution Strategy — Cycle 029
 content: |
-  # Execution Strategy — Cycle 028
+  # Execution Strategy — Cycle 029
 
   ## Mode
-  Batched parallel — 3 dependency layers + 1 manual pause.
+  Batched parallel — 2 dependency layers.
 
   ## Parallelism
   Max concurrent workers: 4
-  Worktrees: enabled
+  Worktrees: disabled (beepboop plugin hook issue — use non-worktree execution)
   Review cadence: incremental review per item
 
   ## Work Item Groups
 
   ### Group 1 (parallel — no dependencies)
-  - WI-224: Obsolete status + resolution field in MCP tools
-  - WI-227: Migration script empty domain fix
-  - WI-228: README comprehensive update
-  - WI-232: ARCHITECTURE.md — document context assembly algorithm
-  - WI-233: Fix ideate_write_work_items to produce v3 per-file YAML format
+  - WI-234: Fix ID auto-assignment in write.ts
+  - WI-235: ARCHITECTURE.md tool count update
+  - WI-236: CLAUDE.md v3 structure update
+  - WI-237: Remove artifact_dir from MCP tool schemas and handlers
 
-  ### Manual pause: Re-write cycle 028 work items using the fixed tool
-
-  ### Group 2 (depends on WI-233)
-  - WI-225: ideate_update_work_items MCP tool (depends on 233)
-
-  ### Group 3 (depends on WI-224 + WI-225)
-  - WI-226: Bulk status cleanup (depends on 224, 225)
+  ### Group 2 (depends on WI-237)
+  - WI-238: Comprehensive skills/agents audit (depends on 237 — needs to know new tool interface)
 
   ## Dependency Graph
 
   ```
-  224 ───────────────┐
-  233 → [migrate] → 225 ─┤
-                         ├─ 226
-  227                    │
-  228                    │
-  232                    │
+  234
+  235
+  236
+  237 → 238
   ```
 
   ## Agent Configuration

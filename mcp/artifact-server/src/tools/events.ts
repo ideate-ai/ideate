@@ -14,13 +14,10 @@ export async function handleEmitEvent(
   ctx: ToolContext,
   args: Record<string, unknown>
 ): Promise<string> {
-  const artifactDir = args.artifact_dir as string | undefined;
+  // artifact_dir is now always ctx.ideateDir — resolved at server startup
   const event = args.event as string | undefined;
   const rawVariables = args.variables as Record<string, unknown> | undefined;
 
-  if (!artifactDir) {
-    throw new Error("Missing required parameter: artifact_dir");
-  }
   if (!event) {
     throw new Error("Missing required parameter: event");
   }

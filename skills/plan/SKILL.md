@@ -346,7 +346,7 @@ After the architect completes, read the architecture document and module specs. 
    - **Fewer than 5 modules**: Decompose to work items in the main session (skip spawning decomposers). The module layer may be implicit rather than producing separate module spec files.
    - **5 or more modules**: Spawn decomposer agents in parallel (Phase 5).
 
-## 4.3 Write `plan/overview.md`
+## 4.3 Write overview.yaml
 
 Write the project overview to `.ideate/modules/overview.yaml` (or as a human-readable summary; this file is for human reference). The content:
 
@@ -630,9 +630,8 @@ Run `/ideate:execute` to begin building, or `/ideate:refine` to adjust the plan.
 ```
 
 After presenting the plan summary, call `ideate_emit_event` with:
-- artifact_dir: {artifact_dir}
 - event: "plan.complete"
-- variables: { "ARTIFACT_DIR": "{artifact_dir}", "WORK_ITEM_COUNT": "{total_work_item_count}" }
+- variables: { "WORK_ITEM_COUNT": "{total_work_item_count}" }
 
 This call is best-effort — if it fails, continue without interruption.
 

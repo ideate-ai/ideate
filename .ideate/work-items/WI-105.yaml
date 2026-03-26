@@ -1,10 +1,11 @@
 id: WI-105
 type: work_item
 title: brrr/phases/execute.md — context digest + unverifiable scrutiny + mode-relative Andon
-status: pending
+status: done
 complexity: medium
 scope:
-  - {path: skills/brrr/phases/execute.md, op: modify}
+  - path: skills/brrr/phases/execute.md
+    op: modify
 depends: []
 blocks: []
 criteria:
@@ -20,28 +21,28 @@ module: null
 domain: null
 notes: |
   # WI-105: brrr/phases/execute.md — context digest + unverifiable scrutiny + mode-relative Andon
-  
+
   ## Context
-  
+
   Three improvements to `skills/brrr/phases/execute.md`:
-  
+
   1. **Missing context digest**: The standalone execute skill (Phase 4.5) prepares a filtered 100-150 line context digest before spawning workers, giving each worker architecture sections relevant to their file scope plus the full interface contracts section. `brrr/phases/execute.md` bypasses this entirely — workers receive the full architecture, principles, and constraints files. This is both a token-efficiency issue and a quality issue (workers receive undifferentiated context).
-  
+
   2. **Unverifiable self-check claims unchecked**: Workers can classify acceptance criteria as `unverifiable` to avoid extra investigation work. The incremental reviewer has no instruction to scrutinize these claims.
-  
+
   3. **Proxy-human deferrals are silent**: When the proxy-human returns `DEFER`, brrr logs it to the journal and continues. The user sees deferred items only in the final activity report. For brrr (autonomous mode), the deferral should be logged visibly in the running output without interrupting the loop.
-  
+
   ---
-  
+
   ## Fix 1: Context digest preparation
-  
+
   In `skills/brrr/phases/execute.md`, before the worker-spawning section, add a context digest preparation step. Mirror the logic from `skills/execute/SKILL.md` Phase 4.5:
-  
+
   ```markdown
   ### Prepare Context Digest
-  
+
   Before spawning workers, prepare a filtered context digest for this cycle's pending work items. This reduces context sent to each worker without losing relevant information.
-  
+
   For each pending work item:
   1. Read `{artifact_dir}/plan/architecture.md`. Extract:
      - Sections mentioning any file path in the work item's `file_scope`
@@ -50,35 +51,35 @@ notes: |
      - Cap at 150 lines total; if over limit, prioritize interface contracts, then component map, then other sections
   2. Read `{artifact_dir}/steering/guiding-principles.md` in full (this is typically short enough to include entirely)
   3. Read `{artifact_dir}/steering/constraints.md` in full
-  
+
   Store as `{work_item_context_digest[item_id]}`. Pass to the worker instead of the raw architecture file.
-  
+
   If architecture.md is ≤200 lines total, skip digest preparation and pass the full file.
   ```
-  
+
   Update worker prompt template to use `{work_item_context_digest[item_id]}` instead of the full architecture path.
-  
+
   ---
-  
+
   ## Fix 2: Unverifiable scrutiny in incremental reviewer
-  
+
   In the incremental reviewer spawn instructions (the section that says "When a work item completes, spawn the code-reviewer"), add to the reviewer prompt:
-  
+
   ```markdown
     > **Unverifiable claims**: The worker's self-check may contain criteria marked `unverifiable`. For each such claim:
     > 1. List all `unverifiable` criteria explicitly in your findings.
     > 2. Attempt to verify at least 2 of them by reading the relevant source files. If a criterion marked `unverifiable` can actually be verified by file inspection, reclassify it and report it as either `satisfied` or `unsatisfied`.
     > 3. Any `unverifiable` claim that could reasonably be verified by reading the implementation must be reclassified. Only accept `unverifiable` for criteria that genuinely require runtime testing, external dependencies, or human judgment.
   ```
-  
+
   ---
-  
+
   ## Fix 3: Mode-relative Andon — visible deferral logging in brrr
-  
+
   In the proxy-human invocation section, update the handling of `DEFER` responses:
-  
+
   **Current behavior**: DEFER → add to deferred items list → continue silently.
-  
+
   **New behavior**: After a DEFER decision, in addition to the journal entry:
   1. Print immediately to running output:
      ```
@@ -86,13 +87,13 @@ notes: |
      ```
   2. In the `### Cycle-by-Cycle Summary` section of the activity report (Phase 9), explicitly list deferred items under each cycle: "Deferred decisions: {N} — {list of topics}"
   3. In the activity report's `### Open Items` section, list all deferred Andon events with their cycle number, event description, and the proxy-human's deferral rationale.
-  
+
   **Do NOT**: interrupt the loop, ask the user, or pause execution. This is logging only.
-  
+
   ---
-  
+
   ## Acceptance Criteria
-  
+
   1. `skills/brrr/phases/execute.md` contains a context digest preparation step before worker spawning
   2. The digest always includes the full interface contracts section from architecture.md
   3. Workers receive the context digest instead of the full architecture.md when architecture > 200 lines
@@ -102,6 +103,7 @@ notes: |
   7. The activity report `### Open Items` section lists all deferred Andon events with rationale
 cycle_created: 1
 cycle_modified: null
-content_hash: "15cdadcf3962a35be34b1258b30e3ad3704b977ab9a6b8883733a17b8eb8ab6d"
-token_count: 1570
+content_hash: 29409ac804fa8300c9b7930459b9e8ab8d4e861a2d570f2cce018d70f1d3c698
+token_count: 1573
 file_path: .ideate/work-items/WI-105.yaml
+resolution: Implemented during v3 migration

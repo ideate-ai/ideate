@@ -6,7 +6,7 @@ import { handleGetWorkItemContext, handleGetContextPackage } from "./context.js"
 import { handleArtifactQuery } from "./query.js";
 import { handleGetExecutionStatus, handleGetReviewManifest } from "./execution.js";
 import { handleGetConvergenceStatus, handleGetDomainState, handleGetProjectStatus } from "./analysis.js";
-import { handleAppendJournal, handleArchiveCycle, handleWriteWorkItems, handleUpdateWorkItems } from "./write.js";
+import { handleAppendJournal, handleArchiveCycle, handleWriteWorkItems, handleUpdateWorkItems, handleWriteArtifact } from "./write.js";
 import { handleEmitEvent } from "./events.js";
 import { handleGetMetrics } from "./metrics.js";
 
@@ -33,16 +33,12 @@ export const TOOLS: Tool[] = [
     inputSchema: {
       type: "object",
       properties: {
-        artifact_dir: {
-          type: "string",
-          description: "Absolute path to the specs/ artifact directory.",
-        },
         work_item_id: {
           type: "string",
           description: "Work item identifier (e.g. 'WI-184' or '184').",
         },
       },
-      required: ["artifact_dir", "work_item_id"],
+      required: ["work_item_id"],
     },
   },
   {
@@ -51,13 +47,8 @@ export const TOOLS: Tool[] = [
       "Returns the full project context package: guiding principles, constraints, architecture overview, domain policies, and current execution strategy. Use at the start of a session to orient yourself.",
     inputSchema: {
       type: "object",
-      properties: {
-        artifact_dir: {
-          type: "string",
-          description: "Absolute path to the specs/ artifact directory.",
-        },
-      },
-      required: ["artifact_dir"],
+      properties: {},
+      required: [],
     },
   },
   {
@@ -128,13 +119,8 @@ export const TOOLS: Tool[] = [
       "Returns execution status for the current cycle: total work items, counts by status (pending/in-progress/done/blocked), and which items are ready to start based on dependency resolution.",
     inputSchema: {
       type: "object",
-      properties: {
-        artifact_dir: {
-          type: "string",
-          description: "Absolute path to the specs/ artifact directory.",
-        },
-      },
-      required: ["artifact_dir"],
+      properties: {},
+      required: [],
     },
   },
   {
@@ -144,16 +130,12 @@ export const TOOLS: Tool[] = [
     inputSchema: {
       type: "object",
       properties: {
-        artifact_dir: {
-          type: "string",
-          description: "Absolute path to the specs/ artifact directory.",
-        },
         cycle_number: {
           type: "integer",
           description: "Cycle number to retrieve. Defaults to the most recent cycle.",
         },
       },
-      required: ["artifact_dir"],
+      required: [],
     },
   },
   {
@@ -163,16 +145,12 @@ export const TOOLS: Tool[] = [
     inputSchema: {
       type: "object",
       properties: {
-        artifact_dir: {
-          type: "string",
-          description: "Absolute path to the specs/ artifact directory.",
-        },
         cycle_number: {
           type: "integer",
           description: "The cycle number to assess for convergence.",
         },
       },
-      required: ["artifact_dir", "cycle_number"],
+      required: ["cycle_number"],
     },
   },
   {
@@ -182,10 +160,6 @@ export const TOOLS: Tool[] = [
     inputSchema: {
       type: "object",
       properties: {
-        artifact_dir: {
-          type: "string",
-          description: "Absolute path to the specs/ artifact directory.",
-        },
         domains: {
           type: "array",
           items: { type: "string" },
@@ -193,7 +167,7 @@ export const TOOLS: Tool[] = [
             "Domain names to retrieve (e.g. ['workflow', 'artifact-structure']). Omit to retrieve all domains.",
         },
       },
-      required: ["artifact_dir"],
+      required: [],
     },
   },
   {
@@ -202,13 +176,8 @@ export const TOOLS: Tool[] = [
       "Returns a high-level project status summary: current cycle, total work items by status, recent journal entries, open domain questions, and pending findings.",
     inputSchema: {
       type: "object",
-      properties: {
-        artifact_dir: {
-          type: "string",
-          description: "Absolute path to the specs/ artifact directory.",
-        },
-      },
-      required: ["artifact_dir"],
+      properties: {},
+      required: [],
     },
   },
   {
@@ -218,10 +187,6 @@ export const TOOLS: Tool[] = [
     inputSchema: {
       type: "object",
       properties: {
-        artifact_dir: {
-          type: "string",
-          description: "Absolute path to the specs/ artifact directory.",
-        },
         skill: {
           type: "string",
           enum: ["plan", "execute", "review", "refine", "brrr"],
@@ -241,7 +206,7 @@ export const TOOLS: Tool[] = [
           description: "Markdown body of the journal entry.",
         },
       },
-      required: ["artifact_dir", "skill", "date", "entry_type", "body"],
+      required: ["skill", "date", "entry_type", "body"],
     },
   },
   {
@@ -251,16 +216,12 @@ export const TOOLS: Tool[] = [
     inputSchema: {
       type: "object",
       properties: {
-        artifact_dir: {
-          type: "string",
-          description: "Absolute path to the specs/ artifact directory.",
-        },
         cycle_number: {
           type: "integer",
           description: "The cycle number to archive.",
         },
       },
-      required: ["artifact_dir", "cycle_number"],
+      required: ["cycle_number"],
     },
   },
   {
@@ -270,10 +231,6 @@ export const TOOLS: Tool[] = [
     inputSchema: {
       type: "object",
       properties: {
-        artifact_dir: {
-          type: "string",
-          description: "Absolute path to the specs/ artifact directory.",
-        },
         items: {
           type: "array",
           description: "Array of work item objects to write.",
@@ -342,7 +299,7 @@ export const TOOLS: Tool[] = [
           },
         },
       },
-      required: ["artifact_dir", "items"],
+      required: ["items"],
     },
   },
   {
@@ -352,10 +309,6 @@ export const TOOLS: Tool[] = [
     inputSchema: {
       type: "object",
       properties: {
-        artifact_dir: {
-          type: "string",
-          description: "Path to artifact directory",
-        },
         updates: {
           type: "array",
           items: {
@@ -381,16 +334,36 @@ export const TOOLS: Tool[] = [
     },
   },
   {
+    name: "ideate_write_artifact",
+    description:
+      "Write any artifact to the .ideate/ directory as a YAML file. Handles path resolution, content hashing, and SQLite indexing automatically.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        type: {
+          type: "string",
+          description:
+            "Artifact type (overview, execution_strategy, interview, research, architecture, guiding_principles, constraints, etc.)",
+        },
+        id: {
+          type: "string",
+          description: "Artifact identifier",
+        },
+        content: {
+          type: "object",
+          description: "YAML fields to write (type-specific content)",
+        },
+      },
+      required: ["type", "id", "content"],
+    },
+  },
+  {
     name: "ideate_get_metrics",
     description:
       "Returns aggregated metrics from the metrics_events table. Supports three aggregation scopes: agent (per-agent-type token and finding aggregates), work_item (first-pass acceptance and rework counts), and cycle (convergence speed, finding totals, token totals, cost estimates). Omit scope to get all three levels.",
     inputSchema: {
       type: "object",
       properties: {
-        artifact_dir: {
-          type: "string",
-          description: "Absolute path to the specs/ artifact directory.",
-        },
         scope: {
           type: "string",
           enum: ["agent", "work_item", "cycle"],
@@ -421,7 +394,7 @@ export const TOOLS: Tool[] = [
           additionalProperties: false,
         },
       },
-      required: ["artifact_dir"],
+      required: [],
     },
   },
   {
@@ -431,10 +404,6 @@ export const TOOLS: Tool[] = [
     inputSchema: {
       type: "object",
       properties: {
-        artifact_dir: {
-          type: "string",
-          description: "Absolute path to the specs/ artifact directory.",
-        },
         event: {
           type: "string",
           description:
@@ -447,7 +416,7 @@ export const TOOLS: Tool[] = [
           additionalProperties: { type: "string" },
         },
       },
-      required: ["artifact_dir", "event"],
+      required: ["event"],
     },
   },
 ];
@@ -497,6 +466,9 @@ export async function handleTool(
 
     case "ideate_update_work_items":
       return handleUpdateWorkItems(ctx, _args);
+
+    case "ideate_write_artifact":
+      return handleWriteArtifact(ctx, _args);
 
     case "ideate_emit_event":
       return handleEmitEvent(ctx, _args);

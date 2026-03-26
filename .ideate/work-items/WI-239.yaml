@@ -1,0 +1,35 @@
+id: WI-239
+type: work_item
+title: Generic ideate_write_artifact MCP tool
+status: pending
+complexity: medium
+scope:
+  - path: mcp/artifact-server/src/tools/write.ts
+    op: modify
+  - path: mcp/artifact-server/src/tools/index.ts
+    op: modify
+  - path: mcp/artifact-server/src/__tests__/tools.test.ts
+    op: modify
+depends:
+  - WI-237
+blocks:
+  - WI-238
+criteria:
+  - New MCP tool ideate_write_artifact registered
+  - Accepts type, id, and content object
+  - Writes YAML to appropriate directory based on type
+  - Computes content_hash and token_count automatically
+  - Upserts into SQLite after writing
+  - No artifact_dir parameter
+  - At least 3 tests
+domain: artifact-structure
+notes: |-
+  # WI-239: Generic Write Artifact Tool
+
+  New handleWriteArtifact. Type-to-path: overview/execution_strategy/architecture to plan/, guiding_principles/constraints to steering/, interview to interviews/, others to {type}/. Content serialized to YAML with auto-computed hash/token fields.
+resolution: null
+cycle_created: 29
+cycle_modified: null
+content_hash: 3665dfc639a306af164a67b393412299d376301d9f118fca49ff090958c1b94d
+token_count: 259
+file_path: .ideate/work-items/WI-239.yaml

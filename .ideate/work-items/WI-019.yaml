@@ -1,10 +1,11 @@
 id: WI-019
 type: work_item
 title: Review Skill — Journal-Keeper Timing Fix
-status: pending
+status: done
 complexity: low
 scope:
-  - {path: skills/review/SKILL.md, op: modify}
+  - path: skills/review/SKILL.md
+    op: modify
 depends: []
 blocks: []
 criteria:
@@ -16,23 +17,24 @@ module: null
 domain: null
 notes: |
   # Implementation Notes: 019
-  
+
   Restructure Phase 3 into two sub-phases:
-  
+
   **Phase 3a: Spawn Three Reviewers (parallel)**
   - code-reviewer
   - spec-reviewer
   - gap-analyst
-  
+
   Wait for all three to complete. Write their outputs to `reviews/final/`.
-  
+
   **Phase 3b: Spawn Journal-Keeper (sequential)**
   - journal-keeper receives all context it had before PLUS the three completed review files
   - The prompt explicitly references `reviews/final/code-quality.md`, `reviews/final/spec-adherence.md`, `reviews/final/gap-analysis.md`
-  
+
   Update Phase 4 to reflect that three files are written first, then the fourth. The synthesis (Phase 5) still waits for all four.
 cycle_created: 1
 cycle_modified: null
-content_hash: "8dadf44aeffd040a4c5f0cd874347072872d64af641c2b2980d17251c1ec769c"
-token_count: 387
+content_hash: 112036f217068234ddbf85ed1a563f9e8e3d83a0782b5d59c28d6a577156b23d
+token_count: 384
 file_path: .ideate/work-items/WI-019.yaml
+resolution: Implemented during v3 migration

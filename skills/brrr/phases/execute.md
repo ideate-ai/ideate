@@ -4,47 +4,47 @@
 
 Called by the brrr loop controller at the start of each cycle. The following variables are available from the controller context:
 
-- `{artifact_dir}` — absolute path to the artifact directory
+- `{project_root}` — absolute path to the project root
 - `{project_source_root}` — absolute path to the project source code
 - `{cycle_number}` — current 1-based cycle counter
 - `{completed_items}` — set of work item numbers already completed
 
 ## Instructions
 
-Execute all pending work items following the execution strategy from `{artifact_dir}/plan/execution-strategy.md`.
+Execute all pending work items following the execution strategy from `{project_root}/.ideate/modules/execution-strategy.yaml`.
 
 ### Prepare Context Digest
 
 Before spawning workers, prepare a filtered context digest for this cycle's pending work items. This reduces context sent to each worker without losing relevant information.
 
 For each pending work item:
-1. Read `{artifact_dir}/plan/architecture.md`. Check its total line count.
-   - If architecture.md is ≤200 lines total, skip digest preparation for that item and pass the full file.
-   - If architecture.md is >200 lines, extract:
+1. Read `{project_root}/.ideate/modules/architecture.yaml`. Check its total line count.
+   - If architecture.yaml is ≤200 lines total, skip digest preparation for that item and pass the full file.
+   - If architecture.yaml is >200 lines, extract:
      - The full `## Interface Contracts` section — always included in full, uncapped (contracts span modules and must not be truncated regardless of length)
      - Sections mentioning any file path in the work item's `file_scope`
      - The component map entry for the relevant component
      - Cap all non-interface-contracts content at 150 lines total; if over this limit, include the component map entry first, then file-scope sections. If the interface contracts section alone exceeds 150 lines, include only the interface contracts section.
-2. Read `{artifact_dir}/steering/guiding-principles.md` in full (typically short enough to include entirely)
-3. Read `{artifact_dir}/steering/constraints.md` in full
+2. Read `{project_root}/.ideate/principles/GP-*.yaml` in full (typically short enough to include entirely)
+3. Read `{project_root}/.ideate/constraints/C-*.yaml` in full
 
-Store as `{work_item_context_digest[item_id]}`. Pass to the worker instead of the raw architecture file path. Include the full paths to the original files so workers can read them if more detail is needed: "Full architecture at `{artifact_dir}/plan/architecture.md`, full principles at `{artifact_dir}/steering/guiding-principles.md`, full constraints at `{artifact_dir}/steering/constraints.md` — read these if you need detail beyond what the digest provides."
+Store as `{work_item_context_digest[item_id]}`. Pass to the worker instead of the raw architecture file path. Include the full paths to the original files so workers can read them if more detail is needed: "Full architecture at `{project_root}/.ideate/modules/architecture.yaml`, full principles at `{project_root}/.ideate/principles/`, full constraints at `{project_root}/.ideate/constraints/` — read these if you need detail beyond what the digest provides."
 
 ### Context for Every Worker
 
 **Call `ideate_get_work_item_context`**: Look in your tool list for a tool whose name ends in `ideate_get_work_item_context` (it will be prefixed, e.g. `mcp__ideate_artifact_server__ideate_get_work_item_context` or `mcp__plugin_ideate_ideate_artifact_server__ideate_get_work_item_context`). If not found, stop and report: "The ideate MCP artifact server is required but not available. Verify .mcp.json configuration."
 
-Call it with `({artifact_dir}, {work_item_id})` — returns pre-assembled context including work item spec, module spec, domain policies, and research. Also provide the project source root path and relevant domain policies (if not already included). Skip the manual file reads in steps 1–8 below.
+Call it with `({work_item_id})` — returns pre-assembled context including work item spec, module spec, domain policies, and research. Also provide the project source root path and relevant domain policies (if not already included). Skip the manual file reads in steps 1–8 below.
 
 Every worker subagent receives:
 
-1. The work item spec — if `{artifact_dir}/plan/work-items.yaml` exists, extract the item's content. Otherwise read `{artifact_dir}/plan/work-items/NNN-{name}.md`.
-2. If `{artifact_dir}/plan/notes/{id}.md` exists, include it as additional implementation notes.
+1. The work item spec — read `{project_root}/.ideate/work-items/WI-{NNN}.yaml` (includes inline implementation notes in the `notes` field).
+2. _(Implementation notes are inline in the work item YAML `notes` field.)_
 3. The context digest — `{work_item_context_digest[item_id]}` prepared in the "Prepare Context Digest" step above. Includes paths to the full architecture, principles, and constraints documents for reference.
-4. The relevant module spec — from `{artifact_dir}/plan/modules/` if it exists and matches the work item's scope; otherwise the full architecture doc
+4. The relevant module spec — from `{project_root}/.ideate/modules/` if it exists and matches the work item's scope; otherwise the full architecture doc
 5. _(Included in context digest)_
 6. _(Included in context digest)_
-7. Relevant research — any files from `{artifact_dir}/steering/research/` referenced in the work item
+7. Relevant research — any files from `{project_root}/.ideate/research/` referenced in the work item
 8. Project source root — the absolute path `{project_source_root}`
 
 All paths provided to workers must be absolute.
@@ -76,24 +76,22 @@ The worker prompt must also include this self-check instruction:
 **Skipping completed items**: Before starting a work item, check whether its number is in `{completed_items}`. If so, skip it and report: "Skipping work item NNN: {title} — already completed."
 
 **Hook: work_item.started**: Before spawning the worker for each work item (after the skip check passes), call `ideate_emit_event` with:
-- artifact_dir: {artifact_dir}
 - event: "work_item.started"
-- variables: { "ARTIFACT_DIR": "{artifact_dir}", "WORK_ITEM_ID": "{work_item_id}", "WORK_ITEM_TITLE": "{work_item_title}" }
+- variables: { "WORK_ITEM_ID": "{work_item_id}", "WORK_ITEM_TITLE": "{work_item_title}" }
 
 This call is best-effort — if it fails, continue without interruption.
 
 **Hook: work_item.completed**: After each work item passes incremental review (findings handled, rework complete if any), call `ideate_emit_event` with:
-- artifact_dir: {artifact_dir}
 - event: "work_item.completed"
-- variables: { "ARTIFACT_DIR": "{artifact_dir}", "WORK_ITEM_ID": "{work_item_id}", "VERDICT": "{review_verdict}" }
+- variables: { "WORK_ITEM_ID": "{work_item_id}", "VERDICT": "{review_verdict}" }
 
 Where `{review_verdict}` is `"pass"` if the review passed without rework, `"rework"` if it passed after rework, or `"fail"` if unresolvable. This call is best-effort — if it fails, continue without interruption.
 
-**Refreshing execution status mid-cycle**: If the `{completed_items}` set needs to be refreshed mid-cycle (e.g., after a partial failure and retry), look in your tool list for a tool whose name ends in `ideate_get_execution_status` (it will be prefixed, e.g. `mcp__ideate_artifact_server__ideate_get_execution_status` or `mcp__plugin_ideate_ideate_artifact_server__ideate_get_execution_status`). If not found, stop and report: "The ideate MCP artifact server is required but not available. Verify .mcp.json configuration." Call it with `({artifact_dir})` — returns current completed, pending, and blocked sets. Use the returned `completed` set to update `{completed_items}` before skipping decisions.
+**Refreshing execution status mid-cycle**: If the `{completed_items}` set needs to be refreshed mid-cycle (e.g., after a partial failure and retry), look in your tool list for a tool whose name ends in `ideate_get_execution_status` (it will be prefixed, e.g. `mcp__ideate_artifact_server__ideate_get_execution_status` or `mcp__plugin_ideate_ideate_artifact_server__ideate_get_execution_status`). If not found, stop and report: "The ideate MCP artifact server is required but not available. Verify .mcp.json configuration." Call it — returns current completed, pending, and blocked sets. Use the returned `completed` set to update `{completed_items}` before skipping decisions.
 
 ### Execution Modes
 
-Execute according to the mode in `{artifact_dir}/plan/execution-strategy.md`:
+Execute according to the mode in `{project_root}/.ideate/modules/execution-strategy.yaml`:
 
 **Sequential**: Execute one work item at a time in dependency order. Select the next item whose dependencies are all complete. Build it. Trigger incremental review. Handle findings. Update journal. Repeat.
 
@@ -125,7 +123,7 @@ Include the following in the code-reviewer's prompt:
   >
   > **Dynamic testing (incremental scope)**: After your static review, perform the dynamic checks defined in your agent instructions under "Dynamic Testing > Incremental review scope". Discover the project's test model, run the smoke test, and run tests scoped to the changed files. If the smoke test fails, report a Critical finding titled "Startup failure after [work item name]".
 
-Write the result to `{artifact_dir}/.ideate/cycles/{NNN}/findings/F-{WI}-{SEQ}.yaml`. After the code-reviewer returns, record a metrics entry with `phase: "6a"`, `agent_type: "code-reviewer"`. Include `input_tokens`, `output_tokens`, `cache_read_tokens`, `cache_write_tokens` from agent response metadata (null if unavailable), and `mcp_tools_called` (array of MCP tool names used to assemble context, or `[]` if none). Also set: `outcome` to `"pass"`, `"rework"`, or `"fail"` based on the review verdict and whether rework was required; `finding_count` to the total number of findings across all severities from the review (null if output cannot be parsed); `finding_severities` to `{"critical": N, "significant": N, "minor": N}` (null if output cannot be parsed); `first_pass_accepted` to `true` if the review passes with no rework required, `false` otherwise; `rework_count` to `null`. (Full schema including `skill` and `cycle` fields defined in controller SKILL.md.)
+Write the result to `{project_root}/.ideate/cycles/{NNN}/findings/F-{WI}-{SEQ}.yaml`. After the code-reviewer returns, record a metrics entry with `phase: "6a"`, `agent_type: "code-reviewer"`. Include `input_tokens`, `output_tokens`, `cache_read_tokens`, `cache_write_tokens` from agent response metadata (null if unavailable), and `mcp_tools_called` (array of MCP tool names used to assemble context, or `[]` if none). Also set: `outcome` to `"pass"`, `"rework"`, or `"fail"` based on the review verdict and whether rework was required; `finding_count` to the total number of findings across all severities from the review (null if output cannot be parsed); `finding_severities` to `{"critical": N, "significant": N, "minor": N}` (null if output cannot be parsed); `first_pass_accepted` to `true` if the review passes with no rework required, `false` otherwise; `rework_count` to `null`. (Full schema including `skill` and `cycle` fields defined in controller SKILL.md.)
 
 **Review format**:
 
@@ -187,18 +185,18 @@ When an Andon event occurs (scope-changing finding, merge conflict, spec ambigui
    model: "opus"
    prompt: "[Andon Event for proxy-human agent]
 
-   Artifact directory: {artifact_dir}
+   Project root: {project_root}
    Cycle: {cycle_number}
 
    Event:
    {andon_event_description}
 
-   Write your decision to {artifact_dir}/proxy-human-log.md following the entry format defined in your agent definition."
+   Write your decision to {project_root}/.ideate/proxy-human-log.md following the entry format defined in your agent definition."
    ```
 
 3. Wait for the proxy-human agent to respond.
 
-4. Record the proxy-human's decision in `{artifact_dir}/journal.md`:
+4. Record the proxy-human's decision via `ideate_append_journal`:
 
    ```markdown
    ## [brrr] {date} — Proxy-human decision (Cycle {N})
@@ -213,7 +211,7 @@ When an Andon event occurs (scope-changing finding, merge conflict, spec ambigui
    ```
    Do NOT interrupt the loop or ask the user. This is logging only.
 
-**If the Agent tool is not available**: Handle the event yourself — read `guiding-principles.md` and `constraints.md`, apply them to the event, make the best decision, and record it in `{artifact_dir}/proxy-human-log.md` with heading: `## [brrr-fallback] {ISO date} — Cycle {cycle_number}` followed by the same Event/Decision/Confidence/Rationale fields.
+**If the Agent tool is not available**: Handle the event yourself — read the guiding principles and constraints YAML files, apply them to the event, make the best decision, and record it in `{project_root}/.ideate/proxy-human-log.md` with heading: `## [brrr-fallback] {ISO date} — Cycle {cycle_number}` followed by the same Event/Decision/Confidence/Rationale fields.
 
 ### Worker Agent Failure
 
@@ -225,11 +223,11 @@ If a subagent fails (crashes, times out, produces no output):
 
 ### Journal Updates (Per Work Item)
 
-After each work item completes (and after any rework), append to `{artifact_dir}/journal.md`.
+After each work item completes (and after any rework), append a journal entry via `ideate_append_journal`.
 
 **Call `ideate_append_journal`**: Look in your tool list for a tool whose name ends in `ideate_append_journal` (it will be prefixed, e.g. `mcp__ideate_artifact_server__ideate_append_journal` or `mcp__plugin_ideate_ideate_artifact_server__ideate_append_journal`). If not found, stop and report: "The ideate MCP artifact server is required but not available. Verify .mcp.json configuration."
 
-Call it with `({artifact_dir}, "brrr", {date}, {entry_type}, {body})` — appends a structured journal entry atomically.
+Call it with `("brrr", {date}, {entry_type}, {body})` — appends a structured journal entry atomically.
 
 ```markdown
 ## [brrr] {date} — Cycle {cycle_N} — Work item NNN: {title}
@@ -246,12 +244,12 @@ Rework: {N} minor, {N} significant findings fixed from incremental review.
 {Description of significant fixes if any.}
 ```
 
-Update `total_items_executed` in `{artifact_dir}/brrr-state.md` after each item completes.
+Update `total_items_executed` in `{project_root}/.ideate/brrr-state.md` after each item completes.
 
 ## Exit Conditions
 
 - All pending work items have been attempted (skipped, completed, or failed+deferred)
-- Each completed item has an incremental review written to `{artifact_dir}/.ideate/cycles/{NNN}/findings/`
+- Each completed item has an incremental review written to `{project_root}/.ideate/cycles/{NNN}/findings/`
 - `brrr-state.md` `total_items_executed` is updated
 - Journal has an entry for each completed item
 
@@ -259,8 +257,8 @@ Return to the controller. The controller will proceed to Phase 6b (review.md).
 
 ## Artifacts Written
 
-- `{artifact_dir}/.ideate/cycles/{NNN}/findings/F-{WI}-{SEQ}.yaml` — one per work item reviewed
-- `{artifact_dir}/journal.md` — appended per work item and per Andon event
-- `{artifact_dir}/brrr-state.md` — `total_items_executed` updated
-- `{artifact_dir}/proxy-human-log.md` — if Andon events occurred
-- `{artifact_dir}/metrics.jsonl` — one entry per agent spawned
+- `{project_root}/.ideate/cycles/{NNN}/findings/F-{WI}-{SEQ}.yaml` — one per work item reviewed
+- `{project_root}/.ideate/cycles/{NNN}/journal/` — appended per work item and per Andon event
+- `{project_root}/.ideate/brrr-state.md` — `total_items_executed` updated
+- `{project_root}/.ideate/proxy-human-log.md` — if Andon events occurred
+- `{project_root}/.ideate/metrics.jsonl` — one entry per agent spawned

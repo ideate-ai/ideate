@@ -1,10 +1,11 @@
 id: WI-089
 type: work_item
 title: CLAUDE.md — add manifest.json to artifact structure diagram
-status: pending
+status: done
 complexity: low
 scope:
-  - {path: CLAUDE.md, op: modify}
+  - path: CLAUDE.md
+    op: modify
 depends: []
 blocks: []
 criteria:
@@ -14,11 +15,11 @@ module: null
 domain: null
 notes: |
   # Implementation Notes: 089 — CLAUDE.md updates
-  
+
   ## Artifact structure diagram
-  
+
   The current diagram in CLAUDE.md does not include `manifest.json`. Add it as the first entry under `specs/`:
-  
+
   ```
   specs/
   ├── manifest.json           # Schema version identifier
@@ -32,12 +33,13 @@ notes: |
       ├── index.md            # Domain registry + current cycle number
       └── {name}/             # policies.md, decisions.md, questions.md per domain
   ```
-  
+
   ## Plugin structure section
-  
+
   Update the `scripts/` comment to remove `migrate-to-domains.sh` reference. Replace with `(validate-specs.sh, migrate-to-optimized.sh)` to reflect the current state.
 cycle_created: 1
 cycle_modified: null
-content_hash: "15667285c14cee7faa0808485db53c451a5b9b06bf152388dd284e94471e9fd8"
-token_count: 410
+content_hash: 097ed5a916e6cfefdbdaa56f1228222ca5f785ebbea38c73a6ef946cf9ee9cf1
+token_count: 407
 file_path: .ideate/work-items/WI-089.yaml
+resolution: Implemented during v3 migration

@@ -1,0 +1,28 @@
+id: WI-234
+type: work_item
+title: Fix ID auto-assignment — strip WI- prefix before CAST
+status: pending
+complexity: low
+scope:
+  - path: mcp/artifact-server/src/tools/write.ts
+    op: modify
+  - path: mcp/artifact-server/src/__tests__/tools.test.ts
+    op: modify
+depends: []
+blocks:
+  - WI-237
+criteria:
+  - ID auto-assignment uses REPLACE(n.id, 'WI-', '') before CAST to correctly compute max existing ID
+  - Auto-assigned IDs increment from the actual highest existing numeric ID
+  - At least 1 test verifying auto-assignment produces correct next ID for WI-NNN format
+domain: artifact-structure
+notes: |-
+  # WI-234: Fix ID Auto-Assignment
+
+  In handleWriteWorkItems, the max ID query uses CAST(n.id AS INTEGER) which returns 0 for WI-NNN format. Fix: CAST(REPLACE(n.id, 'WI-', '') AS INTEGER).
+resolution: null
+cycle_created: 29
+cycle_modified: null
+content_hash: 342eee03cc1124d90d94bd4b65a32d748cd14ab463f1496093018b9796945f81
+token_count: 213
+file_path: .ideate/work-items/WI-234.yaml

@@ -23,11 +23,11 @@ Store both values. All subsequent phases reference these.
 
 # Phase 2: Locate and Validate Artifact Directory
 
-Determine the **project root** — the directory containing `.ideate/config.json`. If the artifact directory was provided as an argument, resolve it: if it contains `.ideate/config.json`, use it; if it's a subdirectory (e.g., `specs/`), walk up to find `.ideate/config.json` in an ancestor. If no argument, check the current working directory and walk up.
+Determine the **project root** — the directory containing `.ideate/config.json`. If the artifact directory was provided as an argument, resolve it: if it contains `.ideate/config.json`, use it; if it's a subdirectory, walk up to find `.ideate/config.json` in an ancestor. If no argument, check the current working directory and walk up.
 
 Validate by calling `ideate_get_project_status` with the resolved path. If the MCP server cannot find artifacts, stop and report the error.
 
-Store the project root as `{artifact_dir}`. All MCP tool calls use this as the base.
+Store the project root as `{project_root}`. All MCP tool calls use this implicitly — the server resolves paths from `.ideate/config.json`.
 
 ## Derive Project Source Root
 
@@ -41,15 +41,15 @@ Store as `{project_source_root}`.
 
 Read artifacts in this order:
 
-1. `plan/execution-strategy.md`
-2. `plan/overview.md` (if exists)
-3. `plan/architecture.md`
-4. `steering/guiding-principles.md`
-5. `steering/constraints.md`
-6. `plan/modules/*.md` (if they exist)
-7. Work items — precedence: `plan/work-items.yaml` first; fallback to `plan/work-items/*.md`
-8. `steering/research/*.md` (if they exist)
-9. `journal.md` (if exists)
+1. `.ideate/modules/execution-strategy.yaml`
+2. `.ideate/modules/overview.yaml` (if exists)
+3. `.ideate/modules/architecture.yaml`
+4. `.ideate/principles/GP-*.yaml`
+5. `.ideate/constraints/C-*.yaml`
+6. `.ideate/modules/*.yaml` (if they exist)
+7. Work items — glob `.ideate/work-items/WI-*.yaml`
+8. `.ideate/research/*.yaml` (if they exist)
+9. `.ideate/cycles/*/journal/J-*.yaml` (if exist)
 
 Verify: every work item has an objective, acceptance criteria, file scope, and dependencies. Every dependency reference points to an existing work item.
 
@@ -59,7 +59,7 @@ If no work items are found, stop and direct the user to run `/ideate:plan` first
 
 ## Build Completed Items Set
 
-1. Call `ideate_get_execution_status` with `({artifact_dir})` to get the completed/pending/blocked sets. If unavailable, stop with error: "The ideate MCP artifact server is required but not available. Verify .mcp.json configuration."
+1. Call `ideate_get_execution_status()` to get the completed/pending/blocked sets. If unavailable, stop with error: "The ideate MCP artifact server is required but not available. Verify .mcp.json configuration."
 2. For each review file, read the verdict line (`## Verdict:`)
 3. Cross-reference with journal entries (`## [execute] * — Work item NNN:*` with `Status: complete`)
 4. A work item is complete if both a passing review and a journal entry with `Status: complete` exist
@@ -75,7 +75,7 @@ Build the dependency graph. Perform depth-first traversal for cycle detection. I
 
 # Phase 4: Check for Existing brrr Session
 
-If `{artifact_dir}/brrr-state.md` exists, read it. Extract `cycles_completed`, `convergence_achieved`, and `started_at`.
+If `{project_root}/.ideate/brrr-state.md` exists, read it. Extract `cycles_completed`, `convergence_achieved`, and `started_at`.
 
 Present:
 > A previous brrr session exists ({cycles_completed} cycles completed, convergence: {convergence_achieved}, started: {started_at}). Resume or start fresh?
@@ -85,7 +85,7 @@ Present:
 
 ## Initialize brrr State
 
-Create or reset `{artifact_dir}/brrr-state.md`:
+Create or reset `{project_root}/.ideate/brrr-state.md`:
 
 ```markdown
 # brrr Session State
@@ -106,7 +106,7 @@ full_review_interval: 3
 ```
 ## brrr Autonomous Loop
 
-Artifact directory: {artifact_dir}
+Project root: {project_root}
 Project source root: {project_source_root}
 Max cycles: {N}
 Already completed: {N} work items
@@ -115,8 +115,8 @@ Already completed: {N} work items
 {Numbered list of all work items not in completed_items, with titles}
 
 ### Execution Strategy
-Mode: {from execution-strategy.md}
-Max parallelism: {from execution-strategy.md}
+Mode: {from execution-strategy.yaml}
+Max parallelism: {from execution-strategy.yaml}
 ```
 
 Ask:
@@ -152,30 +152,29 @@ Record `{pending_count_start_of_cycle}` = current number of pending items.
 
 ### 6a: Execute Phase
 
-**Record cycle start commit**: Run `git rev-parse HEAD` in `{project_source_root}`. If successful, store as `{cycle_start_commit}` and append `cycle_{cycle_number}_start_commit: {hash}` to `{artifact_dir}/brrr-state.md`. If the command fails (not a git repo), set `{cycle_start_commit}` = null.
+**Record cycle start commit**: Run `git rev-parse HEAD` in `{project_source_root}`. If successful, store as `{cycle_start_commit}` and append `cycle_{cycle_number}_start_commit: {hash}` to `{project_root}/.ideate/brrr-state.md`. If the command fails (not a git repo), set `{cycle_start_commit}` = null.
 
 Read `{phases_dir}/execute.md`. Follow all instructions in that document.
 
 Continue here after all pending work items have been attempted.
 
-**Record cycle end commit**: Run `git rev-parse HEAD` in `{project_source_root}`. Store as `{cycle_end_commit}`. Append `cycle_{cycle_number}_end_commit: {hash}` to `{artifact_dir}/brrr-state.md`.
+**Record cycle end commit**: Run `git rev-parse HEAD` in `{project_source_root}`. Store as `{cycle_end_commit}`. Append `cycle_{cycle_number}_end_commit: {hash}` to `{project_root}/.ideate/brrr-state.md`.
 
 ### 6b: Comprehensive Review Phase
 
 Read `{phases_dir}/review.md`. Follow all instructions in that document. The phase document receives `{cycle_start_commit}` and `{cycle_end_commit}` from the current context.
 
-Continue here after the four output files exist in `{artifact_dir}/archive/cycles/{formatted_cycle_number}/` and the journal is updated. The phase document returns `{last_cycle_findings}`.
+Continue here after the four output files exist in `{project_root}/.ideate/cycles/{formatted_cycle_number}/` and the journal is updated. The phase document returns `{last_cycle_findings}`.
 
 ### 6c: Convergence Check
 
 **Call `ideate_get_convergence_status`**: Look in your tool list for a tool whose name ends in `ideate_get_convergence_status` (it will be prefixed, e.g. `mcp__ideate_artifact_server__ideate_get_convergence_status` or `mcp__plugin_ideate_ideate_artifact_server__ideate_get_convergence_status`). If not found, stop and report: "The ideate MCP artifact server is required but not available. Verify .mcp.json configuration."
 
-Call it with `({artifact_dir}, {cycle_number})` — parses `spec-adherence.md` and `{last_cycle_findings}` and returns a convergence status object with `converged: true|false`, `condition_a: true|false` (zero critical/significant findings), and `condition_b: true|false` (principle adherence verdict).
+Call it with `({cycle_number})` — parses `spec-adherence.md` and `{last_cycle_findings}` and returns a convergence status object with `converged: true|false`, `condition_a: true|false` (zero critical/significant findings), and `condition_b: true|false` (principle adherence verdict).
 
 Use the returned `converged` flag to drive the convergence decision. If `converged` is true, set `{convergence_achieved}` = true, call `ideate_emit_event` with:
-- artifact_dir: {artifact_dir}
 - event: "cycle.converged"
-- variables: { "ARTIFACT_DIR": "{artifact_dir}", "CYCLE_NUMBER": "{cycle_number}", "TOTAL_CYCLES": "{cycles_completed}" }
+- variables: { "CYCLE_NUMBER": "{cycle_number}", "TOTAL_CYCLES": "{cycles_completed}" }
 
 This call is best-effort — if it fails, continue without interruption. Then exit the loop. If false, proceed to Phase 6d.
 
@@ -191,7 +190,7 @@ Minor findings do not block convergence.
 
 **Condition B: Guiding Principles Adherence**
 
-Read `{artifact_dir}/archive/cycles/{formatted_cycle_number}/spec-adherence.md`:
+Read `{project_root}/.ideate/cycles/{formatted_cycle_number}/spec-adherence.md`:
 
 1. File missing → Condition B fails. Log: "spec-adherence.md not found — treating as non-converged."
 2. No section matching `## Principle Violation` (case-insensitive, with or without trailing "s") → fails. Log: "spec-adherence.md missing Principle Violations section."
@@ -208,13 +207,12 @@ Read `{artifact_dir}/archive/cycles/{formatted_cycle_number}/spec-adherence.md`:
 Both conditions must pass simultaneously.
 
 - If both pass: set `{convergence_achieved}` = true. Call `ideate_emit_event` with:
-  - artifact_dir: {artifact_dir}
   - event: "cycle.converged"
-  - variables: { "ARTIFACT_DIR": "{artifact_dir}", "CYCLE_NUMBER": "{cycle_number}", "TOTAL_CYCLES": "{cycles_completed}" }
+  - variables: { "CYCLE_NUMBER": "{cycle_number}", "TOTAL_CYCLES": "{cycles_completed}" }
   This call is best-effort — if it fails, continue without interruption. Then exit the loop. Proceed to Phases 7–9.
 - If either fails: proceed to Phase 6d.
 
-Update `{artifact_dir}/brrr-state.md`:
+Update `{project_root}/.ideate/brrr-state.md`:
 ```
 convergence_achieved: {true | false}
 last_cycle_findings: {critical: N, significant: N, minor: N}
@@ -228,7 +226,7 @@ Continue here after new work items are created and the journal is updated.
 
 ### 6e: Cycle Limit Check
 
-Increment `cycles_completed` in `{artifact_dir}/brrr-state.md`.
+Increment `cycles_completed` in `{project_root}/.ideate/brrr-state.md`.
 
 If `cycles_completed >= max_cycles` without convergence, exit the loop and proceed to Phases 7–9 (Phase 8 path).
 
@@ -263,7 +261,7 @@ If any reviewer session fails or produces no output:
 
 # Metrics Instrumentation
 
-After each agent spawn (via the Agent tool), append one JSON entry to `{artifact_dir}/metrics.jsonl`. Best-effort only: if writing fails, continue without interruption.
+After each agent spawn (via the Agent tool), append one JSON entry to `.ideate/metrics.jsonl`. Best-effort only: if writing fails, continue without interruption.
 
 **Entry schema (one JSON object per line):**
 
@@ -313,7 +311,7 @@ These three fields are optional (null if not available). Include them in the Pha
 - You do not skip incremental reviews. Every completed work item gets reviewed before the cycle's comprehensive review runs.
 - You do not present minor review findings to the user. Handle them silently.
 - You do not make design decisions. If the proxy-human defers, note the deferral and continue where possible.
-- You do not modify steering artifacts. You have read-only access to `steering/`. You write to `.ideate/cycles/{NNN}/findings/`, `journal.md`, `brrr-state.md`, and `proxy-human-log.md` (via proxy-human) — all through MCP tools.
+- You do not modify steering artifacts. You have read-only access to `.ideate/principles/` and `.ideate/constraints/`. You write to `.ideate/cycles/{NNN}/findings/`, `.ideate/brrr-state.md`, and `.ideate/proxy-human-log.md` (via proxy-human) — all through MCP tools.
 - You do not declare convergence unless both Condition A and Condition B pass simultaneously in the same cycle.
 - You do not re-plan from scratch. New work items in the refinement phase address specific findings. They do not replace the original plan.
 - You do not use filler phrases, encouragement, or enthusiasm. State facts.
