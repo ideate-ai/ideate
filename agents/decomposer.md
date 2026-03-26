@@ -94,8 +94,9 @@ Apply this test to every work item: if two independent LLMs were given this work
 
 ### Acceptance Criteria
 
-Prefer machine-verifiable criteria:
+Each criterion must state its validation method. Two methods are available — use whichever is appropriate. Neither is exceptional.
 
+**Machine verification** — use when the criterion is objective and automatable:
 - File exists at path
 - Function/class/export with specific name exists
 - Tests pass
@@ -103,9 +104,14 @@ Prefer machine-verifiable criteria:
 - Structural assertions (file contains section X, config has key Y)
 - Behavioral contracts (given input A, produces output B)
 
-Avoid criteria that require human judgment: "readable", "intuitive", "well-structured", "appropriate". If you find yourself writing such a criterion, it signals an unresolved design decision. Resolve it by specifying what "well-structured" concretely means in this context.
+**Human-in-the-loop** — use when the criterion is inherently subjective or requires judgment:
+- User approval (e.g., UX flow review, content sign-off)
+- Visual review (e.g., rendered output matches design intent)
+- A/B comparison (e.g., output quality relative to baseline)
 
-When machine verification is genuinely impossible (e.g., prose quality in documentation), state the criterion as precisely as possible and note that it requires human review.
+For each human-validated criterion, name the approval authority (e.g., "product owner approves", "design review sign-off") so the reviewer knows who must verify it.
+
+Do not write criteria like "readable", "intuitive", "well-structured", or "appropriate" without specifying their validation method. If you cannot specify who validates a subjective criterion or by what process, that is an unresolved design decision — resolve it before writing the criterion.
 
 ### File Scope
 

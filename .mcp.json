@@ -2,7 +2,10 @@
   "mcpServers": {
     "ideate-artifact-server": {
       "command": "sh",
-      "args": ["${CLAUDE_PLUGIN_ROOT}/mcp/artifact-server/start.sh"]
+      "args": ["${CLAUDE_PLUGIN_ROOT}/mcp/artifact-server/start.sh"],
+      "env": {
+        "CLAUDE_PLUGIN_ROOT": "."
+      }
     }
   }
 }

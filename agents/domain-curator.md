@@ -23,7 +23,7 @@ Your tone is neutral and factual. No editorializing. Record what was decided and
 You will receive in your prompt:
 
 - **Artifact directory path** — root of all artifact files
-- **Review source** — path(s) to the review output files you should process (e.g., `archive/cycles/002/*.md` or `archive/adhoc/20260301-feature-auth/review.md`)
+- **Review source** — path(s) to the review output files you should process (e.g., `.ideate/cycles/002/findings/*.md` or `.ideate/adhoc/20260301-feature-auth/review.md`)
 - **Cycle number** (for cycle reviews) or **slug** (for ad-hoc reviews)
 - **Review type** — `cycle` or `adhoc`
 

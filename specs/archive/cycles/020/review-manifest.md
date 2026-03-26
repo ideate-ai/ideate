@@ -1,0 +1,14 @@
+# Review Manifest — Cycle 020
+
+## Work Items
+
+| # | Title | File Scope | Incremental Verdict | Findings (C/S/M) | Work Item Path | Review Path |
+|---|---|---|---|---|---|---|
+| 174 | Add build:migration npm script to package.json | mcp/artifact-server/package.json | Pass | 0/0/2 | work-items.yaml#174 | archive/incremental/174-build-migration-script.md |
+| 175 | Fix toYaml array-item whitespace guard and clean up stale test call sites | scripts/migrate-to-v3.ts, scripts/migrate-to-v3.js, mcp/artifact-server/src/__tests__/migrate.test.ts | Fail (reworked — minor finding fixed by execute) | 0/0/1 | work-items.yaml#175 | archive/incremental/175-toyaml-fix-and-test-cleanup.md |
+| 176 | Update db.ts row in architecture.md source code index | specs/plan/architecture.md | Pass | 0/0/0 | work-items.yaml#176 | archive/incremental/176-db-ts-architecture-row.md |
+| 177 | Add checkSchemaVersion version-0 path test | mcp/artifact-server/src/__tests__/schema.test.ts | Pass | 0/0/0 | work-items.yaml#177 | archive/incremental/177-checkschemaversion-test.md |
+
+## Notes
+
+WI-175 incremental verdict was Fail (minor finding only: weak test assertion). Execute phase applied the fix (`expect(result).toContain('- " indented"')`). No acceptance criteria were unmet and all 156 tests passed both before and after the rework. All 4 work items are complete.

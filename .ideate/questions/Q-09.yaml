@@ -1,0 +1,14 @@
+id: Q-09
+type: domain_question
+domain: project-boundaries
+status: open
+impact: Users who want outpost-dependent features (spawn_session, remote dispatch) cannot locate the project; they receive a 404 with no alternative guidance.
+source: archive/cycles/001/gap-analysis.md IN2, archive/cycles/001/decision-log.md OQ8, archive/cycles/001/summary.md (Findings Requiring User Input)
+resolution: null
+resolved_in: null
+description: "`README.md:16` links to `https://github.com/dan/outpost`. This URL has not been confirmed as a public, accessible repository. Should it be verified before public release, or replaced with a description of where to obtain outpost if the repository will remain private?"
+cycle_created: 1
+cycle_modified: null
+content_hash: "09ceb938a091f825979e34964a914d36cb09e9a6d183f93ac4fec2bac616f8a5"
+token_count: 200
+file_path: .ideate/questions/Q-09.yaml

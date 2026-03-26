@@ -1,4 +1,4 @@
-import chokidar, { FSWatcher } from "chokidar";
+import chokidar, { FSWatcher, WatchOptions } from "chokidar";
 import { EventEmitter } from "events";
 import path from "path";
 
@@ -14,6 +14,15 @@ export interface FileChangeEvent {
  */
 export class ArtifactWatcher extends EventEmitter {
   private watchers: Map<string, FSWatcher> = new Map();
+  private debounceTimers: Map<string, ReturnType<typeof setTimeout>> = new Map();
+  private extraOptions: WatchOptions;
+  readonly debounceMs: number;
+
+  constructor(extraOptions: WatchOptions = {}, debounceMs = 500) {
+    super();
+    this.extraOptions = extraOptions;
+    this.debounceMs = debounceMs;
+  }
 
   watch(artifactDir: string): void {
     if (this.watchers.has(artifactDir)) {
@@ -21,20 +30,29 @@ export class ArtifactWatcher extends EventEmitter {
     }
 
     const watcher = chokidar.watch(artifactDir, {
-      ignored: /(^|[/\\])\../, // hidden files
+      ignored: /index\.db(-wal|-shm)?$/,
       persistent: false,
       ignoreInitial: true,
       awaitWriteFinish: {
         stabilityThreshold: 200,
         pollInterval: 100,
       },
+      ...this.extraOptions,
     });
 
     const onEvent = (filePath: string) => {
-      this.emit("change", {
-        artifactDir,
-        filePath: path.resolve(filePath),
-      } satisfies FileChangeEvent);
+      const existing = this.debounceTimers.get(artifactDir);
+      if (existing) {
+        clearTimeout(existing);
+      }
+      const timer = setTimeout(() => {
+        this.debounceTimers.delete(artifactDir);
+        this.emit("change", {
+          artifactDir,
+          filePath: path.resolve(filePath),
+        } satisfies FileChangeEvent);
+      }, this.debounceMs);
+      this.debounceTimers.set(artifactDir, timer);
     };
 
     watcher.on("add", onEvent);
@@ -45,6 +63,11 @@ export class ArtifactWatcher extends EventEmitter {
   }
 
   unwatch(artifactDir: string): void {
+    const timer = this.debounceTimers.get(artifactDir);
+    if (timer) {
+      clearTimeout(timer);
+      this.debounceTimers.delete(artifactDir);
+    }
     const watcher = this.watchers.get(artifactDir);
     if (watcher) {
       watcher.close();

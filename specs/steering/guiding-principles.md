@@ -5,12 +5,10 @@ A plan is not done until any reasonable question about the system can be answere
 
 This extends to all system dimensions — including user-facing ones. Visual identity, interaction design, user flows, accessibility requirements, and UX patterns must be resolved in the plan with the same rigor as data models or API contracts. A spec that fully defines backend behavior but leaves UI/UX to the executor's discretion is incomplete. The planning interview must surface these decisions explicitly.
 
-> _Amended in refinement (2026-03-21): Added explicit requirement that specs cover UI/UX and visual identity decisions, not just technical architecture._
+For subjective dimensions (aesthetics, tone, user experience feel), spec sufficiency means the subjective choice has been made explicitly during planning and documented — not that it can be machine-verified. Once a subjective decision is recorded in the spec, it becomes an objective validation target.
 
 ## 2. Minimal Inference at Execution
 The executor should not make subjective decisions. Every architectural choice, technology selection, interface contract, error handling strategy, user experience pattern, visual identity decision, and behavioral detail should be resolved during planning. The executor follows instructions; it does not design.
-
-> _Amended in refinement (2026-03-21): Expanded scope to include UX and visual identity decisions alongside technical choices. The plan phase — not the executor — is where visual and interaction design questions get answered._
 
 ## 3. Guiding Principles Over Implementation Details
 Users care about objectives, not every technical choice. The tool must determine what level of granularity requires user input versus what can be delegated. Guiding principles serve as the decision framework — if a question can be answered by the principles, it should be answered without asking the user.
@@ -28,7 +26,7 @@ After initial planning, user interaction should be minimal and read-only by defa
 Large projects decompose into modules, each with its own planning scope. The tool must handle arbitrary project scale by breaking work into nested levels — from high-level architecture down to atomic executable tasks. Where Claude Code's native capabilities limit recursion, external tooling (MCP servers, SDK orchestrators, CLI multiplexing) should be built to fill the gap.
 
 ## 8. Durable Knowledge Capture
-Context windows are limited. All knowledge generated during planning, execution, and review must be captured in durable artifacts on disk. These artifacts serve as the inter-phase contract — no in-memory state carries between skill invocations. The artifact directory is the single source of truth.
+Context windows are limited. All knowledge generated during planning, execution, and review must be captured in durable YAML artifacts on disk. These artifacts serve as the inter-phase contract — no in-memory state carries between skill invocations. The `.ideate/` directory is the single source of truth for artifacts. The MCP artifact server is a required component of ideate v3 — it provides the runtime index and is the mandatory interface between skills and artifacts. Skills read and write artifacts exclusively through MCP tools; they do not access YAML files directly. The SQLite index is a derived cache rebuilt from YAML — deleting `index.db` must never lose data. MCP availability checks in skills apply to external tools and servers that enhance ideate's capabilities, not to the ideate artifact server itself which is always present.
 
 ## 9. Domain Agnosticism
 The core workflow (explore idea → refine into plan → execute → review → iterate) is not specific to software. The tool should adapt its output format and evaluation criteria to the domain. For software: tests and type checks. For a business plan: key metrics. The evaluation criteria are part of the plan, not hardcoded into the tool.
@@ -41,3 +39,6 @@ The tool speaks neutrally without validation, encouragement, or sugar-coating. A
 
 ## 12. Refinement as Validation
 The refine phase serves double duty: fixing what's wrong AND adjusting what was asked for. Users are fallible and sometimes need to see results to understand what they actually need. Post-review is not just acceptance testing — it's validation that the original ask was correct. Requirements can change based on what the user learns from seeing working output.
+
+## 13. Appropriate Validation Strategy
+Not all acceptance criteria can be machine-verified. For objectively measurable work (tests, type checks, structural assertions), machine verification is required. For inherently subjective work (aesthetics, UX design, content tone), human-in-the-loop verification is the appropriate method. The planning interview must identify which criteria are subjective and establish the validation approach for each — machine test, human review, user approval, or A/B comparison. Subjective decisions resolved during planning become objective specs: once the user approves a color palette, layout pattern, or interaction style, subsequent work is validated against that documented choice, not re-evaluated subjectively.

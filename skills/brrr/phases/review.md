@@ -18,11 +18,11 @@ Available from controller context:
 
 ### Build Shared Context Package
 
-**MCP availability check**: Look in your tool list for a tool whose name ends in `ideate_get_context_package` (it will be prefixed, e.g. `mcp__ideate_artifact_server__ideate_get_context_package` or `mcp__plugin_ideate_ideate_artifact_server__ideate_get_context_package`). If found:
-1. Call it with `({artifact_dir})` — returns the pre-assembled context package.
-2. Hold the result as `{context_package}`. Skip the manual assembly steps below.
+**Call `ideate_get_context_package`**: Look in your tool list for a tool whose name ends in `ideate_get_context_package` (it will be prefixed, e.g. `mcp__ideate_artifact_server__ideate_get_context_package` or `mcp__plugin_ideate_ideate_artifact_server__ideate_get_context_package`). If not found, stop and report: "The ideate MCP artifact server is required but not available. Verify .mcp.json configuration."
 
-If not found, assemble inline:
+Call it with `({artifact_dir})` — returns the pre-assembled context package. Hold the result as `{context_package}`.
+
+If `ideate_get_context_package` is unavailable, assemble inline:
 
 1. Read `{artifact_dir}/plan/architecture.md`. If ≤300 lines, include in full. If >300 lines, include only the component map section and interface contracts section.
 2. Read `{artifact_dir}/steering/guiding-principles.md` in full.
@@ -63,15 +63,13 @@ Read `last_full_review_cycle` and `full_review_interval` from `{artifact_dir}/br
 
 ### Generate Review Manifest
 
-Write `{artifact_dir}/archive/incremental/review-manifest.md`:
+**Call `ideate_get_review_manifest`**: Look in your tool list for a tool whose name ends in `ideate_get_review_manifest` (it will be prefixed, e.g. `mcp__ideate_artifact_server__ideate_get_review_manifest` or `mcp__plugin_ideate_ideate_artifact_server__ideate_get_review_manifest`). If not found, stop and report: "The ideate MCP artifact server is required but not available. Verify .mcp.json configuration."
 
-1. **Work item source** (use precedence):
-   - If `{artifact_dir}/plan/work-items.yaml` exists: read it. Extract id, title, and scope from each item under `items:`.
-   - Otherwise: glob `{artifact_dir}/plan/work-items/*.md` and extract number (NNN prefix), title, and scope.
-2. Glob `{artifact_dir}/archive/incremental/*.md` (excluding `review-manifest.md`). For each file, extract: work item number/id, verdict (`## Verdict:`), finding counts (count `### C`, `### S`, `### M` headings).
-3. Match reviews to work items by number/id. Items without reviews show "None" / "—".
-4. If `{diff_mode}` = `"differential"`: filter to work items whose scope includes at least one file in `{changed_files}`. Include a note at the top of the manifest: "Differential review — scope: {N} changed files + {M} boundary files."
-5. Write the manifest as a table: `| id | title | file scope | verdict | findings (C/S/M) | work item ref | review path |`
+Call it with `({artifact_dir})` — returns a pre-built manifest table matching work items to their incremental review verdicts and finding counts.
+
+Write the response as the review manifest to the cycle output directory.
+
+If `{diff_mode}` = `"differential"`: filter the manifest to work items whose scope includes at least one file in `{changed_files}`. Include a note: "Differential review — scope: {N} changed files + {M} boundary files."
 
 ### Spawn Three Reviewers in Parallel
 
@@ -98,7 +96,7 @@ Spawn all three simultaneously. Do not wait for one before starting another.
   > **Shared context package** (inline — do not re-read architecture, principles, or constraints files individually):
   > {context_package}
   >
-  > **Review manifest**: {artifact_dir}/archive/incremental/review-manifest.md — your index of all work items and incremental review status. Read individual work items and incremental reviews only when investigating specific findings.
+  > **Review manifest**: {artifact_dir}/.ideate/cycles/{NNN}/review-manifest.md — your index of all work items and incremental review status. Read individual work items and incremental reviews only when investigating specific findings.
   >
   > Project source code is at: {project_source_root} — read source files as needed.
   >
@@ -122,7 +120,7 @@ Spawn all three simultaneously. Do not wait for one before starting another.
   >
   > **Module specs**: {artifact_dir}/plan/modules/*.md (if they exist).
   >
-  > **Review manifest**: {artifact_dir}/archive/incremental/review-manifest.md — use as an index. Read individual work items and incremental reviews only when investigating specific findings in their file scope.
+  > **Review manifest**: {artifact_dir}/.ideate/cycles/{NNN}/review-manifest.md — use as an index. Read individual work items and incremental reviews only when investigating specific findings in their file scope.
   >
   > Project source code is at: {project_source_root} — read source files as needed.
   >
@@ -146,7 +144,7 @@ Spawn all three simultaneously. Do not wait for one before starting another.
   >
   > **Module specs**: {artifact_dir}/plan/modules/*.md (if they exist).
   >
-  > **Review manifest**: {artifact_dir}/archive/incremental/review-manifest.md — use as an index. Read individual work items and incremental reviews only when investigating specific gaps in their file scope.
+  > **Review manifest**: {artifact_dir}/.ideate/cycles/{NNN}/review-manifest.md — use as an index. Read individual work items and incremental reviews only when investigating specific gaps in their file scope.
   >
   > Project source code is at: {project_source_root} — read source files as needed.
   >
@@ -154,7 +152,7 @@ Spawn all three simultaneously. Do not wait for one before starting another.
   >
   > Write your findings to: {artifact_dir}/archive/cycles/{formatted_cycle_number}/gap-analysis.md
 
-Wait for all three to complete. Verify their output files exist before proceeding. After each reviewer returns, record a metrics entry with `phase: "6b"` (schema in controller SKILL.md).
+Wait for all three to complete. Verify their output files exist before proceeding. After each reviewer returns, record a metrics entry with `phase: "6b"` (schema in controller SKILL.md). For reviewer entries (`code-reviewer`, `spec-reviewer`, `gap-analyst`), also set `finding_count` to the total findings from the reviewer's output file (null if unparseable) and `finding_severities` to `{"critical": N, "significant": N, "minor": N}` (null if unparseable). Set `outcome`, `first_pass_accepted`, and `rework_count` to `null` for all phase `"6b"` entries.
 
 ### Spawn Journal-Keeper (After Reviewers Complete)
 
@@ -174,7 +172,7 @@ Wait for all three to complete. Verify their output files exist before proceedin
   >
   > **Plan overview**: {artifact_dir}/plan/overview.md
   >
-  > **Review manifest**: {artifact_dir}/archive/incremental/review-manifest.md — use as an index. Read individual incremental reviews only when cross-referencing specific findings.
+  > **Review manifest**: {artifact_dir}/.ideate/cycles/{NNN}/review-manifest.md — use as an index. Read individual incremental reviews only when cross-referencing specific findings.
   >
   > - Code quality review: {artifact_dir}/archive/cycles/{formatted_cycle_number}/code-quality.md
   > - Spec adherence review: {artifact_dir}/archive/cycles/{formatted_cycle_number}/spec-adherence.md
@@ -182,7 +180,7 @@ Wait for all three to complete. Verify their output files exist before proceedin
   >
   > Write your output to: {artifact_dir}/archive/cycles/{formatted_cycle_number}/decision-log.md
 
-After the journal-keeper returns, record a metrics entry with `phase: "6b"`, `agent_type: "journal-keeper"` (schema in controller SKILL.md).
+After the journal-keeper returns, record a metrics entry with `phase: "6b"`, `agent_type: "journal-keeper"` (schema in controller SKILL.md). Set `finding_count`, `finding_severities`, `outcome`, `first_pass_accepted`, and `rework_count` to `null` for journal-keeper entries.
 
 ### Collect Review Findings
 
@@ -198,6 +196,15 @@ Build `last_cycle_findings` for return to the controller:
 - `critical_count`: number of critical findings
 - `significant_count`: number of significant findings
 - `minor_count`: number of minor findings
+
+### Emit review.complete Hook
+
+After computing `last_cycle_findings`, call `ideate_emit_event` with:
+- artifact_dir: {artifact_dir}
+- event: "review.complete"
+- variables: { "ARTIFACT_DIR": "{artifact_dir}", "CYCLE_NUMBER": "{cycle_number}", "FINDING_COUNT": "{total_finding_count}" }
+
+Where `{total_finding_count}` = `critical_count + significant_count + minor_count`. This call is best-effort — if it fails, continue without interruption.
 
 ### Emit Quality Summary
 
@@ -227,7 +234,7 @@ Best-effort: if any step below fails, skip it and continue without blocking.
    - `implementation_gaps`: gap-analyst minor findings, or gap-analyst findings with "incomplete", "partial", "not connected", "missing integration"
    - `other`: anything else
 
-4. **work_items_reviewed**: Count distinct work item rows in `{artifact_dir}/archive/incremental/review-manifest.md`. Use `null` if the file is absent or cannot be parsed.
+4. **work_items_reviewed**: Count distinct work item rows in `{artifact_dir}/.ideate/cycles/{NNN}/review-manifest.md`. Use `null` if the file is absent or cannot be parsed.
 
 5. **andon_events**: Read the last 20 entries of `{artifact_dir}/journal.md` (or the full file if shorter). Count entries for cycle `{cycle_number}` that mention "Andon" (case-insensitive). Default to 0 if the journal cannot be read.
 
@@ -255,11 +262,21 @@ If the event cannot be written, log `quality_summary event skipped: {reason}` an
   >
   > Follow the domain-curator agent instructions. Extract policy-grade, decision-grade, question-grade, and conflict-grade items from this cycle's review files and update the domains/ layer accordingly.
 
-After the domain-curator returns, record a metrics entry with `phase: "6b"`, `agent_type: "domain-curator"` (schema in controller SKILL.md).
+After the domain-curator returns, record a metrics entry with `phase: "6b"`, `agent_type: "domain-curator"` (schema in controller SKILL.md). Set `finding_count`, `finding_severities`, `outcome`, `first_pass_accepted`, and `rework_count` to `null` for domain-curator entries.
+
+### Archive Cycle (After Domain Curator)
+
+**Call `ideate_archive_cycle`**: Look in your tool list for a tool whose name ends in `ideate_archive_cycle` (it will be prefixed, e.g. `mcp__ideate_artifact_server__ideate_archive_cycle` or `mcp__plugin_ideate_ideate_artifact_server__ideate_archive_cycle`). If not found, stop and report: "The ideate MCP artifact server is required but not available. Verify .mcp.json configuration."
+
+Call it with `({artifact_dir}, {cycle_number})` — archives completed work items and findings into the cycle directory. This is equivalent to the standalone review skill's Phase 7.5 archival.
 
 ### Update Journal
 
-Append a review summary to `{artifact_dir}/journal.md`:
+Append a review summary to `{artifact_dir}/journal.md`.
+
+**Call `ideate_append_journal`**: Look in your tool list for a tool whose name ends in `ideate_append_journal` (it will be prefixed, e.g. `mcp__ideate_artifact_server__ideate_append_journal` or `mcp__plugin_ideate_ideate_artifact_server__ideate_append_journal`). If not found, stop and report: "The ideate MCP artifact server is required but not available. Verify .mcp.json configuration."
+
+Call it with `({artifact_dir}, "brrr", {date}, "review_complete", {body})` — appends a structured journal entry atomically.
 
 ```markdown
 ## [brrr] {date} — Cycle {N} review complete
@@ -283,7 +300,7 @@ If `metrics.jsonl` could not be written, note "metrics unavailable" and omit the
 ## Exit Conditions
 
 - `{artifact_dir}/archive/cycles/{formatted_cycle_number}/` contains: code-quality.md, spec-adherence.md, gap-analysis.md, decision-log.md
-- `{artifact_dir}/archive/incremental/review-manifest.md` written
+- `{artifact_dir}/.ideate/cycles/{NNN}/review-manifest.md` written
 - `last_cycle_findings` dict populated with critical, significant, minor counts
 - Journal updated with review summary and metrics summary
 
@@ -295,7 +312,7 @@ Return to the controller with `last_cycle_findings`. The controller will run Pha
 - `{artifact_dir}/archive/cycles/{formatted_cycle_number}/spec-adherence.md`
 - `{artifact_dir}/archive/cycles/{formatted_cycle_number}/gap-analysis.md`
 - `{artifact_dir}/archive/cycles/{formatted_cycle_number}/decision-log.md`
-- `{artifact_dir}/archive/incremental/review-manifest.md`
+- `{artifact_dir}/.ideate/cycles/{NNN}/review-manifest.md`
 - `{artifact_dir}/journal.md` — appended (review summary + metrics summary)
 - `{artifact_dir}/metrics.jsonl` — one entry per agent spawned; quality_summary event appended
 - `{artifact_dir}/domains/` — policies, decisions, and questions updated by domain-curator

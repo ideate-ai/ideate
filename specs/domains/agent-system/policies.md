@@ -24,8 +24,9 @@ An agent's output is written to a specified artifact path; the invoking skill re
 - **Established**: planning phase
 - **Status**: active
 
-## P-19: Agent definitions must reference the canonical archive/incremental/ path for incremental reviews
-Agent definition files that instruct the agent to read prior incremental reviews must use `archive/incremental/` as the path; the legacy `reviews/incremental/` path does not exist. When the artifact directory structure changes, all agent definitions that embed artifact paths must be updated in the same work item as the structural change.
+## P-19: Agent definitions must reference canonical .ideate/ paths for artifact access
+Agent definition files that instruct the agent to read prior findings, reviews, or other artifacts must use `.ideate/cycles/{NNN}/findings/` as the path for cycle-scoped artifacts and `.ideate/{type}/` for cross-cycle artifacts. When the artifact directory structure changes, all agent definitions that embed artifact paths must be updated in the same work item as the structural change.
 - **Derived from**: GP-8 (Durable Knowledge Capture) — stale paths cause silent data loss
 - **Established**: cycle 006
+- **Amended**: cycle 016 — updated from `archive/incremental/` to `.ideate/cycles/{NNN}/findings/` as part of v3 architecture; review output format changed from markdown to YAML finding objects
 - **Status**: active

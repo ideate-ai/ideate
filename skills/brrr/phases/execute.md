@@ -32,12 +32,9 @@ Store as `{work_item_context_digest[item_id]}`. Pass to the worker instead of th
 
 ### Context for Every Worker
 
-**MCP availability check**: Look in your tool list for a tool whose name ends in `ideate_get_work_item_context` (it will be prefixed, e.g. `mcp__ideate_artifact_server__ideate_get_work_item_context` or `mcp__plugin_ideate_ideate_artifact_server__ideate_get_work_item_context`). If found:
-1. Call it with `({artifact_dir}, {work_item_id})` — returns pre-assembled context including work item spec, module spec, domain policies, and research.
-2. Also provide the project source root path and relevant domain policies (if not already included).
-3. Skip the manual file reads in steps 1–8 below.
+**Call `ideate_get_work_item_context`**: Look in your tool list for a tool whose name ends in `ideate_get_work_item_context` (it will be prefixed, e.g. `mcp__ideate_artifact_server__ideate_get_work_item_context` or `mcp__plugin_ideate_ideate_artifact_server__ideate_get_work_item_context`). If not found, stop and report: "The ideate MCP artifact server is required but not available. Verify .mcp.json configuration."
 
-If not found, read files manually:
+Call it with `({artifact_dir}, {work_item_id})` — returns pre-assembled context including work item spec, module spec, domain policies, and research. Also provide the project source root path and relevant domain policies (if not already included). Skip the manual file reads in steps 1–8 below.
 
 Every worker subagent receives:
 
@@ -78,6 +75,22 @@ The worker prompt must also include this self-check instruction:
 
 **Skipping completed items**: Before starting a work item, check whether its number is in `{completed_items}`. If so, skip it and report: "Skipping work item NNN: {title} — already completed."
 
+**Hook: work_item.started**: Before spawning the worker for each work item (after the skip check passes), call `ideate_emit_event` with:
+- artifact_dir: {artifact_dir}
+- event: "work_item.started"
+- variables: { "ARTIFACT_DIR": "{artifact_dir}", "WORK_ITEM_ID": "{work_item_id}", "WORK_ITEM_TITLE": "{work_item_title}" }
+
+This call is best-effort — if it fails, continue without interruption.
+
+**Hook: work_item.completed**: After each work item passes incremental review (findings handled, rework complete if any), call `ideate_emit_event` with:
+- artifact_dir: {artifact_dir}
+- event: "work_item.completed"
+- variables: { "ARTIFACT_DIR": "{artifact_dir}", "WORK_ITEM_ID": "{work_item_id}", "VERDICT": "{review_verdict}" }
+
+Where `{review_verdict}` is `"pass"` if the review passed without rework, `"rework"` if it passed after rework, or `"fail"` if unresolvable. This call is best-effort — if it fails, continue without interruption.
+
+**Refreshing execution status mid-cycle**: If the `{completed_items}` set needs to be refreshed mid-cycle (e.g., after a partial failure and retry), look in your tool list for a tool whose name ends in `ideate_get_execution_status` (it will be prefixed, e.g. `mcp__ideate_artifact_server__ideate_get_execution_status` or `mcp__plugin_ideate_ideate_artifact_server__ideate_get_execution_status`). If not found, stop and report: "The ideate MCP artifact server is required but not available. Verify .mcp.json configuration." Call it with `({artifact_dir})` — returns current completed, pending, and blocked sets. Use the returned `completed` set to update `{completed_items}` before skipping decisions.
+
 ### Execution Modes
 
 Execute according to the mode in `{artifact_dir}/plan/execution-strategy.md`:
@@ -90,7 +103,7 @@ Execute according to the mode in `{artifact_dir}/plan/execution-strategy.md`:
 
 **Worktree isolation**: If the execution strategy specifies worktrees, create a git worktree for each concurrent subagent before spawning it (`git worktree add` with branch `ideate/NNN-{name}`). After a work item's incremental review passes, merge back using `git merge --no-ff ideate/NNN-{name}`. Resolve trivial conflicts (whitespace, import ordering) automatically. For substantive merge conflicts, route to the Andon cord → proxy-human (see below). After a successful merge: `git worktree remove {path}` and `git branch -d ideate/NNN-{name}`.
 
-**Metrics**: After each worker agent returns, record a metrics entry with `phase: "6a"`, `agent_type: "worker"` (schema in controller SKILL.md). Include `input_tokens`, `output_tokens`, `cache_read_tokens`, `cache_write_tokens` from agent response metadata (null if unavailable), and `mcp_tools_called` (array of MCP tool names used to assemble context for the spawn, or `[]` if none). Before each Agent tool call, record which MCP tool calls (if any) were made to assemble context for that spawn.
+**Metrics**: After each worker agent returns, record a metrics entry with `phase: "6a"`, `agent_type: "worker"` (schema in controller SKILL.md). Include `input_tokens`, `output_tokens`, `cache_read_tokens`, `cache_write_tokens` from agent response metadata (null if unavailable), and `mcp_tools_called` (array of MCP tool names used to assemble context for the spawn, or `[]` if none). Before each Agent tool call, record which MCP tool calls (if any) were made to assemble context for that spawn. Set `outcome`, `finding_count`, `finding_severities`, `first_pass_accepted` to `null` for worker entries. Set `rework_count` to the number of fix-and-re-review cycles completed for this work item (0 if first review passed without rework).
 
 ### Incremental Review (Per Work Item)
 
@@ -112,7 +125,7 @@ Include the following in the code-reviewer's prompt:
   >
   > **Dynamic testing (incremental scope)**: After your static review, perform the dynamic checks defined in your agent instructions under "Dynamic Testing > Incremental review scope". Discover the project's test model, run the smoke test, and run tests scoped to the changed files. If the smoke test fails, report a Critical finding titled "Startup failure after [work item name]".
 
-Write the result to `{artifact_dir}/archive/incremental/NNN-{name}.md`. After the code-reviewer returns, record a metrics entry with `phase: "6a"`, `agent_type: "code-reviewer"`. Include `input_tokens`, `output_tokens`, `cache_read_tokens`, `cache_write_tokens` from agent response metadata (null if unavailable), and `mcp_tools_called` (array of MCP tool names used to assemble context, or `[]` if none). (Full schema including `skill` and `cycle` fields defined in controller SKILL.md.)
+Write the result to `{artifact_dir}/.ideate/cycles/{NNN}/findings/F-{WI}-{SEQ}.yaml`. After the code-reviewer returns, record a metrics entry with `phase: "6a"`, `agent_type: "code-reviewer"`. Include `input_tokens`, `output_tokens`, `cache_read_tokens`, `cache_write_tokens` from agent response metadata (null if unavailable), and `mcp_tools_called` (array of MCP tool names used to assemble context, or `[]` if none). Also set: `outcome` to `"pass"`, `"rework"`, or `"fail"` based on the review verdict and whether rework was required; `finding_count` to the total number of findings across all severities from the review (null if output cannot be parsed); `finding_severities` to `{"critical": N, "significant": N, "minor": N}` (null if output cannot be parsed); `first_pass_accepted` to `true` if the review passes with no rework required, `false` otherwise; `rework_count` to `null`. (Full schema including `skill` and `cycle` fields defined in controller SKILL.md.)
 
 **Review format**:
 
@@ -212,7 +225,11 @@ If a subagent fails (crashes, times out, produces no output):
 
 ### Journal Updates (Per Work Item)
 
-After each work item completes (and after any rework), append to `{artifact_dir}/journal.md`:
+After each work item completes (and after any rework), append to `{artifact_dir}/journal.md`.
+
+**Call `ideate_append_journal`**: Look in your tool list for a tool whose name ends in `ideate_append_journal` (it will be prefixed, e.g. `mcp__ideate_artifact_server__ideate_append_journal` or `mcp__plugin_ideate_ideate_artifact_server__ideate_append_journal`). If not found, stop and report: "The ideate MCP artifact server is required but not available. Verify .mcp.json configuration."
+
+Call it with `({artifact_dir}, "brrr", {date}, {entry_type}, {body})` — appends a structured journal entry atomically.
 
 ```markdown
 ## [brrr] {date} — Cycle {cycle_N} — Work item NNN: {title}
@@ -234,7 +251,7 @@ Update `total_items_executed` in `{artifact_dir}/brrr-state.md` after each item 
 ## Exit Conditions
 
 - All pending work items have been attempted (skipped, completed, or failed+deferred)
-- Each completed item has an incremental review written to `{artifact_dir}/archive/incremental/`
+- Each completed item has an incremental review written to `{artifact_dir}/.ideate/cycles/{NNN}/findings/`
 - `brrr-state.md` `total_items_executed` is updated
 - Journal has an entry for each completed item
 
@@ -242,7 +259,7 @@ Return to the controller. The controller will proceed to Phase 6b (review.md).
 
 ## Artifacts Written
 
-- `{artifact_dir}/archive/incremental/NNN-{name}.md` — one per work item reviewed
+- `{artifact_dir}/.ideate/cycles/{NNN}/findings/F-{WI}-{SEQ}.yaml` — one per work item reviewed
 - `{artifact_dir}/journal.md` — appended per work item and per Andon event
 - `{artifact_dir}/brrr-state.md` — `total_items_executed` updated
 - `{artifact_dir}/proxy-human-log.md` — if Andon events occurred

@@ -1,0 +1,178 @@
+# Work items archived from cycle 017
+# Extracted from plan/work-items.yaml items "150" through "159"
+
+items:
+  "150":
+    title: "Fix watcher ignored pattern + integration test"
+    complexity: small
+    scope:
+      - {path: mcp/artifact-server/src/watcher.ts, op: modify}
+      - {path: mcp/artifact-server/src/__tests__/watcher.test.ts, op: create}
+    depends: []
+    blocks: ["158"]
+    criteria:
+      - 'watcher.ts ignored pattern does not exclude .ideate/ directory — only index.db, index.db-wal, index.db-shm are ignored'
+      - 'Integration test: write a YAML file to a temp .ideate/ directory, assert the watcher emits a change event within 2 seconds'
+      - 'Integration test: modify an existing YAML file, assert change event fires'
+      - 'Integration test: delete a YAML file, assert change event fires'
+      - 'npm run build succeeds; all existing tests pass'
+    notes: plan/notes/150.md
+
+  "151":
+    title: "Fix startup error handling in index.ts"
+    complexity: small
+    scope:
+      - {path: mcp/artifact-server/src/index.ts, op: modify}
+    depends: []
+    blocks: []
+    criteria:
+      - 'resolveArtifactDir call is wrapped in try/catch; on failure, logs a human-readable message to stderr and exits with code 1'
+      - 'rebuildIndex call is wrapped in try/catch; on failure, logs a human-readable message to stderr and exits with code 1'
+      - 'Successful startup logs a single line to stderr: "[ideate-artifact-server] started, {N} files indexed"'
+      - 'npm run build succeeds'
+    notes: plan/notes/151.md
+
+  "152":
+    title: "Schema additions — addressed_by, amended_by, user_version, files_failed"
+    complexity: medium
+    scope:
+      - {path: mcp/artifact-server/src/schema.ts, op: modify}
+      - {path: mcp/artifact-server/src/indexer.ts, op: modify}
+      - {path: mcp/artifact-server/src/__tests__/schema.test.ts, op: modify}
+      - {path: mcp/artifact-server/src/__tests__/indexer.test.ts, op: modify}
+    depends: []
+    blocks: ["154", "158"]
+    criteria:
+      - 'findings table has an addressed_by TEXT column (nullable)'
+      - 'domain_policies table has an amended_by TEXT column (nullable)'
+      - 'createSchema sets PRAGMA user_version to CURRENT_SCHEMA_VERSION'
+      - 'On startup, if existing DB user_version != CURRENT_SCHEMA_VERSION, the DB file is deleted and recreated from scratch'
+      - 'CURRENT_SCHEMA_VERSION incremented to 3'
+      - 'RebuildStats has files_failed: number and parse_errors: string[] fields'
+      - 'rebuildIndex increments files_failed and appends to parse_errors when YAML parsing fails'
+      - 'buildRow for findings includes addressed_by field'
+      - 'buildRow for domain_policies includes amended_by field'
+      - 'Schema tests verify addressed_by and amended_by columns exist'
+      - 'Indexer test verifies files_failed is reported for malformed YAML'
+      - 'npm run build succeeds; all tests pass'
+    notes: plan/notes/152.md
+
+  "153":
+    title: "Update edge type registry for reversed-direction edges"
+    complexity: small
+    scope:
+      - {path: mcp/artifact-server/src/schema.ts, op: modify}
+      - {path: mcp/artifact-server/src/indexer.ts, op: modify}
+    depends: ["152"]
+    blocks: ["154"]
+    criteria:
+      - 'EDGE_TYPE_REGISTRY replaces addresses with addressed_by: source_types finding/domain_question, target_types work_item, yaml_field addressed_by'
+      - 'EDGE_TYPE_REGISTRY replaces amends with amended_by: source_types domain_policy, target_types domain_policy, yaml_field amended_by'
+      - 'extractEdges correctly extracts addressed_by edges from finding YAML with an addressed_by field'
+      - 'extractEdges correctly extracts amended_by edges from domain_policy YAML with an amended_by field'
+      - 'EDGE_TYPES array updated to match new names'
+      - 'npm run build succeeds; all tests pass'
+    notes: plan/notes/153.md
+
+  "154":
+    title: "Integrate Drizzle ORM — replace raw SQL in indexer.ts"
+    complexity: medium
+    scope:
+      - {path: mcp/artifact-server/package.json, op: modify}
+      - {path: mcp/artifact-server/src/db.ts, op: create}
+      - {path: mcp/artifact-server/src/indexer.ts, op: modify}
+      - {path: mcp/artifact-server/src/index.ts, op: modify}
+    depends: ["152", "153"]
+    blocks: []
+    criteria:
+      - 'drizzle-orm is added to package.json dependencies'
+      - 'src/db.ts exports Drizzle table definitions matching all tables in schema.ts'
+      - 'upsertRow in indexer.ts uses Drizzle insert().onConflictDoUpdate() instead of raw SQL string interpolation'
+      - 'upsertEdge in indexer.ts uses Drizzle insert().onConflictDoNothing() instead of raw SQL'
+      - 'upsertFileRef in indexer.ts uses Drizzle insert().onConflictDoNothing() instead of raw SQL'
+      - 'deleteStaleRows uses Drizzle delete().where() instead of raw SQL'
+      - 'No column names or table names are interpolated as strings in SQL anywhere in indexer.ts'
+      - 'All existing tests pass without modification (Drizzle is an internal implementation change)'
+      - 'npm run build succeeds'
+    notes: plan/notes/154.md
+
+  "155":
+    title: "Update .ideate/ directory structure for cycle-scoped layout"
+    complexity: small
+    scope:
+      - {path: mcp/artifact-server/src/config.ts, op: modify}
+      - {path: mcp/artifact-server/src/__tests__/config.test.ts, op: modify}
+    depends: []
+    blocks: ["157"]
+    criteria:
+      - 'createIdeateDir creates cycle-scoped subdirectories matching P-28: work-items/, principles/, constraints/, policies/, decisions/, questions/, modules/, research/, interviews/, cycles/'
+      - 'Old subdirectories removed from createIdeateDir if they no longer match the layout'
+      - 'Config tests updated to assert the new directory list'
+      - 'npm run build succeeds; all tests pass'
+    notes: plan/notes/155.md
+
+  "156":
+    title: "Fix module-level mutable state in migration script"
+    complexity: small
+    scope:
+      - {path: scripts/migrate-to-v3.ts, op: modify}
+      - {path: mcp/artifact-server/src/__tests__/migrate.test.ts, op: modify}
+    depends: []
+    blocks: ["157"]
+    criteria:
+      - 'All module-level let variables (errors, created, ideateDir, sourceDir, dryRun, force) are moved inside runMigration'
+      - 'Private helper functions receive state via a context object parameter instead of reading module globals'
+      - 'MigrationContext type or interface is exported for test access'
+      - 'All existing 38+ migration tests pass without behavioral change'
+      - 'npm run build succeeds'
+    notes: plan/notes/156.md
+
+  "157":
+    title: "Complete migration script — journal, archive cycles, metrics"
+    complexity: medium
+    scope:
+      - {path: scripts/migrate-to-v3.ts, op: modify}
+      - {path: mcp/artifact-server/src/__tests__/migrate.test.ts, op: modify}
+    depends: ["155", "156"]
+    blocks: []
+    criteria:
+      - 'runMigration calls migrateJournal: converts journal.md entries to individual YAML files in .ideate/cycles/{NNN}/journal/'
+      - 'runMigration calls migrateArchiveCycles: converts archive/cycles/{NNN}/*.md review files to YAML finding objects in .ideate/cycles/{NNN}/findings/'
+      - 'runMigration calls migrateMetrics: copies metrics.jsonl to .ideate/metrics.jsonl'
+      - 'Journal entries have type: journal_entry, id: J-{cycle}-{seq}, cycle, phase, date, title, content fields'
+      - 'Finding objects have type: finding, id: F-{cycle}-{seq}, cycle, reviewer, severity, title, description, file_path, suggestion, addressed_by: null'
+      - 'Dry-run mode does not write journal, archive, or metrics files'
+      - 'Tests cover migrateJournal with a minimal fixture'
+      - 'Tests cover migrateArchiveCycles with a minimal fixture'
+      - 'All tests pass'
+    notes: plan/notes/157.md
+
+  "158":
+    title: "Watcher + indexer test expansion — edge type extraction coverage"
+    complexity: small
+    scope:
+      - {path: mcp/artifact-server/src/__tests__/indexer.test.ts, op: modify}
+      - {path: mcp/artifact-server/src/__tests__/watcher.test.ts, op: modify}
+    depends: ["150", "152"]
+    blocks: []
+    criteria:
+      - 'Indexer tests cover edge extraction for blocks, belongs_to_module, belongs_to_domain, derived_from, relates_to, supersedes edge types (not just depends_on)'
+      - 'Indexer tests cover addressed_by edge extraction from a finding YAML fixture with addressed_by field set'
+      - 'Indexer tests cover amended_by edge extraction from a domain_policy YAML fixture with amended_by field set'
+      - 'Watcher integration test verifies the full chain: write YAML file → watcher event fires → rebuildIndex called → database reflects new content'
+      - 'All tests pass'
+    notes: plan/notes/158.md
+
+  "159":
+    title: "Spec cleanup — stale notes, criteria, scope entries"
+    complexity: trivial
+    scope:
+      - {path: specs/plan/notes/148.md, op: modify}
+      - {path: specs/plan/work-items.yaml, op: modify}
+    depends: []
+    blocks: []
+    criteria:
+      - 'plan/notes/148.md edge type table includes work_item as a source type for belongs_to_domain'
+      - 'WI-149 scope entry in work-items.yaml updated from scripts/migrate-to-v3.test.ts to mcp/artifact-server/src/__tests__/migrate.test.ts'
+      - 'WI-144 criterion for idx_edges_composite updated to note the UNIQUE constraint provides an equivalent implicit index'
+    notes: plan/notes/159.md

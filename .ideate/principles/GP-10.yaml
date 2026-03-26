@@ -1,0 +1,11 @@
+id: GP-10
+type: guiding_principle
+name: Full SDLC Ownership
+status: active
+description: Ideate takes a project from rough idea to user-testable output. It does not stop at planning or at code generation — it produces something the user can evaluate. The user performs human-in-the-loop validation and re-engages with ideate for refinement if the output misses the mark.
+amendment_history: []
+cycle_created: 1
+cycle_modified: null
+content_hash: "245eedaa623c13785e68739fd0799d88a8b2b1005cb9838fa921e132e5843409"
+token_count: 123
+file_path: .ideate/principles/GP-10.yaml

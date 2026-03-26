@@ -1,3 +1,4 @@
+import { WatchOptions } from "chokidar";
 import { EventEmitter } from "events";
 export interface FileChangeEvent {
     artifactDir: string;
@@ -10,6 +11,10 @@ export interface FileChangeEvent {
  */
 export declare class ArtifactWatcher extends EventEmitter {
     private watchers;
+    private debounceTimers;
+    private extraOptions;
+    readonly debounceMs: number;
+    constructor(extraOptions?: WatchOptions, debounceMs?: number);
     watch(artifactDir: string): void;
     unwatch(artifactDir: string): void;
     close(): void;

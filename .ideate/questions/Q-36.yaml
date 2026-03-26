@@ -1,0 +1,14 @@
+id: Q-36
+type: domain_question
+domain: agent-system
+status: open
+impact: Behavioral divergence between brrr and standalone review for domain-curator model selection. Relates to the broader brrr vs standalone review divergence tracked in Q-20 (artifact-structure).
+source: archive/cycles/013/code-quality.md M2; archive/cycles/013/decision-log.md OQ-11
+resolution: null
+resolved_in: null
+description: "`skills/review/SKILL.md:437-442` conditionally selects sonnet or opus for the domain-curator based on conflict signal detection. `skills/brrr/phases/review.md:245-246` unconditionally uses opus. Should brrr adopt the conditional logic, or is unconditional opus intentional for autonomous operation where stronger reasoning is preferred?"
+cycle_created: 1
+cycle_modified: null
+content_hash: "1e8cec7bfed19cd1238de580218dd52630e640679456a947434e4b3c9d32e971"
+token_count: 210
+file_path: .ideate/questions/Q-36.yaml

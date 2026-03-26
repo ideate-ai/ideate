@@ -1,0 +1,36 @@
+id: WI-212
+type: work_item
+title: Telemetry metrics schema extension
+status: pending
+complexity: medium
+scope:
+  - {path: mcp/artifact-server/src/schema.ts, op: modify}
+  - {path: mcp/artifact-server/src/db.ts, op: modify}
+  - {path: mcp/artifact-server/src/indexer.ts, op: modify}
+depends: []
+blocks:
+  - "213"
+  - "214"
+criteria:
+  - "metricsEvents extension table in db.ts adds columns: input_tokens (integer), output_tokens (integer), cache_read_tokens (integer), cache_write_tokens (integer), outcome (text), finding_count (integer), finding_severities (text), first_pass_accepted (integer), rework_count (integer), work_item_total_tokens (integer), cycle_total_tokens (integer), cycle_total_cost_estimate (text), convergence_cycles (integer), context_artifact_ids (text)"
+  - MetricsEvent interface in schema.ts includes all new fields as optional properties
+  - createSchema DDL in schema.ts includes all new columns for the metrics_events table
+  - buildRow in indexer.ts maps all new YAML fields to the metrics_events extension table columns
+  - Existing metricsEvents columns (event_name, timestamp, payload) are preserved — no breaking changes
+  - CURRENT_SCHEMA_VERSION in schema.ts is incremented
+  - npm run build succeeds
+module: null
+domain: null
+notes: |
+  # WI-212: Telemetry Metrics Schema Extension
+  
+  ## Schema changes
+  
+  The existing metrics_events table has: id, event_name, timestamp, payload. We extend it with typed columns for the core telemetry metrics.
+  
+  ### New columns in metricsEvents (db.ts):
+cycle_created: 1
+cycle_modified: null
+content_hash: ff993f1de7ef1a3b297ba8f51a6e47b88347994a7cc2fab28424e72b442ec1dd
+token_count: 404
+file_path: .ideate/work-items/WI-212.yaml

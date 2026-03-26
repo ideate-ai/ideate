@@ -1,6 +1,6 @@
 # Domain Registry
 
-current_cycle: 15
+current_cycle: 26
 
 ## Domains
 
@@ -9,7 +9,7 @@ The five-skill SDLC lifecycle (plan, execute, review, refine, brrr), phase seque
 Files: domains/workflow/policies.md, decisions.md, questions.md
 
 ### artifact-structure
-The artifact directory contract: what files exist, their paths, formats, read/write phase permissions, naming conventions, append-only semantics, and the module spec layer.
+The artifact directory contract: what files exist, their paths, formats, read/write phase permissions, naming conventions, append-only semantics, and the module spec layer. From cycle 016 onward also covers the v3 `.ideate/` YAML+SQLite storage layer, edge type registry, migration tooling, and watcher/rebuild pipeline. From cycle 022 onward also covers the MCP artifact server tool suite (11 tools), class table inheritance schema (v1), and graph query infrastructure.
 Files: domains/artifact-structure/policies.md, decisions.md, questions.md
 
 ### agent-system
@@ -43,3 +43,21 @@ Files: domains/project-boundaries/policies.md, decisions.md, questions.md
 **Smoke test inline prompt inconsistency (cycle 011)**: Resolved in cycle 012. Q-33 and Q-34 both closed by WI-129 (D-48). All inline prompts and labels now use language consistent with the generalized agent definition.
 
 **Model configuration and tier aliases (cycle 013)**: D-49 (project-boundaries) established that custom model configuration belongs in Claude Code env vars, not ideate. D-50 (agent-system) replaced hardcoded model IDs with tier aliases to make env var overrides work. Three open questions remain: Q-35 (README table conflation), Q-36 (brrr unconditional opus), Q-37 (missing CLAUDE_CODE_SUBAGENT_MODEL documentation).
+
+**v3 architecture Phase 1 gaps (cycle 016)**: D-52 through D-56 (artifact-structure) record the Phase 1 foundation decisions. Cycle 016 opened four questions (Q-38 through Q-41). Cycle 017 resolved three: Q-38 (watcher pattern, WI-150), Q-39 (files_failed counter, WI-152), Q-40 (schema migration via user_version, WI-152). Q-41 (migration script scope) resolved in cycle 019: one-time conversion tool, header added by WI-172 (D-81). P-24 (workflow) codifies that async event paths in background services require end-to-end integration tests.
+
+**v3 Phase 1 completion gaps (cycle 017)**: Cycle 017 addressed all 10 planned work items with passing incremental reviews, but all three capstone reviewers issued Fail. Six significant gaps remain in the migration script (D-64 through D-67) and the Drizzle migration (D-64). Twelve new questions (Q-42 through Q-53) track the Phase 1 residual work. Two require user decisions before Phase 2: Q-44 (journal layout authority) and Q-51 (detectCycles criterion scope). P-30 (workflow) codifies the root cause: child work item specs must be cross-checked against parent feature specs for scope completeness.
+
+**Incremental-vs-capstone review divergence pattern**: D-31 (cycle 004) and D-75 (cycle 017) independently demonstrate that incremental reviewers cannot detect cross-item spec completeness gaps. P-21 (cycle 004) and P-30 (cycle 017) provide complementary mitigations: P-21 addresses shared data contracts between producer/consumer pairs; P-30 addresses parent-child spec decomposition completeness.
+
+**v3 Phase 1 residual resolution (cycle 018)**: Cycle 018 resolved 9 of 12 open questions from cycle 017: Q-42 (deleteStaleRows Drizzle, WI-160), Q-43 (finding field extraction, WI-162), Q-45 (remaining archive file types, WI-165/WI-168), Q-46 (plan artifact migration, WI-163), Q-47 (interview migration, WI-164), Q-48 (stale edge type names, WI-166), Q-49 (architecture.md paths, WI-166), Q-50 (CURRENT_SCHEMA_VERSION collision, WI-166/D-79), Q-52 (domainQuestions column, WI-167/D-80). All three capstone reviewers issued Pass. Five significant performance/maintenance findings opened 9 new questions (Q-54 through Q-62). The highest-priority carry-forward is Q-58 (migrate-to-v3.js dual-maintenance, flagged three consecutive times).
+
+**Rebuild pipeline performance cluster (cycle 018)**: Q-54 (watcher debounce), Q-55 (unindexed file_path scans), and Q-57 (O(n^2) BFS) collectively describe a performance degradation pattern that compounds as artifact counts grow. All three resolved in cycle 019: D-84 (500ms debounce, WI-170), D-85 (file-path indexes + pre-created statements, WI-171), D-87 (index-pointer BFS, WI-171).
+
+**Cycle 019 residual — fully resolved in cycle 020**: All five open questions from cycle 019 (Q-63 through Q-67) were closed by four parallel work items (WI-174 through WI-177). Q-63 (build:migration script absent) resolved by WI-174 (D-91). Q-64 (db.ts architecture row) resolved by WI-176. Q-65 (stale 3-arg test call sites) resolved by WI-175. Q-66 (toYaml array-item guard) resolved by WI-175 (D-92). Q-67 (checkSchemaVersion version-0 test) resolved by WI-177. Q-58 (dual-maintenance, carried three cycles) is now fully closed.
+
+**Cycle 021 minor residual cluster**: Three low-severity carry-forwards from incremental reviews. Q-72 (workflow) tracks the intentional-but-undocumented outer-catch swallow in `pretest`. Q-73 (artifact-structure) tracks the version-mismatch test's reliance on `checkSchemaVersion`'s internal db.close() side-effect. Q-74 (artifact-structure) tracks the 11 untested conditions in the array-item quoting guard. All three are latent fragilities or documentation gaps; none require a dedicated refinement cycle.
+
+**Cycle 020 minor residual cluster**: Fully resolved in cycle 021. Q-68 (stale artifacts) resolved by WI-178. Q-69 (toYaml array-item guard) resolved by WI-179. Q-70 (checkSchemaVersion coverage) resolved by WI-180. Q-71 (pretest fail-fast) resolved by WI-178.
+
+**Cycle 022 MCP tool suite — recursive CTE cluster**: Q-75 (cycle protection), Q-76 (ambiguous column), and Q-78 (missing depth > 1 test) all relate to the same recursive CTE in `query.ts`. Q-78 is the root cause — the two significant findings (Q-75, Q-76) survived to capstone review because no test exercises the depth > 1 code path. All three are surgical fixes in a single file; recommended for next refinement cycle. This is the same test coverage gap pattern as D-57/P-24 (cycle 016): untested async/recursive paths survive incremental review.

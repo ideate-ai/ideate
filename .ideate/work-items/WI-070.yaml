@@ -1,0 +1,27 @@
+id: WI-070
+type: work_item
+title: Write README
+status: pending
+complexity: high
+scope:
+  - {path: README.md, op: modify}
+depends:
+  - "063"
+  - "064"
+  - "066"
+  - "067"
+  - "068"
+  - "069"
+blocks: []
+criteria:
+  - "README.md at project root documents: what ideate is, artifact directory structure (annotated tree), domain layer (policies/decisions/questions formats, GP→domain policy derivation, granularity guidelines), archive (immutability, archive vs. domain relationship, tracing a policy to its origin), interview structure (per-cycle per-domain files, _full.md, citation format, context loading table), domain curator (when it runs, what it does, policy-grade threshold, conflict handling, bootstrapping), review modes (full table of invocations/agents/output), skill reference (one section per skill with context loaded + what it writes + domain interaction), plan artifact decay, migration guide, worked example"
+  - "Worked example is concrete: uses real file snippets, traces one full cycle from plan through curator run"
+  - Tone is factual and direct — no marketing language, no hedging
+module: null
+domain: null
+notes: null
+cycle_created: 1
+cycle_modified: null
+content_hash: c25b528e4ea37cade1fe10acd3514199126383e6765ee208f6dd441ca4c3d14b
+token_count: 305
+file_path: .ideate/work-items/WI-070.yaml

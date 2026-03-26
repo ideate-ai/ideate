@@ -1,0 +1,14 @@
+id: Q-72
+type: domain_question
+domain: workflow
+status: open
+impact: Future readers may silently inherit a broken pretest guard and not realize the outer catch is intentionally permissive. Behavior is correct per spec; this is a documentation gap only.
+source: archive/cycles/021/code-quality.md M1; archive/cycles/021/gap-analysis.md MG1; archive/cycles/021/decision-log.md Q-72
+resolution: null
+resolved_in: null
+description: "The outer `try/catch(e) {}` in `pretest` wraps the `statSync` call on `migrate-to-v3.ts`. Any error — wrong working directory, permissions, `.ts` absent — is swallowed silently and `pretest` exits 0. The design is intentional (specs/plan/notes/178.md line 56: \"don't want infra issues to break test runs\"), but no inline comment documents this. The one-liner format prevents adding a comment directly."
+cycle_created: 1
+cycle_modified: null
+content_hash: a9f96fdd3bf250cd2d0556949c889a2216edd4d3f1e6a8ed95ee7c1b76cfbbff
+token_count: 234
+file_path: .ideate/questions/Q-72.yaml

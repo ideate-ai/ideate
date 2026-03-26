@@ -1,0 +1,14 @@
+id: Q-73
+type: domain_question
+domain: artifact-structure
+status: open
+impact: Low — current behavior is correct. Risk materializes only if `checkSchemaVersion` implementation is changed to not close the handle internally. Latent fragility with no current failure.
+source: archive/cycles/021/decision-log.md Q-73; archive/cycles/021/code-quality.md M2; archive/cycles/021/gap-analysis.md MG2
+resolution: null
+resolved_in: null
+description: "`schema.test.ts:305` opens a `Database` handle and passes it to `checkSchemaVersion`. The function closes the handle internally on the stale-version path. The test relies on this internal side-effect for cleanup. If `checkSchemaVersion` is changed to not close the handle before deletion, the test leaks a file descriptor and leaves the DB file locked, causing the `finally` cleanup to fail."
+cycle_created: 1
+cycle_modified: null
+content_hash: "8aa0dc82fe4f34fa6e135d824f4b3e84b4b80ce8dc6e1e7991a8c47f4c1610be"
+token_count: 234
+file_path: .ideate/questions/Q-73.yaml

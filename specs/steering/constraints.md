@@ -4,7 +4,7 @@
 
 1. **Claude Code plugin format.** The core product is a Claude Code plugin — markdown skill definitions, agent definitions, plugin manifest. No runtime code is required for the core workflow, but external tooling (MCP servers, SDK orchestrators) may be built to extend capabilities.
 
-2. **File-based coordination.** All inter-phase state lives in the artifact directory on disk. No in-memory state between skill invocations. Each skill reads what it needs from artifacts and writes its outputs back.
+2. **File-based coordination.** All inter-phase state lives in YAML files in the `.ideate/` directory. No in-memory state between skill invocations. Each skill reads what it needs from artifacts — either directly from YAML files or via MCP tools backed by the SQLite runtime index — and writes its outputs as YAML files. The SQLite index is a derived cache; skills must never write directly to it.
 
 3. **Agent teams as preferred execution mode.** Design for agent teams with shared task lists as the default, with batched subagents as fallback. Sequential mode available for small projects or constrained environments.
 

@@ -1,0 +1,14 @@
+id: Q-06
+type: domain_question
+domain: agent-system
+status: open
+impact: brrr Phase 9 activity report parses confidence-level summaries from proxy-human-log.md; case-sensitive parsing may fail to aggregate correctly.
+source: archive/cycles/001/decision-log.md OQ6, archive/cycles/001/summary.md Minor M3
+resolution: null
+resolved_in: null
+description: `agents/proxy-human.md` output contract specifies lowercase confidence values (`high|medium|low`) but the log format uses uppercase (`HIGH/MEDIUM/LOW`). Which is canonical?
+cycle_created: 1
+cycle_modified: null
+content_hash: ab2312cb24ca0dcfe0acd0254ed6cba1a9f15ac0f03d189d03bed94599ac02a7
+token_count: 157
+file_path: .ideate/questions/Q-06.yaml

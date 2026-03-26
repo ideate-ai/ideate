@@ -60,3 +60,15 @@ When the smoke test cannot execute at all (infrastructure failure — runner not
 - **Derived from**: D-45 (smoke test infrastructure failure handling); Q-26 (smoke test blocking scenario); user decision in cycle 011 refinement interview
 - **Established**: cycle 011
 - **Status**: active
+
+## P-24: Work items implementing async event paths in a background service must include an end-to-end integration test for that path
+When a work item delivers a feature that depends on an asynchronous event chain (e.g., file watcher -> callback -> index rebuild), the work item's acceptance criteria must include at least one integration test that exercises the full chain end-to-end against a real or realistic environment. Unit tests on individual links in the chain are insufficient — the chain must be tested as assembled. A missing integration test for an async path is a specification gap, not merely a quality gap.
+- **Derived from**: D-57 (watcher ignored-pattern bug survived all incremental reviews due to absent integration test)
+- **Established**: cycle 016
+- **Status**: active
+
+## P-30: Child work item notes specs must be cross-checked against the parent feature spec for scope completeness
+When a refinement cycle decomposes a feature-level spec (e.g., WI-146 "migration script") into per-cycle child work items (e.g., WI-157 "migration completion"), the child's notes spec must be validated against the parent for missing steps before execution begins. The decomposer or refiner must confirm that the union of all child work items covers every step in the parent spec. Omissions in a child spec are invisible to incremental reviewers who see only the child's notes — the capstone review is the first opportunity to detect gaps, at which point rework is required.
+- **Derived from**: D-75 (cycle 017 incremental-vs-capstone divergence); D-66 (migration script implemented against WI-157 without checking WI-146 steps 7-12)
+- **Established**: cycle 017
+- **Status**: active

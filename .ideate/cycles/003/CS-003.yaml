@@ -1,0 +1,50 @@
+id: CS-003
+type: cycle_summary
+cycle: 3
+content: |
+  # Review Summary — Cycle 003
+  
+  ## Overview
+  
+  Cycle 003 delivered `manifest.json` as an artifact directory schema version marker. The two work items (WI-074 and WI-075) are complete and all acceptance criteria are satisfied. The implementation is internally consistent between `specs/artifact-conventions.md` and `skills/plan/SKILL.md`. However, the convention was not propagated to three documentation artifacts that also contain artifact directory structure references: `README.md`, `CLAUDE.md`, and `specs/plan/architecture.md`. These omissions are cross-cutting gaps outside the stated cycle scope.
+  
+  ## Critical Findings
+  
+  None.
+  
+  ## Significant Findings
+  
+  - [code-reviewer] README.md artifact directory diagram omits manifest.json (`README.md:37-85`) — relates to: WI-074 (cross-cutting propagation gap)
+  - [code-reviewer] Architecture.md read/write permissions table has no row for manifest.json (`specs/plan/architecture.md:89-104`) — relates to: GP-8 Durable Knowledge Capture (cross-cutting)
+  - [gap-analyst] CLAUDE.md artifact structure diagram omits manifest.json — relates to: WI-074 (cross-cutting propagation gap)
+  
+  ## Minor Findings
+  
+  - [code-reviewer / spec-reviewer] artifact-conventions.md Review Artifacts section headings still reference legacy `reviews/` paths (pre-existing, not introduced this cycle) — relates to: cross-cutting
+  - [gap-analyst] Migration scripts (`migrate-to-cycles.sh`, `migrate-to-domains.sh`) not removed as stated in interview — relates to: refine-003 interview intent
+  - [gap-analyst] Schema version 1 not defined — structural invariants of a v1-compliant artifact directory not documented — relates to: WI-074 (deferred by design)
+  - [gap-analyst] Architecture.md Section 8 artifact contract omits manifest.json (Minor framing, complements S2 above)
+  
+  ## Suggestions
+  
+  None.
+  
+  ## Findings Requiring User Input
+  
+  - **Migration script removal**: The refine-003 interview stated `scripts/migrate-to-cycles.sh` and `scripts/migrate-to-domains.sh` "will be removed." No cycle 003 work item addressed this. The scripts remain present and the README Migration section still documents `migrate-to-domains.sh`. Confirm: should these be removed in the next cycle, and should the README Migration section be updated or removed at the same time?
+  
+  ## Proposed Refinement Plan
+  
+  Three significant findings require a small follow-on cycle:
+  
+  1. **WI-076**: Add `manifest.json` to `README.md` artifact directory diagram and `/ideate:plan → What it writes` listing (one-line fix each)
+  2. **WI-077**: Add `manifest.json` to `CLAUDE.md` artifact structure diagram (one-line fix)
+  3. **WI-078**: Add `manifest.json` row to `specs/plan/architecture.md` permissions table
+  
+  All three are independent and parallelizable. Scope is narrow — documentation only, no behavior changes.
+  
+  The minor finding on stale `reviews/` paths in artifact-conventions.md section headings (OQ6) can be bundled into WI-076 or handled separately, depending on preference.
+  
+  The migration script removal (OQ4) requires a user decision before it can be scoped.
+content_hash: ba9ce4df49878ad6e4335ab7588add9f2652a772d82937206904d23f92f4f108
+token_count: 786

@@ -15,6 +15,7 @@ specs/           # Ideate's own artifact directory — uses the same structure i
 
 | Skill | What it does |
 |---|---|
+| `/ideate:init` | Initialize .ideate/ for an existing codebase — scaffold, survey, interview, bootstrap domains |
 | `/ideate:plan` | Interview → research → architecture → work items → domain bootstrap |
 | `/ideate:execute` | Build work items with per-item incremental review |
 | `/ideate:review` | Capstone review: cycle (default), `--domain`, `--full`, or natural language scope |

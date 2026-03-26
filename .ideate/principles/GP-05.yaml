@@ -1,0 +1,11 @@
+id: GP-05
+type: guiding_principle
+name: Continuous Review
+status: active
+description: Review is not a phase that happens after execution — it overlaps with execution. Items are reviewed as they finish while other items continue building. The comprehensive end-of-cycle review is a capstone synthesis, not the first time anyone looks at the work. Catch issues as they occur.
+amendment_history: []
+cycle_created: 1
+cycle_modified: null
+content_hash: "1d0ca434f5be5cf328ff5a4058c1ff499b5dc0f29ab2c8e465fa37d7930b2bb0"
+token_count: 124
+file_path: .ideate/principles/GP-05.yaml

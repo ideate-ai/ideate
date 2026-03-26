@@ -6,6 +6,7 @@
 
 | Skill | Purpose | Invokes Agents | Key Artifacts |
 |-------|---------|---------------|---------------|
+| `/ideate:init` | Initialize .ideate/ for an existing codebase — scaffold, survey, interview, bootstrap domains | architect, domain-curator | .ideate/config.json, .ideate/principles/*, .ideate/constraints/*, domains/* |
 | `/ideate:plan` | Interview → research → decompose → produce specs | researcher, architect, decomposer | steering/*, plan/* |
 | `/ideate:execute` | Build project following the plan | code-reviewer (incremental) | archive/incremental/*, journal.md |
 | `/ideate:review` | Comprehensive multi-perspective evaluation | code-reviewer, spec-reviewer, gap-analyst, journal-keeper, domain-curator | archive/cycles/{NNN}/*, domains/* |
@@ -26,9 +27,13 @@
 | domain-curator | opus | no | Read, Write, Glob | review, brrr |
 | proxy-human | sonnet | no | Read, Grep, Glob, Bash | brrr |
 
+### MCP Artifact Server (`mcp/artifact-server/`)
+
+Built-in TypeScript MCP server providing structured data access to the `.ideate/` artifact directory. Uses SQLite as a runtime index over YAML source files. See Section 5 for details.
+
 ### External Tooling
 
-Session orchestration and remote work dispatch are handled by separate projects (e.g., outpost) configured as MCP servers. Ideate does not include built-in MCP server implementations.
+Session orchestration and remote work dispatch are handled by external MCP servers configured in .mcp.json.
 
 ---
 
@@ -101,7 +106,6 @@ Read/write permissions per phase:
 | plan/modules/*.md | write | read | read | update |
 | plan/execution-strategy.md | write | read | read | overwrite |
 | plan/work-items/*.md | write | read | read | write (new) |
-| manifest.json | write | read | read | read |
 | archive/incremental/*.md | — | write | read | read |
 | archive/cycles/{NNN}/*.md | — | — | write | read |
 | journal.md | init | append | append | append |
@@ -305,9 +309,41 @@ Read/write permissions per phase:
 
 ---
 
-## 5. MCP Servers
+## 5. MCP Artifact Server
 
-Session orchestration and remote work dispatch are handled by separate projects configured as MCP servers. Ideate focuses on planning, refinement, execution, and review workflows. MCP server implementations (such as session spawning and remote worker dispatch) are maintained in separate repositories and configured by users as needed.
+Ideate includes a built-in MCP server (`mcp/artifact-server/`) that provides structured data access to the artifact directory. The server runs as a stdio transport, registered via `.mcp.json`.
+
+### v3 Architecture
+
+**Source of truth**: YAML files in `.ideate/` directory, organized by artifact type (one file per artifact).
+
+**Directory structure**: Cross-cycle artifacts (work items, policies, decisions, questions, principles, constraints, modules, research) live as flat files directly under `.ideate/{type}/`. Cycle-scoped artifacts (findings, journal entries) live under `.ideate/cycles/{NNN}/`. There is no `archive/` prefix — `cycles/` is a top-level subdirectory of `.ideate/`.
+
+**Runtime index**: SQLite database at `.ideate/index.db` (gitignored). Rebuilt from YAML files on startup using content-hash-based incremental comparison. WAL mode for concurrent reads. FK enforcement enabled per connection (`PRAGMA foreign_keys = ON`).
+
+**Schema (v1)**: Class table inheritance — `nodes` base table (id, type, cycle_created, cycle_modified, content_hash, token_count, file_path, status) + 12 extension tables (work_items, findings, domain_policies, domain_decisions, domain_questions, guiding_principles, constraints, module_specs, research_findings, journal_entries, metrics_events, document_artifacts). Each extension table PK is FK to `nodes(id)` with `ON DELETE CASCADE`. `edges` table references `nodes(id)` for both source and target with `ON DELETE CASCADE`. `node_file_refs` references `nodes(id)` with `ON DELETE CASCADE`. 10 edge types defined in `EDGE_TYPE_REGISTRY` with application-level type validation.
+
+**Rebuild pipeline**: On startup, scans all YAML files → parses → upserts into `nodes` + extension table (two-pass insert per artifact, `PRAGMA defer_foreign_keys = ON` during rebuild transaction) → extracts inline edges → runs Kahn's DAG validation. Stale row deletion is a single `DELETE FROM nodes WHERE id NOT IN (...)` — CASCADE handles extension tables, edges, and file refs. File watcher (500ms debounce) triggers incremental rebuilds on changes.
+
+**Query approach**: Hybrid — Drizzle ORM for type-safe CRUD (inserts, single-table selects, deletes), raw `db.prepare()` for graph traversal (recursive CTEs, multi-table JOINs across nodes + extensions + edges).
+
+**Tools (11)**: Organized in `src/tools/` directory. `ToolContext` interface provides `db`, `drizzleDb`, and `ideateDir` to all tool handlers. Write tools write YAML first (GP-8), then synchronously upsert affected SQLite rows.
+
+| Tool | Category | File |
+|------|----------|------|
+| `ideate_get_work_item_context` | Context assembly | tools/context.ts |
+| `ideate_get_context_package` | Context assembly | tools/context.ts |
+| `ideate_artifact_query` | Graph query | tools/query.ts |
+| `ideate_get_execution_status` | Execution status | tools/execution.ts |
+| `ideate_get_review_manifest` | Execution status | tools/execution.ts |
+| `ideate_get_convergence_status` | Analysis | tools/analysis.ts |
+| `ideate_get_domain_state` | Analysis | tools/analysis.ts |
+| `ideate_get_project_status` | Analysis | tools/analysis.ts |
+| `ideate_append_journal` | Write | tools/write.ts |
+| `ideate_archive_cycle` | Write | tools/write.ts |
+| `ideate_write_work_items` | Write | tools/write.ts |
+
+Session orchestration and remote work dispatch remain in external MCP servers.
 
 ---
 
@@ -446,11 +482,11 @@ The capstone review (layer 2) accounts for incremental reviews:
 
 ### Complete File Specification
 
-#### `manifest.json`
-- **Purpose**: Identifies the schema version of this artifact directory
-- **Format**: `{"schema_version": 1}`
-- **Semantics**: Written once during `/ideate:plan` directory scaffolding. Not read or checked by any skill at runtime. Updated only by migration scripts when the schema version advances.
-- **Phases**: plan (write), execute (read), review (read), refine (read)
+#### `.ideate/config.json`
+- **Purpose**: Identifies the schema version of the `.ideate/` artifact directory and stores optional project metadata
+- **Format**: `{"schema_version": 2, "project_name": "<optional>"}` — only `schema_version` is required
+- **Semantics**: Written once during `/ideate:init` or `/ideate:plan` directory scaffolding. Read by the MCP server on startup to locate and validate the artifact directory. Updated only by migration scripts when the schema version advances.
+- **Phases**: init/plan (write), runtime (read by MCP server)
 
 #### `steering/interview.md`
 - **Purpose**: Record of the planning conversation
@@ -543,3 +579,26 @@ The capstone review (layer 2) accounts for incremental reviews:
 - **Format**: Phase-tagged entries with dates. Format: `## [{phase}] {date} — {title}`
 - **Semantics**: STRICTLY APPEND-ONLY. No phase ever edits or deletes existing entries.
 - **Phases**: plan (init), execute (append per item), review (append), refine (append)
+
+---
+
+## 9. Source Code Index
+
+Key exports per source file. Format: file path relative to project root, language, key exported symbols.
+
+| File | Language | Key Exports |
+|------|----------|-------------|
+| mcp/artifact-server/src/config.ts | TypeScript | CONFIG_SCHEMA_VERSION, IdeateConfigJson, IdeateConfig, readIdeateConfig, findIdeateConfig, resolveArtifactDir, createIdeateDir, writeConfig |
+| mcp/artifact-server/src/schema.ts | TypeScript | CURRENT_SCHEMA_VERSION, EDGE_TYPES, EdgeType, EDGE_TYPE_REGISTRY, ArtifactCommon, WorkItem, Finding, DomainPolicy, DomainDecision, DomainQuestion, GuidingPrinciple, Constraint, ModuleSpec, ResearchFinding, JournalEntry, Edge, NodeFileRef, createSchema, checkSchemaVersion |
+| mcp/artifact-server/src/db.ts | TypeScript | workItems, findings, domainPolicies, domainDecisions, domainQuestions, guidingPrinciples, constraints, moduleSpecs, researchFindings, journalEntries, edges, nodeFileRefs, documentArtifacts, metricsEvents, AnyTable, TYPE_TO_DRIZZLE_TABLE |
+| mcp/artifact-server/src/indexer.ts | TypeScript | RebuildStats, MAX_DEPENDENCY_NODES, MAX_DEPENDENCY_EDGES, detectCycles, rebuildIndex |
+| mcp/artifact-server/src/watcher.ts | TypeScript | FileChangeEvent, ArtifactWatcher, artifactWatcher |
+| mcp/artifact-server/src/tools/index.ts | TypeScript | ToolContext, TOOLS, handleTool |
+| mcp/artifact-server/src/tools/context.ts | TypeScript | handleGetWorkItemContext, handleGetContextPackage |
+| mcp/artifact-server/src/tools/query.ts | TypeScript | handleArtifactQuery |
+| mcp/artifact-server/src/tools/execution.ts | TypeScript | handleGetExecutionStatus, handleGetReviewManifest |
+| mcp/artifact-server/src/tools/analysis.ts | TypeScript | handleGetConvergenceStatus, handleGetDomainState, handleGetProjectStatus |
+| mcp/artifact-server/src/tools/write.ts | TypeScript | handleAppendJournal, handleArchiveCycle, handleWriteWorkItems |
+| mcp/artifact-server/src/index.ts | TypeScript | (MCP server entry point — no public exports) |
+| scripts/migrate-to-v3.ts | TypeScript | MigrationContext, sha256, toYaml, buildArtifact, parsePrinciples, parseYamlFlowArray, parseWorkItemsYaml, migrateJournal, migrateArchiveCycles, extractSection, migratePlanArtifacts, migrateSteeringArtifacts, migrateInterviews, migrateMetrics, MigrationOptions, runMigration |
+| scripts/migrate-to-v3.js | JavaScript | sha256, toYaml, buildArtifact, parsePrinciples, parseYamlFlowArray, parseWorkItemsYaml, migrateJournal, migrateArchiveCycles, extractSection, migratePlanArtifacts, migrateSteeringArtifacts, migrateInterviews, migrateMetrics, runMigration |

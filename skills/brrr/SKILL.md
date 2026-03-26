@@ -23,27 +23,15 @@ Store both values. All subsequent phases reference these.
 
 # Phase 2: Locate and Validate Artifact Directory
 
-If the artifact directory was not provided, search for directories containing `plan/execution-strategy.md` and `steering/guiding-principles.md` in the current directory and its immediate children.
+Determine the **project root** — the directory containing `.ideate/config.json`. If the artifact directory was provided as an argument, resolve it: if it contains `.ideate/config.json`, use it; if it's a subdirectory (e.g., `specs/`), walk up to find `.ideate/config.json` in an ancestor. If no argument, check the current working directory and walk up.
 
-Verify the directory contains at minimum:
-- `steering/guiding-principles.md`
-- `steering/constraints.md`
-- `plan/architecture.md`
-- `plan/execution-strategy.md`
-- At least one work item (in `plan/work-items.yaml` or `plan/work-items/`)
+Validate by calling `ideate_get_project_status` with the resolved path. If the MCP server cannot find artifacts, stop and report the error.
 
-If any required artifact is missing, stop and report exactly what is missing.
-
-Store the artifact directory as `{artifact_dir}`. All artifact file operations reference this root.
+Store the project root as `{artifact_dir}`. All MCP tool calls use this as the base.
 
 ## Derive Project Source Root
 
-Determine the **project source root** using this precedence:
-
-1. Explicit user argument or prior context
-2. Path reference in `plan/architecture.md` or `plan/overview.md`
-3. Parent of `{artifact_dir}` (if `{artifact_dir}` is a subdirectory like `./specs/`)
-4. Ask: "Where is the project source code?"
+Determine the **project source root**. In most cases this is the same as the project root. If the architecture documents specify a different source path, use that instead. If ambiguous, ask: "Where is the project source code?"
 
 Store as `{project_source_root}`.
 
@@ -71,7 +59,7 @@ If no work items are found, stop and direct the user to run `/ideate:plan` first
 
 ## Build Completed Items Set
 
-1. Glob `{artifact_dir}/archive/incremental/*.md`
+1. Call `ideate_get_execution_status` with `({artifact_dir})` to get the completed/pending/blocked sets. If unavailable, stop with error: "The ideate MCP artifact server is required but not available. Verify .mcp.json configuration."
 2. For each review file, read the verdict line (`## Verdict:`)
 3. Cross-reference with journal entries (`## [execute] * — Work item NNN:*` with `Status: complete`)
 4. A work item is complete if both a passing review and a journal entry with `Status: complete` exist
@@ -180,6 +168,19 @@ Continue here after the four output files exist in `{artifact_dir}/archive/cycle
 
 ### 6c: Convergence Check
 
+**Call `ideate_get_convergence_status`**: Look in your tool list for a tool whose name ends in `ideate_get_convergence_status` (it will be prefixed, e.g. `mcp__ideate_artifact_server__ideate_get_convergence_status` or `mcp__plugin_ideate_ideate_artifact_server__ideate_get_convergence_status`). If not found, stop and report: "The ideate MCP artifact server is required but not available. Verify .mcp.json configuration."
+
+Call it with `({artifact_dir}, {cycle_number})` — parses `spec-adherence.md` and `{last_cycle_findings}` and returns a convergence status object with `converged: true|false`, `condition_a: true|false` (zero critical/significant findings), and `condition_b: true|false` (principle adherence verdict).
+
+Use the returned `converged` flag to drive the convergence decision. If `converged` is true, set `{convergence_achieved}` = true, call `ideate_emit_event` with:
+- artifact_dir: {artifact_dir}
+- event: "cycle.converged"
+- variables: { "ARTIFACT_DIR": "{artifact_dir}", "CYCLE_NUMBER": "{cycle_number}", "TOTAL_CYCLES": "{cycles_completed}" }
+
+This call is best-effort — if it fails, continue without interruption. Then exit the loop. If false, proceed to Phase 6d.
+
+If `ideate_get_convergence_status` is unavailable, evaluate convergence manually:
+
 **Condition A: Zero Critical and Significant Findings**
 
 From `{last_cycle_findings}`:
@@ -206,7 +207,11 @@ Read `{artifact_dir}/archive/cycles/{formatted_cycle_number}/spec-adherence.md`:
 
 Both conditions must pass simultaneously.
 
-- If both pass: set `{convergence_achieved}` = true. Exit the loop. Proceed to Phases 7–9.
+- If both pass: set `{convergence_achieved}` = true. Call `ideate_emit_event` with:
+  - artifact_dir: {artifact_dir}
+  - event: "cycle.converged"
+  - variables: { "ARTIFACT_DIR": "{artifact_dir}", "CYCLE_NUMBER": "{cycle_number}", "TOTAL_CYCLES": "{cycles_completed}" }
+  This call is best-effort — if it fails, continue without interruption. Then exit the loop. Proceed to Phases 7–9.
 - If either fails: proceed to Phase 6d.
 
 Update `{artifact_dir}/brrr-state.md`:
@@ -262,7 +267,7 @@ After each agent spawn (via the Agent tool), append one JSON entry to `{artifact
 
 **Entry schema (one JSON object per line):**
 
-    {"timestamp":"<ISO8601>","skill":"brrr","phase":"<id>","cycle":<N>,"agent_type":"<type>","model":"<model>","work_item":"<slug or null>","wall_clock_ms":<ms>,"turns_used":<N or null>,"context_files_read":["<path>",...],"input_tokens":<N or null>,"output_tokens":<N or null>,"cache_read_tokens":<N or null>,"cache_write_tokens":<N or null>,"mcp_tools_called":["<tool_name>",...]}
+    {"timestamp":"<ISO8601>","skill":"brrr","phase":"<id>","cycle":<N>,"agent_type":"<type>","model":"<model>","work_item":"<slug or null>","wall_clock_ms":<ms>,"turns_used":<N or null>,"context_files_read":["<path>",...],"input_tokens":<N or null>,"output_tokens":<N or null>,"cache_read_tokens":<N or null>,"cache_write_tokens":<N or null>,"mcp_tools_called":["<tool_name>",...],"outcome":"<pass|fail|rework or null>","finding_count":<N or null>,"finding_severities":{"critical":<N>,"significant":<N>,"minor":<N>} or null,"first_pass_accepted":<true|false or null>,"rework_count":<N or null>}
 
 - `timestamp` — ISO 8601 when the agent was spawned
 - `phase` — e.g., `"6a"`, `"6b"`
@@ -278,6 +283,11 @@ After each agent spawn (via the Agent tool), append one JSON entry to `{artifact
 - `cache_read_tokens` — integer or null. Prompt caching read tokens if available. Null if not available.
 - `cache_write_tokens` — integer or null. Prompt caching write tokens if available. Null if not available.
 - `mcp_tools_called` — array of strings. Names of MCP tools called to assemble context for this agent spawn (e.g., `["ideate_get_context_package", "ideate_get_work_item_context"]`). Empty array `[]` if no MCP tools were called.
+- `outcome` — optional (null if not available). For `code-reviewer` entries (phase `"6a"`): `"pass"` if the incremental review verdict is Pass with no rework, `"rework"` if the verdict is Pass after rework, `"fail"` if the verdict is Fail. For all other agent types: `null`.
+- `finding_count` — optional (null if not available). For `code-reviewer` entries (phase `"6a"`): total findings from the incremental review. For reviewer entries (phase `"6b"`, agent types `"code-reviewer"`, `"spec-reviewer"`, `"gap-analyst"`): total findings from that reviewer's output file. Null for `worker`, `journal-keeper`, `domain-curator`, and `proxy-human` entries, and null if output cannot be parsed.
+- `finding_severities` — optional (null if not available). Object with keys `critical`, `significant`, `minor` and integer values. Populated for `code-reviewer` phase `"6a"` entries and reviewer phase `"6b"` entries. Null for all other agent types and null if output cannot be parsed.
+- `first_pass_accepted` — optional (null if not available). For `code-reviewer` entries (phase `"6a"`): `true` if the incremental review passes with no rework required, `false` otherwise. Null for all other agent types.
+- `rework_count` — optional (null if not available). For `worker` entries: the number of fix-and-re-review cycles completed for this work item (0 if the first review passed without rework). Null for all other agent types.
 
 Before each Agent tool call, record which MCP tool calls (if any) were made to assemble context for that spawn. Include the tool names in the `mcp_tools_called` array. If no MCP tools were called, use an empty array `[]`.
 
@@ -287,6 +297,14 @@ Record timestamp immediately before the Agent tool call; compute `wall_clock_ms`
 
 Phase documents contain per-cycle and overall journal summary instructions. If `metrics.jsonl` could not be written, note "metrics unavailable" in the journal summary.
 
+**Convergence summary fields**: When the loop exits (converged or max-cycles reached), the activity report and final journal entry must include the following summary fields derived from `metrics.jsonl`:
+
+- `convergence_cycles` — integer. The number of cycles completed before convergence (or before the cycle limit was reached). Equal to `cycles_completed` from `brrr-state.md`.
+- `cycle_total_tokens` — integer or null. Sum of all `input_tokens` + `output_tokens` + `cache_read_tokens` + `cache_write_tokens` across every entry in `metrics.jsonl` for this brrr session (where `skill` = `"brrr"`). Null if `metrics.jsonl` is unavailable or token fields are all null.
+- `cycle_total_cost_estimate` — string or null. A human-readable cost estimate string (e.g., `"~$4.20"`) derived from `cycle_total_tokens` using current published model pricing for the models used. Null if token data is unavailable or pricing cannot be determined.
+
+These three fields are optional (null if not available). Include them in the Phase 9 activity report Run Summary and in the journal entry written at the end of Phase 9.
+
 ---
 
 # What You Do Not Do
@@ -295,7 +313,7 @@ Phase documents contain per-cycle and overall journal summary instructions. If `
 - You do not skip incremental reviews. Every completed work item gets reviewed before the cycle's comprehensive review runs.
 - You do not present minor review findings to the user. Handle them silently.
 - You do not make design decisions. If the proxy-human defers, note the deferral and continue where possible.
-- You do not modify steering artifacts. You have read-only access to `steering/`. You write to `archive/incremental/`, `archive/cycles/`, `journal.md`, `brrr-state.md`, and `proxy-human-log.md` (via proxy-human).
+- You do not modify steering artifacts. You have read-only access to `steering/`. You write to `.ideate/cycles/{NNN}/findings/`, `journal.md`, `brrr-state.md`, and `proxy-human-log.md` (via proxy-human) — all through MCP tools.
 - You do not declare convergence unless both Condition A and Condition B pass simultaneously in the same cycle.
 - You do not re-plan from scratch. New work items in the refinement phase address specific findings. They do not replace the original plan.
 - You do not use filler phrases, encouragement, or enthusiasm. State facts.

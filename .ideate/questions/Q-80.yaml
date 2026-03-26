@@ -1,0 +1,14 @@
+id: Q-80
+type: domain_question
+domain: artifact-structure
+status: open
+impact: Source index may include files from symlinked directories, inflating context assembly results. No correctness bug in current single-project usage.
+source: archive/cycles/022/code-quality.md M2; archive/cycles/022/decision-log.md Q-80
+resolution: null
+resolved_in: null
+description: The `walkDir` function in `context.ts` used to build the source code index does not check for symbolic links. In a monorepo with symlinked `node_modules` or workspace packages, it could traverse into unintended directories and inflate the source index.
+cycle_created: 1
+cycle_modified: null
+content_hash: bee6b9eee078c4ea04b2aaacdf4864525d760ee4d567aabe72a8bc2ae87f5d50
+token_count: 180
+file_path: .ideate/questions/Q-80.yaml

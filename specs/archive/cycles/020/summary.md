@@ -1,0 +1,43 @@
+# Review Summary
+
+## Overview
+
+Cycle 020 closed all five open questions carried forward from cycle 019 (Q-63–Q-67) via four parallel work items (WI-174–WI-177). All 156 tests pass. No critical or significant findings. Six minor findings were identified across code quality and gap analysis — all pre-existing edge cases or developer-experience gaps, none introduced by this cycle's changes.
+
+## Critical Findings
+
+None.
+
+## Significant Findings
+
+None.
+
+## Minor Findings
+
+- [code-reviewer] `build:migration` does not clean stale `.d.ts` and `.js.map` files already on disk; a `prebuild:migration` step with `rmSync` would close this — relates to: WI-174
+- [code-reviewer] `pretest` emits a staleness warning but exits 0; a stale compiled `migrate-to-v3.js` does not block `npm test` — relates to: WI-174
+- [gap-analyst] `toYaml` array-item guard covers leading whitespace but not reserved scalar values or YAML indicator characters that the scalar guard also covers — relates to: WI-175
+- [gap-analyst] `pretest` silently swallows error (no warning) when `migrate-to-v3.js` is absent entirely; `statSync` throws into `catch {}` — relates to: WI-174 (cross-cutting with code-reviewer M2)
+- [gap-analyst] `checkSchemaVersion` version-mismatch and version-current branches untested; WI-177 added only the version-0 path — relates to: WI-177
+- [gap-analyst] `checkSchemaVersion` version-current (happy path) specifically untested — the path exercised on every post-migration server startup — relates to: WI-177 (grouped with finding above into Q-70)
+
+## Suggestions
+
+None.
+
+## Findings Requiring User Input
+
+None — all findings can be resolved from existing context.
+
+## Proposed Refinement Plan
+
+No critical or significant findings. The project meets its stated requirements for cycle 020.
+
+Four new open questions (Q-68–Q-71) are all minor and candidate for the next cycle. Suggested scope for `/ideate:refine`:
+
+- **Q-68** (`WI-174` follow-on): Add `prebuild:migration` step that removes stale `scripts/migrate-to-v3.d.ts`, `.d.ts.map`, and `.js.map` before compiling. One-line `rmSync` in a `prebuild:migration` npm script.
+- **Q-69** (`WI-175` follow-on): Extend `toYaml` array-item quoting condition to full parity with the scalar guard: add checks for reserved scalars (`true`, `false`, `null`, `~`) and YAML indicator characters. Mirror in `migrate-to-v3.js`.
+- **Q-70** (`WI-177` follow-on): Add tests for the remaining two `checkSchemaVersion` branches — version-mismatch (non-zero `user_version` that doesn't match `CURRENT_SCHEMA_VERSION`) and version-current (matching version, returns `true`). Three work items or one combined.
+- **Q-71** (`WI-174` follow-on, pairs with Q-68): Harden `pretest` to exit non-zero when staleness is detected, and emit a warning (rather than silently swallowing) when `migrate-to-v3.js` is absent.
+
+These four questions group naturally into 2–3 work items and are all low-effort changes with no architectural impact.

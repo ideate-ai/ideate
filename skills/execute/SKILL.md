@@ -12,35 +12,22 @@ Your tone is neutral and factual. Report status plainly. No encouragement, no en
 
 # Phase 1: Locate Artifact Directory
 
-If the user provided an artifact directory path as an argument, use it.
+Determine the **project root** — the directory containing `.ideate/config.json`. Use this precedence:
 
-If no argument was provided, check for `.ideate.json` in the current working directory — if found, use its `artifactDir` value (resolved relative to that file's location).
+1. If the user provided a path argument, resolve it. If it points to a directory containing `.ideate/config.json`, use it as the project root. If it points to a subdirectory (e.g., `specs/`), walk up to find `.ideate/config.json` in an ancestor.
+2. Check the current working directory and walk up to find `.ideate/config.json`.
+3. Check for `.ideate.json` in the current working directory — if found, use its `artifactDir` value (resolved relative to that file's location) to locate the project root.
+4. Otherwise ask: "Where is the project root? (The directory containing `.ideate/`)"
 
-If no `.ideate.json` exists, search for the most recently modified artifact directory by looking for directories containing `plan/execution-strategy.md` and `steering/guiding-principles.md` in the current working directory and its immediate children. If multiple candidates exist, present them and ask the user to choose. If none are found, ask:
+Validate by calling `ideate_get_project_status` with the resolved path. If the MCP server cannot find artifacts, stop and report the error. Do not proceed without a valid `.ideate/` directory.
 
-> What is the path to the artifact directory for this project?
-
-Verify the directory exists and contains at minimum:
-- `steering/guiding-principles.md`
-- `steering/constraints.md`
-- `plan/architecture.md`
-- `plan/execution-strategy.md`
-- At least one file in `plan/work-items/`
-
-If any of these are missing, stop and report what is missing. Do not proceed without a valid, complete artifact directory.
-
-Store the artifact directory path. All artifact file operations reference this root.
+Store the project root path. All MCP tool calls use this as the base for `artifact_dir`.
 
 ## Derive Project Source Root
 
-After validating the artifact directory, determine the **project source root** — the directory containing the actual source code. Derive it using this precedence:
+Determine the **project source root** — the directory containing the actual source code. In most cases this is the same as the project root. If the architecture or overview documents specify a different source path, use that instead. If ambiguous, ask: "Where is the project source code?"
 
-1. If the user specified a project source path (as a separate argument or in prior context), use it.
-2. If `plan/architecture.md` or `plan/overview.md` contains a project root or source path reference, use it.
-3. If the artifact directory is inside the project (e.g., `./specs/`), use the artifact directory's parent.
-4. Otherwise, ask: "Where is the project source code?"
-
-Store the project source root separately from the artifact directory. Both paths are used throughout execution.
+Store the project source root separately from the project root. Both paths are used throughout execution.
 
 ---
 
@@ -76,15 +63,13 @@ If validation fails, report the specific issues and stop. Do not execute a broke
 
 Before validating dependencies, check whether any work items were already completed in a previous execution run. This enables resuming execution after a partial run or user-initiated stop.
 
-1. Glob `archive/incremental/*.md` in the artifact directory.
-2. For each review file found, read the verdict line (`## Verdict: {Pass | Fail}`).
-3. Cross-reference with journal entries. A work item is considered complete if:
-   - A journal entry exists matching `## [execute] * — Work item NNN:*` with `Status: complete` or `Status: complete with rework`, AND
-   - A review file exists for that work item with `Verdict: Pass`
-4. Build a `completed_items` set containing the work item numbers that satisfy both conditions.
-5. Report: "Found {N} already-completed items. These will be skipped."
+Call `ideate_get_execution_status` with `({artifact_dir})` — returns completed, pending, and blocked work item sets derived from incremental reviews and journal entries.
 
-If no review files exist and no matching journal entries exist, this is a fresh execution. Report nothing and proceed.
+If the ideate MCP artifact server is not available, stop and report: "The ideate MCP artifact server is required but not available. Verify .mcp.json configuration."
+
+Use the returned `completed` set as `completed_items`. Report: "Found {N} already-completed items. These will be skipped."
+
+If no completed items are returned and no in-progress items are returned, this is a fresh execution. Report nothing and proceed.
 
 The `completed_items` set is used in Phase 6 to skip work items that are already done.
 
@@ -178,14 +163,25 @@ Execute according to the mode specified in the execution strategy.
 
 **Skipping completed items**: In all execution modes, before starting a work item, check whether its number appears in the `completed_items` set built during the Completed Items Scan. If it does, skip the item and report: "Skipping work item NNN: {title} — already completed." Treat skipped items as having satisfied dependencies for downstream work items.
 
+**Hook: work_item.started**: Before spawning the worker for each work item (after the skip check passes), call `ideate_emit_event` with:
+- artifact_dir: {artifact_dir}
+- event: "work_item.started"
+- variables: { "ARTIFACT_DIR": "{artifact_dir}", "WORK_ITEM_ID": "{work_item_id}", "WORK_ITEM_TITLE": "{work_item_title}" }
+
+This call is best-effort — if it fails, continue without interruption.
+
+**Hook: work_item.completed**: After each work item passes incremental review (findings handled, rework complete if any), call `ideate_emit_event` with:
+- artifact_dir: {artifact_dir}
+- event: "work_item.completed"
+- variables: { "ARTIFACT_DIR": "{artifact_dir}", "WORK_ITEM_ID": "{work_item_id}", "VERDICT": "{review_verdict}" }
+
+Where `{review_verdict}` is `"pass"` if the review passed without rework, `"rework"` if it passed after rework, or `"fail"` if unresolvable. This call is best-effort — if it fails, continue without interruption.
+
 ## Context for Every Worker
 
-**MCP availability check**: Look in your tool list for a tool whose name ends in `ideate_get_work_item_context` (it will be prefixed, e.g. `mcp__ideate_artifact_server__ideate_get_work_item_context` or `mcp__plugin_ideate_ideate_artifact_server__ideate_get_work_item_context`). If found:
-1. Call it with `({artifact_dir}, {work_item_id})` — returns pre-assembled context including work item spec, module spec, domain policies, and research.
-2. Also provide the project source root path and relevant domain policies (if not already included).
-3. Skip the manual file reads in steps 1–8 below.
+Call `ideate_get_work_item_context` with `({artifact_dir}, {work_item_id})` — returns pre-assembled context including work item spec, module spec, domain policies, and research. Also provide the project source root path and relevant domain policies (if not already included).
 
-If not found, read files manually:
+If the ideate MCP artifact server is not available, stop and report: "The ideate MCP artifact server is required but not available. Verify .mcp.json configuration."
 
 Regardless of execution mode, every worker (subagent, teammate, or the main session in sequential mode) receives:
 
@@ -298,7 +294,7 @@ Use Claude Code agent teams with a shared task list. This mode requires `CLAUDE_
 
 For large projects where the plan includes sub-plans or where module-level execution is specified, use the Agent tool to invoke sub-sessions. Each sub-session runs `/ideate:execute` for its designated scope.
 
-If the Agent tool is not available but the session-spawner MCP server (from outpost) is configured, fall back to `spawn_session`. If neither is available, execute all items in the main session using the standard modes above and note in the journal that recursive execution was not available.
+If the Agent tool is not available but the session-spawner MCP server (from external MCP servers) is configured, fall back to `spawn_session`. If neither is available, execute all items in the main session using the standard modes above and note in the journal that recursive execution was not available.
 
 ---
 
@@ -328,7 +324,7 @@ The code-reviewer performs an incremental review scoped to the files touched by 
 
 **Non-blocking**: The review runs while other work items continue. In batched parallel mode, reviews for items in the current group run concurrently with each other. In team mode, a review does not block other teammates from picking up new work items. In sequential mode, the review runs before the next work item begins (it is inherently blocking since only one item runs at a time).
 
-Write the review result to `archive/incremental/NNN-{name}.md`, matching the work item's number and name. After the code-reviewer returns, record a metrics entry (see Metrics Instrumentation).
+Write the review result to `.ideate/cycles/{NNN}/findings/F-{WI}-{SEQ}.yaml`, where `{NNN}` is the current cycle number, `{WI}` is the work item number, and `{SEQ}` is a zero-padded sequence number starting at 001. After the code-reviewer returns, record a metrics entry (see Metrics Instrumentation).
 
 The review follows the format defined in the artifact conventions:
 
@@ -472,6 +468,10 @@ After resolving all presented issues, resume execution.
 
 After each work item completes (and after any rework from review findings), append an entry to `journal.md`.
 
+Call `ideate_append_journal` with `({artifact_dir}, "execute", {date}, {entry_type}, {body})` — appends a structured journal entry atomically.
+
+If the ideate MCP artifact server is not available, stop and report: "The ideate MCP artifact server is required but not available. Verify .mcp.json configuration."
+
 Format:
 
 ```markdown
@@ -501,6 +501,10 @@ Report status to the user at these milestones:
 - **Group completion**: When a dependency group finishes, report which items completed, which had rework, and which group is next.
 - **Andon cord presentation**: When presenting issues (Phase 9), include current progress.
 - **Halfway point**: When approximately half the work items are complete, report overall progress.
+
+Call `ideate_get_project_status` with `({artifact_dir})` — returns a structured project status summary including completed, in-progress, remaining, rework, and Andon cord item counts. Use the response directly to populate the status report below.
+
+If the ideate MCP artifact server is not available, stop and report: "The ideate MCP artifact server is required but not available. Verify .mcp.json configuration."
 
 Status format:
 
@@ -587,7 +591,7 @@ If the user stops execution partway through:
 2. Write a journal entry noting the pause and which items remain
 3. List what would be needed to resume (which items are next, any pending Andon cord issues)
 
-The user can re-run `/ideate:execute` to resume. The skill should detect already-completed items (by checking for existing `archive/incremental/NNN-{name}.md` files and journal entries) and skip them.
+The user can re-run `/ideate:execute` to resume. The skill should detect already-completed items (via `ideate_get_execution_status`) and skip them.
 
 ---
 
@@ -597,7 +601,7 @@ After each agent spawn (via the Agent tool), append one JSON entry to `{artifact
 
 **Entry schema (one JSON object per line):**
 
-    {"timestamp":"<ISO8601>","skill":"execute","phase":"<id>","cycle":null,"agent_type":"<type>","model":"<model>","work_item":"<slug or null>","wall_clock_ms":<ms>,"turns_used":<N or null>,"context_files_read":["<path>",...],"input_tokens":<N or null>,"output_tokens":<N or null>,"cache_read_tokens":<N or null>,"cache_write_tokens":<N or null>,"mcp_tools_called":["<tool_name>",...]}
+    {"timestamp":"<ISO8601>","skill":"execute","phase":"<id>","cycle":null,"agent_type":"<type>","model":"<model>","work_item":"<slug or null>","wall_clock_ms":<ms>,"turns_used":<N or null>,"context_files_read":["<path>",...],"input_tokens":<N or null>,"output_tokens":<N or null>,"cache_read_tokens":<N or null>,"cache_write_tokens":<N or null>,"mcp_tools_called":["<tool_name>",...],"outcome":"<pass|fail|rework or null>","finding_count":<N or null>,"finding_severities":{"critical":<N>,"significant":<N>,"minor":<N>} or null,"first_pass_accepted":<true|false or null>,"rework_count":<N or null>}
 
 - `timestamp` — ISO 8601 when the agent was spawned.
 - `skill` — `"execute"` (constant for this skill).
@@ -613,6 +617,11 @@ After each agent spawn (via the Agent tool), append one JSON entry to `{artifact
 - `cache_read_tokens` — integer or null. Prompt caching read tokens if available. Null if not available.
 - `cache_write_tokens` — integer or null. Prompt caching write tokens if available. Null if not available.
 - `mcp_tools_called` — array of strings. Names of MCP tools called to assemble context for this agent spawn (e.g., `["ideate_get_context_package", "ideate_get_work_item_context"]`). Empty array `[]` if no MCP tools were called.
+- `outcome` — optional (null if not available). For `code-reviewer` entries: `"pass"` if the incremental review verdict is Pass with no rework, `"rework"` if the verdict is Pass after rework, `"fail"` if the verdict is Fail. For `worker` entries: `null`.
+- `finding_count` — optional (null if not available). For `code-reviewer` entries: total number of findings across all severities from the incremental review. Null for `worker` entries.
+- `finding_severities` — optional (null if not available). For `code-reviewer` entries: object with keys `critical`, `significant`, `minor` and integer values derived from the incremental review. Null for `worker` entries.
+- `first_pass_accepted` — optional (null if not available). For `code-reviewer` entries: `true` if the review passes with no rework required (Verdict: Pass and no findings were fixed before review), `false` otherwise. Null for `worker` entries.
+- `rework_count` — optional (null if not available). For `worker` entries: the number of fix-and-re-review cycles completed for this work item (0 if the first review passed without rework). Null for `code-reviewer` entries and other agents.
 
 Before each Agent tool call, record which MCP tool calls (if any) were made to assemble context for that spawn. Include the tool names in the `mcp_tools_called` array. If no MCP tools were called, use an empty array `[]`.
 
@@ -638,7 +647,7 @@ If `metrics.jsonl` could not be written, note "metrics unavailable" and omit the
 - You do not skip incremental reviews. Every completed work item gets reviewed.
 - You do not present minor review findings to the user. Fix them silently.
 - You do not interrupt the user for routine decisions. The Andon cord is for issues that guiding principles cannot resolve.
-- You do not modify steering artifacts. You have read-only access to `steering/`. You append to `journal.md` and write to `archive/incremental/`.
+- You do not modify steering artifacts. You have read-only access to `steering/`. You append to `journal.md` and write findings to `.ideate/cycles/{NNN}/findings/`.
 - You do not re-plan. If the plan has problems (cycles, missing items, contradictions), you stop and tell the user to fix the plan or run `/ideate:refine`.
 - You do not praise work. Absence of findings means the work is acceptable.
 - You do not use filler phrases, encouragement, or enthusiasm. State facts.

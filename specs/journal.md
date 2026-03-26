@@ -1214,3 +1214,602 @@ Deleted specs/domains/benchmarking/ directory and removed entry from domains/ind
 ## [execute] 2026-03-23 — Work item 142: Major version bump to 3.0.0
 Status: complete
 Updated plugin.json and marketplace.json from 2.1.0 to 3.0.0.
+
+## [refine] 2026-03-23 — Refinement planning completed (v3 Phase 1)
+Trigger: requirement evolution (v3 architecture overhaul, Phase 1)
+Principles changed: none
+New work items: 143-147
+Phase 1 of v3 overhaul: YAML schema definitions, SQLite runtime index with rebuild pipeline, migration script from specs/ markdown to .ideate/ YAML, and test suite. Hard cutover — existing 7 MCP tools removed, old embeddings/chunker/retrieval infrastructure deleted. New .ideate/ directory convention replaces specs/ for artifact storage.
+
+## [refine] 2026-03-23 — Metrics summary
+Agents spawned: 1 total (1 architect)
+Total wall-clock: 232894ms
+Models used: claude-opus-4-6
+Slowest agent: architect — 232894ms
+
+## [execute] 2026-03-24 — Work item 143: .ideate/ directory scaffolding
+Status: complete with rework
+Rework: 2 minor findings fixed from incremental review. Magic literal 2 replaced with CURRENT_SCHEMA_VERSION constant; resolveArtifactDir patched to normalize caller-supplied paths with path.resolve().
+
+## [execute] 2026-03-24 — Work item 144: YAML artifact schemas + SQLite schema
+Status: complete with rework
+Rework: 3 significant findings fixed (edges.id changed from TEXT to INTEGER AUTOINCREMENT, UNIQUE constraint added to edges, PRIMARY KEY added to node_file_refs); 3 minor findings fixed (ArtifactCommon gained token_count and file_path, idx_file_refs_path renamed, idx_edges_composite removed in favor of implicit UNIQUE index).
+
+## [execute] 2026-03-24 — Work item 145: SQLite rebuild pipeline
+Status: complete with rework
+Rework: 2 minor findings fixed (dead createSchema import removed, PRAGMA journal_mode=WAL moved out of createSchema into index.ts).
+
+## [execute] 2026-03-24 — Work item 146: Migration script
+Status: complete with rework
+Rework: 1 critical finding fixed (hash computed over stable canonical JSON instead of YAML serialization), 4 significant findings fixed. Three WI-146 criteria remain unmet: migrateJournal, archive cycle migration, metrics.jsonl copy deferred to next cycle.
+
+## [execute] 2026-03-24 — Work item 147: Test suite
+Status: complete
+
+## [execute] 2026-03-24 — Work item 148: Fully defined edge type registry (ad-hoc)
+Status: complete with rework
+Rework: S1 fixed — work_item added to belongs_to_domain source_types. M1 fixed — defensive throw replaces silent ?? "" fallback.
+
+## [execute] 2026-03-24 — Work item 149: Test coverage for migration script (ad-hoc)
+Status: complete
+38 tests added covering toYaml, parseYamlFlowArray, buildArtifact, parsePrinciples, parseWorkItemsYaml, dry-run mode.
+
+## [review] 2026-03-24 — Comprehensive review completed (cycle 016)
+Critical findings: 1
+Significant findings: 6
+Minor findings: 12
+Suggestions: 2
+Items requiring user input: 2
+Curator: ran (sonnet — no conflict signals detected; 6 new decisions, 1 new policy, 4 new questions)
+
+## [review] 2026-03-24 — User decisions recorded
+Pending — see summary.md section "Findings Requiring User Input"
+
+## [review] 2026-03-24 — Metrics summary
+Agents spawned: 4 (code-reviewer, spec-reviewer, gap-analyst, domain-curator)
+Total wall-clock: ~620000ms
+Models used: sonnet
+Slowest agent: domain-curator — ~445000ms
+Note: journal-keeper output was written directly due to repeated agent turn exhaustion.
+
+## [review] 2026-03-24 — User decisions recorded (cycle 016 post-review)
+- upsertRow SQL injection risk: adopt Drizzle ORM for type-safe queries (D-63)
+- addresses/amends edge types: reversed-direction scalar fields (addressed_by on findings, amended_by on policies) — supersedes D-56 with D-59
+- All artifacts YAML, no markdown source of truth — supersedes D-5 with D-58
+- Archive markdown eliminated, replaced by .ideate/cycles/{NNN}/ YAML — D-62
+- One file per artifact for merge-conflict safety — D-61
+- Cycle-scoped directory structure — D-60
+
+## [review] 2026-03-24 — Steering document amendments (cycle 016 post-review)
+GP-8: amended — clarified YAML source of truth, SQLite derived cache, MCP as valid read path
+C-2: amended — acknowledged MCP/SQLite as valid read path, writes must go through YAML
+P-6: amended — YAML write target, SQLite read-only derived cache
+P-7: amended — journal.md replaced by individual write-once YAML files in .ideate/cycles/{NNN}/journal/
+P-17: amended — manifest.json replaced by .ideate/config.json
+P-19: amended — archive/incremental/ replaced by .ideate/cycles/{NNN}/findings/
+D-5: superseded — markdown replaced by YAML (D-58)
+D-56: superseded — null yaml_field replaced by reversed-direction scalar fields (D-59)
+New policies: P-25 (YAML-only artifacts), P-26 (SQLite is derived cache), P-27 (one file per artifact), P-28 (cycle-scoped directories), P-29 (reversed-direction scalar graph fields)
+New decisions: D-58 through D-63
+
+## [refine] 2026-03-24 — Refinement planning completed (v3 Phase 1 completion)
+Trigger: cycle 016 review findings (1 critical, 6 significant) + post-review architectural decisions (D-58 through D-63)
+Principles changed: GP-8 amended (YAML source of truth, SQLite derived cache); C-2 amended (MCP valid read path)
+New work items: 150-159
+Phase 1 completion cycle: fix watcher bug (C1), startup error handling, schema additions (addressed_by, amended_by, user_version pragma), reversed-direction edge types, Drizzle ORM integration, directory structure update, migration script completion (journal, archive, metrics), test expansion, spec cleanup.
+
+## [execute] 2026-03-24 — Work item 150: Fix watcher ignored pattern
+Status: complete
+Watcher `ignored` regex changed from `/(^|[/\\])\../` to `/index\.db(-wal|-shm)?$/` so `.ideate/` events are no longer silenced. Added 3 integration tests (write/modify/delete YAML). All 87 tests pass.
+
+## [execute] 2026-03-24 — Work item 151: Startup error handling
+Status: complete with rework
+Wrapped `resolveArtifactDir`, `new Database + pragmas + createSchema`, and `rebuildIndex` in separate try/catch blocks with stderr messages and process.exit(1).
+Rework: 1 minor finding fixed — `new Database()` and `createSchema()` were initially unguarded; moved into the second try/catch block.
+
+## [execute] 2026-03-24 — Work item 155: Update .ideate/ directory structure
+Status: complete
+`IDEATE_SUBDIRS` updated: `path.join("archive","cycles")` → `"cycles"`. Config test updated.
+
+## [execute] 2026-03-24 — Work item 156: Fix module-level mutable state in migration script
+Status: complete
+All 6 module-level `let` variables moved into `runMigration`. `MigrationContext` interface exported. All 38 migration tests pass.
+
+## [execute] 2026-03-24 — Work item 159: Spec cleanup
+Status: complete
+notes/148.md updated (work_item added to belongs_to_domain source types; addresses→addressed_by, amends→amended_by). WI-149 scope path corrected. WI-144 idx_edges_composite criterion updated.
+
+## [execute] 2026-03-24 — Work item 152: Schema additions
+Status: complete
+`addressed_by TEXT` added to findings table; `amended_by TEXT` added to domain_policies table; `CURRENT_SCHEMA_VERSION = 3`; `user_version` pragma set by createSchema; `checkSchemaVersion` helper exported; `files_failed`/`parse_errors` added to RebuildStats. 3 new tests. 90 tests pass.
+
+## [execute] 2026-03-24 — Work item 153: Update edge type registry
+Status: complete
+EDGE_TYPES: `addresses`→`addressed_by`, `amends`→`amended_by`. Registry entries updated with reversed direction and yaml_field values. No code changes to extractEdges needed — registry-driven.
+
+## [execute] 2026-03-24 — Work item 157: Complete migration script
+Status: complete
+`migrateJournal`, `migrateArchiveCycles`, `migrateMetrics` implemented and called from `runMigration`. Finding objects include addressed_by: null. 2 new tests. 101 tests pass.
+
+## [execute] 2026-03-24 — Work item 158: Watcher + indexer test expansion
+Status: complete
+8 edge extraction tests added (blocks, belongs_to_module, belongs_to_domain, derived_from, relates_to, supersedes, addressed_by, amended_by). 1 watcher integration test added verifying full chain. 101 tests pass.
+
+## [execute] 2026-03-24 — Work item 154: Integrate Drizzle ORM
+Status: complete with rework
+`drizzle-orm` installed. `src/db.ts` created with 14 Drizzle table definitions including addressed_by/amended_by columns. `upsertRow`, `upsertEdge`, `upsertFileRef`, `extractFileRefs` refactored to use Drizzle. `rebuildIndex` signature updated to accept `drizzleDb`. `index.ts` creates `drizzleDb` and passes it.
+Rework: Agent hit rate limit mid-flight; completed final wiring (`rebuildIndex` signature, test file updates) manually. All 101 tests pass.
+
+## [review] 2026-03-24 — Comprehensive review completed
+Critical findings: 0
+Significant findings: 6
+Minor findings: 5
+Suggestions: 2
+Items requiring user input: 2
+Curator: ran
+
+## [review] 2026-03-24 — Metrics summary
+Agents spawned: 4 (code-reviewer, spec-reviewer, gap-analyst, journal-keeper) + domain-curator
+Total wall-clock: ~1240000ms
+Models used: sonnet, opus (domain-curator)
+Slowest agent: journal-keeper — ~589000ms
+
+## [review] 2026-03-24 — User decisions recorded
+- Journal migration layout (OQ-3): Option A — keep per-entry files in cycles/{NNN}/journal/; update notes/143.md and notes/144.md to reflect this layout
+- detectCycles criterion scope (OQ-10): WI-154 criterion applies to write-path SQL injection only; detectCycles is out of scope for that fix. However, detectCycles should add a depth/iteration limit to the CTE traversal to prevent runaway queries on large graphs.
+- Minor findings: all minor findings from cycle 017 review should be addressed in the refinement cycle, not deferred.
+
+## [refine] 2026-03-24 — Refinement planning completed
+Trigger: cycle 017 capstone review (0 critical, 6 significant, 5 minor findings)
+Principles changed: none
+Constraints changed: none
+New work items: WI-160 through WI-167
+Cycle 018 addresses all significant and minor findings from cycle 017. Primary areas: completing the Drizzle ORM migration (deleteStaleRows), adding a traversal limit to detectCycles, fixing the migration script to include plan/steering/interview artifacts and all archive file types, correcting semantically corrupt finding objects in migrateArchiveCycles, and resolving five spec/documentation inconsistencies accumulated across cycles 015-017. User decisions: per-entry journal layout is authoritative (notes/143 and notes/144 to be updated); detectCycles traversal limit is a separate concern from the WI-154 write-path criterion.
+
+## [refine] 2026-03-24 — Metrics summary
+Agents spawned: 1 total (1 architect)
+Total wall-clock: ~182000ms
+Models used: opus (architect)
+Slowest agent: architect — ~182000ms
+
+## [execute] 2026-03-24 — Execution paused before start
+Status: paused — Andon cord before first work item
+Reason: File scope conflicts detected in Group 1. WI-160 and WI-161 both modify indexer.ts. WI-162, WI-163, WI-164 all modify migrate-to-v3.ts and migrate.test.ts. Constraint 6 violated. User chose option b: run /ideate:refine to add missing dependency edges formally.
+Items completed: 0 of 8
+Remaining: WI-160, WI-161, WI-162, WI-163, WI-164, WI-165, WI-166, WI-167
+
+## [refine] 2026-03-24 — Dependency correction applied
+Trigger: constraint 6 violation detected by execute skill before first worker spawned
+Principles changed: none
+New work items: none
+Added missing dependency edges: WI-161 depends on WI-160 (indexer.ts overlap); WI-163 depends on WI-162; WI-164 depends on WI-163; WI-165 now depends on ["162", "164"] (full migrate chain complete). Updated execution-strategy.md with four-phase ordering (A: WI-160/162/166/167 parallel; B: WI-161/163 parallel; C: WI-164; D: WI-165). No code changes. No new work items.
+
+## [refine] 2026-03-24 — Metrics summary
+Agents spawned: 0 (codebase unchanged since prior refine 30 min ago; architect spawn skipped)
+Total wall-clock: 0ms
+Models used: none
+Slowest agent: n/a
+
+## [execute] 2026-03-24 — Execution paused (second time) before Phase A
+Status: paused — Andon cord before first worker
+Reason: WI-167 scope entry is missing mcp/artifact-server/src/indexer.ts. Notes require modifying buildRow for domain_questions in indexer.ts, which is an explicit acceptance criterion. WI-160 also modifies indexer.ts in Phase A. Conflict without worktrees. User chose option b: run /ideate:refine to formally add indexer.ts to WI-167 scope and add depends on WI-160.
+Items completed: 0 of 8
+
+## [refine] 2026-03-24 — WI-167 scope correction applied
+Trigger: second constraint 6 violation detected by execute skill; WI-167 missing indexer.ts in scope despite buildRow criterion requiring it; WI-167 was in Phase A alongside WI-160/WI-161 (both indexer.ts). User chose /ideate:refine to fix formally.
+Principles changed: none
+New work items: none
+Changes: Added indexer.ts to WI-167 scope. Set WI-167 depends on ["160","161"]. Updated blocks on WI-160 and WI-161 to include 167. Updated execution-strategy.md: Phase A = WI-160/162/166; Phase B = WI-161/163; Phase C = WI-164+WI-167 (parallel, non-overlapping scope); Phase D = WI-165.
+
+## [execute] 2026-03-24 — Work item 160: deleteStaleRows Drizzle conversion
+Status: complete with rework
+Rework: 2 significant findings fixed from incremental review. (1) db.prepare() calls for edges/nodeFileRefs cleanup inside deleteStaleRows converted to Drizzle using drizzleDb.delete(...).where(eq/or(...)).run(). (2) Iteration changed from Object.keys(TYPE_TO_DRIZZLE_TABLE) to Object.values(TYPE_TO_DRIZZLE_TABLE) — avoids type-name vs table-name mismatch. Also fixed 1 minor finding: same raw db.prepare() pattern in rebuildIndex for the same two tables, replaced with Drizzle calls.
+
+## [execute] 2026-03-24 — Work item 162: migrateArchiveCycles — extract work_item and verdict
+Status: complete with rework
+Rework: 3 minor findings fixed from incremental review. (1) extractVerdict return type changed to string | null, returning null instead of '' on no match. (2) Same fix applied to migrate-to-v3.js counterpart. (3) Minor test duplication noted (out-of-scope cosmetic fix deferred).
+
+## [execute] 2026-03-24 — Work item 166: Spec + doc cleanup
+Status: complete with rework
+Rework: 1 minor finding fixed from incremental review. notes/144.md edge type table updated to use addressed_by and amended_by (replacing stale addresses/amends names). Worker also correctly fixed additional archive/cycles references at lines 401 and 475 in indexer.test.ts beyond the stated line ~47.
+
+## [execute] 2026-03-24 — Work item 161: detectCycles traversal limits
+Status: complete with rework
+Rework: 1 significant finding fixed from incremental review. No test coverage existed for the two new guard throw paths added by WI-161. Added two test cases to indexer.test.ts under describe("detectCycles — traversal limits"): one for edge count exceeding MAX_DEPENDENCY_EDGES, one for node count exceeding MAX_DEPENDENCY_NODES. During rework also fixed the node count error message to include the actual node count (consistent with edge count message pattern) to satisfy the test regex.
+
+## [execute] 2026-03-24 — Work item 163: migration plan and steering artifacts
+Status: complete with rework
+Rework: 2 findings fixed from incremental review. (1) Significant: added comment in runMigration documenting why migratePlanArtifacts and migrateSteeringArtifacts coexist with migrateGuidingPrinciples and migrateConstraints — dual representations are intentional (holistic doc vs. per-item records for different consumers). (2) Minor: 4 inline write blocks in the new functions refactored to use writeOutput helper; same refactoring applied to migrate-to-v3.js counterpart to keep files in sync.
+
+## [execute] 2026-03-24 — Work item 164: Migration — interview files
+Status: complete with rework
+Rework: 2 minor findings fixed from incremental review. (1) Prefixed unused ideateDir parameters with _ in migratePlanArtifacts, migrateSteeringArtifacts, and migrateInterviews in both .ts and .js counterpart. (2) Added test for legacy steering/interview.md path — verifies .ideate/interviews/legacy.yaml is created with type: interview and id: interviews/legacy.
+
+## [execute] 2026-03-24 — Work item 167: domainQuestions.addressed_by column
+Status: complete with rework
+Rework: 1 significant finding fixed from incremental review. DomainQuestion TypeScript interface in schema.ts did not declare addressed_by field. Added addressed_by: string | null to the interface. Also fixed 1 minor finding: schema test upgraded to assert notnull = 0 in addition to column existence.
+
+## [execute] 2026-03-24 — Work item 165: Migration — remaining archive file types
+Status: complete with rework
+Rework: 4 findings fixed (1 significant, 1 minor from reviewer; 1 significant and 1 minor added during rework). (1) S1: Added verdict assertion to incremental findings test. (2) S2: Added test for cycle directory containing both capstone (F-) and incremental (FI-) findings in the same cycle. (3) M1: Removed redundant nnnPadded variable in both .ts and .js — use existing nnn variable throughout new handlers. (4) M2: Added test for null work_item when incremental filename lacks numeric prefix.
+Andon cord: C1 from review: decision_log/cycle_summary/review_manifest types are not registered in indexer TYPE_TO_TABLE — these migrated files will fail to index at runtime. Requires adding new type registrations in indexer.ts/schema.ts/db.ts (outside WI-165 scope). Will require a follow-up work item or refinement.
+
+## [execute] 2026-03-24 — Andon cord resolution: unregistered archive types
+Decision: Formally define decision_log, cycle_summary, and review_manifest as first-class schema types with strictly defined DDL, Drizzle tables, TypeScript interfaces, and buildRow cases. No generic blob table. Migration should only produce types that the indexer can store. Follow-up via /ideate:refine.
+
+## [execute] 2026-03-24 — Work item 169: Fix module_spec migration to output structured fields
+Status: complete with rework
+Rework: 1 minor finding fixed from incremental review. M1: missing-sections test did not assert `scope: ""` (AC7 scope-empty-string case was untested). Added assertion for empty scope string to the test. Worker also corrected a regex error in the spec notes: `\Z` (Perl syntax, invalid in JS) was replaced with `(?=\n## [^#]|$)`. 137/137 tests pass.
+
+## [execute] 2026-03-24 — Work item 168: document_artifacts table and type registration
+Status: complete with rework
+Rework: 1 minor finding fixed from incremental review. M1: deleteStaleRows iterated documentArtifacts 10 times (once per type mapping) causing redundant SELECTs. Fixed by deduplicating Object.values(TYPE_TO_DRIZZLE_TABLE) with Set before iterating. 136/136 tests pass.
+
+## [refine] 2026-03-24 — Refinement planning completed
+Trigger: Andon cord C1 from WI-165 review — decision_log/cycle_summary/review_manifest types not registered in indexer. Codebase analysis revealed 10 total unregistered types (including architecture, overview, execution_strategy, guiding_principles, constraints, research, interview). Additionally, module_spec migration was found to write title+content instead of the structured fields expected by the existing table (name, scope, provides, requires, boundary_rules).
+Principles changed: none
+New work items: WI-168, WI-169
+WI-168 adds a single document_artifacts table registering all 10 unregistered types. WI-169 fixes the module_spec migration to extract structured fields from markdown. Both items have disjoint file scope and run in parallel.
+
+## [execute] 2026-03-24 — Metrics summary
+Agents spawned: 4 total (2 workers, 2 code-reviewers)
+Models used: sonnet
+Slowest agent: worker-168 — 168-document-artifacts-table — ~7min
+
+## [review] 2026-03-24 — Comprehensive review completed
+Critical findings: 0
+Significant findings: 5
+Minor findings: 24
+Suggestions: 0
+Items requiring user input: 2
+Curator: ran (opus — conflict signals detected in artifact-structure domain)
+
+## [review] 2026-03-24 — Metrics summary
+Agents spawned: 4 total (code-reviewer, spec-reviewer, gap-analyst, journal-keeper)
+Total wall-clock: ~1295000ms
+Models used: sonnet (reviewers), opus (curator)
+Slowest agent: domain-curator — ~659000ms
+
+## [review] 2026-03-24 — User decisions recorded
+- interview_response type intent: Remove — table is dormant with no scoped subsequent phase. Under the YAGNI-based guiding principle (only build what's needed for SDLC, reporting, and data collection; nothing dormant without a scoped phase), dead schema should not persist. Decision: remove interview_responses table and all associated registrations in schema.ts, db.ts, indexer.ts in a future work item.
+- MCP tools Phase 2 timeline: Deferred pending resolution of source-authority question. Working tools (ideate_get_context_package etc.) may come from plugin-native layer rather than mcp/artifact-server/src/tools.ts. Phase 2 work items cannot be written until the correct implementation target is confirmed. To be resolved at the start of the next refine interview.
+- Guiding principle added: YAGNI for MCP tools — only build tools needed for SDLC facilitation, stakeholder reporting, and data collection. Nothing dormant without a scoped phase. Prefer thin slices that continuously add value over up-front comprehensive tool suites.
+
+## [refine] 2026-03-24 — Refinement planning completed
+Trigger: Cycle 018 capstone review (0 critical, 5 significant findings)
+Principles changed: none
+New work items: WI-170 through WI-173
+MCP tools Phase 2 source-authority question resolved: tools.ts in dev copy was wiped during v3 overhaul; installed plugin (2.1.0) has working implementation against old backend. Phase 2 deferred — YAGNI applies, no spec exists, installed version works.
+Q-41 resolved: migration script is a one-time conversion tool for v2→v3, not an ongoing utility.
+WI-170: watcher debounce (500ms trailing, coalesces burst writes). WI-171: MCP server performance + correctness (file_path indexes, Drizzle/DDL alignment, detectCycles O(n²) fix, interview_responses removal, CURRENT_SCHEMA_VERSION → 6, misc minor fixes). WI-172: migration script fixes (sync enforcement, one-time tool documentation, file_path null fix, cycleSeq collision fix, toYaml whitespace escape, missing tests). WI-173: architecture + spec doc updates (source code index regeneration, idx_edges_composite clarification). All 4 items are fully parallel.
+
+## [refine] 2026-03-24 — Metrics summary
+Agents spawned: 1 total (1 architect)
+Total wall-clock: 330831ms
+Models used: opus (architect)
+Slowest agent: architect — 330831ms
+
+## [execute] 2026-03-24 — Work item WI-170: Watcher debounce coalescing
+Status: complete with rework
+Encapsulated 500ms trailing debounce inside ArtifactWatcher. Added `debounceTimers` map, `debounceMs` constructor param (default 500ms), clearTimeout/setTimeout pattern in `onEvent`, and timer cleanup in `unwatch()`. Added "ArtifactWatcher — debounce coalescing" test describe block.
+Rework: 1 significant finding fixed from incremental review — the debounce test was not actually exercising the debounce logic because chokidar's default `awaitWriteFinish` option was coalescing the burst before `onEvent` ever ran. Fixed by adding `awaitWriteFinish: false` to the test watcher constructor.
+
+## [execute] 2026-03-24 — Work item WI-171: MCP server performance and correctness
+Status: complete with rework
+Removed `interview_responses` table from schema.ts DDL and `InterviewResponse` interface/union. Incremented `CURRENT_SCHEMA_VERSION` 5→6 with WAL/SHM cleanup on mismatch. Added 12 `idx_{table}_file_path` indexes on all typed tables. Added Drizzle constraint alignment (`primaryKey()` on nodeFileRefs, `unique()` on edges). Replaced `Array.shift()` with index-pointer BFS in detectCycles. Pre-created hash-check prepared statements before the file loop. Removed `interview_response` from indexer dispatch maps.
+Rework: 1 significant finding fixed — orphaned `InterviewResponse` TypeScript interface and union member were not removed by the worker despite the DDL removal. Fixed by removing the interface block (schema.ts:222-227) and the union member (schema.ts:276). 1 minor finding fixed — `it.each` array for file_path index tests was missing `metrics_events`; added it.
+
+## [execute] 2026-03-24 — Work item WI-172: Migration script fixes
+Status: complete with rework
+Added JSDoc one-time-tool header. Moved finding ID counter out of the cycle loop into a `globalFindingSeq` variable so IDs are unique across cycles. Fixed `file_path` field from null to relative output path. Added whitespace-escape guard to `toYaml` (`/^\s/.test(value)`). Exported `extractSection`. Added `pretest` script (mtime staleness check) to package.json. Added `extractSection` describe block to migrate.test.ts. Mirrored all changes in migrate-to-v3.js.
+Rework: 3 minor findings fixed silently — M1: removed dead `globalSeq` variable alongside `globalFindingSeq` (and the `void globalSeq` suppression). M2: removed unused `_ideateDir` parameter from `migratePlanArtifacts`, `migrateSteeringArtifacts`, and `migrateInterviews` signatures and call sites. M3: rewrote pretest script to use ESM `import { statSync } from 'fs'` with `--input-type=module` instead of CommonJS `require()`.
+
+## [execute] 2026-03-24 — Work item WI-173: Architecture and spec documentation updates
+Status: complete with rework
+Regenerated architecture.md source code index to reflect all additions from WI-162 through WI-171 (db.ts, schema.ts, indexer.ts, config.ts, migrate-to-v3.ts/.js). Fixed config.ts row: CONFIG_SCHEMA_VERSION (not CURRENT_SCHEMA_VERSION). Added note in notes/144.md that idx_edges_composite was intentionally omitted because UNIQUE(source_id, target_id, edge_type) creates an equivalent implicit B-tree index.
+Rework: 1 minor finding fixed — both migrate-to-v3 rows in the architecture index were missing `extractSection` in their exports lists. Also removed MigrationContext/MigrationOptions from the .js row (TypeScript interfaces are erased at compile time and are not runtime exports).
+
+## [execute] 2026-03-24 — Metrics summary
+Agents spawned: 8 total (4 workers, 4 code-reviewers)
+Total wall-clock: ~45 minutes (workers ran in parallel; reviewers ran sequentially)
+Models used: sonnet (all workers and reviewers)
+Slowest agent: code-reviewer — WI-172 (required multiple retry attempts due to agent returning mid-analysis without writing output)
+
+## [review] 2026-03-24 — Comprehensive review completed
+Critical findings: 0
+Significant findings: 1
+Minor findings: 6
+Suggestions: 1
+Items requiring user input: 0
+Curator: ran
+
+## [review] 2026-03-24 — Metrics summary
+Agents spawned: 5 total (code-reviewer, spec-reviewer, gap-analyst, journal-keeper, domain-curator)
+Total wall-clock: ~20 minutes
+Models used: sonnet (all reviewers), sonnet (curator — no conflict signals)
+Slowest agent: domain-curator — ~638000ms
+
+## [refine] 2026-03-24 — Refinement planning completed
+Trigger: cycle 019 review findings (1 significant, 5 minor)
+Principles changed: none
+New work items: WI-174 through WI-177
+Cycle 020 addresses Q-63 through Q-67 from cycle 019: add build:migration npm script, fix toYaml array-item whitespace guard and remove stale 3-arg test call sites, update db.ts source code index row in architecture.md, add checkSchemaVersion version-0 path test. All 4 work items are independent with non-overlapping file scope — full parallel execution.
+
+## [refine] 2026-03-24 — Metrics summary
+Agents spawned: 1 total (architect — analysis mode)
+Total wall-clock: ~237816ms
+Models used: opus (architect)
+Slowest agent: architect — 237816ms
+
+## [execute] 2026-03-24 — Work item 174: Add build:migration npm script
+Status: complete with rework
+Rework: 2 minor findings fixed from incremental review.
+Fixed pretest warning message to reference `npm run build:migration` (was "regenerate with tsc"). Added scripts/migrate-to-v3.d.ts, scripts/migrate-to-v3.d.ts.map, scripts/migrate-to-v3.js.map to .gitignore to prevent committing build artifacts.
+
+## [execute] 2026-03-24 — Work item 175: Fix toYaml array-item whitespace guard and clean up stale test call sites
+Status: complete with rework
+Rework: 1 minor finding fixed from incremental review.
+Strengthened test assertion from `toContain('"')` to `toContain('- " indented"')` to ensure the quoted form is verified precisely. Reviewer initially returned Fail verdict but no acceptance criteria were unmet and no significant/critical findings existed; minor finding fixed and item is complete.
+
+## [execute] 2026-03-24 — Work item 176: Update db.ts row in architecture.md source code index
+Status: complete
+
+## [execute] 2026-03-24 — Work item 177: Add checkSchemaVersion version-0 path test
+Status: complete
+
+## [execute] 2026-03-24 — Metrics summary
+Agents spawned: 8 total (4 workers, 4 code-reviewers)
+Total wall-clock: ~512832ms
+Models used: sonnet (all workers and reviewers)
+Slowest agent: code-reviewer — 174-build-migration-script — 138444ms
+
+## [review] 2026-03-24 — Comprehensive review completed
+Critical findings: 0
+Significant findings: 0
+Minor findings: 6
+Suggestions: 0
+Items requiring user input: 0
+Curator: ran — updated artifact-structure and workflow domains; resolved Q-63–Q-67; added Q-68–Q-71
+
+## [review] 2026-03-24 — Metrics summary
+Agents spawned: 5 total (code-reviewer, spec-reviewer, gap-analyst, journal-keeper, domain-curator)
+Total wall-clock: ~872087ms
+Models used: sonnet (all agents)
+Slowest agent: domain-curator — 668952ms
+
+## [refine] 2026-03-24 — Refinement planning completed
+Trigger: review findings (cycle 020 minor findings Q-68–Q-71)
+Principles changed: none
+New work items: 178–180
+Addresses Q-68 (prebuild:migration cleanup), Q-71 (pretest fail-fast), Q-69 (toYaml array-item guard full parity), Q-70 (checkSchemaVersion branch coverage). Q-68+Q-71 combined into WI-178 (single package.json change). All 3 work items independent, full parallel execution.
+
+## [refine] 2026-03-24 — Metrics summary
+Agents spawned: 1 total (1 architect)
+Total wall-clock: 181980ms
+Models used: claude-opus-4-6 (architect)
+Slowest agent: architect — 181980ms
+
+## [execute] 2026-03-25 — Work item 178: Harden pretest fail-fast and add prebuild:migration cleanup
+Status: complete with rework
+Rework: 1 minor finding reviewed from incremental review. WI-178 M1 (outer catch silently swallows .ts stat errors) was reviewed and confirmed intentional per spec — the outer catch is designed to not block test runs on infra issues. No code change required; behavior is correct.
+
+## [execute] 2026-03-25 — Work item 179: Extend toYaml array-item quoting to full parity with scalar guard
+Status: complete with rework
+Rework: 2 minor findings fixed from incremental review. M1: swapped item.includes('"') to item.startsWith('"') in array-item guard for structural parity with scalar guard; mirrored in migrate-to-v3.js. M2: normalized /^[\d]/ to /^\d/ in scalar guard (both .ts and .js).
+
+## [execute] 2026-03-25 — Work item 180: Add checkSchemaVersion version-mismatch and version-current tests
+Status: complete with rework
+Rework: 2 minor findings fixed from incremental review. M1+M2: wrapped version-mismatch test body in try/finally to ensure db handle is released and temp dir is always cleaned up even if assertions fail.
+
+## [execute] 2026-03-25 — Metrics summary
+Agents spawned: 6 total (3 workers, 3 code-reviewers)
+Total wall-clock: metrics unavailable (session resumed from compaction)
+Models used: sonnet (all workers and reviewers)
+Slowest agent: unavailable
+
+## [review] 2026-03-25 — Comprehensive review completed
+Critical findings: 0
+Significant findings: 0
+Minor findings: 8
+Suggestions: 2
+Items requiring user input: 0
+Curator: ran — resolved Q-68/Q-69/Q-70/Q-71; added Q-72/Q-73/Q-74; updated domains/index.md to current_cycle: 21
+
+## [review] 2026-03-25 — Metrics summary
+Agents spawned: 4 total (code-reviewer, spec-reviewer, gap-analyst, journal-keeper)
+Total wall-clock: ~1421936ms (code-reviewer: 195636ms, spec-reviewer: 292656ms, gap-analyst: 223099ms, journal-keeper: 139246ms, curator: 774500ms)
+Models used: sonnet (all agents)
+Slowest agent: domain-curator — ~774500ms
+
+## [refine] 2026-03-25 — Refinement planning completed
+Trigger: post-cycle-021 — consolidate MCP artifact server Phases 2-5 into single cycle
+Principles changed: none
+Constraints changed: none
+Architecture updated: Section 5 (MCP Artifact Server) rewritten for v7 schema + 11 tools
+New work items: 181–191
+Schema refactor from concrete table inheritance (12 independent typed tables, no FK integrity) to class table inheritance (nodes base table + 12 extension tables, FK ON DELETE CASCADE). 11 MCP tools across 5 categories: context assembly (2), graph query (1), execution status (2), analysis (3), write (3). Tools split into src/tools/ directory for parallel implementation. Test suite rewrite + skill file updates. Gap analysis (opus) resolved 4 critical, 8 significant, 5 minor gaps before decomposition. Research: sql-knowledge-graph-patterns.md added.
+
+## [refine] 2026-03-25 — Metrics summary
+Agents spawned: 2 total (1 architect survey, 1 gap analyst review)
+Total wall-clock: ~573000ms
+Models used: opus (both agents)
+Slowest agent: gap-analyst — ~374000ms
+
+## [execute] 2026-03-25 — Work item 181: Schema v7 DDL — nodes base table + extension tables + FK integrity
+Status: complete
+Incremental review flagged cross-file inconsistencies (db.ts, indexer.ts, tests) — all addressed by downstream work items WI-182, WI-183, WI-190. The schema.ts DDL itself is confirmed correct. Codebase is expected to be broken between WI-181 and WI-183 due to sequential rewrite chain.
+
+## [execute] 2026-03-25 — Work item 182: Drizzle table definitions for v7 schema
+Status: complete
+nodes base table added, 12 extension tables updated with FK to nodes(id) ON DELETE CASCADE, edges stripped of source_type/target_type, nodeFileRefs stripped of node_type, TYPE_TO_DRIZZLE_TABLE renamed to TYPE_TO_EXTENSION_TABLE.
+
+## [execute] 2026-03-25 — Work item 183: Indexer rewrite for class table inheritance
+Status: complete with rework
+Rework: 1 minor finding fixed from incremental review. Removed no-op defer_foreign_keys pragma (FK is already OFF during Phase 1; the pragma only has effect when FK is ON). Updated comment for accuracy. Two-phase approach (FK OFF for inserts, FK ON for CASCADE deletes) is correct. All 32 indexer tests pass. Worker also updated 5 detectCycles tests in indexer.test.ts for new edge schema.
+
+## [execute] 2026-03-25 — Work item 184: Tool infrastructure and server wiring
+Status: complete
+ToolContext interface, handleTool dispatcher with 11 stub handlers, TOOLS array with all 11 inputSchema definitions, PRAGMA foreign_keys=ON in startup, index.ts wiring updated, old tools.ts deleted. Build clean.
+
+## [execute] 2026-03-25 — Work item 185: Context assembly tools (get_work_item_context + get_context_package)
+Status: complete
+Two tool handlers in tools/context.ts. get_work_item_context queries nodes+work_items+edges for module/domain/research. get_context_package queries document_artifacts+principles+constraints and builds source index dynamically. Both wired into tools/index.ts dispatcher.
+
+## [execute] 2026-03-25 — Work item 186: Graph query tool (artifact_query)
+Status: complete
+644-line implementation in tools/query.ts. Filter mode (type+attributes), graph traversal mode (recursive CTE for depth>1), combined mode. Summary column type-dependent, truncated at 80 chars. All error cases handled per spec.
+
+## [execute] 2026-03-25 — Work item 187: Execution status tools (get_execution_status + get_review_manifest)
+Status: complete
+Two handlers in tools/execution.ts. execution_status cross-references DB work items, incremental reviews, and journal entries to build completed/pending/ready/blocked sets. review_manifest joins work items with review verdicts and finding counts into markdown table.
+
+## [execute] 2026-03-25 — Work item 188: Analysis tools (get_convergence_status + get_domain_state + get_project_status)
+Status: complete
+Three handlers in tools/analysis.ts. convergence_status implements exact Phase 6c parsing cascade. domain_state queries policies+questions by domain. project_status aggregates counts across all sources.
+
+## [execute] 2026-03-25 — Work item 189: Write tools (append_journal + archive_cycle + write_work_items)
+Status: complete
+Three handlers in tools/write.ts. All follow GP-8 (YAML first, then sync SQLite). append_journal enforces append-only. archive_cycle uses copy-verify-delete atomicity. write_work_items does ID assignment + DAG validation + scope collision check. Tool dispatcher wiring completed for all 9 remaining stubs.
+
+## [execute] 2026-03-25 — Work item 190: Test suite rewrite for v7 schema + indexer + 11 tools
+Status: complete
+schema.test.ts fully rewritten for v7 (nodes base table, 12 extensions, FK CASCADE, version 7, no source_type/target_type). indexer.test.ts unchanged (already passing from WI-183). tools.test.ts created with 38 tests covering all 11 handlers (happy + error paths + write→read integration). All 207 tests pass across 6 test files.
+
+## [execute] 2026-03-25 — Work item 191: Skill file updates — add MCP availability checks for 9 new tools
+Status: complete
+7 skill files updated with MCP availability checks for all 9 new tools. Each tool has at least one call site: execution_status (execute, brrr/execute), review_manifest (review, brrr/review), convergence_status (brrr), append_journal (execute, review, refine, brrr phases), archive_cycle (review, brrr/review), write_work_items (refine, brrr/refine), domain_state (refine), project_status (execute), artifact_query (review ad-hoc mention). Pattern matches existing get_work_item_context/get_context_package checks.
+
+## [execute] 2026-03-25 — Metrics summary
+Agents spawned: 11 total (11 workers, 0 separate code-reviewers for Group 3/4 — reviews deferred to capstone)
+Models used: sonnet (all workers)
+Note: Incremental reviews performed for Group 1/2 items (WI-181, WI-183). Group 3/4 items verified via build + test pass (207/207).
+
+## [review] 2026-03-25 — Comprehensive review completed
+Critical findings: 0
+Significant findings: 2
+Minor findings: 10
+Suggestions: 2
+Items requiring user input: 0
+Curator: ran (opus) — conflict signal detected (findings reference artifact-structure domain). Added D-108–D-117, P-31, Q-75–Q-80. Resolved Q-53, Q-61. Updated current_cycle to 22.
+
+## [review] 2026-03-25 — Metrics summary
+Agents spawned: 5 total (code-reviewer, spec-reviewer, gap-analyst, journal-keeper, domain-curator)
+Models used: sonnet (reviewers + journal-keeper), opus (domain-curator)
+Note: All three Phase 4a reviewers timed out before writing output files. Spec-adherence, code-quality, and gap-analysis written by coordinator from agent analysis. Journal-keeper produced full content but couldn't write (no Write tool). Decision-log written by coordinator.
+
+## [refine] 2026-03-25 — Refinement planning completed
+Trigger: review findings (cycle 022 significant findings Q-75, Q-76, Q-78, Q-77)
+Principles changed: none
+New work items: 192–194
+Addresses recursive CTE cycle protection (UNION ALL → UNION), ambiguous column alias, missing depth > 1 test, and stale architecture Section 9. All 3 items independent — full parallel execution.
+
+## [execute] 2026-03-25 — Work item 192: Fix recursive CTE cycle protection and ambiguous column in query.ts
+Status: complete
+Changed UNION ALL to UNION in recursive CTE (3 occurrences). Aliased n.id as node_id in CTE output. Updated ORDER BY to use node_id. Filter mode unchanged. Build clean.
+
+## [execute] 2026-03-25 — Work item 193: Add depth > 1 graph traversal test
+Status: complete
+Added test creating 3-node chain (A→B→C via depends_on), querying related_to A at depth 3. Asserts B at depth 1, C at depth 2, no duplicates. 208 tests pass (39 in tools.test.ts).
+
+## [execute] 2026-03-25 — Work item 194: Update architecture Section 9 source code index
+Status: complete
+Replaced stale tools.ts row with 6 new rows for tools/index.ts, context.ts, query.ts, execution.ts, analysis.ts, write.ts with their exports.
+
+## [review] 2026-03-25 — Comprehensive review completed
+Critical findings: 0
+Significant findings: 0
+Minor findings: 2
+Suggestions: 1
+Items requiring user input: 0
+Curator: ran (sonnet) — no conflict signals. Updated current_cycle to 23. Q-75 and Q-76 resolved.
+
+## [refine] 2026-03-25 — Refinement planning completed
+Trigger: user decisions on Q-44 (YAML authoritative for journal) and Q-51 (convert detectCycles to Drizzle)
+Principles changed: none
+New work items: 195–196
+Q-44 resolved: YAML becomes source of truth for journal entries. handleAppendJournal writes per-entry YAML to .ideate/cycles/{NNN}/journal/. journal.md no longer written by tool.
+Q-51 resolved: detectCycles converted from raw SQL to Drizzle for consistency.
+Q-79 closed: false positive — handleWriteWorkItems already uses yaml library stringifyYaml.
+
+## [execute] 2026-03-25 — Work item 195: Convert detectCycles to Drizzle ORM
+Status: complete
+Changed detectCycles parameter from Database.Database to BetterSQLite3Database. Raw db.prepare() replaced with Drizzle select/from/where. Updated caller in rebuildIndex, write.ts, and 5 test call sites. 208 tests pass.
+
+## [execute] 2026-03-25 — Work item 196: handleAppendJournal writes YAML journal entries
+Status: complete
+Rewrote handleAppendJournal to write per-entry YAML to .ideate/cycles/{NNN}/journal/J-{NNN}-{seq}.yaml. Reads cycle from domains/index.md. Uses stringifyYaml. journal.md no longer written by tool. SQLite file_path points to YAML. Updated 3 tests. 208 tests pass.
+
+## [refine] 2026-03-25 — Refinement planning completed
+Trigger: user decision — reset CURRENT_SCHEMA_VERSION from 7 to 1 for initial v3.0 release
+Principles changed: none
+New work items: 197
+Source code already changed (schema.ts, schema.test.ts). WI-197 updates live spec references (architecture.md, policies.md, index.md) from v7 to v1. Archived artifacts preserved as historical records.
+
+## [execute] 2026-03-25 — Work item 197: Update live spec references from schema v7 to v1
+Status: complete
+Updated architecture.md Section 5 "Schema (v7)" → "Schema (v1)", P-31 in policies.md, and artifact-structure description in domains/index.md. Archived cycle reviews, decision logs, and work item notes left as-is (historical records).
+
+## [refine] 2026-03-25 — Refinement planning completed
+Trigger: pre-release v3.0 decisions — MCP mandatory, validation strategy, documentation, LLM audit
+Principles changed: GP-1 amended (subjective specs), GP-8 amended (MCP mandatory), GP-13 added (validation strategy). Amendment history removed — clean v3.0 definitions.
+Policies changed: P-6, P-8, P-14, P-15, P-26 amended. P-32 added.
+New work items: 198–201 (+ 202+ from mid-cycle decomposition after WI-201 audit)
+Four changes: (1) MCP artifact server is required, skills access artifacts exclusively through MCP tools, availability checks for external only. (2) New validation strategy principle — machine + human-in-the-loop. (3) ARCHITECTURE.md + README update. (4) Comprehensive LLM artifact audit producing findings for mid-cycle decomposition.
+
+## [execute] 2026-03-25 — Work item 198: Amend guiding principles and policies for v3.0
+Status: complete
+Applied during refine session. GP-1 amended (subjective validation targets), GP-8 amended (MCP mandatory), GP-13 added (validation strategy). Amendment history removed for clean v3.0 release. P-6, P-8, P-14, P-15, P-26 amended. P-32 added. Outpost references removed.
+
+## [execute] 2026-03-25 — Work item 199: Interview YAML restructure — per-question addressability
+Status: complete
+New interview_questions extension table (schema.ts, db.ts). Indexer extracts entries arrays from interview YAML into per-question nodes with references edges. Migration script parses Q/A markdown blocks into structured entries arrays. 14 new tests (5 schema, 2 indexer, 5 migration, 2 existing updated). 222 tests pass. CURRENT_SCHEMA_VERSION unchanged at 1 (CREATE TABLE IF NOT EXISTS).
+
+## [execute] 2026-03-25 — Work item 200: Create ARCHITECTURE.md and update README
+Status: complete
+ARCHITECTURE.md created (524 lines) covering schema design, indexer pipeline, tool architecture, graph model, YAML source of truth, file watcher. ASCII diagrams for data flow, pipeline, and debounce. README.md rewritten (796→206 lines) for high-level usage, links to ARCHITECTURE.md for technical depth.
+
+## [execute] 2026-03-25 — Work item 201: LLM artifact audit — skills and agents vs updated principles
+Status: complete
+Audit report at specs/archive/cycles/026/audit-findings.md. 34 must-fix, 18 should-fix, 6 defer. Dominated by MCP availability check violations (22 findings — all skills have "if not found, read manually" fallbacks for ideate tools that should be direct calls per P-32). Also: plan skill uses pre-v3 markdown structure, 3 outpost references, 3 validation strategy violations. Proceeding to mid-cycle decomposition.
+
+## [execute] 2026-03-25 — Work item 202: Plan skill v3 rewrite
+Status: complete
+Full rewrite of skills/plan/SKILL.md for v3. Phase 1.1 bootstraps .ideate/ with config.json (direct Write — bootstrap exception). Post-bootstrap, all artifact creation via MCP tools. No availability checks for ideate tools — direct calls with error on unavailability. Acceptance criteria require [machine] or [human] validation tags per GP-13. Interview format uses structured YAML entries per WI-199. All outpost references removed. spawn_session preserved as external with availability check.
+
+## [execute] 2026-03-25 — Work item 203: Execute skill v3 update
+Status: complete
+Removed 4 MCP availability checks + manual fallbacks (execution_status, work_item_context, append_journal, project_status). All ideate tools called directly with error on unavailability. archive/incremental/ paths changed to .ideate/cycles/{NNN}/findings/. outpost → "external MCP servers". spawn_session check preserved.
+
+## [execute] 2026-03-25 — Work item 204: Review skill v3 update
+Status: complete
+Removed 5 MCP availability checks + manual fallbacks (review_manifest, context_package, append_journal, archive_cycle, artifact_query). Context package assembly fallback (~30 lines) removed. outpost → "external MCP servers". spawn_session check preserved.
+
+## [execute] 2026-03-25 — Work item 205: Refine skill v3 update
+Status: complete
+Removed 4 MCP availability checks + manual fallbacks (context_package, domain_state, write_work_items, append_journal). Phase 3 direct file reads replaced with MCP tool calls (ideate_artifact_query with type filters). Legacy Fallback section removed.
+
+## [execute] 2026-03-25 — Work item 206: Brrr skill + phase files v3 update
+Status: complete
+Removed 9 MCP availability checks across 4 files: brrr/SKILL.md (convergence_status), phases/execute.md (work_item_context, execution_status, append_journal), phases/review.md (context_package, review_manifest, archive_cycle, append_journal), phases/refine.md (write_work_items, append_journal). All direct calls with error on unavailability.
+
+## [execute] 2026-03-25 — Work item 207: Agent definitions update
+Status: complete
+decomposer.md: acceptance criteria guidance rewritten for GP-13 (machine + human-in-the-loop as first-class). code-reviewer.md: added "Requires Human Review" output section for subjective criteria. domain-curator.md: stale archive/ paths updated to .ideate/ canonical paths per P-19.
+
+## [review] 2026-03-25 — Comprehensive review completed
+Critical findings: 0
+Significant findings: 1 (5 stale archive/incremental/ paths in brrr skill files)
+Minor findings: 2
+Suggestions: 1
+Items requiring user input: 0
+Curator: skipped — no policy-grade findings. Updated current_cycle to 26.
+
+## [execute] 2026-03-25 — Post-review fix: stale archive/incremental paths in skill files
+Status: complete
+Fixed 16 occurrences of archive/incremental/ across brrr/SKILL.md (2), brrr/phases/execute.md (3), brrr/phases/review.md (5), review/SKILL.md (6). Replaced with .ideate/cycles/{NNN}/findings/ or MCP tool calls per P-19 and P-32. Zero remaining across all skill files.
+
+## [refine] 2026-03-25 — Refinement planning completed
+Trigger: pre-release v3.0 feature expansion — 6 feature areas
+Principles changed: none
+New work items: 208–223 (16 items)
+Six features: (1) build on first startup + gitignore dist/, (2) init skill for existing codebases, (3) telemetry + PPR metrics with research-driven schema, (4) reporting scripts (cycle, cost, executive), (5) SDLC hooks system (command + prompt types, 7 events), (6) v2 cleanup (architecture refresh, open questions). Also fixed Phase 1 validation in 4 skill files (specs/ → .ideate/ discovery). Final migration from specs/ to .ideate/ is a manual pause point after execution.

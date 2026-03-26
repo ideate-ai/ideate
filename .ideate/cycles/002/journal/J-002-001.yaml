@@ -1,0 +1,15 @@
+id: J-002-001
+type: journal_entry
+phase: refine
+date: "2026-03-09"
+cycle_created: 2
+title: Refinement planning completed
+content: |
+  Trigger: user request to add observability and execution control to session spawner.
+  Principles changed: none.
+  New work items: 022-025.
+  Addresses: JSONL logging of spawn calls (configurable IDEATE_LOG_FILE), in-memory session registry, team_name parameter with IDEATE_TEAM_NAME propagation, terminal status table printed to stderr after each spawn, execution instructions injection via exec_instructions parameter and IDEATE_EXEC_INSTRUCTIONS env var with recursive propagation.
+  Scope: mcp/session-spawner/server.py and test_server.py only.
+  Deferred: researcher findings on claude CLI flags (background agent running; may influence instruction injection mechanism if CLI flags exist).
+content_hash: e33dee6856fdfbfa54bb7c1e60d33e4e80c49bac71c164b1f2c36bb7aeac7130
+token_count: 209

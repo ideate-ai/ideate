@@ -1,0 +1,29 @@
+id: WI-223
+type: work_item
+title: README documentation for new report scripts
+status: pending
+complexity: small
+scope:
+  - {path: README.md, op: modify}
+depends: []
+blocks: []
+criteria:
+  - "README.md contains a section documenting all report scripts: report.sh, report-cycle.sh, report-cost.sh, report-executive.sh"
+  - "Each script entry includes: purpose (one line), usage syntax, Python 3 requirement note"
+  - The section is co-located with existing utility script documentation
+  - No existing README sections are removed or reordered
+module: null
+domain: null
+notes: |
+  # WI-223: README Documentation for Report Scripts
+  
+  ## Location in README
+  
+  Add a "## Reporting Scripts" section. Place it after the existing utility scripts documentation.
+  
+  ## Content
+cycle_created: 1
+cycle_modified: null
+content_hash: "24b3a35cb157b31cf68522cd9cd06f02496c3e3a4815d15a3a282256ccd01aac"
+token_count: 217
+file_path: .ideate/work-items/WI-223.yaml

@@ -1,0 +1,18 @@
+id: FI-020-001
+type: finding
+cycle: 20
+reviewer: code-reviewer
+severity: minor
+title: "`pretest` warning message says \"regenerate with tsc\" not \"regenerate with `npm run build:migration`\""
+description: |
+  - **File**: `/Users/dan/code/ideate/mcp/artifact-server/package.json:11`
+  - **Issue**: The `pretest` staleness warning reads `regenerate with tsc`. The stated rationale for WI-174 (from Q-63 and cycle 019 gap analysis) was that `pretest` references `build:migration` as the recovery command. The current message does not reference `npm run build:migration`. A contributor seeing this warning cannot follow it to the newly added script without already knowing about it.
+  - **Suggested fix**: Change the warning string in `pretest` from `'WARNING: migrate-to-v3.js may be stale — regenerate with tsc\n'` to `'WARNING: migrate-to-v3.js may be stale — run npm run build:migration from mcp/artifact-server/ to regenerate\n'`.
+file_path: cycles/020/findings/FI-020-001.yaml
+line: null
+suggestion: null
+addressed_by: null
+work_item: WI-174
+verdict: Pass
+content_hash: fd737b1eb40418c7d87d319ca7210110cf128eaa8890fe1f1f5c1a35ca16ca98
+token_count: 271

@@ -1,0 +1,11 @@
+id: GP-02
+type: guiding_principle
+name: Minimal Inference at Execution
+status: active
+description: The executor should not make subjective decisions. Every architectural choice, technology selection, interface contract, error handling strategy, user experience pattern, visual identity decision, and behavioral detail should be resolved during planning. The executor follows instructions; it does not design.
+amendment_history: []
+cycle_created: 1
+cycle_modified: null
+content_hash: a9e46f74c86b60e199860735f9aeda55acccf38487a527d6c39900dc54ca7a2f
+token_count: 133
+file_path: .ideate/principles/GP-02.yaml

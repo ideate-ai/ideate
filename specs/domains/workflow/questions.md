@@ -103,3 +103,18 @@
 - **Status**: resolved
 - **Resolution**: WI-129 added the "(non-startup-failure, non-infrastructure-failure)" qualifier to the brrr finding-handling label at `skills/brrr/phases/execute.md:160`.
 - **Resolved in**: cycle 012
+
+## Q-71: `pretest` does not fail-fast when `migrate-to-v3.js` is stale or absent
+- **Question**: The `pretest` hook detects staleness and emits a warning to stderr but exits 0. A developer running `npm test` with a stale or absent compiled file sees the warning scroll past and proceeds with potentially incorrect results. Additionally, when `migrate-to-v3.js` does not exist (fresh clone before running `build:migration`), `statSync` throws and the `catch(e) {}` block swallows the error silently — no warning is emitted at all. Should `pretest` exit non-zero on staleness or absence?
+- **Source**: archive/cycles/020/code-quality.md M2; archive/cycles/020/gap-analysis.md MI1; archive/cycles/020/decision-log.md Q-71
+- **Impact**: CI and local runs against stale or absent compiled scripts produce incorrect test results with no machine-readable signal. On a fresh clone, the missing-file case produces no signal whatsoever.
+- **Status**: resolved
+- **Resolution**: WI-178 hardened `pretest` to exit 1 with a warning when `.js` is absent (ENOENT), exit 1 with a staleness warning when `.js` mtime is less than `.ts` mtime, and exit 0 when both files exist and `.js` is current. See D-102.
+- **Resolved in**: cycle 021
+
+## Q-72: `pretest` outer catch silently swallows all errors on `migrate-to-v3.ts` stat
+- **Question**: The outer `try/catch(e) {}` in `pretest` wraps the `statSync` call on `migrate-to-v3.ts`. Any error — wrong working directory, permissions, `.ts` absent — is swallowed silently and `pretest` exits 0. The design is intentional (specs/plan/notes/178.md line 56: "don't want infra issues to break test runs"), but no inline comment documents this. The one-liner format prevents adding a comment directly.
+- **Source**: archive/cycles/021/code-quality.md M1; archive/cycles/021/gap-analysis.md MG1; archive/cycles/021/decision-log.md Q-72
+- **Impact**: Future readers may silently inherit a broken pretest guard and not realize the outer catch is intentionally permissive. Behavior is correct per spec; this is a documentation gap only.
+- **Status**: open
+- **Reexamination trigger**: Any future touch to the `pretest` script; add a comment or update surrounding documentation to note the intentional permissiveness.

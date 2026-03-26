@@ -14,41 +14,56 @@ Your tone is neutral and direct throughout. No encouragement, no validation, no 
 
 # PHASE 1: SETUP
 
-## 1.1 Artifact Directory
+## 1.1 Bootstrap `.ideate/` Directory
 
-Before anything else, check for `.ideate.json` in the current working directory. If found, use its `artifactDir` value as the target directory and confirm with the user:
+The plan skill creates the project's `.ideate/` directory from scratch. The ideate MCP artifact server reads from `.ideate/`, but `.ideate/` does not exist until plan creates it. Because of this bootstrapping constraint, Phase 1 uses the Write tool directly — this is the one phase where direct file writes are necessary. After bootstrap, all artifact creation uses MCP tools.
+
+**Step 1: Check for existing `.ideate/` directory.**
+
+If `.ideate/` already exists in the current working directory, skip to Step 4 and resume from there. The project has already been initialized.
+
+**Step 2: Ask the user for initial idea (if not provided as argument).**
+
+If the user provided an initial idea as an argument, acknowledge it. Either way, ask:
+
+> Where should I store the planning artifacts? The default is `.ideate/` in the current directory. Press Enter to accept or provide a different path.
+
+If no `.ideate.json` exists, use `.ideate/` relative to the current working directory unless the user specifies otherwise. If `.ideate.json` exists, read it for any `artifactDir` override and confirm:
 
 > I'll store planning artifacts in `{artifactDir}` (from .ideate.json). Proceed?
 
-If no `.ideate.json` exists, ask the user:
+**Step 3: Create the directory structure using the Write tool.**
 
-> Where should I store the planning artifacts? Provide a directory path. I will create the full structure inside it.
+Write `.ideate/config.json`:
 
-If the user provided an initial idea as an argument, acknowledge it and still ask for the artifact directory before proceeding.
-
-Once the user provides a path, create the directory structure and write `manifest.json`:
-
-```
-{artifact-dir}/
-├── manifest.json
-├── steering/
-│   ├── research/
-│   └── interviews/
-├── plan/
-│   ├── modules/
-│   └── work-items/
-├── archive/
-│   ├── incremental/
-│   └── cycles/
-└── domains/
-```
-
-Create `manifest.json` with the content:
 ```json
-{"schema_version": 1}
+{"schema_version": 2}
 ```
 
-Create `.gitkeep` files in all empty directories. No other artifact files yet.
+Create `.gitkeep` files in every subdirectory to ensure git tracks the structure:
+
+```
+.ideate/
+├── config.json
+├── work-items/.gitkeep
+├── principles/.gitkeep
+├── constraints/.gitkeep
+├── modules/.gitkeep
+├── research/.gitkeep
+├── interviews/.gitkeep
+├── domains/.gitkeep
+└── cycles/.gitkeep
+```
+
+**Step 4: Verify MCP server availability.**
+
+After writing `config.json`, call any ideate MCP tool (e.g., `ideate_artifact_index`) to confirm the MCP artifact server is running. The MCP server starts indexing as soon as `.ideate/config.json` exists.
+
+If the ideate MCP artifact server tools are not available, stop immediately and report:
+
+> The ideate MCP artifact server is required but not available. Verify it is configured in .mcp.json and that `mcp/artifact-server/` has been built.
+
+Do not proceed past this point without a working MCP server.
 
 ## 1.2 Initial Idea Capture
 
@@ -145,12 +160,14 @@ During the interview, spawn `researcher` agents in the background when topics ar
 
 **How to spawn:**
 
-Use the Agent tool to spawn a subagent with the researcher agent prompt, or use `spawn_session` if outpost is configured. Provide:
+Use the Agent tool to spawn a subagent with the researcher agent prompt. If `spawn_session` is available (check tool list for a session-spawner MCP server), it may be used as an alternative. Provide:
 
 - The specific topic to investigate
 - Specific questions to answer
-- Output file path: `{artifact-dir}/steering/research/{topic-slug}.md`
+- Output file path: `.ideate/research/{topic-slug}.yaml`
 - Context from the interview so far (what the user is building, relevant constraints)
+
+Research artifacts must follow the YAML format for the MCP server to index them. If the researcher writes markdown, convert to YAML before the Phase 3 write step.
 
 **How to integrate findings:**
 
@@ -164,12 +181,12 @@ When research results arrive:
 
 **Handling researcher output:**
 
-- If the researcher agent writes directly to `{artifact_dir}/steering/research/{topic-slug}.md`, read and integrate the findings as described above.
-- If the researcher returns output in its response instead of writing to disk (e.g., because it lacks Write tool access or returned inline), write the response content to `{artifact_dir}/steering/research/{topic-slug}.md` using the Write tool, then integrate the findings.
+- If the researcher agent writes directly to `.ideate/research/{topic-slug}.yaml`, read and integrate the findings as described above.
+- If the researcher returns output in its response instead of writing to disk, write the response content to `.ideate/research/{topic-slug}.yaml` using an MCP write tool (or Write tool if no MCP write exists for research artifacts), then integrate the findings.
 
 After each researcher agent returns, record a metrics entry (see Metrics Instrumentation).
 
-If no session-spawner MCP server or subagent capability is available, note the topics that would benefit from research and continue. You can still leverage your training knowledge but flag that live research was not performed.
+If no subagent capability or session-spawner MCP server is available, note the topics that would benefit from research and continue. You can still leverage your training knowledge but flag that live research was not performed.
 
 ## 2.5 Completion Detection
 
@@ -220,43 +237,51 @@ If the user wants to address questions, continue the interview for those specifi
 
 # PHASE 3: STEERING ARTIFACTS
 
-After the interview closes, write the steering artifacts. Do this before spawning the architect, because the architect reads these.
+After the interview closes, write the steering artifacts. Do this before spawning the architect, because the architect reads these. All artifact writes in this phase use MCP tools where available; fall back to Write tool only for artifact types not yet supported by MCP write tools.
 
-## 3.1 `steering/interview.md`
+## 3.1 Interview YAML
 
-Write the interview transcript. Format:
+Write the interview as a structured YAML file to `.ideate/interviews/interview-plan-001.yaml`. Use the structured entries format:
 
-```markdown
-# Interview Transcript — {today's date}
-
-## Context
-{What triggered this planning session. Include the initial idea.}
-
----
-
-**Q: {Question you asked}**
-A: {Substance of user's answer — not verbatim, but capturing all key information.}
-
-**Q: {Next question}**
-A: {Answer}
+```yaml
+id: interview-plan-001
+type: interview
+cycle_created: 0
+phase: plan
+date: "{today's date}"
+context: "{What triggered this planning session. Include the initial idea.}"
+entries:
+  - id: IQ-plan-001-001
+    question: "{Question you asked}"
+    answer: "{Substance of user's answer — not verbatim, but capturing all key information.}"
+    domain: null
+    seq: 1
+  - id: IQ-plan-001-002
+    question: "{Next question}"
+    answer: "{Answer}"
+    domain: "{domain-name if already determined, otherwise null}"
+    seq: 2
 ```
 
-Capture the substance of every exchange. Do not omit questions because they seem minor. The interview transcript is the raw evidence for all downstream artifacts.
+Capture the substance of every exchange. Do not omit questions because they seem minor. The interview is the raw evidence for all downstream artifacts.
 
-## 3.2 `steering/guiding-principles.md`
+## 3.2 Guiding Principles
 
 Derive 5-15 guiding principles from the interview. These are the decision framework — the "why" behind the project. They answer: when a question arises during execution that the spec does not explicitly address, how should it be resolved?
 
-Format:
+Write one YAML file per principle to `.ideate/principles/GP-{NN}.yaml`:
 
-```markdown
-# Guiding Principles
-
-## 1. {Principle Name}
-{One paragraph explaining what this principle means and why it matters for this project. Grounded in specific things the user said.}
-
-## 2. {Principle Name}
-{Explanation.}
+```yaml
+id: GP-{NN}
+type: guiding_principle
+name: {Principle Name}
+status: active
+description: |
+  {One paragraph explaining what this principle means and why it matters for this project.
+  Grounded in specific things the user said.}
+amendment_history: []
+cycle_created: 0
+cycle_modified: null
 ```
 
 Rules for principles:
@@ -266,24 +291,18 @@ Rules for principles:
 - If two principles conflict, note the tension and which takes priority
 - Principles should be specific enough that you could test whether a decision adheres to them
 
-## 3.3 `steering/constraints.md`
+## 3.3 Constraints
 
-Extract hard constraints from the interview, organized by category:
+Extract hard constraints from the interview, organized by category. Write one YAML file per constraint to `.ideate/constraints/C-{NN}.yaml`:
 
-```markdown
-# Constraints
-
-## Technology Constraints
-1. **{Constraint name}.** {Explanation.}
-
-## Design Constraints
-N. **{Constraint name}.** {Explanation.}
-
-## Process Constraints
-N. **{Constraint name}.** {Explanation.}
-
-## Scope Constraints
-N. **{Constraint name}.** {Explanation.}
+```yaml
+id: C-{NN}
+type: constraint
+category: {technology | design | process | scope}
+status: active
+description: "{Constraint name}. {Explanation.}"
+cycle_created: 0
+cycle_modified: null
 ```
 
 Constraints are non-negotiable boundaries. If the user said "must use Python 3.12+", that is a constraint. If the user said "prefer Python", that is a principle, not a constraint.
@@ -296,20 +315,20 @@ Constraints are non-negotiable boundaries. If the user said "must use Python 3.1
 
 Spawn the `architect` agent in **design** mode with `model: opus`. This overrides the agent's default model for this task. Provide it with:
 
-- The full interview transcript (`steering/interview.md`)
-- Guiding principles (`steering/guiding-principles.md`)
-- Constraints (`steering/constraints.md`)
-- All research findings (`steering/research/*.md`)
+- The full interview YAML (`.ideate/interviews/interview-plan-001.yaml`)
+- Guiding principles (`.ideate/principles/GP-*.yaml`)
+- Constraints (`.ideate/constraints/C-*.yaml`)
+- All research findings (`.ideate/research/*.yaml`)
 - Clear instruction to operate in **design** mode
 - The full absolute paths where output should be written:
-  - `{artifact_dir}/plan/architecture.md`
-  - `{artifact_dir}/plan/modules/{name}.md` (one per module)
+  - `.ideate/modules/architecture.yaml`
+  - `.ideate/modules/{name}.yaml` (one per module)
 
-**Note:** If the architect agent lacks Write tool access and returns its output inline in its response, you (the plan skill) must write the response content to the target paths above using the Write tool.
+**Note:** If the architect agent lacks Write tool access and returns its output inline in its response, you (the plan skill) must write the response content to the target paths above using an MCP write tool or the Write tool.
 
 The architect will produce:
-- `plan/architecture.md` — component map, data flow, module specifications, interface contracts, execution order, design tensions
-- `plan/modules/{name}.md` — one file per module with Scope, Provides, Requires, Boundary Rules, Internal Design Notes
+- `.ideate/modules/architecture.yaml` — component map, data flow, module specifications, interface contracts, execution order, design tensions
+- `.ideate/modules/{name}.yaml` — one file per module with Scope, Provides, Requires, Boundary Rules, Internal Design Notes
 
 **Wait for the architect to complete.** The architect runs in the foreground because its output is required before decomposition can begin. After it returns, record a metrics entry (see Metrics Instrumentation).
 
@@ -329,22 +348,22 @@ After the architect completes, read the architecture document and module specs. 
 
 ## 4.3 Write `plan/overview.md`
 
-Write the project overview based on the interview and architecture:
+Write the project overview to `.ideate/modules/overview.yaml` (or as a human-readable summary; this file is for human reference). The content:
 
-```markdown
-# {Project Name}
-
-## What We Are Building
-{2-4 paragraphs describing the project, its purpose, key components, and how they fit together.}
-
-## Key Components
-{Structured list of major components with one-line descriptions.}
-
-## Project Structure
-{Directory layout or structural overview.}
-
-## Workflow
-{How the system works end-to-end, from the user's perspective.}
+```yaml
+id: overview
+type: module
+title: "{Project Name}"
+summary: |
+  {2-4 paragraphs describing the project, its purpose, key components, and how they fit together.}
+components: |
+  {Structured list of major components with one-line descriptions.}
+structure: |
+  {Directory layout or structural overview.}
+workflow: |
+  {How the system works end-to-end, from the user's perspective.}
+cycle_created: 0
+cycle_modified: null
 ```
 
 ---
@@ -367,11 +386,11 @@ Decompose to work items yourself, in the main session. For each module (or for t
 
 Spawn one `decomposer` agent per module, in parallel, each with `model: opus`. This overrides the agent's default model for this task. Provide each with:
 
-- The module spec (`plan/modules/{name}.md`)
-- The architecture doc (`plan/architecture.md`)
-- Guiding principles (`steering/guiding-principles.md`)
-- Constraints (`steering/constraints.md`)
-- Relevant research findings from `steering/research/`
+- The module spec (`.ideate/modules/{name}.yaml`)
+- The architecture doc (`.ideate/modules/architecture.yaml`)
+- Guiding principles (`.ideate/principles/GP-*.yaml`)
+- Constraints (`.ideate/constraints/C-*.yaml`)
+- Relevant research findings from `.ideate/research/`
 - The starting work item number for that module's range (coordinate numbering across modules to avoid collisions)
 
 Each decomposer produces work items with placeholder numbers. After each decomposer returns, record a metrics entry (see Metrics Instrumentation). After all decomposers complete, you reconcile: assign final sequential numbers, resolve cross-module dependencies (replacing interface references with concrete work item numbers), and run the full validation suite.
@@ -389,35 +408,41 @@ Over-allocate ranges. After reconciliation, renumber to eliminate gaps.
 
 ## 5.3 Work Item Format
 
-Every work item must follow this exact format:
+Every work item is a YAML file written to `.ideate/work-items/WI-{NNN}.yaml` using an MCP write tool. Format:
 
-```markdown
-# NNN: {Title}
+```yaml
+id: WI-{NNN}
+type: work_item
+title: "{Title}"
+status: pending
+complexity: {low | medium | high}
+scope:
+  - {path: "{path/to/file}", op: {create | modify | delete}}
+depends: [{NNN}, ...]
+blocks: [{NNN}, ...]
+criteria:
+  - "{criterion} [machine]"
+  - "{criterion} [human]"
+module: "{module-name or null}"
+domain: "{domain-name or null}"
+notes: |
+  # WI-{NNN}: {Title}
 
-## Objective
-{What this work item accomplishes. One to three sentences. State the deliverable, not the activity.}
+  ## Objective
+  {What this work item accomplishes. One to three sentences. State the deliverable, not the activity.}
 
-## Acceptance Criteria
-- [ ] {Machine-verifiable criterion}
-- [ ] {Machine-verifiable criterion}
-
-## File Scope
-- `{path/to/file}` ({create | modify | delete})
-
-## Dependencies
-- Depends on: {NNN, NNN | none}
-- Blocks: {NNN, NNN | none}
-
-## Implementation Notes
-{Technical details, edge cases, error handling, integration points. Enough detail that two independent LLMs would produce functionally equivalent output.}
-
-## Complexity
-{Low | Medium | High}
+  ## Implementation Notes
+  {Technical details, edge cases, error handling, integration points. Enough detail that two
+  independent LLMs would produce functionally equivalent output.}
+cycle_created: 0
+cycle_modified: null
 ```
 
 ### Acceptance Criteria Rules
 
-**Prefer machine-verifiable criteria:**
+**Every criterion must include a validation method tag.**
+
+Machine-verifiable criteria (tag: `[machine]`):
 - File exists at a specific path
 - Function/class/export with a specific name and signature exists
 - Tests pass (specific test files or suites)
@@ -425,9 +450,15 @@ Every work item must follow this exact format:
 - Structural assertions (file contains a specific section, config has a specific key)
 - Behavioral contracts (given input A, produces output B)
 
-**Avoid criteria requiring human judgment:** "readable", "intuitive", "well-structured", "appropriate". If you find yourself writing such a criterion, it signals an unresolved design decision in the spec. Go back and resolve it. Specify what "well-structured" concretely means in this context.
+Human-in-the-loop criteria (tag: `[human]`):
+- Prose quality in documentation
+- Aesthetic or UX design choices
+- Subjective tone or style evaluation
+- Any criterion where the correct answer depends on human judgment
 
-**When machine verification is genuinely impossible** (e.g., prose quality in documentation), state the criterion as precisely as possible and note that it requires human review. This should be rare.
+Both machine and human criteria are first-class. Do not avoid human criteria — subjective decisions made during planning become objective specs once approved, and subsequent work is validated against the documented choice. If you find yourself writing a criterion with no clear validation method, it signals an unresolved design decision in the spec. Go back and resolve it.
+
+Write each criterion as a plain string with the validation tag in brackets at the end: `"The output renders correctly on mobile viewports (min 320px) [human]"` or `"File .ideate/config.json exists with key schema_version [machine]"`.
 
 ### File Scope Rules
 
@@ -467,7 +498,7 @@ Check for:
 - Ambiguous terms that could be interpreted differently
 - Missing file paths or function signatures
 - Unspecified error handling behavior
-- Acceptance criteria that require subjective judgment
+- Acceptance criteria with no stated validation method
 - Implementation notes that say "as appropriate" or "as needed" without defining what that means
 
 If any work item fails this test, add more detail until it passes.
@@ -476,38 +507,35 @@ If any work item fails this test, add more detail until it passes.
 
 # PHASE 6: EXECUTION STRATEGY
 
-## 6.1 Write `plan/execution-strategy.md`
+## 6.1 Write Execution Strategy
 
-Based on the process track answers from the interview and the structure of the work item dependency graph, write the execution strategy:
+Write `.ideate/modules/execution-strategy.yaml` based on the process track answers from the interview and the structure of the work item dependency graph:
 
-```markdown
-# Execution Strategy
-
-## Mode
-{Sequential | Batched parallel | Full parallel (teams)}
-
-## Parallelism
-Max concurrent agents: {N}
-
-## Worktrees
-Enabled: {yes | no}
-Reason: {why or why not}
-
-## Review Cadence
-{After every item | After every batch | At end only}
-
-## Work Item Groups
-Group 1 ({parallel | sequential}): NNN, NNN, NNN
-Group 2 ({parallel | sequential}, depends on group N): NNN, NNN
-...
-
-## Dependency Graph
-{ASCII diagram or textual description of dependency relationships between work items}
-
-## Agent Configuration
-Model for workers: {sonnet | opus}
-Model for reviewers: {sonnet | opus}
-Permission mode: {acceptEdits | dontAsk}
+```yaml
+id: execution-strategy
+type: module
+title: Execution Strategy
+mode: {sequential | batched_parallel | full_parallel}
+max_concurrent_agents: {N}
+worktrees_enabled: {true | false}
+worktrees_reason: "{why or why not}"
+review_cadence: {after_every_item | after_every_batch | end_only}
+work_item_groups:
+  - group: 1
+    mode: {parallel | sequential}
+    items: [{NNN}, ...]
+  - group: 2
+    mode: {parallel | sequential}
+    depends_on_group: 1
+    items: [{NNN}, ...]
+agent_config:
+  worker_model: {sonnet | opus}
+  reviewer_model: {sonnet | opus}
+  permission_mode: {acceptEdits | dontAsk}
+dependency_graph: |
+  {ASCII diagram or textual description of dependency relationships}
+cycle_created: 0
+cycle_modified: null
 ```
 
 The execution mode should be determined by:
@@ -534,48 +562,42 @@ State whether each group should run in parallel or sequentially, and why.
 
 ## 7.1 Write All Remaining Artifacts
 
-Write every artifact file that has not been written yet:
+Verify and write every artifact that has not been written yet. Use MCP write tools where available.
 
-1. Work items — write in consolidated YAML format:
-   - `plan/work-items.yaml` — all structured work item data (id, title, complexity, scope, depends, blocks, criteria). Format:
+**Work items**: All work items should already be written as individual `.ideate/work-items/WI-{NNN}.yaml` files (from Phase 5.3). Verify they are all present.
 
-         items:
-           NNN:
-             title: {title}
-             complexity: {low|medium|high}
-             scope: [{path: ..., op: {create|modify|delete}}]
-             depends: [NNN, ...]
-             blocks: [NNN, ...]
-             criteria:
-               - {plain string criterion}
-             notes: plan/notes/NNN.md
+**Execution strategy**: Written in Phase 6.1. Verify it exists.
 
-   - `plan/notes/NNN.md` — one file per work item containing only the implementation notes (prose detail). Workers load this file when executing the item.
+**Journal entry**: Write the planning session journal entry as `.ideate/cycles/000/journal/J-000-001.yaml`:
 
-   If the project already uses legacy per-file format (`plan/work-items/*.md`), continue using that format for consistency unless the user explicitly requests migration.
-2. `plan/execution-strategy.md` — from Phase 6
-3. `journal.md` — initialize with the planning session entry:
-
-```markdown
-# Project Journal
-
-## [plan] {today's date} — Planning session completed
-{Summary of what was planned: number of modules, number of work items, key decisions made, deferred questions. 3-5 sentences.}
+```yaml
+id: J-000-001
+type: journal_entry
+cycle: 0
+seq: 1
+phase: plan
+date: "{today's date}"
+summary: |
+  {Summary of what was planned: number of modules, number of work items, key decisions made,
+  deferred questions. 3-5 sentences.}
 ```
 
 Verify that the following files exist and are complete:
-- `steering/interviews/plan/_full.md` (or `steering/interview.md` if interviews/ not yet created)
-- `steering/guiding-principles.md`
-- `steering/constraints.md`
-- `steering/research/*.md` (any files produced by researchers)
-- `plan/overview.md`
-- `plan/architecture.md`
-- `plan/modules/*.md` (if applicable — projects with 5+ modules)
-- `plan/execution-strategy.md`
-- `plan/work-items/*.md`
-- `journal.md`
-- `domains/index.md` (created in Phase 8)
-- `domains/*/policies.md`, `domains/*/decisions.md`, `domains/*/questions.md` (one set per domain)
+- `.ideate/config.json`
+- `.ideate/interviews/interview-plan-001.yaml`
+- `.ideate/principles/GP-{NN}.yaml` (one per principle)
+- `.ideate/constraints/C-{NN}.yaml` (one per constraint)
+- `.ideate/research/*.yaml` (any files produced by researchers)
+- `.ideate/modules/overview.yaml`
+- `.ideate/modules/architecture.yaml`
+- `.ideate/modules/{name}.yaml` (if applicable — projects with 5+ modules)
+- `.ideate/modules/execution-strategy.yaml`
+- `.ideate/work-items/WI-{NNN}.yaml` (one per work item)
+- `.ideate/cycles/000/journal/J-000-001.yaml`
+- `.ideate/domains/index.yaml` (created in Phase 8)
+- `.ideate/domains/{name}/policies/P-{N}.yaml` (one per policy per domain)
+- `.ideate/domains/{name}/decisions/D-{N}.yaml` (one per decision per domain)
+- `.ideate/domains/{name}/questions/Q-{N}.yaml` (one per open question per domain)
 
 ## 7.2 Present Plan Summary
 
@@ -607,6 +629,13 @@ Present the final plan to the user with this structure:
 Run `/ideate:execute` to begin building, or `/ideate:refine` to adjust the plan.
 ```
 
+After presenting the plan summary, call `ideate_emit_event` with:
+- artifact_dir: {artifact_dir}
+- event: "plan.complete"
+- variables: { "ARTIFACT_DIR": "{artifact_dir}", "WORK_ITEM_COUNT": "{total_work_item_count}" }
+
+This call is best-effort — if it fails, continue without interruption.
+
 ---
 
 # PHASE 8: DOMAIN BOOTSTRAP
@@ -626,104 +655,120 @@ Start coarse. Two or three domains are usually right. Signals for splitting a do
 
 Do NOT create domains for every module. Domains are knowledge units, not code units.
 
-## 8.2 Create Interview Structure
+## 8.2 Tag Interview Entries by Domain
 
-The planning interview is stored in per-domain files for precise domain-scoped loading.
-
-Write the interview to `steering/interviews/plan/`:
-
-1. `_full.md` — the compiled transcript (human reading only, never loaded into context by skills)
-2. `_general.md` — questions that span domains or predate domain creation
-3. `{domain-name}.md` — one file per domain with questions tagged to that domain
-
-When creating domain files, go back through the interview and sort each Q&A exchange into the most relevant domain file. Add an inline tag at the start of each question block: `<!-- domains: {domain-name} -->`. Cross-cutting questions get tags for all relevant domains.
-
-If the interview transcript was already written to `steering/interview.md` in Phase 3.1, use it as the source. Create the `steering/interviews/plan/` directory and produce the split files from it. Do not delete `steering/interview.md` — it remains as legacy.
+Go back through the interview YAML (`interview-plan-001.yaml`) and update the `domain` field on each entry to reflect the most relevant domain. Cross-cutting questions may be tagged with a domain or left as `null`. Write the updated interview YAML back to disk.
 
 ## 8.3 Create Domain Files
 
-For each domain identified in 8.1, create:
+For each domain identified in 8.1, create the following YAML files using MCP write tools or the Write tool.
 
-`domains/{name}/policies.md`:
-```markdown
-# Policies: {Domain Name}
+**Policies** — one file per policy at `.ideate/domains/{name}/policies/P-{N}.yaml`:
 
-## P-{N}: {Short title}
-{One-sentence rule. Actionable and unambiguous.}
-- **Derived from**: {GP-N (Principle Name)}
-- **Established**: planning phase
-- **Status**: active
+```yaml
+id: P-{N}
+type: policy
+domain: "{name}"
+title: "{Short title}"
+rule: "{One-sentence rule. Actionable and unambiguous.}"
+derived_from: "GP-{N} ({Principle Name})"
+established: planning phase
+status: active
+amended_by: null
+cycle_created: 0
+cycle_modified: null
 ```
 
 Project the guiding principles into domain-specific actionable rules. A GP becomes a domain policy when its application in this domain is substantively more specific than the GP alone. If the GP applies identically everywhere, it stays a GP.
 
-`domains/{name}/decisions.md`:
-```markdown
-# Decisions: {Domain Name}
+**Decisions** — one file per decision at `.ideate/domains/{name}/decisions/D-{N}.yaml`:
 
-## D-{N}: {Short title}
-- **Decision**: {What was decided — one sentence}
-- **Rationale**: {Why — from interview or architecture doc}
-- **Assumes**: {Key assumptions — omit if none}
-- **Source**: {plan/architecture.md | steering/interviews/plan/{domain}.md#Q{N}}
-- **Status**: settled
+```yaml
+id: D-{N}
+type: decision
+domain: "{name}"
+title: "{Short title}"
+decision: "{What was decided — one sentence}"
+rationale: "{Why — from interview or architecture doc}"
+assumes: "{Key assumptions — omit field if none}"
+source: "{modules/architecture.yaml | interviews/interview-plan-001.yaml#IQ-plan-001-{N}}"
+status: settled
+cycle_created: 0
+cycle_modified: null
 ```
 
 Record planning-phase decisions: technology selections, architectural choices, interface contracts, data model decisions. These are the first entries — workers in cycle 1 start with real policy context.
 
-`domains/{name}/questions.md`:
-```markdown
-# Questions: {Domain Name}
+**Questions** — one file per open question at `.ideate/domains/{name}/questions/Q-{N}.yaml`:
 
-## Q-{N}: {Short title}
-- **Question**: {Specific question}
-- **Source**: {steering/interviews/plan/{domain}.md#Q{N} or plan/overview.md}
-- **Impact**: {What is affected if this remains unanswered}
-- **Status**: open
-- **Reexamination trigger**: {Condition that would make this urgent}
+```yaml
+id: Q-{N}
+type: question
+domain: "{name}"
+title: "{Short title}"
+question: "{Specific question}"
+source: "{interviews/interview-plan-001.yaml#IQ-plan-001-{N} | modules/overview.yaml}"
+impact: "{What is affected if this remains unanswered}"
+status: open
+addressed_by: null
+reexamination_trigger: "{Condition that would make this urgent}"
+cycle_created: 0
+cycle_modified: null
 ```
 
 Capture open questions from the interview that belong to this domain.
 
-## 8.4 Create domains/index.md
+## 8.4 Create `domains/index.yaml`
 
-```markdown
-# Domain Registry
+Write `.ideate/domains/index.yaml`:
 
+```yaml
+id: domain-index
+type: domain_index
 current_cycle: 0
-
-## Domains
-
-### {domain-name}
-{One-sentence description of what this domain covers.}
-Files: domains/{domain-name}/policies.md, decisions.md, questions.md
-
-### {domain-name-2}
-...
-
-## Cross-Cutting Concerns
-{Any concerns that span multiple domains and cannot be assigned to one.}
+domains:
+  - name: "{domain-name}"
+    description: "{One-sentence description of what this domain covers.}"
+    files:
+      policies: domains/{domain-name}/policies/
+      decisions: domains/{domain-name}/decisions/
+      questions: domains/{domain-name}/questions/
+  - name: "{domain-name-2}"
+    description: "..."
+    files:
+      policies: domains/{domain-name-2}/policies/
+      decisions: domains/{domain-name-2}/decisions/
+      questions: domains/{domain-name-2}/questions/
+cross_cutting_concerns: |
+  {Any concerns that span multiple domains and cannot be assigned to one.
+  Omit or leave empty if none.}
+cycle_created: 0
+cycle_modified: null
 ```
 
 The cycle counter starts at 0 (no review cycles have run yet). The first `/ideate:review` run will update this to 1.
 
-## 8.5 Update Journal
+## 8.5 Write Domain Journal Entry
 
-Append to `journal.md`:
+Write a second journal entry at `.ideate/cycles/000/journal/J-000-002.yaml`:
 
-```markdown
-## [plan] {today's date} — Domain bootstrap complete
-Domains created: {list}
-Initial policies: {N} (across all domains)
-Initial decisions: {N} (from planning phase)
-Open questions: {N}
+```yaml
+id: J-000-002
+type: journal_entry
+cycle: 0
+seq: 2
+phase: plan
+date: "{today's date}"
+summary: |
+  Domain bootstrap complete. Domains created: {list}. Initial policies: {N} (across all domains).
+  Initial decisions: {N} (from planning phase). Open questions: {N}.
 ```
 
 ---
 
 # Metrics Instrumentation
 
-After each agent spawn (via the Agent tool), append one JSON entry to `{artifact_dir}/metrics.jsonl`. Best-effort only: if writing fails, continue without interruption.
+After each agent spawn (via the Agent tool), append one JSON entry to `.ideate/metrics.jsonl`. Best-effort only: if writing fails, continue without interruption.
 
 **Entry schema (one JSON object per line):**
 
@@ -732,31 +777,37 @@ After each agent spawn (via the Agent tool), append one JSON entry to `{artifact
 - `timestamp` — ISO 8601 when the agent was spawned.
 - `skill` — `"plan"` (constant for this skill).
 - `phase` — phase identifier (e.g., `"2.4"`, `"4.1"`, `"5.1"`).
+- `cycle` — `null` (plan runs at cycle 0, before any review cycles).
 - `agent_type` — the agent definition name (e.g., `"researcher"`, `"architect"`, `"decomposer"`).
 - `model` — model string passed to Agent tool (e.g., `"sonnet"`, `"opus"`).
 - `work_item` — `null` (plan skill agents are not tied to individual work items).
 - `wall_clock_ms` — elapsed ms between Agent tool invocation and return.
 - `turns_used` — from Agent response metadata if available; `null` otherwise.
 - `context_files_read` — absolute file paths explicitly provided in the agent's prompt.
-- `input_tokens` — integer or null. Input token count from agent response metadata. Null if not available.
-- `output_tokens` — integer or null. Output token count from agent response metadata. Null if not available.
-- `cache_read_tokens` — integer or null. Prompt caching read tokens if available. Null if not available.
-- `cache_write_tokens` — integer or null. Prompt caching write tokens if available. Null if not available.
-- `mcp_tools_called` — array of strings. Names of MCP tools called to assemble context for this agent spawn (e.g., `["ideate_get_context_package", "ideate_get_work_item_context"]`). Empty array `[]` if no MCP tools were called.
+- `input_tokens` — integer or null.
+- `output_tokens` — integer or null.
+- `cache_read_tokens` — integer or null.
+- `cache_write_tokens` — integer or null.
+- `mcp_tools_called` — array of MCP tool names called to assemble context for this agent spawn. Empty array `[]` if no MCP tools were called.
 
-Before each Agent tool call, record which MCP tool calls (if any) were made to assemble context for that spawn. Include the tool names in the `mcp_tools_called` array. If no MCP tools were called, use an empty array `[]`.
-
-Extract from agent response metadata if available. Set to null if token counts are not available in the response.
+Before each Agent tool call, record which MCP tool calls (if any) were made to assemble context for that spawn. Include the tool names in the `mcp_tools_called` array.
 
 Record timestamp immediately before the Agent tool call; compute `wall_clock_ms` after it returns.
 
-**Journal summary**: At the end of Phase 7.1 (after verifying all artifacts), append to `journal.md`:
+**Journal summary**: At the end of Phase 7.1 (after verifying all artifacts), append a metrics journal entry to `.ideate/cycles/000/journal/J-000-003.yaml`:
 
-> ## [plan] {date} — Metrics summary
-> Agents spawned: {N total} ({breakdown by type})
-> Total wall-clock: {total_ms}ms
-> Models used: {list of distinct models}
-> Slowest agent: {agent_type} — {ms}ms
+```yaml
+id: J-000-003
+type: journal_entry
+cycle: 0
+seq: 3
+phase: plan
+date: "{date}"
+summary: |
+  Metrics summary. Agents spawned: {N total} ({breakdown by type}).
+  Total wall-clock: {total_ms}ms. Models used: {list}.
+  Slowest agent: {agent_type} — {ms}ms.
+```
 
 If `metrics.jsonl` could not be written, note "metrics unavailable" and omit the breakdown.
 
@@ -785,8 +836,18 @@ When you make a decision without asking, do not announce it during the interview
 
 # ERROR HANDLING
 
+## MCP server unavailable
+If the ideate MCP artifact server tools are not available after bootstrap, stop and report:
+
+> The ideate MCP artifact server is required but not available. Verify it is configured in .mcp.json and that `mcp/artifact-server/` has been built.
+
+Do not attempt workarounds or proceed without MCP. The artifact server is a required component of ideate v3.
+
+## External MCP servers unavailable
+If `spawn_session` or other external MCP server tools are not available, continue without them. Log the gap (topics that would have benefited from live research, sessions that would have benefited from parallelization). Use the Agent tool as the primary spawning mechanism. External MCP servers enhance ideate's capabilities but are not required.
+
 ## Research unavailable
-If you cannot spawn researcher agents (no session-spawner MCP, no subagent support), proceed without background research. Use your training knowledge for factual questions. Flag in the interview summary that live research was not performed and list topics that would benefit from investigation.
+If you cannot spawn researcher agents (no Agent tool support, no session-spawner MCP), proceed without background research. Use your training knowledge for factual questions. Flag in the interview summary that live research was not performed and list topics that would benefit from investigation.
 
 ## Architect fails or produces incomplete output
 If the architect's output is missing module specs, has unresolved interface conflicts, or does not cover the full project scope, do not proceed to decomposition. Fix the issues — either by re-spawning the architect with more specific instructions, or by completing the architecture yourself.
@@ -807,6 +868,8 @@ If the user wants to stop the interview before all tracks are covered, present w
 - You do not present options without analysis. If options exist, you present tradeoffs.
 - You do not use filler phrases ("Great question!", "That's a good approach!", "Let's dive in!"). You ask the next question.
 - You do not skip validation. Every work item passes the spec sufficiency test.
-- You do not produce vague acceptance criteria. If you cannot make a criterion machine-verifiable, you resolve the underlying ambiguity first.
+- You do not produce acceptance criteria without a validation method tag. Every criterion is tagged `[machine]` or `[human]`.
 - You do not create work items with overlapping file scopes unless they are sequenced by dependency.
 - You do not leave interface contracts undefined between modules. Contracts are defined before work items.
+- You do not access `.ideate/` YAML files directly after bootstrap. All reads and writes go through MCP tools.
+- You do not perform MCP availability checks on the ideate artifact server tools. They are always present. If they are absent, it is a configuration error — stop and report it.

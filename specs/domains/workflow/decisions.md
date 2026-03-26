@@ -138,3 +138,35 @@
 - **Rationale**: WI-126 (cycle 011) generalized the agent definition but excluded inline prompt fragments by AC-7. The inline prompts retained pre-generalization language, creating contradictory guidance for code-reviewers spawned via execute or brrr. The brrr label lacked the exclusion qualifier present in the execute skill, risking misrouting of startup-failure or infra-failure findings.
 - **Source**: archive/cycles/012/decision-log.md D-48; archive/cycles/012/summary.md
 - **Status**: settled
+
+## D-57: Watcher ignored-pattern bug survived all incremental reviews because no integration test exercised the async event path
+- **Decision**: The chokidar `ignored: /(^|[/\\])\../` bug in `watcher.ts:24` caused the watcher to never fire for any `.ideate/` files, making incremental rebuild entirely non-functional. All seven incremental reviews for WI-143 through WI-149 returned Pass. The bug was caught only in the capstone review. No integration test existed that wrote a YAML file to a temp `.ideate/` directory and asserted the watcher triggered a rebuild.
+- **Rationale**: Three independent reviewers (code-reviewer, spec-reviewer, gap-analyst) independently flagged both the bug and the missing integration test. The gap is structural: unit tests on the watcher and rebuild functions in isolation cannot detect a broken wiring between them. Only an end-to-end test of the assembled chain (file write -> watcher event -> rebuild call) would have caught this.
+- **Source**: archive/cycles/016/code-quality.md C1, M5; archive/cycles/016/gap-analysis.md G2; archive/cycles/016/decision-log.md Q1
+- **Policy**: P-24
+- **Status**: settled
+
+## D-75: Cycle 017 incremental-vs-capstone divergence confirms cross-item gap pattern from D-31
+- **Decision**: Cycle 017 reproduced the D-31 pattern at larger scale: 10 incremental Pass verdicts against 3 capstone Fail verdicts on the same work items. The `deleteStaleRows` omission (WI-154) was missed by the incremental reviewer and independently caught by all three capstone reviewers. The migration completeness gaps (WI-157 vs WI-146) were similarly invisible to the per-item reviewer who lacked the parent spec context.
+- **Rationale**: This is the same structural limitation identified in D-31/cycle 004: incremental reviewers operate on a single work item in isolation and cannot detect when a work item's notes spec is incomplete relative to its parent feature spec or when an acceptance criterion is unmet in code sections outside the work item's primary diff.
+- **Source**: archive/cycles/017/decision-log.md D-014; archive/cycles/017/summary.md
+- **Policy**: P-30
+- **Status**: settled
+
+## D-76: Cycle 018 all three capstone reviewers issued Pass — Phase 1 residual work fully addressed
+- **Decision**: Cycle 018 (covering execution cycles 018 and 019) produced Pass verdicts from all three capstone reviewers (code-quality Pass with caveats, spec-adherence Pass, gap-analysis Pass). All 10 work items (WI-160 through WI-169) met acceptance criteria. 137 tests pass. Five significant findings are performance/maintenance concerns, not correctness bugs.
+- **Rationale**: This reverses the cycle 017 triple-Fail outcome (D-74). The residual gaps from cycle 017 (deleteStaleRows Drizzle conversion, migration field extraction, plan/steering/interview migration, spec cleanup, domainQuestions column, document_artifacts table) are all resolved.
+- **Source**: archive/cycles/018/summary.md; archive/cycles/018/review-manifest.md
+- **Status**: settled
+
+## D-78: WI-165 Andon cord correctly routed out-of-scope Critical finding to user — produced WI-168
+- **Decision**: WI-165's incremental review emitted a Critical finding (three archive document types unknown to the indexer). The executor routed it to the Andon cord rather than attempting an in-scope fix, because the fix required changes to schema.ts, db.ts, and indexer.ts (all outside WI-165 scope). User decision created WI-168 to register all 10 unregistered document types via a new `document_artifacts` table.
+- **Rationale**: Correct application of P-22 and P-23 — the finding was out-of-scope for WI-165 and required architectural changes. The Andon-to-WI-168 path demonstrates the designed flow: escalate, bound the follow-up, execute in a new work item.
+- **Source**: archive/cycles/018/decision-log.md E3, E4; archive/cycles/018/spec-adherence.md (Principle 6 evidence)
+- **Status**: settled
+
+## D-102: Q-68 and Q-71 combined into a single work item targeting package.json
+- **Decision**: Q-68 (stale `.d.ts`/`.js.map` files not cleaned by `build:migration`) and Q-71 (`pretest` exits 0 on stale or absent `.js`) were combined into WI-178 rather than planned as two separate work items, because both changes targeted `mcp/artifact-server/package.json` exclusively with no logical dependency between them.
+- **Rationale**: Both questions were build-tooling hygiene with a shared single-file scope. One work item avoids unnecessary parallelism overhead for two-line changes in the same file; combining also prevents a potential edit conflict if both work items ran in parallel.
+- **Source**: archive/cycles/021/decision-log.md D-102; WI-178
+- **Status**: settled

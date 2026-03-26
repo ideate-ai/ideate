@@ -1,0 +1,14 @@
+id: Q-16
+type: domain_question
+domain: artifact-structure
+status: open
+impact: "No functional failure. Undocumented schema intent accumulates as technical debt: future implementers cannot determine whether the field is reliably populated or safely ignorable."
+source: archive/cycles/006/decision-log.md D10, OQ3; archive/cycles/006/summary.md Minor M4
+resolution: null
+resolved_in: null
+description: The `suggestion` key was added to `by_reviewer` sub-objects during WI-093 rework for schema symmetry with `by_severity`. Should it be retained as-is, or should derivation rules explicitly document that `by_reviewer.suggestion` is populated but intentionally has no current consumer?
+cycle_created: 1
+cycle_modified: null
+content_hash: "2465a01be1fa0eb23bb440243a82c97a2675153695b2f6135aeae5a3f0bbe13b"
+token_count: 196
+file_path: .ideate/questions/Q-16.yaml

@@ -1,0 +1,14 @@
+id: Q-08
+type: domain_question
+domain: agent-system
+status: open
+impact: Very large projects (requiring multiple levels of decomposition deeper than architecture -> modules -> work items) cannot be fully automated within ideate alone.
+source: specs/steering/constraints.md C-5, specs/steering/guiding-principles.md GP-7, specs/steering/interview.md (2026-03-08)
+resolution: null
+resolved_in: null
+description: Claude Code does not support subagents spawning their own subagents. For truly large projects requiring recursive decomposition (GP-7), what external tooling fills this gap, and when should it be built?
+cycle_created: 1
+cycle_modified: null
+content_hash: b6e4340e1f5cf0d69830174ec536aaf0c338de56da462d483284e46d1d886a91
+token_count: 179
+file_path: .ideate/questions/Q-08.yaml

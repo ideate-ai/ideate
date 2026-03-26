@@ -12,22 +12,20 @@ Tone: neutral, direct. No encouragement, no validation, no hedging qualifiers, n
 
 # Phase 1: Locate Artifact Directory
 
-If the user provided an artifact directory path as an argument or in previous context, use it. Otherwise check for `.ideate.json` in the current working directory — if found, use its `artifactDir` value (resolved relative to that file's location). Otherwise ask:
+Determine the **project root** — the directory containing `.ideate/config.json`. Use this precedence:
 
-> What is the path to the artifact directory for this project?
+1. If the user provided a path argument, resolve it. If it points to a directory containing `.ideate/config.json`, use it as the project root. If it points to a subdirectory (e.g., `specs/`), walk up to find `.ideate/config.json` in an ancestor.
+2. Check the current working directory and walk up to find `.ideate/config.json`.
+3. Check for `.ideate.json` in the current working directory — if found, use its `artifactDir` value (resolved relative to that file's location) to locate the project root.
+4. Otherwise ask: "Where is the project root? (The directory containing `.ideate/`)"
 
-Verify the directory exists and contains at minimum `steering/guiding-principles.md` and `plan/overview.md`. If these are missing, stop and tell the user this does not look like an ideate artifact directory. Do not proceed without a valid artifact directory.
+Validate by calling `ideate_get_project_status` with the resolved path. If the MCP server cannot find artifacts, stop and report the error. Do not proceed without a valid `.ideate/` directory.
 
-Store the artifact directory path. All artifact file operations reference this root.
+Store the project root path. All MCP tool calls use this as the base for `artifact_dir`.
 
-Next, determine the **project source root** — the directory containing the actual source code being refined. Derive it using this precedence:
+Next, determine the **project source root** — the directory containing the actual source code being refined. In most cases this is the same as the project root. If the architecture or overview documents specify a different source path, use that instead. If ambiguous, ask: "Where is the project source code?"
 
-1. If the user specified a project source path, use it.
-2. If `plan/architecture.md` or `plan/overview.md` contains a project root or source path reference, use it.
-3. If the artifact directory is inside the project (e.g., `./specs/`), use the artifact directory's parent.
-4. Otherwise, ask: "Where is the project source code?"
-
-Store the project source root separately from the artifact directory.
+Store the project source root separately from the project root.
 
 ---
 
@@ -49,49 +47,37 @@ Wait for the architect's analysis before proceeding. You need this to ask inform
 
 # Phase 3: Load Prior Context
 
-**MCP availability check**: Look in your tool list for a tool whose name ends in `ideate_get_context_package` (it will be prefixed, e.g. `mcp__ideate_artifact_server__ideate_get_context_package` or `mcp__plugin_ideate_ideate_artifact_server__ideate_get_context_package`). If found:
-1. Call it with `({artifact_dir})` — returns architecture, guiding principles, and constraints pre-assembled.
-2. Hold the result. Skip steps 1–3 below (architecture, principles, constraints). Continue from step 4.
+**MCP required**: Look in your tool list for a tool whose name ends in `ideate_get_context_package` (it will be prefixed, e.g. `mcp__ideate_artifact_server__ideate_get_context_package` or `mcp__plugin_ideate_ideate_artifact_server__ideate_get_context_package`). If not found, stop with:
 
-Read all existing artifacts from the artifact directory. Load them in this order:
+> The ideate MCP artifact server is required but not available. Verify .mcp.json configuration.
 
-1. `steering/guiding-principles.md` — the project's decision framework
-2. `steering/constraints.md` — hard boundaries
-3. `plan/overview.md` — what was originally planned
-4. `plan/architecture.md` — technical architecture
-5. `plan/modules/*.md` — module specs (if they exist)
-6. `plan/execution-strategy.md` — how execution was structured
-7. Work items — if `plan/work-items.yaml` exists, read it (consolidated format); otherwise glob `plan/work-items/*.md` (legacy per-file format). If prior cycles have been archived (check for `archive/cycles/*/work-items/`), note their existence but do not load them unless the user's changes specifically reference prior work. The domain layer and cycle summaries already distill prior cycle context.
-8. `steering/interview.md` — the original interview transcript
-9. `steering/research/*.md` — all research findings
-10. `journal.md` — project history (if it exists)
+Call `ideate_get_context_package({artifact_dir})` — returns architecture, guiding principles, and constraints pre-assembled.
+
+Then load remaining context via MCP tools:
+
+1. Call `ideate_artifact_query({artifact_dir}, {type: "overview"})` — retrieves `plan/overview.md`.
+2. Call `ideate_artifact_query({artifact_dir}, {type: "modules"})` — retrieves `plan/modules/*.md` specs (if they exist).
+3. Call `ideate_artifact_query({artifact_dir}, {type: "execution-strategy"})` — retrieves `plan/execution-strategy.md`.
+4. Call `ideate_artifact_query({artifact_dir}, {type: "work-items"})` — retrieves current work items (consolidated or legacy format). If prior cycles have been archived, note their existence but do not load them unless the user's changes specifically reference prior work.
+5. Call `ideate_artifact_query({artifact_dir}, {type: "interview"})` — retrieves the original interview transcript.
+6. Call `ideate_artifact_query({artifact_dir}, {type: "research"})` — retrieves all research findings.
+7. Call `ideate_artifact_query({artifact_dir}, {type: "journal"})` — retrieves project history (if it exists).
 
 ## 3.1 Domain Layer (Primary Source for Current State)
 
-If `domains/` exists in the artifact directory, load the domain layer instead of individual review files:
+**MCP required**: Look in your tool list for a tool whose name ends in `ideate_get_domain_state` (it will be prefixed, e.g. `mcp__ideate_artifact_server__ideate_get_domain_state` or `mcp__plugin_ideate_ideate_artifact_server__ideate_get_domain_state`). If not found, stop with:
 
-11. `domains/index.md` — domain registry and current cycle number
-12. `domains/*/policies.md` — all domain policies (glob all domains)
-13. `domains/*/questions.md` — all domain open and resolved questions (glob all domains)
+> The ideate MCP artifact server is required but not available. Verify .mcp.json configuration.
+
+Call `ideate_get_domain_state({artifact_dir})` — returns domain policies, open questions, and current cycle number pre-assembled across all domains.
 
 Then load the latest cycle summary from the archive:
 
-14. `archive/cycles/{N}/summary.md` — where N is the current cycle number from `domains/index.md`
+- `archive/cycles/{N}/summary.md` — where N is the current cycle number returned by `ideate_get_domain_state`.
 
 Do NOT load all incremental reviews. The domain layer already distills what matters from prior cycles.
 
-## 3.2 Legacy Fallback (No Domain Layer)
-
-If `domains/` does not exist (pre-migration artifact directory), load the legacy review files. To determine the latest cycle number, glob `archive/cycles/` and pick the highest NNN directory. If `domains/index.md` exists, use its cycle number instead.
-
-11. `archive/cycles/{NNN}/summary.md` — where NNN is the latest cycle number (highest directory under `archive/cycles/`)
-12. `archive/cycles/{NNN}/code-quality.md` — code quality findings (if it exists)
-13. `archive/cycles/{NNN}/spec-adherence.md` — spec adherence findings (if it exists)
-14. `archive/cycles/{NNN}/gap-analysis.md` — gap analysis (if it exists)
-15. `archive/cycles/{NNN}/decision-log.md` — decision log (if it exists)
-16. `archive/incremental/*.md` — incremental review findings (if they exist)
-
-If any artifact does not exist, note its absence and continue. The only required artifacts are `steering/guiding-principles.md` and `plan/overview.md`.
+If any artifact does not exist, note its absence and continue. The MCP server validation in Phase 1 already confirmed the project has a valid `.ideate/` directory.
 
 Combine the architect's codebase analysis with these artifacts to form your complete understanding of the project's current state.
 
@@ -288,7 +274,11 @@ Write a new execution strategy for this refinement cycle. The strategy covers on
 
 **Determine the next ID**: if `plan/work-items.yaml` exists, read its `items:` keys and find the highest numeric ID; increment by 1. Otherwise, glob `plan/work-items/` and find the highest NNN prefix. Use 3-digit zero-padded numbering.
 
-**Write format**: if `plan/work-items.yaml` exists, append new items to it using the consolidated YAML format. Also create `plan/notes/{id}.md` for each item's implementation notes. If only the legacy format exists, create `plan/work-items/NNN-{name}.md` per item (legacy format).
+**MCP required**: Look in your tool list for a tool whose name ends in `ideate_write_work_items` (it will be prefixed, e.g. `mcp__ideate_artifact_server__ideate_write_work_items` or `mcp__plugin_ideate_ideate_artifact_server__ideate_write_work_items`). If not found, stop with:
+
+> The ideate MCP artifact server is required but not available. Verify .mcp.json configuration.
+
+Call `ideate_write_work_items({artifact_dir}, {items_array})` — atomically appends the new work items to `plan/work-items.yaml` (or creates per-item files in the legacy format) and creates `plan/notes/{id}.md` for each item.
 
 For refinement work items, follow the same format as defined in the artifact conventions. Key differences from initial planning work items:
 
@@ -320,7 +310,11 @@ Validate all new work items:
 
 ## 7i. journal.md — APPEND Refinement Entry
 
-Append a refinement entry to the journal. Format:
+**MCP required**: Look in your tool list for a tool whose name ends in `ideate_append_journal` (it will be prefixed, e.g. `mcp__ideate_artifact_server__ideate_append_journal` or `mcp__plugin_ideate_ideate_artifact_server__ideate_append_journal`). If not found, stop with:
+
+> The ideate MCP artifact server is required but not available. Verify .mcp.json configuration.
+
+Call `ideate_append_journal({artifact_dir}, "refine", {date}, {entry_type}, {body})` — appends a structured journal entry atomically. The journal entry format to pass as `body`:
 
 ```markdown
 ## [refine] {date} — Refinement planning completed

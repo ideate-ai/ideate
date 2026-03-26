@@ -1,0 +1,19 @@
+# Review Manifest — Cycle 022
+
+## Work Items
+
+| # | Title | File Scope | Incremental Verdict | Findings (C/S/M) | Work Item Path | Review Path |
+|---|---|---|---|---|---|---|
+| 181 | Schema v7 DDL — nodes base table + extension tables + FK integrity | src/schema.ts | Fail | 1/4/1 | work-items.yaml#181 | archive/incremental/181-schema-v7-ddl.md |
+| 182 | Drizzle table definitions for v7 schema | src/db.ts | None | — | work-items.yaml#182 | — |
+| 183 | Indexer rewrite for class table inheritance | src/indexer.ts | Pass | 0/0/1 | work-items.yaml#183 | archive/incremental/183-indexer-rewrite.md |
+| 184 | Tool infrastructure and server wiring | src/tools/index.ts, src/index.ts | None | — | work-items.yaml#184 | — |
+| 185 | Context assembly tools | src/tools/context.ts | None | — | work-items.yaml#185 | — |
+| 186 | Graph query tool | src/tools/query.ts | None | — | work-items.yaml#186 | — |
+| 187 | Execution status tools | src/tools/execution.ts | None | — | work-items.yaml#187 | — |
+| 188 | Analysis tools | src/tools/analysis.ts | None | — | work-items.yaml#188 | — |
+| 189 | Write tools | src/tools/write.ts | None | — | work-items.yaml#189 | — |
+| 190 | Test suite rewrite | src/__tests__/schema.test.ts, src/__tests__/indexer.test.ts, src/__tests__/tools.test.ts | None | — | work-items.yaml#190 | — |
+| 191 | Skill file updates | skills/execute/SKILL.md, skills/review/SKILL.md, skills/refine/SKILL.md, skills/brrr/SKILL.md, skills/brrr/phases/*.md | None | — | work-items.yaml#191 | — |
+
+**Note**: WI-181 incremental review Fail was due to cross-file findings (db.ts, indexer.ts, tests) addressed by downstream work items WI-182, WI-183, WI-190. The schema.ts DDL itself was confirmed correct by the reviewer.

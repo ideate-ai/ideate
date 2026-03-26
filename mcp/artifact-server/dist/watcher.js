@@ -8,24 +8,41 @@ import path from "path";
  */
 export class ArtifactWatcher extends EventEmitter {
     watchers = new Map();
+    debounceTimers = new Map();
+    extraOptions;
+    debounceMs;
+    constructor(extraOptions = {}, debounceMs = 500) {
+        super();
+        this.extraOptions = extraOptions;
+        this.debounceMs = debounceMs;
+    }
     watch(artifactDir) {
         if (this.watchers.has(artifactDir)) {
             return;
         }
         const watcher = chokidar.watch(artifactDir, {
-            ignored: /(^|[/\\])\../, // hidden files
+            ignored: /index\.db(-wal|-shm)?$/,
             persistent: false,
             ignoreInitial: true,
             awaitWriteFinish: {
                 stabilityThreshold: 200,
                 pollInterval: 100,
             },
+            ...this.extraOptions,
         });
         const onEvent = (filePath) => {
-            this.emit("change", {
-                artifactDir,
-                filePath: path.resolve(filePath),
-            });
+            const existing = this.debounceTimers.get(artifactDir);
+            if (existing) {
+                clearTimeout(existing);
+            }
+            const timer = setTimeout(() => {
+                this.debounceTimers.delete(artifactDir);
+                this.emit("change", {
+                    artifactDir,
+                    filePath: path.resolve(filePath),
+                });
+            }, this.debounceMs);
+            this.debounceTimers.set(artifactDir, timer);
         };
         watcher.on("add", onEvent);
         watcher.on("change", onEvent);
@@ -33,6 +50,11 @@ export class ArtifactWatcher extends EventEmitter {
         this.watchers.set(artifactDir, watcher);
     }
     unwatch(artifactDir) {
+        const timer = this.debounceTimers.get(artifactDir);
+        if (timer) {
+            clearTimeout(timer);
+            this.debounceTimers.delete(artifactDir);
+        }
         const watcher = this.watchers.get(artifactDir);
         if (watcher) {
             watcher.close();

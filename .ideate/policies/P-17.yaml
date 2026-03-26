@@ -1,0 +1,14 @@
+id: P-17
+type: domain_policy
+domain: artifact-structure
+status: active
+derived_from:
+  - D-17 (manifest.json as schema version marker)
+established: cycle 003
+amended: cycle 016 — renamed from `manifest.json` to `.ideate/config.json` as part of v3 architecture
+description: "The plan skill creates `.ideate/config.json` with `{\"schema_version\": N}` during initial directory scaffolding; the file is written once and updated only by migration scripts, never by execute, review, or refine phases."
+cycle_created: 1
+cycle_modified: null
+content_hash: "44c58d8fa9c386622fdc946987b30443911144a03f998dfcd18fb2abf828328a"
+token_count: 149
+file_path: .ideate/policies/P-17.yaml

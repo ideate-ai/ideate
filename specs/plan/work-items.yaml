@@ -1427,3 +1427,1289 @@ items:
       - 'marketplace.json plugins[0].version field reads "3.0.0"'
       - 'No other fields in either file are modified'
     notes: plan/notes/142.md
+
+  "143":
+    title: ".ideate/ directory scaffolding and config schema"
+    complexity: small
+    scope:
+      - {path: mcp/artifact-server/src/config.ts, op: modify}
+      - {path: .gitignore, op: modify}
+    depends: []
+    blocks: ["145", "146"]
+    criteria:
+      - 'config.ts resolveArtifactDir() walks up from CWD looking for .ideate/ directory containing config.json (not .ideate.json)'
+      - 'config.ts exports a TypeScript interface for config.json schema with fields: schema_version (number), project_name (string, optional)'
+      - '.gitignore contains entries for .ideate/index.db, .ideate/index.db-wal, .ideate/index.db-shm'
+      - 'config.ts exports a createIdeateDir(path) function that creates the .ideate/ directory structure with subdirectories: work-items/, principles/, constraints/, policies/, decisions/, questions/, modules/, research/, interviews/, archive/cycles/'
+      - 'config.ts exports a writeConfig(path, config) function that writes config.json'
+      - 'Existing config.ts tests updated to cover new discovery logic'
+    notes: plan/notes/143.md
+
+  "144":
+    title: "YAML artifact schemas and SQLite runtime index schema"
+    complexity: medium
+    scope:
+      - {path: mcp/artifact-server/src/schema.ts, op: create}
+    depends: []
+    blocks: ["145", "146", "147"]
+    criteria:
+      - 'schema.ts exports TypeScript interfaces for all artifact types: WorkItem, Finding, DomainPolicy, DomainDecision, DomainQuestion, GuidingPrinciple, Constraint, ModuleSpec, ResearchFinding, InterviewResponse, JournalEntry, MetricsEvent'
+      - 'Each interface includes common fields: id (string), type (string literal), cycle_created (number), cycle_modified (number | null), content_hash (string), status (string)'
+      - 'WorkItem interface includes: title, complexity, scope (array), depends (array), blocks (array), criteria (array), module (string | null), domain (string | null)'
+      - 'Finding interface includes: severity (critical | significant | minor), work_item (string), file_refs (array), verdict (pass | fail), cycle (number), reviewer (string)'
+      - 'schema.ts exports a createSchema(db) function that creates all typed SQLite tables using better-sqlite3'
+      - 'SQLite schema includes typed tables for each artifact type with common columns (id, type, cycle_created, cycle_modified, content_hash, token_count, file_path, status) plus type-specific columns'
+      - 'SQLite schema includes a universal edges table: edges(id, source_id, source_type, target_id, target_type, edge_type, props TEXT)'
+      - 'SQLite schema includes indexes: idx_edges_source(source_id, edge_type), idx_edges_target(target_id, edge_type); UNIQUE constraint on (source_id, target_id, edge_type) provides an equivalent implicit composite index'
+      - 'SQLite schema includes a node_file_refs(node_id, node_type, file_path) table with index on file_path'
+      - 'schema.ts exports edge type enumeration: depends_on, blocks, belongs_to_module, belongs_to_domain, derived_from, relates_to, addressed_by, references, amended_by, supersedes'
+    notes: plan/notes/144.md
+
+  "145":
+    title: "SQLite rebuild pipeline and old infrastructure removal"
+    complexity: large
+    scope:
+      - {path: mcp/artifact-server/src/indexer.ts, op: modify}
+      - {path: mcp/artifact-server/src/watcher.ts, op: modify}
+      - {path: mcp/artifact-server/src/index.ts, op: modify}
+      - {path: mcp/artifact-server/src/tools.ts, op: modify}
+      - {path: mcp/artifact-server/src/embeddings.ts, op: delete}
+      - {path: mcp/artifact-server/src/chunker.ts, op: delete}
+      - {path: mcp/artifact-server/src/retrieval.ts, op: delete}
+      - {path: mcp/artifact-server/package.json, op: modify}
+    depends: ["143", "144"]
+    blocks: ["147"]
+    criteria:
+      - 'embeddings.ts, chunker.ts, retrieval.ts are deleted'
+      - 'tools.ts exports an empty tools array (no MCP tools registered)'
+      - 'indexer.ts exports a rebuildIndex(db, ideateDir) function that scans all YAML files in .ideate/ and populates SQLite tables'
+      - 'indexer.ts parses YAML files and maps fields to typed tables using schema.ts mappings'
+      - 'indexer.ts extracts inline edges (depends, blocks, derived_from, etc.) from YAML fields and populates the edges table'
+      - 'indexer.ts computes SHA-256 content_hash per file and skips unchanged files during incremental rebuild'
+      - 'indexer.ts implements Kahn''s algorithm for DAG cycle detection on depends_on edges, logging warnings for cycles found'
+      - 'indexer.ts populates node_file_refs from work item scope fields'
+      - 'watcher.ts triggers incremental rebuild on YAML file changes in .ideate/'
+      - 'index.ts creates SQLite database at .ideate/index.db in WAL mode with busy_timeout=5000, calls createSchema() on startup, triggers full rebuild, then starts file watcher'
+      - 'package.json removes @xenova/transformers dependency'
+      - 'No import of deleted modules remains in any source file'
+    notes: plan/notes/145.md
+
+  "146":
+    title: "Migration script: specs/ markdown to .ideate/ YAML"
+    complexity: large
+    scope:
+      - {path: scripts/migrate-to-v3.sh, op: create}
+      - {path: scripts/migrate-to-v3.ts, op: create}
+    depends: ["143", "144"]
+    blocks: []
+    criteria:
+      - 'scripts/migrate-to-v3.sh accepts source and target directory arguments'
+      - 'Script converts guiding-principles.md to individual YAML files in .ideate/principles/ (one per principle, GP-NN.yaml)'
+      - 'Script converts constraints.md to individual YAML files in .ideate/constraints/ (one per constraint, C-NN.yaml)'
+      - 'Script converts work-items.yaml entries to individual YAML files in .ideate/work-items/ (WI-NNN.yaml), merging implementation notes from plan/notes/'
+      - 'Script converts domains/*/policies.md to individual YAML files in .ideate/policies/ (P-NN.yaml with domain field)'
+      - 'Script converts domains/*/decisions.md to individual YAML files in .ideate/decisions/ (D-NN.yaml with domain field)'
+      - 'Script converts domains/*/questions.md to individual YAML files in .ideate/questions/ (Q-NN.yaml with domain field)'
+      - 'Script converts steering/research/*.md to YAML files in .ideate/research/'
+      - 'Script converts archive/cycles/{NNN}/*.md to YAML files in .ideate/archive/cycles/{NNN}/'
+      - 'Script converts journal.md to .ideate/journal.yaml'
+      - 'Script copies metrics.jsonl to .ideate/metrics.jsonl'
+      - 'Script creates .ideate/config.json with schema_version: 2'
+      - 'Script supports --dry-run flag that reports what would be migrated without writing'
+      - 'Script reports migration statistics: files converted, files skipped, errors encountered'
+      - 'All migrated YAML files include required common fields (id, type, status)'
+    notes: plan/notes/146.md
+
+  "147":
+    title: "Test suite for YAML schema and rebuild pipeline"
+    complexity: medium
+    scope:
+      - {path: mcp/artifact-server/src/__tests__/schema.test.ts, op: create}
+      - {path: mcp/artifact-server/src/__tests__/indexer.test.ts, op: modify}
+      - {path: mcp/artifact-server/src/__tests__/config.test.ts, op: modify}
+      - {path: mcp/artifact-server/src/__tests__/embeddings.test.ts, op: delete}
+      - {path: mcp/artifact-server/src/__tests__/chunker.test.ts, op: delete}
+      - {path: mcp/artifact-server/src/__tests__/retrieval.test.ts, op: delete}
+    depends: ["144", "145"]
+    blocks: []
+    criteria:
+      - 'schema.test.ts tests createSchema() creates all expected tables and indexes in an in-memory SQLite database'
+      - 'indexer.test.ts tests rebuildIndex() correctly parses a work item YAML file and populates the work_items table'
+      - 'indexer.test.ts tests rebuildIndex() extracts depends_on edges and populates the edges table'
+      - 'indexer.test.ts tests incremental rebuild skips files with unchanged content_hash'
+      - 'indexer.test.ts tests Kahn''s algorithm detects a cycle in depends_on edges'
+      - 'indexer.test.ts tests node_file_refs are populated from work item scope fields'
+      - 'config.test.ts tests resolveArtifactDir() finds .ideate/ directory by walking up from CWD'
+      - 'Old test files for deleted modules (embeddings.test.ts, chunker.test.ts, retrieval.test.ts) are deleted'
+      - 'All tests pass with vitest'
+    notes: plan/notes/147.md
+
+  "148":
+    title: "Fully defined edge type registry"
+    complexity: small
+    scope:
+      - {path: mcp/artifact-server/src/schema.ts, op: modify}
+      - {path: mcp/artifact-server/src/indexer.ts, op: modify}
+      - {path: specs/plan/notes/148.md, op: create}
+    depends: ["144", "145"]
+    blocks: []
+    criteria:
+      - 'EDGE_TYPES in schema.ts has a documented entry for every edge type: source artifact type(s), target artifact type(s), YAML field it is extracted from, and a one-line semantic description'
+      - 'The `references` edge type is either documented with full source/target/field metadata, or removed if it has no defined use case'
+      - 'rebuildIndex in indexer.ts extracts edges for all documented edge types (no undocumented edge types are extracted)'
+      - 'An EdgeTypeSpec interface or constant object is exported from schema.ts mapping each EdgeType to its metadata (source_types, target_types, yaml_field, description)'
+      - 'The edge type table in specs/plan/notes/148.md lists every edge type with full column definitions'
+    notes: plan/notes/148.md
+
+  "149":
+    title: "Test coverage for migration script"
+    complexity: small
+    scope:
+      - {path: mcp/artifact-server/src/__tests__/migrate.test.ts, op: create}
+    depends: ["146"]
+    blocks: []
+    criteria:
+      - 'A test file `scripts/migrate-to-v3.test.ts` exists using vitest'
+      - 'Tests for `toYaml()`: multi-key objects in arrays emit valid flow mapping syntax `{key: val}`; multi-line strings use block scalar format; arrays of scalars emit YAML sequence format'
+      - 'Tests for `parseYamlFlowArray()`: handles unquoted values `[foo, bar]`, single-quoted `[''foo'', ''bar'']`, mixed, empty array `[]`'
+      - 'Tests for `buildArtifact()`: content_hash is stable (calling twice with same input produces same hash); token_count equals Math.floor(canonical.length / 4)'
+      - 'Tests for `migrateGuidingPrinciples()`: parses a minimal guiding-principles.md fixture with one `## 1. Name` section and produces a GP-01.yaml output object with correct fields'
+      - 'Tests for work item migration: a minimal work-items.yaml entry is parsed into a WI-NNN object with correct id, title, complexity, depends, blocks, criteria'
+      - 'Dry-run mode: script exits without writing any files when --dry-run is passed'
+      - 'All tests pass with vitest'
+    notes: plan/notes/149.md
+
+  "160":
+    title: "deleteStaleRows Drizzle conversion"
+    complexity: small
+    scope:
+      - {path: mcp/artifact-server/src/indexer.ts, op: modify}
+    depends: []
+    blocks: ["161", "167"]
+    criteria:
+      - 'deleteStaleRows uses Drizzle db.delete(tableRef).where(notInArray(tableRef.id, keepIds)) for each table in ALL_TYPED_TABLES'
+      - 'No db.prepare() calls remain in deleteStaleRows'
+      - 'No column names or table names are interpolated as strings in deleteStaleRows'
+      - 'detectCycles is not modified (write-path criterion only)'
+      - 'npm run build succeeds; all existing tests pass'
+    notes: plan/notes/160.md
+
+  "161":
+    title: "detectCycles traversal limit"
+    complexity: small
+    scope:
+      - {path: mcp/artifact-server/src/indexer.ts, op: modify}
+    depends: ["160"]
+    blocks: ["167"]
+    criteria:
+      - 'detectCycles checks node count before running Kahn algorithm; if nodes > MAX_DEPENDENCY_NODES, throws an Error with a descriptive message'
+      - 'detectCycles checks edge count before running; if edges > MAX_DEPENDENCY_EDGES, throws an Error with a descriptive message'
+      - 'MAX_DEPENDENCY_NODES and MAX_DEPENDENCY_EDGES are exported constants from indexer.ts (suggested values: 10000 nodes, 50000 edges)'
+      - 'npm run build succeeds; all existing tests pass'
+    notes: plan/notes/161.md
+
+  "162":
+    title: "migrateArchiveCycles — extract work_item and verdict"
+    complexity: small
+    scope:
+      - {path: scripts/migrate-to-v3.ts, op: modify}
+      - {path: mcp/artifact-server/src/__tests__/migrate.test.ts, op: modify}
+    depends: []
+    blocks: ["163", "165"]
+    criteria:
+      - 'migrateArchiveCycles extracts verdict from the "## Verdict: {Pass|Fail}" line at the start of each review file'
+      - 'migrateArchiveCycles derives work_item from the review filename prefix (e.g., "154-integrate-drizzle.md" → "WI-154")'
+      - 'Finding objects produced by migrateArchiveCycles include both work_item and verdict fields populated from the review file'
+      - 'Test verifies verdict extraction using a minimal fixture file containing a "## Verdict: Pass" line'
+      - 'Test verifies work_item extraction from a filename like "154-some-title.md"'
+      - 'npm run build succeeds; all existing tests pass'
+    notes: plan/notes/162.md
+
+  "163":
+    title: "Migration: plan + steering artifacts"
+    complexity: medium
+    scope:
+      - {path: scripts/migrate-to-v3.ts, op: modify}
+      - {path: mcp/artifact-server/src/__tests__/migrate.test.ts, op: modify}
+    depends: ["162"]
+    blocks: ["164"]
+    criteria:
+      - 'runMigration calls migratePlanArtifacts which migrates plan/architecture.md, plan/overview.md, plan/execution-strategy.md, and all plan/modules/*.md files'
+      - 'runMigration calls migrateSteeringArtifacts which migrates steering/guiding-principles.md, steering/constraints.md, and all steering/research/*.md files'
+      - 'Migrated plan artifacts are written to .ideate/plan/ with type fields: architecture → type: architecture, overview → type: overview, execution-strategy → type: execution_strategy, modules → type: module_spec'
+      - 'Migrated steering artifacts are written to .ideate/steering/ with type fields: guiding-principles → type: guiding_principles, constraints → type: constraints, research → type: research'
+      - 'Dry-run mode does not write plan or steering artifact files'
+      - 'Test covers migratePlanArtifacts with a minimal fixture containing one plan/overview.md file'
+      - 'Test covers migrateSteeringArtifacts with a minimal fixture containing one steering/constraints.md file'
+      - 'npm run build succeeds; all existing tests pass'
+    notes: plan/notes/163.md
+
+  "164":
+    title: "Migration: interview files"
+    complexity: small
+    scope:
+      - {path: scripts/migrate-to-v3.ts, op: modify}
+      - {path: mcp/artifact-server/src/__tests__/migrate.test.ts, op: modify}
+    depends: ["163"]
+    blocks: ["165"]
+    criteria:
+      - 'runMigration calls migrateInterviews'
+      - 'migrateInterviews migrates steering/interview.md (if it exists) with type: interview'
+      - 'migrateInterviews migrates all files under steering/interviews/**/*.md, preserving the subdirectory structure under .ideate/interviews/'
+      - 'Each migrated interview file has type: interview and an id derived from the relative path (e.g., interviews/refine-018/_full.md → id: interviews/refine-018/_full)'
+      - 'Dry-run mode does not write interview files'
+      - 'Test covers migrateInterviews with a minimal fixture containing one steering/interviews/refine-001/_full.md file'
+      - 'npm run build succeeds; all existing tests pass'
+    notes: plan/notes/164.md
+
+  "165":
+    title: "Migration: remaining archive file types"
+    complexity: medium
+    scope:
+      - {path: scripts/migrate-to-v3.ts, op: modify}
+      - {path: mcp/artifact-server/src/__tests__/migrate.test.ts, op: modify}
+    depends: ["162", "164"]
+    blocks: []
+    criteria:
+      - 'migrateArchiveCycles also processes decision-log.md from each cycle directory, producing a single content artifact per cycle with type: decision_log'
+      - 'migrateArchiveCycles also processes summary.md from each cycle directory, producing a single content artifact per cycle with type: cycle_summary'
+      - 'migrateArchiveCycles also processes review-manifest.md from each cycle directory, producing a single content artifact per cycle with type: review_manifest'
+      - 'migrateArchiveCycles also processes incremental/*.md files from each cycle directory (if an incremental/ subdirectory exists), using the same finding-extraction logic as code-quality.md and applying the work_item extraction from WI-162'
+      - 'Dry-run mode does not write any of the new file types'
+      - 'Test covers decision-log migration with a minimal fixture'
+      - 'Test covers cycle summary migration with a minimal fixture'
+      - 'Test covers incremental review migration with a minimal fixture'
+      - 'npm run build succeeds; all existing tests pass'
+    notes: plan/notes/165.md
+
+  "166":
+    title: "Spec + doc cleanup — journal layout, edge names, architecture dir, schema version constant, test fixture"
+    complexity: small
+    scope:
+      - {path: specs/plan/notes/143.md, op: modify}
+      - {path: specs/plan/notes/144.md, op: modify}
+      - {path: specs/plan/work-items.yaml, op: modify}
+      - {path: specs/plan/architecture.md, op: modify}
+      - {path: mcp/artifact-server/src/config.ts, op: modify}
+      - {path: mcp/artifact-server/src/__tests__/config.test.ts, op: modify}
+      - {path: mcp/artifact-server/src/__tests__/indexer.test.ts, op: modify}
+    depends: []
+    blocks: []
+    criteria:
+      - 'notes/143.md describes per-entry journal files at cycles/{NNN}/journal/J-{NNN}-{seq}.yaml (not a flat journal.yaml at .ideate/ root)'
+      - 'notes/144.md JournalEntry describes individual YAML files rather than an entries: array in journal.yaml'
+      - 'WI-144 criterion text in work-items.yaml uses addressed_by and amended_by edge names (not the stale addresses/amends names)'
+      - 'architecture.md documents cycles/ as the directory for cycle-scoped artifact storage (not archive/cycles)'
+      - 'config.ts exports CONFIG_SCHEMA_VERSION (renamed from CURRENT_SCHEMA_VERSION) for the IdeateConfig JSON schema version'
+      - 'config.test.ts references CONFIG_SCHEMA_VERSION consistently'
+      - 'indexer.test.ts fixture at line ~47 uses cycles/ subdirectory path (not archive/cycles)'
+      - 'schema.ts CURRENT_SCHEMA_VERSION export is unchanged (different concern, no rename needed)'
+      - 'npm run build succeeds; all existing tests pass'
+    notes: plan/notes/166.md
+
+  "167":
+    title: "domainQuestions.addressed_by column"
+    complexity: small
+    scope:
+      - {path: mcp/artifact-server/src/schema.ts, op: modify}
+      - {path: mcp/artifact-server/src/db.ts, op: modify}
+      - {path: mcp/artifact-server/src/__tests__/schema.test.ts, op: modify}
+      - {path: mcp/artifact-server/src/indexer.ts, op: modify}
+    depends: ["160", "161"]
+    blocks: []
+    criteria:
+      - 'domainQuestions Drizzle table definition includes addressed_by: text(''addressed_by'') (nullable)'
+      - 'createSchema DDL SQL includes addressed_by TEXT column in domain_questions table'
+      - 'CURRENT_SCHEMA_VERSION in schema.ts incremented to 4'
+      - 'buildRow for domain_questions includes addressed_by field mapped from doc.addressed_by'
+      - 'Schema test verifies addressed_by column exists in domain_questions table'
+      - 'npm run build succeeds; all existing tests pass'
+    notes: plan/notes/167.md
+
+  "168":
+    title: "document_artifacts table and type registration"
+    complexity: medium
+    scope:
+      - {path: mcp/artifact-server/src/schema.ts, op: modify}
+      - {path: mcp/artifact-server/src/db.ts, op: modify}
+      - {path: mcp/artifact-server/src/indexer.ts, op: modify}
+      - {path: mcp/artifact-server/src/__tests__/schema.test.ts, op: modify}
+      - {path: mcp/artifact-server/src/__tests__/indexer.test.ts, op: modify}
+    depends: ["167"]
+    blocks: []
+    criteria:
+      - 'document_artifacts DDL in createSchema has 8 common columns plus title TEXT, cycle INTEGER, content TEXT'
+      - 'DocumentArtifact TypeScript interface in schema.ts has type field as union of all 10 document type strings'
+      - 'DocumentArtifact is added to the Artifact union type in schema.ts'
+      - 'CURRENT_SCHEMA_VERSION incremented from 4 to 5'
+      - 'documentArtifacts Drizzle table definition added to db.ts'
+      - 'AnyTable union in db.ts updated to include typeof documentArtifacts'
+      - 'TYPE_TO_DRIZZLE_TABLE in db.ts includes all 10 new type keys each mapped to documentArtifacts'
+      - 'TYPE_TO_TABLE in indexer.ts includes all 10 new type keys each mapped to "document_artifacts"'
+      - '"document_artifacts" added to ALL_TYPED_TABLES array in indexer.ts'
+      - 'buildRow in indexer.ts handles case "document_artifacts" with title, cycle, content fields'
+      - 'Schema test verifies document_artifacts table exists with title, cycle, and content columns'
+      - 'Indexer test verifies each of the 10 new types is present in TYPE_TO_TABLE mapping to "document_artifacts"'
+      - 'npm run build succeeds; all existing tests pass'
+    notes: plan/notes/168.md
+
+  "169":
+    title: "Fix module_spec migration to output structured fields"
+    complexity: small
+    scope:
+      - {path: scripts/migrate-to-v3.ts, op: modify}
+      - {path: scripts/migrate-to-v3.js, op: modify}
+      - {path: mcp/artifact-server/src/__tests__/migrate.test.ts, op: modify}
+    depends: ["165"]
+    blocks: []
+    criteria:
+      - 'migratePlanArtifacts in migrate-to-v3.ts produces module_spec YAML with name, scope, provides, requires, boundary_rules fields (not title and content)'
+      - 'name is derived from the H1 heading with any "Module: " prefix stripped'
+      - 'scope is the body of the "## Scope" section trimmed to a string'
+      - 'provides is the list items from the "## Provides" section serialized as a YAML array'
+      - 'requires is the list items from the "## Requires" section serialized as a YAML array'
+      - 'boundary_rules is the list items from the "## Boundary Rules" section serialized as a YAML array'
+      - 'Sections absent from the markdown produce empty arrays for list fields and empty string for scope'
+      - 'migrate-to-v3.js updated to match the .ts implementation'
+      - 'migrate.test.ts adds tests covering structured field extraction from a module spec markdown fixture'
+      - 'npm run build succeeds; all existing tests pass'
+    notes: plan/notes/169.md
+
+  "170":
+    title: "Watcher debounce"
+    complexity: small
+    scope:
+      - {path: mcp/artifact-server/src/index.ts, op: modify}
+      - {path: mcp/artifact-server/src/watcher.ts, op: modify}
+      - {path: mcp/artifact-server/src/__tests__/watcher.test.ts, op: modify}
+    depends: []
+    blocks: []
+    criteria:
+      - 'ArtifactWatcher applies a 500ms trailing debounce to file event callbacks'
+      - 'N rapid file write events trigger exactly 1 rebuild invocation, not N'
+      - 'src/index.ts watcher setup uses the debounced callback'
+      - 'A new watcher test verifies multiple rapid events coalesce into a single callback invocation after the debounce window'
+      - 'All existing watcher tests pass'
+      - 'npm run build succeeds; all tests pass'
+    notes: plan/notes/170.md
+
+  "171":
+    title: "MCP server performance and correctness"
+    complexity: large
+    scope:
+      - {path: mcp/artifact-server/src/schema.ts, op: modify}
+      - {path: mcp/artifact-server/src/db.ts, op: modify}
+      - {path: mcp/artifact-server/src/indexer.ts, op: modify}
+      - {path: mcp/artifact-server/src/__tests__/schema.test.ts, op: modify}
+      - {path: mcp/artifact-server/src/__tests__/indexer.test.ts, op: modify}
+    depends: []
+    blocks: []
+    criteria:
+      - 'CREATE INDEX IF NOT EXISTS idx_{table}_file_path ON {table}(file_path) added for each typed table in schema.ts'
+      - 'All prepared hash-check statements created once before the file loop in rebuildIndex, not inside the loop'
+      - 'nodeFileRefs Drizzle table definition declares primaryKey([nodeId, filePath])'
+      - 'edges Drizzle table definition declares a unique constraint on (sourceId, targetId, edgeType)'
+      - 'All onConflictDoNothing() and onConflictDoUpdate() calls remain valid with the updated Drizzle definitions'
+      - 'Both BFS loops in detectCycles use an index-pointer pattern instead of Array.shift()'
+      - 'interview_responses table DDL removed from schema.ts'
+      - 'interviewResponses Drizzle table definition removed from db.ts'
+      - '"interview_response" removed from TYPE_TO_TABLE, TYPE_TO_DRIZZLE_TABLE, buildRow switch, and ALL_TYPED_TABLES in indexer.ts'
+      - 'CURRENT_SCHEMA_VERSION incremented (5 → 6) for the interview_responses removal'
+      - 'Schema test verifies interview_responses table no longer exists after schema creation'
+      - 'Indexer test updated to remove interview_response from TYPE_TO_TABLE assertions'
+      - 'deleteStaleRows unused db: Database.Database parameter removed'
+      - 'PRAGMA foreign_keys = ON removed (no FK constraints exist to enforce)'
+      - 'checkSchemaVersion deletes WAL and SHM files alongside index.db on version mismatch'
+      - 'walkDir logs a warning to stderr on directory read error instead of silently continuing'
+      - 'tokenCount function has an inline comment documenting the length/4 approximation and its known imprecision'
+      - 'TYPE_TO_TABLE in indexer.ts has a comment noting it must be kept in sync with TYPE_TO_DRIZZLE_TABLE in db.ts'
+      - 'CURRENT_SCHEMA_VERSION in schema.ts has a comment explaining the intentional naming asymmetry with CONFIG_SCHEMA_VERSION in config.ts (per D-79)'
+      - 'npm run build succeeds; all tests pass'
+    notes: plan/notes/171.md
+
+  "172":
+    title: "Migration script fixes"
+    complexity: medium
+    scope:
+      - {path: scripts/migrate-to-v3.ts, op: modify}
+      - {path: scripts/migrate-to-v3.js, op: modify}
+      - {path: mcp/artifact-server/src/__tests__/migrate.test.ts, op: modify}
+      - {path: mcp/artifact-server/package.json, op: modify}
+    depends: []
+    blocks: []
+    criteria:
+      - 'migrate-to-v3.js has a header comment stating it is generated from migrate-to-v3.ts and must be kept in sync'
+      - 'mcp/artifact-server/package.json has a pretest script that compiles migrate-to-v3.ts to migrate-to-v3.js before running tests'
+      - 'migrate-to-v3.ts (and .js) has a header comment documenting it as a one-time conversion tool for v2 → v3 migration'
+      - 'Finding builders in migrateArchiveCycles set file_path to the relative output YAML path instead of null'
+      - 'cycleSeq counter does not reset between cycles — finding IDs are globally unique across all cycles'
+      - 'toYaml escapes string values that start with whitespace (wraps in double quotes or equivalent)'
+      - 'migratePlanArtifacts and migrateSteeringArtifacts use the shared writeOutput helper with no duplicated inline write logic'
+      - 'migrate.test.ts adds a test verifying migrateSteeringArtifacts dry-run does not write any files'
+      - 'migrate.test.ts adds a test for the legacy steering/interview.md path (verifies output at .ideate/interviews/legacy.yaml with type: interview and id: interviews/legacy)'
+      - 'migrate.test.ts adds a test for extractSection with an empty section body (verifies empty string is returned)'
+      - 'npm run build succeeds; all existing tests pass including new ones'
+    notes: plan/notes/172.md
+
+  "173":
+    title: "Architecture and spec documentation updates"
+    complexity: small
+    scope:
+      - {path: specs/plan/architecture.md, op: modify}
+      - {path: specs/plan/notes/144.md, op: modify}
+    depends: []
+    blocks: []
+    criteria:
+      - 'Source code index entry for config.ts in architecture.md lists CONFIG_SCHEMA_VERSION (not CURRENT_SCHEMA_VERSION) and includes resolveArtifactDir, createIdeateDir, writeConfig'
+      - 'Source code index entry for migrate-to-v3.ts includes the exported functions added in WI-162 through WI-169'
+      - 'Source code index entry for migrate-to-v3.js updated to match migrate-to-v3.ts'
+      - 'specs/plan/notes/144.md clarifies that idx_edges_composite was dropped as redundant with the UNIQUE constraint on (source_id, target_id, edge_type) which provides an equivalent index'
+    notes: plan/notes/173.md
+
+  "181":
+    title: "Schema v7 DDL — nodes base table + extension tables + FK integrity"
+    complexity: medium
+    scope:
+      - {path: mcp/artifact-server/src/schema.ts, op: modify}
+    depends: []
+    blocks: ["182"]
+    criteria:
+      - 'CREATE TABLE nodes with columns: id TEXT PRIMARY KEY, type TEXT NOT NULL, cycle_created INTEGER, cycle_modified INTEGER, content_hash TEXT NOT NULL, token_count INTEGER, file_path TEXT NOT NULL, status TEXT'
+      - 'CREATE INDEX idx_nodes_type ON nodes(type) and CREATE INDEX idx_nodes_file_path ON nodes(file_path)'
+      - '12 extension tables created, each with id TEXT PRIMARY KEY REFERENCES nodes(id) ON DELETE CASCADE'
+      - 'Extension tables: work_items, findings, domain_policies, domain_decisions, domain_questions, guiding_principles, constraints, module_specs, research_findings, journal_entries, metrics_events, document_artifacts'
+      - 'Each extension table has type-specific columns matching the current v6 typed table columns (minus the 8 common columns now in nodes)'
+      - 'edges table: source_id and target_id are REFERENCES nodes(id) ON DELETE CASCADE; source_type and target_type columns removed'
+      - 'node_file_refs table: node_id REFERENCES nodes(id) ON DELETE CASCADE; node_type column removed'
+      - 'CURRENT_SCHEMA_VERSION set to 7'
+      - 'TypeScript interfaces updated: Edge without source_type/target_type, NodeFileRef without node_type, ArtifactCommon unchanged'
+      - 'EDGE_TYPE_REGISTRY preserved with all 10 edge types and their source/target type constraints'
+      - 'checkSchemaVersion function preserved (returns false and deletes DB on version mismatch)'
+    notes: plan/notes/181.md
+
+  "182":
+    title: "Drizzle table definitions for v7 schema"
+    complexity: small
+    scope:
+      - {path: mcp/artifact-server/src/db.ts, op: modify}
+    depends: ["181"]
+    blocks: ["183"]
+    criteria:
+      - 'Drizzle nodes table defined with all 8 common columns'
+      - '12 Drizzle extension tables defined, each with id referencing nodes'
+      - 'Drizzle edges table defined without source_type and target_type columns'
+      - 'Drizzle nodeFileRefs table defined without node_type column'
+      - 'TYPE_TO_EXTENSION_TABLE mapping exported (replaces TYPE_TO_DRIZZLE_TABLE) with 20 type string entries mapping to 12 extension table objects'
+      - '10 document sub-types (decision_log, cycle_summary, review_manifest, architecture, overview, execution_strategy, guiding_principles, constraints, research, interview) all map to documentArtifacts'
+      - 'AnyTable union type updated to include all 12 extension tables'
+    notes: plan/notes/182.md
+
+  "183":
+    title: "Indexer rewrite for class table inheritance"
+    complexity: large
+    scope:
+      - {path: mcp/artifact-server/src/indexer.ts, op: modify}
+    depends: ["182"]
+    blocks: ["184"]
+    criteria:
+      - 'rebuildIndex inserts into nodes table first, then into the appropriate extension table (two-pass insert per artifact)'
+      - 'db.pragma("defer_foreign_keys = ON") called inside the rebuild transaction before any inserts'
+      - 'Hash check uses single query on nodes table (SELECT id, content_hash FROM nodes WHERE file_path = ?) instead of scanning 12 tables'
+      - 'deleteStaleRows reduced to single DELETE FROM nodes WHERE id NOT IN (...) — CASCADE handles extension tables, edges, and node_file_refs'
+      - 'Edge extraction preserved — extractEdges function works with nodeId from nodes table'
+      - 'File ref extraction preserved — extractFileRefs function works with nodeId from nodes table'
+      - 'detectCycles function preserved — queries edges table for depends_on edges'
+      - 'ALL_TYPED_TABLES constant and hashCheckStmts Map eliminated'
+      - 'TYPE_TO_TABLE mapping replaced with import of TYPE_TO_EXTENSION_TABLE from db.ts'
+      - 'buildRow function simplified — common fields go to nodes row, type-specific fields go to extension row'
+    notes: plan/notes/183.md
+
+  "184":
+    title: "Tool infrastructure and server wiring"
+    complexity: medium
+    scope:
+      - {path: mcp/artifact-server/src/tools/index.ts, op: create}
+      - {path: mcp/artifact-server/src/index.ts, op: modify}
+    depends: ["183"]
+    blocks: ["185", "186", "187", "188", "189"]
+    criteria:
+      - 'ToolContext interface exported: { db: Database.Database, drizzleDb: BetterSQLite3Database, ideateDir: string }'
+      - 'handleTool function signature: (ctx: ToolContext, name: string, args: Record<string, unknown>) => Promise<string>'
+      - 'TOOLS array contains all 11 tool definitions with name, description, and inputSchema (JSON Schema for parameters)'
+      - 'handleTool dispatches to the correct tool handler by name, throws Error for unknown tools'
+      - 'index.ts startup sets PRAGMA foreign_keys = ON immediately after opening the database connection'
+      - 'index.ts creates ToolContext from existing db, drizzleDb, ideateDir variables'
+      - 'index.ts CallToolRequestSchema handler calls handleTool(ctx, name, args) and wraps errors with isError: true'
+      - 'index.ts ListToolsRequestSchema handler returns TOOLS array'
+      - 'Old tools.ts file removed (replaced by tools/index.ts)'
+    notes: plan/notes/184.md
+
+  "185":
+    title: "Context assembly tools (get_work_item_context + get_context_package)"
+    complexity: large
+    scope:
+      - {path: mcp/artifact-server/src/tools/context.ts, op: create}
+    depends: ["184"]
+    blocks: ["190", "191"]
+    criteria:
+      - 'ideate_get_work_item_context accepts artifact_dir and work_item_id parameters'
+      - 'Returns work item spec (from work_items extension table joined with nodes)'
+      - 'Returns module spec joined via belongs_to_module edge'
+      - 'Returns domain policies joined via belongs_to_domain edge'
+      - 'Returns relevant research findings (matched by topic relevance to work item domain/module)'
+      - 'Reads implementation notes from disk (work_items.notes file path reference)'
+      - 'Response is markdown sections, target 200-500 lines'
+      - 'ideate_get_context_package accepts artifact_dir parameter'
+      - 'Returns architecture document content (from document_artifacts where type = architecture)'
+      - 'Returns guiding principles (from guiding_principles extension table, all rows)'
+      - 'Returns constraints (from constraints extension table, all rows)'
+      - 'Builds source code index dynamically via fs.readdirSync + grep for export patterns'
+      - 'Response is markdown with sections: Architecture, Guiding Principles, Constraints, Source Code Index, Full Document Paths'
+      - 'Response target 500-800 lines'
+    notes: plan/notes/185.md
+
+  "186":
+    title: "Graph query tool (artifact_query)"
+    complexity: large
+    scope:
+      - {path: mcp/artifact-server/src/tools/query.ts, op: create}
+    depends: ["184"]
+    blocks: ["190", "191"]
+    criteria:
+      - 'ideate_artifact_query accepts: type?, filters? (domain, status, cycle, severity, phase, work_item), related_to?, edge_types?, direction? (outgoing/incoming/both), depth? (default 1, max 10), limit? (default 50, max 200), offset?'
+      - 'At least one of type, related_to, or filters must be provided (validates and returns error otherwise)'
+      - 'Filter mode: queries nodes + extension table by type and attribute filters, returns markdown table with ID, Type, Status, Summary, Domain, Cycle, File columns'
+      - 'Graph traversal mode: uses recursive CTE on edges table from related_to node, returns markdown table with ID, Type, Edge, Dir, Depth, Status, Summary columns'
+      - 'Combined mode: related_to + type/filters filters traversal results'
+      - 'Summary column is type-dependent, truncated at 80 characters'
+      - 'Error responses: unknown type lists valid types, non-existent related_to node returns "Node not found", depth without related_to returns parameter error'
+      - 'Pagination: total count shown in header, offset/limit applied, footer hint when results exceed limit'
+      - 'depth > 10 returns error, limit > 200 silently capped'
+    notes: plan/notes/186.md
+
+  "187":
+    title: "Execution status tools (get_execution_status + get_review_manifest)"
+    complexity: medium
+    scope:
+      - {path: mcp/artifact-server/src/tools/execution.ts, op: create}
+    depends: ["184"]
+    blocks: ["190", "191"]
+    criteria:
+      - 'ideate_get_execution_status accepts artifact_dir parameter'
+      - 'Returns completed items (cross-references incremental review verdicts + journal entries)'
+      - 'Returns pending items (work items not in completed set)'
+      - 'Returns ready items (pending items whose dependencies are all in completed set)'
+      - 'Returns blocked items (pending items with unsatisfied dependencies, lists which deps are missing)'
+      - 'Response is markdown sections with item lists and counts'
+      - 'ideate_get_review_manifest accepts artifact_dir and optional cycle_number parameter'
+      - 'Joins work items with incremental reviews by work item ID'
+      - 'Extracts verdict (Pass/Fail) and finding counts (C/S/M) from review files'
+      - 'Returns markdown table: #, Title, File Scope, Incremental Verdict, Findings (C/S/M), Work Item Path, Review Path'
+      - 'Items without reviews show None for verdict'
+      - 'Read-only — no file side-effect write'
+    notes: plan/notes/187.md
+
+  "188":
+    title: "Analysis tools (get_convergence_status + get_domain_state + get_project_status)"
+    complexity: medium
+    scope:
+      - {path: mcp/artifact-server/src/tools/analysis.ts, op: create}
+    depends: ["184"]
+    blocks: ["190", "191"]
+    criteria:
+      - 'ideate_get_convergence_status accepts artifact_dir and cycle_number parameters'
+      - 'Reads spec-adherence.md from archive/cycles/{N}/'
+      - 'Parsing step 1: search for machine-parseable line "**Principle Violation Verdict**: Pass" or "**Principle Violation Verdict**: Fail"'
+      - 'Parsing step 2 (fallback): find ## Principle Violation or ## Guiding Principle section; body is "None." or empty → Pass; body contains ### or "- " → Fail'
+      - 'Parsing step 3 (fallback): return verdict unknown with unexpected format warning'
+      - 'Reads finding counts from summary.md (count bullets under severity headings)'
+      - 'Returns compact YAML: cycle, condition_a (zero critical+significant), condition_b (principle verdict), converged (a AND b), counts, verdict source'
+      - 'ideate_get_domain_state accepts artifact_dir and optional domains[] filter'
+      - 'Returns policies (active), open questions, and cycle number per domain as markdown sections'
+      - 'ideate_get_project_status accepts artifact_dir parameter'
+      - 'Returns aggregated dashboard: work item counts, cycle number, completion counts, finding counts from latest cycle, blocking items, open question counts by domain'
+    notes: plan/notes/188.md
+
+  "189":
+    title: "Write tools (append_journal + archive_cycle + write_work_items)"
+    complexity: large
+    scope:
+      - {path: mcp/artifact-server/src/tools/write.ts, op: create}
+    depends: ["184"]
+    blocks: ["190", "191"]
+    criteria:
+      - 'ideate_append_journal accepts artifact_dir, skill, date, entry_type, body parameters'
+      - 'Formats entry as "## [{skill}] {date} — {entry_type}" header + body'
+      - 'Appends to journal.md (creates if absent), enforces append-only (no update/delete)'
+      - 'Synchronously upserts the new journal entry into SQLite nodes + journal_entries tables after writing YAML'
+      - 'ideate_archive_cycle accepts artifact_dir and cycle_number parameters'
+      - 'Three-phase atomicity: (1) copy all completed work items + incremental reviews to archive/cycles/{N}/, (2) verify all copies exist and match source size, (3) delete originals only after verification'
+      - 'Returns summary of files moved (counts) or error listing failed copies'
+      - 'If verification fails, no originals are deleted'
+      - 'ideate_write_work_items accepts artifact_dir and items array (each with optional id, title, complexity, scope, depends, blocks, criteria, notes_content)'
+      - 'Auto-assigns IDs if not provided (reads current max ID from work_items table, increments)'
+      - 'Validates DAG: runs cycle detection on full dependency graph including new items'
+      - 'Validates non-overlapping scope between concurrent new items'
+      - 'Writes to plan/work-items.yaml + plan/notes/{id}.md files'
+      - 'Synchronously upserts new work items into SQLite nodes + work_items tables after writing YAML'
+      - 'Returns compact YAML: per-item id, result (created), notes_path; or error with which item failed and why'
+    notes: plan/notes/189.md
+
+  "190":
+    title: "Test suite rewrite for v7 schema + indexer + 11 tools"
+    complexity: large
+    scope:
+      - {path: mcp/artifact-server/src/__tests__/schema.test.ts, op: modify}
+      - {path: mcp/artifact-server/src/__tests__/indexer.test.ts, op: modify}
+      - {path: mcp/artifact-server/src/__tests__/tools.test.ts, op: create}
+    depends: ["185", "186", "187", "188", "189"]
+    blocks: []
+    criteria:
+      - 'schema.test.ts: verifies nodes table exists with all 8 columns'
+      - 'schema.test.ts: verifies all 12 extension tables exist with FK to nodes(id)'
+      - 'schema.test.ts: verifies ON DELETE CASCADE — deleting from nodes cascades to extension table, edges, and node_file_refs'
+      - 'schema.test.ts: verifies CURRENT_SCHEMA_VERSION is 7'
+      - 'schema.test.ts: verifies edges table has no source_type or target_type columns'
+      - 'indexer.test.ts: verifies rebuildIndex inserts into both nodes and extension table'
+      - 'indexer.test.ts: verifies hash-based skip checks nodes table only'
+      - 'indexer.test.ts: verifies stale row deletion cascades via single DELETE FROM nodes'
+      - 'indexer.test.ts: verifies edge extraction creates edges with FK-valid source_id and target_id'
+      - 'indexer.test.ts: verifies defer_foreign_keys allows edges before targets during rebuild'
+      - 'tools.test.ts: each of the 11 tools has at least 1 happy-path test returning expected response format'
+      - 'tools.test.ts: each of the 11 tools has at least 1 error-path test (invalid input, missing data)'
+      - 'tools.test.ts: write tool integration test — append_journal writes YAML then read via artifact_query returns the new entry'
+      - 'All tests pass (npm test exits 0)'
+    notes: plan/notes/190.md
+
+  "191":
+    title: "Skill file updates — add MCP availability checks for 9 new tools"
+    complexity: medium
+    scope:
+      - {path: skills/execute/SKILL.md, op: modify}
+      - {path: skills/review/SKILL.md, op: modify}
+      - {path: skills/refine/SKILL.md, op: modify}
+      - {path: skills/brrr/SKILL.md, op: modify}
+      - {path: skills/brrr/phases/execute.md, op: modify}
+      - {path: skills/brrr/phases/review.md, op: modify}
+      - {path: skills/brrr/phases/refine.md, op: modify}
+    depends: ["185", "186", "187", "188", "189"]
+    blocks: []
+    criteria:
+      - 'execute/SKILL.md Phase 2 checks for ideate_get_execution_status and uses it for resume detection if available'
+      - 'execute/SKILL.md Phase 10 checks for ideate_append_journal and uses it for journal writes if available'
+      - 'execute/SKILL.md Phase 11 checks for ideate_get_project_status and uses it for status reporting if available'
+      - 'review/SKILL.md Phase 3.5 checks for ideate_get_review_manifest and uses it for manifest generation if available'
+      - 'review/SKILL.md Phase 7.5 checks for ideate_archive_cycle and uses it for cycle archival if available'
+      - 'review/SKILL.md Phase 8 checks for ideate_append_journal and uses it for journal writes if available'
+      - 'refine/SKILL.md Phase 3 checks for ideate_get_domain_state and uses it for domain context loading if available'
+      - 'refine/SKILL.md Phase 7h checks for ideate_write_work_items and uses it for work item creation if available'
+      - 'refine/SKILL.md Phase 7i checks for ideate_append_journal and uses it for journal writes if available'
+      - 'brrr/SKILL.md or brrr/phases/*.md Phase 6c checks for ideate_get_convergence_status and uses it for convergence check if available'
+      - 'brrr/phases/refine.md checks for ideate_write_work_items and uses it for targeted work item creation if available'
+      - 'All MCP availability checks follow the existing pattern: look for tool name suffix in tool list, use if found, fall back to manual file operations if not'
+      - 'Each new tool has at least one call site in at least one skill file'
+    notes: plan/notes/191.md
+
+  "192":
+    title: "Fix recursive CTE cycle protection and ambiguous column in query.ts"
+    complexity: small
+    scope:
+      - {path: mcp/artifact-server/src/tools/query.ts, op: modify}
+    depends: []
+    blocks: []
+    criteria:
+      - 'Recursive CTE in graph traversal mode uses UNION (not UNION ALL) to prevent duplicate rows on cyclic edges'
+      - 'Column n.id is aliased as node_id in the CTE output SELECT'
+      - 'ORDER BY clause at line ~485 uses node_id (not bare id) to prevent ambiguous column errors'
+      - 'Existing filter mode (non-recursive) is unchanged'
+      - 'TypeScript builds clean (tsc --noEmit)'
+    notes: plan/notes/192.md
+
+  "193":
+    title: "Add depth > 1 graph traversal test"
+    complexity: small
+    scope:
+      - {path: mcp/artifact-server/src/__tests__/tools.test.ts, op: modify}
+    depends: []
+    blocks: []
+    criteria:
+      - 'Test creates a 3-node chain (A→B→C) via depends_on edges in the test DB'
+      - 'Test calls handleArtifactQuery with related_to A, depth 3'
+      - 'Test asserts all 3 nodes appear in results with correct depth values (0, 1, 2)'
+      - 'Test asserts no duplicate rows in results'
+      - 'All tests pass (npm test exits 0)'
+    notes: plan/notes/193.md
+
+  "194":
+    title: "Update architecture Section 9 source code index"
+    complexity: small
+    scope:
+      - {path: specs/plan/architecture.md, op: modify}
+    depends: []
+    blocks: []
+    criteria:
+      - 'Section 9 table no longer lists tools.ts as a single file'
+      - 'Section 9 table includes tools/index.ts with exports: ToolContext, TOOLS, handleTool'
+      - 'Section 9 table includes tools/context.ts with exports: handleGetWorkItemContext, handleGetContextPackage'
+      - 'Section 9 table includes tools/query.ts with exports: handleArtifactQuery'
+      - 'Section 9 table includes tools/execution.ts with exports: handleGetExecutionStatus, handleGetReviewManifest'
+      - 'Section 9 table includes tools/analysis.ts with exports: handleGetConvergenceStatus, handleGetDomainState, handleGetProjectStatus'
+      - 'Section 9 table includes tools/write.ts with exports: handleAppendJournal, handleArchiveCycle, handleWriteWorkItems'
+    notes: plan/notes/194.md
+
+  "195":
+    title: "Convert detectCycles to Drizzle ORM"
+    complexity: small
+    scope:
+      - {path: mcp/artifact-server/src/indexer.ts, op: modify}
+    depends: []
+    blocks: []
+    criteria:
+      - 'detectCycles uses Drizzle select/from/where instead of db.prepare with raw SQL string'
+      - 'Query selects source_id and target_id from edges table where edge_type equals depends_on'
+      - 'Import edges table from db.ts (already imported)'
+      - 'Function signature unchanged: (db: Database.Database) → string[][]'
+      - 'Kahn algorithm logic unchanged — only the initial edge query changes'
+      - 'All tests pass (npm test exits 0)'
+    notes: plan/notes/195.md
+
+  "196":
+    title: "handleAppendJournal writes YAML journal entries"
+    complexity: medium
+    scope:
+      - {path: mcp/artifact-server/src/tools/write.ts, op: modify}
+    depends: []
+    blocks: []
+    criteria:
+      - 'handleAppendJournal writes a per-entry YAML file to .ideate/cycles/{NNN}/journal/J-{NNN}-{seq}.yaml'
+      - 'YAML file contains type: journal_entry, id, phase, date, title, content, cycle_created fields'
+      - 'YAML serialization uses the yaml library (stringifyYaml), not string concatenation'
+      - 'Sequence number (seq) derived from existing files in the cycle journal directory'
+      - 'Cycle number derived from domains/index.md current_cycle or from the date-based cycle detection'
+      - 'journal.md is no longer written to by this tool'
+      - 'Synchronous SQLite upsert still performed after YAML write'
+      - 'file_path in the SQLite nodes row points to the YAML file (not journal.md)'
+      - 'All tests pass (npm test exits 0)'
+    notes: plan/notes/196.md
+
+  "197":
+    title: "Update live spec references from schema v7 to v1"
+    complexity: small
+    scope:
+      - {path: specs/plan/architecture.md, op: modify}
+      - {path: specs/domains/artifact-structure/policies.md, op: modify}
+      - {path: specs/domains/index.md, op: modify}
+    depends: []
+    blocks: []
+    criteria:
+      - 'architecture.md Section 5 says "Schema (v1)" not "Schema (v7)"'
+      - 'architecture.md Section 5 body references v1 where describing current schema'
+      - 'P-31 in domains/artifact-structure/policies.md references v1 not v7'
+      - 'domains/index.md artifact-structure description references v1 not v7'
+      - 'No changes to archived cycle reviews, decision logs, or work item notes'
+    notes: plan/notes/197.md
+
+  "198":
+    title: "Amend guiding principles and policies for v3.0"
+    complexity: small
+    scope:
+      - {path: specs/steering/guiding-principles.md, op: modify}
+      - {path: specs/domains/artifact-structure/policies.md, op: modify}
+      - {path: specs/domains/project-boundaries/policies.md, op: modify}
+      - {path: specs/domains/index.md, op: modify}
+    depends: []
+    blocks: ["201"]
+    criteria:
+      - 'GP-1 amended: subjective choices documented in spec become objective validation targets'
+      - 'GP-8 amended: MCP artifact server is required component; skills access artifacts exclusively through MCP tools; availability checks reserved for external tools'
+      - 'New GP-13 (Appropriate Validation Strategy) added with machine + human-in-the-loop validation methods'
+      - 'P-6 amended: MCP is mandatory interface between skills and artifacts'
+      - 'P-8 amended: validation method must be explicit; includes human-in-the-loop for subjective criteria'
+      - 'P-14 amended: ideate includes MCP artifact server; compute orchestration is external; outpost references removed'
+      - 'P-15 amended: outpost references generalized to external projects'
+      - 'P-26 amended: MCP artifact server is mandatory access layer'
+      - 'New P-32: MCP availability checks for external tools only'
+      - 'domains/index.md project-boundaries description updated to remove outpost references'
+    notes: plan/notes/198.md
+
+  "199":
+    title: "Interview YAML restructure — per-question addressability"
+    complexity: large
+    scope:
+      - {path: mcp/artifact-server/src/schema.ts, op: modify}
+      - {path: mcp/artifact-server/src/db.ts, op: modify}
+      - {path: mcp/artifact-server/src/indexer.ts, op: modify}
+      - {path: scripts/migrate-to-v3.ts, op: modify}
+      - {path: scripts/migrate-to-v3.js, op: modify}
+      - {path: mcp/artifact-server/src/__tests__/schema.test.ts, op: modify}
+      - {path: mcp/artifact-server/src/__tests__/indexer.test.ts, op: modify}
+    depends: []
+    blocks: []
+    criteria:
+      - 'New interview_questions extension table in schema.ts with columns: id, interview_id, question, answer, domain, seq'
+      - 'interview_questions table has FK to nodes(id) ON DELETE CASCADE'
+      - 'Drizzle interviewQuestions table definition in db.ts with FK reference'
+      - 'TYPE_TO_EXTENSION_TABLE includes interview_question mapping'
+      - 'Indexer extracts entries array from interview YAML files and creates one interview_question node per entry'
+      - 'Indexer creates belongs_to edge from each interview_question to its parent interview node'
+      - 'migrate-to-v3.ts migrateInterviews parses Q/A blocks from markdown and produces entries array in YAML output'
+      - 'migrate-to-v3.js updated to match (dual maintenance)'
+      - 'Schema tests verify interview_questions table exists with FK CASCADE'
+      - 'Indexer tests verify entry extraction creates interview_question nodes'
+      - 'CURRENT_SCHEMA_VERSION remains 1 (additive table, no migration needed — rebuild handles it)'
+      - 'All tests pass'
+    notes: plan/notes/199.md
+
+  "200":
+    title: "Create ARCHITECTURE.md and update README"
+    complexity: medium
+    scope:
+      - {path: ARCHITECTURE.md, op: create}
+      - {path: README.md, op: modify}
+    depends: []
+    blocks: []
+    criteria:
+      - 'ARCHITECTURE.md exists at repository root'
+      - 'ARCHITECTURE.md covers: v1 schema design (class table inheritance, nodes + extensions + edges), indexer pipeline (rebuild, hash skip, CASCADE delete), MCP tool architecture (ToolContext, 11 tools, tool categories), graph model (edge types, traversal patterns), YAML source of truth + SQLite derived cache, file watcher lifecycle'
+      - 'ARCHITECTURE.md includes Mermaid or ASCII diagrams for data flow and component relationships'
+      - 'README.md focuses on high-level usage: installation, skill overview, quick start, configuration'
+      - 'README.md does not duplicate deep technical content from ARCHITECTURE.md — links to it instead'
+    notes: plan/notes/200.md
+
+  "201":
+    title: "LLM artifact audit — skills and agents vs updated principles"
+    complexity: large
+    scope:
+      - {path: specs/archive/cycles/026/audit-findings.md, op: create}
+    depends: ["198"]
+    blocks: []
+    criteria:
+      - 'Audit report written to specs/archive/cycles/026/audit-findings.md'
+      - 'Every skill file (plan, execute, review, refine, brrr + phase files) reviewed for GP-8/P-6/P-26/P-32 compliance (MCP mandatory, no direct YAML access, availability checks for external only)'
+      - 'Every skill file reviewed for GP-13/P-8 compliance (validation strategy — subjective vs objective criteria)'
+      - 'Every agent definition reviewed for P-19 compliance (canonical .ideate/ paths)'
+      - 'Every agent definition reviewed for P-10 compliance (non-overlapping responsibilities)'
+      - 'All outpost references in skills and agents identified'
+      - 'Each finding categorized as: must-fix (violates updated principle), should-fix (inconsistency), or defer (no functional impact)'
+      - 'Each must-fix finding includes: file, line range, current text, required change, which principle/policy it violates'
+      - 'Findings are structured for direct decomposition into work items'
+    notes: plan/notes/201.md
+
+  "202":
+    title: "Plan skill v3 rewrite — MCP tools, YAML artifacts, .ideate/ structure"
+    complexity: large
+    scope:
+      - {path: skills/plan/SKILL.md, op: modify}
+    depends: ["201"]
+    blocks: []
+    criteria:
+      - 'Phase 1.1 scaffolds .ideate/ directory structure (not specs/ with manifest.json)'
+      - 'All artifact creation uses MCP write tools (ideate_write_work_items, ideate_append_journal) — no direct Write tool for artifacts'
+      - 'No MCP availability checks for ideate tools — calls are direct'
+      - 'If ideate MCP tools are not available, skill stops with error: "The ideate MCP artifact server is required but not available"'
+      - 'Acceptance criteria rules reflect GP-13: human-in-the-loop is first-class, not exceptional'
+      - 'No outpost references — generalized to "external MCP servers"'
+      - 'spawn_session references note it as external-only capability with availability check preserved'
+      - 'Artifact paths use .ideate/ canonical structure per P-19'
+    notes: plan/notes/202.md
+
+  "203":
+    title: "Execute skill v3 update — remove MCP fallbacks, fix paths"
+    complexity: medium
+    scope:
+      - {path: skills/execute/SKILL.md, op: modify}
+    depends: ["201"]
+    blocks: []
+    criteria:
+      - 'All ideate MCP tool calls are direct — no availability checks, no manual fallbacks'
+      - 'If ideate MCP tools are not available, skill stops with error message'
+      - 'archive/incremental/ references changed to .ideate/cycles/{NNN}/findings/ per P-19'
+      - 'journal.md direct writes replaced with ideate_append_journal calls'
+      - 'No outpost references — generalized to "external MCP servers"'
+      - 'spawn_session availability check preserved (external tool)'
+    notes: plan/notes/203.md
+
+  "204":
+    title: "Review skill v3 update — remove MCP fallbacks"
+    complexity: medium
+    scope:
+      - {path: skills/review/SKILL.md, op: modify}
+    depends: ["201"]
+    blocks: []
+    criteria:
+      - 'All ideate MCP tool calls are direct — no availability checks, no manual fallbacks'
+      - 'If ideate MCP tools are not available, skill stops with error message'
+      - 'ideate_get_context_package, ideate_get_review_manifest, ideate_append_journal, ideate_archive_cycle, ideate_artifact_query all called directly'
+      - 'Context package assembly fallback (manual file reads) removed'
+      - 'No outpost references'
+      - 'spawn_session availability check preserved (external tool)'
+    notes: plan/notes/204.md
+
+  "205":
+    title: "Refine skill v3 update — remove MCP fallbacks, fix direct reads"
+    complexity: medium
+    scope:
+      - {path: skills/refine/SKILL.md, op: modify}
+    depends: ["201"]
+    blocks: []
+    criteria:
+      - 'All ideate MCP tool calls are direct — no availability checks, no manual fallbacks'
+      - 'If ideate MCP tools are not available, skill stops with error message'
+      - 'Phase 3 context loading uses MCP tools instead of direct file reads'
+      - 'ideate_get_context_package, ideate_get_domain_state, ideate_write_work_items, ideate_append_journal all called directly'
+      - 'No outpost references'
+      - 'spawn_session availability check preserved (external tool)'
+    notes: plan/notes/205.md
+
+  "206":
+    title: "Brrr skill + phase files v3 update — remove MCP fallbacks"
+    complexity: medium
+    scope:
+      - {path: skills/brrr/SKILL.md, op: modify}
+      - {path: skills/brrr/phases/execute.md, op: modify}
+      - {path: skills/brrr/phases/review.md, op: modify}
+      - {path: skills/brrr/phases/refine.md, op: modify}
+    depends: ["201"]
+    blocks: []
+    criteria:
+      - 'All ideate MCP tool calls are direct across all 4 files — no availability checks, no manual fallbacks'
+      - 'If ideate MCP tools are not available, skill stops with error message'
+      - 'brrr/SKILL.md: ideate_get_convergence_status called directly'
+      - 'brrr/phases/execute.md: ideate_get_work_item_context, ideate_get_execution_status, ideate_append_journal called directly'
+      - 'brrr/phases/review.md: ideate_get_context_package, ideate_get_review_manifest, ideate_archive_cycle, ideate_append_journal called directly'
+      - 'brrr/phases/refine.md: ideate_write_work_items, ideate_append_journal called directly'
+      - 'spawn_session availability check preserved in brrr controller (external tool)'
+    notes: plan/notes/206.md
+
+  "207":
+    title: "Agent definitions update — validation strategy + paths + outpost refs"
+    complexity: small
+    scope:
+      - {path: agents/decomposer.md, op: modify}
+      - {path: agents/code-reviewer.md, op: modify}
+      - {path: agents/domain-curator.md, op: modify}
+    depends: ["201"]
+    blocks: []
+    criteria:
+      - 'decomposer.md acceptance criteria rules reflect GP-13: human-in-the-loop is first-class validation'
+      - 'code-reviewer.md handles subjective criteria appropriately per GP-13'
+      - 'domain-curator.md uses .ideate/ canonical paths per P-19'
+      - 'No outpost references in any modified agent file'
+    notes: plan/notes/207.md
+
+  "208":
+    title: "Build on first MCP startup + gitignore dist/"
+    complexity: small
+    scope:
+      - {path: mcp/artifact-server/start.sh, op: modify}
+      - {path: .gitignore, op: modify}
+    depends: []
+    blocks: []
+    criteria:
+      - 'start.sh checks for dist/.build-version file and compares its content to the version field in package.json'
+      - 'If dist/.build-version does not exist or its content differs from package.json version, start.sh runs npm run build --prefix "$DIR"'
+      - 'After a successful build, start.sh writes the package.json version string to dist/.build-version'
+      - 'If npm run build fails, start.sh prints an error to stderr and exits with code 1'
+      - 'start.sh still checks for node_modules/.package-lock.json and runs npm install if missing (existing behavior preserved)'
+      - 'The npm install check runs before the build check (dependencies must exist before compiling)'
+      - '.gitignore removes the two lines "!mcp/artifact-server/dist/" and "!mcp/artifact-server/dist/**"'
+      - '.gitignore removes the comment line "# MCP artifact server — dist is committed so it works as a plugin without a build step"'
+      - '.gitignore retains the "dist/" line under "# Python" and retains the "node_modules/" line'
+      - '.gitignore adds a comment "# MCP artifact server — built on first startup via start.sh" above the node_modules/ line'
+    notes: plan/notes/208.md
+
+  "209":
+    title: "Init skill definition"
+    complexity: medium
+    scope:
+      - {path: skills/init/SKILL.md, op: create}
+    depends: []
+    blocks: ["211"]
+    criteria:
+      - 'skills/init/SKILL.md exists with YAML frontmatter containing description, user-invocable: true, and argument-hint'
+      - 'Phase 1 checks if .ideate/ directory exists in the current working directory'
+      - 'If .ideate/ exists, skill warns the user and asks to confirm overwrite or abort — does not silently overwrite'
+      - 'If user aborts, skill exits without modifying any files'
+      - 'Phase 2 scaffolds .ideate/config.json with schema_version: 2 and the directory structure (work-items/, principles/, constraints/, policies/, decisions/, questions/, modules/, research/, interviews/, cycles/)'
+      - 'Phase 3 spawns architect agent in analyze mode to survey the existing codebase, with model: opus override'
+      - 'Phase 4 conducts a lightweight interview (3-5 questions max): what is this project, what are the guiding principles, what are the hard constraints, what domains exist'
+      - 'Phase 4 does NOT interview for architecture decisions, module decomposition, or work item planning'
+      - 'Phase 5 writes steering artifacts to .ideate/: principles/*.yaml, constraints/*.yaml from interview answers'
+      - 'Phase 5 uses MCP write tools if available, falls back to Write tool for initial scaffolding (same bootstrapping pattern as plan Phase 1.1)'
+      - 'Phase 6 bootstraps domain layer from architect analysis: creates domain directories with initial policies.md, decisions.md, questions.md'
+      - 'Skill does NOT produce work items, execution strategy, or architecture doc'
+      - 'Skill does NOT produce plan/overview.md or plan/architecture.md'
+      - 'Final output message tells user the project is ready for /ideate:refine to plan changes'
+      - 'Metrics instrumentation section follows the same pattern as skills/refine/SKILL.md (agent-spawn JSON to metrics.jsonl)'
+    notes: plan/notes/209.md
+
+  "210":
+    title: "Plugin manifest and CLAUDE.md updates for init skill"
+    complexity: small
+    scope:
+      - {path: .claude-plugin/plugin.json, op: modify}
+      - {path: CLAUDE.md, op: modify}
+    depends: []
+    blocks: []
+    criteria:
+      - 'plugin.json description field mentions the init skill or "initialization" capability'
+      - 'CLAUDE.md Skills table includes a row for /ideate:init with description "Initialize .ideate/ for an existing codebase — scaffold, survey, interview, bootstrap domains"'
+      - 'CLAUDE.md Skills table row for init is placed before the plan row (alphabetical order) or after brrr (logical order — init → plan → execute → review → refine → brrr)'
+      - 'CLAUDE.md Artifact structure section is unchanged'
+      - 'No other rows in the Skills table are modified'
+    notes: plan/notes/210.md
+
+  "211":
+    title: "Architect agent init mode prompt"
+    complexity: small
+    scope:
+      - {path: agents/architect.md, op: modify}
+    depends: ["209"]
+    blocks: []
+    criteria:
+      - 'agents/architect.md contains a "# Mode: Init" section (in addition to existing Analyze and Design modes)'
+      - 'Init mode is described as a lightweight version of Analyze: same codebase survey checklist but with additional output focused on domain identification'
+      - 'Init mode output includes a "## Suggested Domains" section listing candidate domain names with one-line descriptions'
+      - 'Init mode output includes a "## Suggested Guiding Principles" section listing 3-5 principles inferred from the codebase patterns'
+      - 'Init mode does NOT produce architecture doc, module specs, or interface contracts'
+      - 'Existing Analyze and Design mode sections are unchanged'
+    notes: plan/notes/211.md
+
+  "212":
+    title: "Telemetry metrics schema extension"
+    complexity: medium
+    scope:
+      - {path: mcp/artifact-server/src/schema.ts, op: modify}
+      - {path: mcp/artifact-server/src/db.ts, op: modify}
+      - {path: mcp/artifact-server/src/indexer.ts, op: modify}
+    depends: []
+    blocks: ["213", "214"]
+    criteria:
+      - 'metricsEvents extension table in db.ts adds columns: input_tokens (integer), output_tokens (integer), cache_read_tokens (integer), cache_write_tokens (integer), outcome (text), finding_count (integer), finding_severities (text), first_pass_accepted (integer), rework_count (integer), work_item_total_tokens (integer), cycle_total_tokens (integer), cycle_total_cost_estimate (text), convergence_cycles (integer), context_artifact_ids (text)'
+      - 'MetricsEvent interface in schema.ts includes all new fields as optional properties'
+      - 'createSchema DDL in schema.ts includes all new columns for the metrics_events table'
+      - 'buildRow in indexer.ts maps all new YAML fields to the metrics_events extension table columns'
+      - 'Existing metricsEvents columns (event_name, timestamp, payload) are preserved — no breaking changes'
+      - 'CURRENT_SCHEMA_VERSION in schema.ts is incremented'
+      - 'npm run build succeeds'
+    notes: plan/notes/212.md
+
+  "213":
+    title: "ideate_get_metrics MCP tool"
+    complexity: medium
+    scope:
+      - {path: mcp/artifact-server/src/tools/metrics.ts, op: create}
+      - {path: mcp/artifact-server/src/tools/index.ts, op: modify}
+    depends: ["212"]
+    blocks: []
+    criteria:
+      - 'mcp/artifact-server/src/tools/metrics.ts exports a handleGetMetrics function with signature (ctx: ToolContext, args: Record<string, unknown>) => Promise<string>'
+      - 'ideate_get_metrics tool accepts artifact_dir (required), scope (optional, enum: agent|work_item|cycle), and filter (optional object with cycle, work_item, agent_type, phase fields)'
+      - 'Agent scope returns: per-agent-type aggregates — total tokens in/out, avg tokens, cache hit rate, finding count, finding severities breakdown, outcome counts (pass/fail/rework)'
+      - 'Work item scope returns: per-work-item aggregates — first-pass acceptance boolean, rework count, total tokens across all agents for that item'
+      - 'Cycle scope returns: per-cycle aggregates — convergence speed (brrr cycles count), total findings by severity, total tokens, total cost estimate'
+      - 'Default (no scope) returns all three aggregation levels'
+      - 'Tool definition added to TOOLS array in tools/index.ts with name ideate_get_metrics'
+      - 'handleTool switch in tools/index.ts dispatches ideate_get_metrics to handleGetMetrics'
+      - 'Response format is markdown with tables for each aggregation level'
+      - 'npm run build succeeds; npm test exits 0'
+    notes: plan/notes/213.md
+
+  "214":
+    title: "Skill telemetry instrumentation for extended metrics"
+    complexity: medium
+    scope:
+      - {path: skills/execute/SKILL.md, op: modify}
+      - {path: skills/review/SKILL.md, op: modify}
+      - {path: skills/brrr/SKILL.md, op: modify}
+      - {path: skills/brrr/phases/execute.md, op: modify}
+      - {path: skills/brrr/phases/review.md, op: modify}
+    depends: ["212"]
+    blocks: []
+    criteria:
+      - 'execute/SKILL.md Metrics Instrumentation schema adds outcome field (pass if incremental review passes, fail if critical finding, rework if significant finding fixed)'
+      - 'execute/SKILL.md Metrics Instrumentation schema adds finding_count and finding_severities fields after incremental review completes'
+      - 'execute/SKILL.md Metrics Instrumentation schema adds first_pass_accepted boolean (true if incremental review verdict is Pass with no rework)'
+      - 'execute/SKILL.md Metrics Instrumentation schema adds rework_count (number of fix-and-re-review cycles for the work item)'
+      - 'review/SKILL.md Metrics Instrumentation schema adds finding_count and finding_severities fields for each reviewer agent spawn'
+      - 'brrr/SKILL.md or brrr/phases/execute.md Metrics Instrumentation schema adds the same outcome, finding_count, finding_severities, first_pass_accepted, rework_count fields as execute/SKILL.md'
+      - 'brrr/phases/review.md Metrics Instrumentation schema adds finding_count and finding_severities for each reviewer spawn'
+      - 'brrr/SKILL.md convergence summary metrics entry includes convergence_cycles (number of brrr loops), cycle_total_tokens, cycle_total_cost_estimate'
+      - 'All added fields are documented as optional in the schema comments (null if not available)'
+      - 'Existing metrics fields are preserved — no breaking changes to the agent-spawn schema'
+    notes: plan/notes/214.md
+
+  "215":
+    title: "Cycle reporting script"
+    complexity: small
+    scope:
+      - {path: scripts/report-cycle.sh, op: create}
+    depends: []
+    blocks: []
+    criteria:
+      - 'scripts/report-cycle.sh is executable (chmod +x)'
+      - 'Script requires python3 (checks and exits with error if not found)'
+      - 'Script accepts optional METRICS_FILE argument (same auto-discovery pattern as scripts/report.sh)'
+      - 'Script produces markdown output with sections: Cycle-over-Cycle Quality Trends, Convergence Speed, First-Pass Acceptance Rate'
+      - 'Quality Trends section shows per-cycle finding counts by severity with trend indicator (improving/stable/degrading) — same logic as report.sh section_quality_trends but promoted to primary output'
+      - 'Convergence Speed section shows brrr cycle count per cycle (from convergence_cycles field if available, or count of quality_summary events per cycle as fallback)'
+      - 'First-Pass Acceptance Rate section shows percentage of work items accepted on first review pass per cycle'
+      - 'Script handles empty or missing metrics file with informative message'
+      - 'Script supports --help flag'
+    notes: plan/notes/215.md
+
+  "216":
+    title: "Cost reporting script"
+    complexity: small
+    scope:
+      - {path: scripts/report-cost.sh, op: create}
+    depends: []
+    blocks: []
+    criteria:
+      - 'scripts/report-cost.sh is executable (chmod +x)'
+      - 'Script requires python3 (checks and exits with error if not found)'
+      - 'Script accepts optional METRICS_FILE argument (same auto-discovery pattern as scripts/report.sh)'
+      - 'Script produces markdown output with sections: Per-Work-Item Token Cost, Per-Cycle Token Cost, Cost Trends'
+      - 'Per-Work-Item section shows total tokens (input + output) per work item, sorted by cost descending'
+      - 'Per-Cycle section shows total tokens per cycle with breakdown by phase'
+      - 'Cost Trends section shows cycle-over-cycle token usage with trend indicator'
+      - 'If cycle_total_cost_estimate is available in metrics entries, script includes dollar estimates'
+      - 'Script handles empty or missing metrics file with informative message'
+      - 'Script supports --help flag'
+    notes: plan/notes/216.md
+
+  "217":
+    title: "Executive reporting script"
+    complexity: small
+    scope:
+      - {path: scripts/report-executive.sh, op: create}
+    depends: []
+    blocks: []
+    criteria:
+      - 'scripts/report-executive.sh is executable (chmod +x)'
+      - 'Script requires python3 (checks and exits with error if not found)'
+      - 'Script accepts optional METRICS_FILE argument (same auto-discovery pattern as scripts/report.sh)'
+      - 'Script produces markdown output with sections: Project Summary, Quality Metrics, Cost Summary, ROI Indicators'
+      - 'Project Summary shows: total work items completed, total cycles, total agent spawns, total wall-clock time'
+      - 'Quality Metrics shows: latest cycle finding counts, trend direction, first-pass acceptance rate'
+      - 'Cost Summary shows: total tokens consumed, estimated cost (if available), average tokens per work item'
+      - 'ROI Indicators shows: rework rate trend, convergence speed trend, tokens-per-finding ratio'
+      - 'Script handles empty or missing metrics file with informative message'
+      - 'Script supports --help flag'
+    notes: plan/notes/217.md
+
+  "218":
+    title: "SDLC hooks configuration schema and dispatcher"
+    complexity: medium
+    scope:
+      - {path: mcp/artifact-server/src/hooks.ts, op: create}
+      - {path: mcp/artifact-server/src/__tests__/hooks.test.ts, op: create}
+    depends: []
+    blocks: ["219", "220"]
+    criteria:
+      - 'hooks.ts exports a HookConfig interface with fields: event (string), type (command | prompt), value (string), enabled (boolean, default true)'
+      - 'hooks.ts exports a HooksConfig interface containing hooks: HookConfig[]'
+      - 'hooks.ts exports the 7 event name constants: plan.complete, work_item.started, work_item.completed, review.finding, review.complete, cycle.converged, andon.triggered'
+      - 'hooks.ts exports a loadHooks(ideateDir: string) function that reads .ideate/hooks.json and returns HooksConfig (returns {hooks:[]} if file does not exist)'
+      - 'hooks.ts exports a dispatchHook(hook: HookConfig, variables: Record<string, string>) function'
+      - 'For type command: dispatchHook performs variable substitution (${VAR_NAME} patterns) in hook.value and executes via child_process.execSync with a 30-second timeout; returns stdout string'
+      - 'For type prompt: dispatchHook performs variable substitution in hook.value and returns the substituted string (the caller passes it to an LLM)'
+      - 'dispatchHook silently returns empty string if hook.enabled is false'
+      - 'hooks.ts exports a fireEvent(ideateDir: string, eventName: string, variables: Record<string, string>) function that loads hooks, filters by event name, and calls dispatchHook for each matching hook'
+      - 'fireEvent catches and logs errors from individual hooks without stopping execution of remaining hooks'
+      - 'Test verifies loadHooks returns empty hooks array when hooks.json does not exist'
+      - 'Test verifies variable substitution replaces ${WORK_ITEM} with provided value'
+      - 'Test verifies command hook type executes a shell command (use echo test as command)'
+      - 'Test verifies fireEvent filters hooks by event name'
+      - 'Test verifies disabled hooks are skipped'
+      - 'npm run build succeeds; all tests pass'
+    notes: plan/notes/218.md
+
+  "219":
+    title: "ideate_emit_event MCP tool for hooks"
+    complexity: small
+    scope:
+      - {path: mcp/artifact-server/src/tools/events.ts, op: create}
+      - {path: mcp/artifact-server/src/tools/index.ts, op: modify}
+    depends: ["218"]
+    blocks: ["220"]
+    criteria:
+      - 'mcp/artifact-server/src/tools/events.ts exports handleEmitEvent with signature (ctx: ToolContext, args: Record<string, unknown>) => Promise<string>'
+      - 'ideate_emit_event tool accepts artifact_dir (required), event (required, string), and variables (optional, object of string key-value pairs)'
+      - 'Handler calls fireEvent(ctx.ideateDir, event, variables) from hooks.ts'
+      - 'Returns JSON summary: event name, hooks matched count, hooks executed count, any errors'
+      - 'Tool definition added to TOOLS array in tools/index.ts with name ideate_emit_event'
+      - 'handleTool switch in tools/index.ts dispatches ideate_emit_event to handleEmitEvent'
+      - 'npm run build succeeds'
+    notes: plan/notes/219.md
+
+  "220":
+    title: "Skill integration for hook event emission"
+    complexity: medium
+    scope:
+      - {path: skills/plan/SKILL.md, op: modify}
+      - {path: skills/execute/SKILL.md, op: modify}
+      - {path: skills/review/SKILL.md, op: modify}
+      - {path: skills/brrr/SKILL.md, op: modify}
+      - {path: skills/brrr/phases/execute.md, op: modify}
+      - {path: skills/brrr/phases/review.md, op: modify}
+    depends: ["219"]
+    blocks: []
+    criteria:
+      - 'skills/plan/SKILL.md emits plan.complete event via ideate_emit_event after Phase 8 (presenting plan summary), with variables: {ARTIFACT_DIR, WORK_ITEM_COUNT}'
+      - 'skills/execute/SKILL.md emits work_item.started before each work item execution, with variables: {ARTIFACT_DIR, WORK_ITEM_ID, WORK_ITEM_TITLE}'
+      - 'skills/execute/SKILL.md emits work_item.completed after each work item passes incremental review, with variables: {ARTIFACT_DIR, WORK_ITEM_ID, VERDICT}'
+      - 'skills/review/SKILL.md emits review.complete after Phase 5 (synthesis), with variables: {ARTIFACT_DIR, CYCLE_NUMBER, FINDING_COUNT}'
+      - 'skills/brrr/phases/execute.md emits work_item.started and work_item.completed with same variables as execute/SKILL.md'
+      - 'skills/brrr/phases/review.md emits review.complete with same variables as review/SKILL.md'
+      - 'skills/brrr/SKILL.md emits cycle.converged when convergence conditions are met, with variables: {ARTIFACT_DIR, CYCLE_NUMBER, TOTAL_CYCLES}'
+      - 'All event emissions use ideate_emit_event MCP tool call'
+      - 'All event emissions are best-effort: if the tool call fails, skill continues without interruption'
+      - 'No review.finding or andon.triggered events emitted in this work item (those require per-finding granularity to be added in a future iteration)'
+    notes: plan/notes/220.md
+
+  "221":
+    title: "Architecture.md refresh — fix stale sections and outpost references"
+    complexity: small
+    scope:
+      - {path: specs/plan/architecture.md, op: modify}
+    depends: []
+    blocks: []
+    criteria:
+      - 'Section 1 line 35 "outpost" reference replaced with "external MCP servers" (no project name)'
+      - 'Section 5 line 346 "outpost" reference replaced with "external MCP servers"'
+      - 'Section 2 coordination table (lines 96-111) removes manifest.json row'
+      - 'Section 8 manifest.json specification (lines 485-489) removed entirely or replaced with config.json specification for .ideate/config.json'
+      - 'Section 9 source code index includes tools/ directory files (tools/index.ts, tools/context.ts, tools/query.ts, tools/execution.ts, tools/analysis.ts, tools/write.ts) — this resolves Q-77'
+      - 'Section 9 no longer lists tools.ts as a single file'
+      - 'Section 1 Skills table includes /ideate:init row (if WI-210 is complete; if not, add a placeholder comment)'
+    notes: plan/notes/221.md
+
+  "222":
+    title: "Resolve open domain questions post-v3"
+    complexity: small
+    scope:
+      - {path: specs/domains/artifact-structure/questions.md, op: modify}
+    depends: []
+    blocks: []
+    criteria:
+      - 'Q-20 status changed from "open" to "resolved" with resolution note: "v3 architecture stores findings under .ideate/cycles/{NNN}/findings/. Both brrr and standalone review write to the same location. The manifest location divergence no longer applies."'
+      - 'Q-77 status changed from "open" to "resolved" with resolution note: "Resolved by WI-221 which updates Section 9 source code index to list all tools/ files."'
+      - 'No other questions are modified'
+      - 'Resolution notes include cycle number reference (cycle 027 or current cycle)'
+    notes: plan/notes/222.md
+
+  "223":
+    title: "README documentation for new report scripts"
+    complexity: small
+    scope:
+      - {path: README.md, op: modify}
+    depends: []
+    blocks: []
+    criteria:
+      - 'README.md contains a section documenting all report scripts: report.sh, report-cycle.sh, report-cost.sh, report-executive.sh'
+      - 'Each script entry includes: purpose (one line), usage syntax, Python 3 requirement note'
+      - 'The section is co-located with existing utility script documentation'
+      - 'No existing README sections are removed or reordered'
+    notes: plan/notes/223.md
+

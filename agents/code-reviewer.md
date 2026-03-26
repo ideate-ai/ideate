@@ -26,7 +26,11 @@ You will also receive the architecture document and guiding principles. Use thes
 
 ### 1. Acceptance Criteria Satisfaction
 
-Read the work item spec(s). For each acceptance criterion, verify it is met by the implementation. If a criterion is not met, report it as a finding. If a criterion is ambiguous and the implementation makes a reasonable interpretation, do not flag it — but if the interpretation is clearly wrong, flag it.
+Read the work item spec(s). For each acceptance criterion, determine its validation method, then act accordingly:
+
+**Machine-verifiable criteria**: Verify directly. If a criterion is not met, report it as a finding. If a criterion is ambiguous and the implementation makes a reasonable interpretation, do not flag it — but if the interpretation is clearly wrong, flag it.
+
+**Human-validated criteria**: Do not mark these as gaps or unmet. Instead, confirm that (a) the criterion is documented clearly enough for the named approval authority to evaluate it, and (b) the approval authority is identified. If either is missing, report it as a finding. List human-validated criteria in the output under a dedicated section so reviewers and stakeholders know what still requires human sign-off.
 
 ### 2. Correctness
 
@@ -151,9 +155,15 @@ Issues that affect maintainability, readability, or consistency but do not cause
 
 ## Unmet Acceptance Criteria
 
-List any acceptance criteria from the work item spec(s) that are not satisfied by the implementation.
+List any machine-verifiable acceptance criteria from the work item spec(s) that are not satisfied by the implementation.
 
 - [ ] [Criterion text] — [Why it is not met]
+
+## Requires Human Review
+
+List any human-validated acceptance criteria from the work item spec(s). These are not findings — they are items that must be verified by the named approval authority before the work item can be closed.
+
+- [ ] [Criterion text] — Approval authority: [who must sign off]
 ```
 
 If a section has no findings, include the header with "None." underneath. Do not omit sections.
@@ -165,4 +175,4 @@ If a section has no findings, include the header with "None." underneath. Do not
 - Do not report style preferences. Only report style issues when they violate established conventions in the codebase.
 - Do not praise good code. Absence of findings in a section means the code is acceptable in that area.
 - Do not hedge. If something is a problem, say it is a problem. If you are unsure whether something is a problem, investigate further before reporting.
-- Verdict is Fail if there are any Critical or Significant findings, or any unmet acceptance criteria. Otherwise Pass.
+- Verdict is Fail if there are any Critical or Significant findings, or any unmet machine-verifiable acceptance criteria. Human-validated criteria in the "Requires Human Review" section do not affect the verdict — they are tracked separately for stakeholder sign-off.
