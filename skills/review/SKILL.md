@@ -172,7 +172,7 @@ All three agents run in parallel. Do not wait for one to finish before starting 
 > **Shared context package** (inline — do not re-read architecture, principles, or constraints files individually):
 > {context_package}
 >
-> **Review manifest**: {output-dir}/review-manifest.md — your index of all work items and their incremental review status. Read individual work items only when investigating specific findings. Read individual incremental reviews only when you find an issue in the same file scope and need to check whether it was already caught.
+> **Review manifest**: {output-dir}/review-manifest.yaml — your index of all work items and their incremental review status. Read individual work items only when investigating specific findings. Read individual incremental reviews only when you find an issue in the same file scope and need to check whether it was already caught.
 >
 > Project source code is at: {project source path} — read source files as needed to investigate specific findings.
 >
@@ -205,7 +205,7 @@ After this agent returns:
 >
 > **Module specs**: Call `ideate_artifact_query({type: "module_spec"})` to retrieve all module specs (if they exist — use these for interface contracts).
 >
-> **Review manifest**: {output-dir}/review-manifest.md — use as an index. Read individual work items and incremental reviews only when investigating specific findings in their file scope.
+> **Review manifest**: {output-dir}/review-manifest.yaml — use as an index. Read individual work items and incremental reviews only when investigating specific findings in their file scope.
 >
 > Project source code is at: {project source path} — read source files as needed to investigate specific findings.
 >
@@ -238,7 +238,7 @@ After this agent returns:
 >
 > **Module specs**: Call `ideate_artifact_query({type: "module_spec"})` to retrieve all module specs (if they exist).
 >
-> **Review manifest**: {output-dir}/review-manifest.md — use as an index. Read individual work items and incremental reviews only when investigating specific gaps in their file scope.
+> **Review manifest**: {output-dir}/review-manifest.yaml — use as an index. Read individual work items and incremental reviews only when investigating specific gaps in their file scope.
 >
 > Project source code is at: {project source path} — read source files as needed to investigate specific gaps.
 >
@@ -275,7 +275,7 @@ Spawn the journal-keeper only AFTER all three reviewers from Phase 4a have compl
 > **Shared context package** (inline — do not re-read architecture or principles files individually):
 > {context_package}
 >
-> **Review manifest**: {output-dir}/review-manifest.md — use as an index of all work items and their review status. Read individual incremental reviews only when cross-referencing specific findings.
+> **Review manifest**: {output-dir}/review-manifest.yaml — use as an index of all work items and their review status. Read individual incremental reviews only when cross-referencing specific findings.
 >
 > **Journal**: call `ideate_artifact_query({type: "journal_entry"})` to retrieve the most recent journal entries (last 20 entries).
 >
@@ -284,9 +284,9 @@ Spawn the journal-keeper only AFTER all three reviewers from Phase 4a have compl
 > For cycle reviews, also call `ideate_artifact_query({type: "interview"})` to retrieve the latest interview YAML.
 >
 > The following three review files have been completed by the other reviewers. Read all three for cross-referencing:
-> - Code quality review: {output-dir}/code-quality.md
-> - Spec adherence review: {output-dir}/spec-adherence.md
-> - Gap analysis: {output-dir}/gap-analysis.md
+> - Code quality review: {output-dir}/code-quality.yaml
+> - Spec adherence review: {output-dir}/spec-adherence.yaml
+> - Gap analysis: {output-dir}/gap-analysis.yaml
 >
 > Follow the output format defined in your agent instructions. Build the decision log chronologically. Include cross-references where findings from different reviewers relate to the same concern.
 >
@@ -304,10 +304,10 @@ After this agent returns:
 After the journal-keeper completes (all four reviewers are now done) and all four files have been written via `ideate_write_artifact`:
 
 1. Read all four output files using the MCP server (or directly via Read if needed for synthesis):
-   - `{output-dir}/code-quality.md`
-   - `{output-dir}/spec-adherence.md`
-   - `{output-dir}/gap-analysis.md`
-   - `{output-dir}/decision-log.md`
+   - `{output-dir}/code-quality.yaml`
+   - `{output-dir}/spec-adherence.yaml`
+   - `{output-dir}/gap-analysis.yaml`
+   - `{output-dir}/decision-log.yaml`
 
 2. Verify each file was written and contains substantive content. If a reviewer failed to produce output (session timeout, error, empty response), note the failure and proceed with the outputs that do exist. Do not re-run failed reviewers automatically — note the gap in the summary.
 
@@ -315,7 +315,7 @@ After the journal-keeper completes (all four reviewers are now done) and all fou
 
 # Phase 6: Synthesize into Summary
 
-Read all four reviewer outputs and produce `{output-dir}/summary.md`. This is the single document that captures the full picture.
+Read all four reviewer outputs and produce `{output-dir}/summary.yaml`. This is the single document that captures the full picture.
 
 ## 6.1 Classify All Findings by Severity
 
@@ -415,7 +415,7 @@ Read the summary file to make this determination. If no such findings exist, ski
 
 2. Otherwise:
    a. Call `ideate_get_domain_state()` — returns all domain policies. For each policy, extract: policy IDs (P-N pattern), domain names, and file paths mentioned in the policy body.
-   b. Read `{output-dir}/summary.md`. For each Critical or Significant finding, extract: the domain name (if stated) and any file paths referenced.
+   b. Read `{output-dir}/summary.yaml`. For each Critical or Significant finding, extract: the domain name (if stated) and any file paths referenced.
    c. Check for conflict signals — any of:
       - A finding references the same file path as a path mentioned in an existing policy
       - A finding's domain name matches an existing policy's domain name
@@ -471,14 +471,14 @@ Verify:
 After archival, the cycle directory structure is:
 ```
 .ideate/cycles/{NNN}/
-  review-manifest.md     # Generated in Phase 3.5
+  review-manifest.yaml   # Generated in Phase 3.5
   work-items/            # Completed work items from this cycle
   findings/              # Findings from this cycle
-  code-quality.md        # From Phase 4a
-  spec-adherence.md      # From Phase 4a
-  gap-analysis.md        # From Phase 4a
-  decision-log.md        # From Phase 4b
-  summary.md             # From Phase 6
+  code-quality.yaml      # From Phase 4a
+  spec-adherence.yaml    # From Phase 4a
+  gap-analysis.yaml      # From Phase 4a
+  decision-log.yaml      # From Phase 4b
+  summary.yaml           # From Phase 6
 ```
 
 ---
@@ -487,9 +487,9 @@ After archival, the cycle directory structure is:
 
 After the domain curator completes (and after Phase 7.5 archival for cycle reviews), emit a `quality_summary` event to `.ideate/metrics.jsonl`. This is a best-effort operation — if it fails for any reason, skip it and continue to Phase 8 without blocking.
 
-## 7.6.1 Derive Counts from summary.md
+## 7.6.1 Derive Counts from summary.yaml
 
-Read `{output-dir}/summary.md` (already produced in Phase 6). Derive the following counts by parsing its contents:
+Read `{output-dir}/summary.yaml` (already produced in Phase 6). Derive the following counts by parsing its contents:
 
 **Severity counts** — count bullet points under each severity heading:
 - `findings.by_severity.critical`: count items under `## Critical Findings`
@@ -510,7 +510,7 @@ Read `{output-dir}/summary.md` (already produced in Phase 6). Derive the followi
 - `implementation_gaps`: gap-analyst findings that are minor, or gap-analyst findings describing incomplete coverage or integration (look for words like "incomplete", "partial", "not connected", "missing integration")
 - `other`: all findings not matching any of the above categories
 
-**work_items_reviewed**: Count distinct work item numbers referenced in `{output-dir}/review-manifest.md` (the `#` column). If the manifest does not exist: for cycle reviews (Phase 7.5 already ran), count files in `{output-dir}/incremental/`; for ad-hoc, domain, or full-audit reviews (Phase 7.5 did not run), query findings via `ideate_artifact_query`.
+**work_items_reviewed**: Count distinct work item numbers referenced in `{output-dir}/review-manifest.yaml` (the `#` column). If the manifest does not exist: for cycle reviews (Phase 7.5 already ran), count files in `{output-dir}/incremental/`; for ad-hoc, domain, or full-audit reviews (Phase 7.5 did not run), query findings via `ideate_artifact_query`.
 
 **andon_events**: Call `ideate_artifact_query({type: "journal_entry"})` to retrieve the most recent journal entries (last 20 entries). Count entries for the current cycle number N that mention "Andon" (case-insensitive). Use 0 if journal entries cannot be retrieved.
 
@@ -532,7 +532,7 @@ Append one JSON line to `.ideate/metrics.jsonl`:
 
 ## 7.6.3 Best-Effort Clause
 
-If count derivation fails (e.g., summary.md is missing, cannot be parsed, or the format does not match expected headings), or if the event cannot be written to `metrics.jsonl`, skip the quality_summary event entirely and proceed to Phase 8 without interruption. Log `quality_summary event skipped: {reason}` in the output so the user is aware.
+If count derivation fails (e.g., summary.yaml is missing, cannot be parsed, or the format does not match expected headings), or if the event cannot be written to `metrics.jsonl`, skip the quality_summary event entirely and proceed to Phase 8 without interruption. Log `quality_summary event skipped: {reason}` in the output so the user is aware.
 
 Do not retry. Do not block the review on this step.
 

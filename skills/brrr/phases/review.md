@@ -95,7 +95,7 @@ Spawn all three simultaneously. Do not wait for one before starting another.
   > **Shared context package** (inline — do not re-read architecture, principles, or constraints files individually):
   > {context_package}
   >
-  > **Review manifest**: {project_root}/.ideate/cycles/{NNN}/review-manifest.md — your index of all work items and incremental review status. Read individual work items and incremental reviews only when investigating specific findings.
+  > **Review manifest**: {project_root}/.ideate/cycles/{NNN}/review-manifest.yaml — your index of all work items and incremental review status. Read individual work items and incremental reviews only when investigating specific findings.
   >
   > Project source code is at: {project_source_root} — read source files as needed.
   >
@@ -119,7 +119,7 @@ Spawn all three simultaneously. Do not wait for one before starting another.
   >
   > **Module specs**: Call `ideate_artifact_query({type: "module_spec"})` to retrieve all module specs (if they exist).
   >
-  > **Review manifest**: {project_root}/.ideate/cycles/{NNN}/review-manifest.md — use as an index. Read individual work items and incremental reviews only when investigating specific findings in their file scope.
+  > **Review manifest**: {project_root}/.ideate/cycles/{NNN}/review-manifest.yaml — use as an index. Read individual work items and incremental reviews only when investigating specific findings in their file scope.
   >
   > Project source code is at: {project_source_root} — read source files as needed.
   >
@@ -143,7 +143,7 @@ Spawn all three simultaneously. Do not wait for one before starting another.
   >
   > **Module specs**: Call `ideate_artifact_query({type: "module_spec"})` to retrieve all module specs (if they exist).
   >
-  > **Review manifest**: {project_root}/.ideate/cycles/{NNN}/review-manifest.md — use as an index. Read individual work items and incremental reviews only when investigating specific gaps in their file scope.
+  > **Review manifest**: {project_root}/.ideate/cycles/{NNN}/review-manifest.yaml — use as an index. Read individual work items and incremental reviews only when investigating specific gaps in their file scope.
   >
   > Project source code is at: {project_source_root} — read source files as needed.
   >
@@ -177,7 +177,7 @@ After writing all three artifacts, verify the writes succeeded before proceeding
   >
   > **Plan overview**: Call `ideate_artifact_query({type: "overview"})` to retrieve the plan overview.
   >
-  > **Review manifest**: {project_root}/.ideate/cycles/{NNN}/review-manifest.md — use as an index. Read individual incremental reviews only when cross-referencing specific findings.
+  > **Review manifest**: {project_root}/.ideate/cycles/{NNN}/review-manifest.yaml — use as an index. Read individual incremental reviews only when cross-referencing specific findings.
   >
   > **Review findings** (read via MCP — call `ideate_artifact_query({type: "cycle_review", cycle: {cycle_number}})` to retrieve the code-quality, spec-adherence, and gap-analysis review artifacts for this cycle).
   >
@@ -234,7 +234,7 @@ Best-effort: if any step below fails, skip it and continue without blocking.
    - `implementation_gaps`: gap-analyst minor findings, or gap-analyst findings with "incomplete", "partial", "not connected", "missing integration"
    - `other`: anything else
 
-4. **work_items_reviewed**: Count distinct work item rows in `{project_root}/.ideate/cycles/{NNN}/review-manifest.md`. Use `null` if the file is absent or cannot be parsed.
+4. **work_items_reviewed**: Count distinct work item rows in `{project_root}/.ideate/cycles/{NNN}/review-manifest.yaml`. Use `null` if the file is absent or cannot be parsed.
 
 5. **andon_events**: Call `ideate_artifact_query({type: "journal_entry"})` to retrieve the most recent journal entries (last 20 entries). Count entries for cycle `{cycle_number}` that mention "Andon" (case-insensitive). Default to 0 if journal entries cannot be retrieved.
 
@@ -300,8 +300,8 @@ If `metrics.jsonl` could not be written, note "metrics unavailable" and omit the
 
 ## Exit Conditions
 
-- `{project_root}/.ideate/cycles/{formatted_cycle_number}/` contains: code-quality.md, spec-adherence.md, gap-analysis.md, decision-log.md
-- `{project_root}/.ideate/cycles/{NNN}/review-manifest.md` written
+- `{project_root}/.ideate/cycles/{formatted_cycle_number}/` contains: code-quality.yaml, spec-adherence.yaml, gap-analysis.yaml, decision-log.yaml
+- `{project_root}/.ideate/cycles/{NNN}/review-manifest.yaml` written
 - `last_cycle_findings` dict populated with critical, significant, minor counts
 - Journal updated with review summary and metrics summary
 
@@ -309,11 +309,11 @@ Return to the controller with `last_cycle_findings`. The controller will run Pha
 
 ## Artifacts Written
 
-- `{project_root}/.ideate/cycles/{formatted_cycle_number}/code-quality.md`
-- `{project_root}/.ideate/cycles/{formatted_cycle_number}/spec-adherence.md`
-- `{project_root}/.ideate/cycles/{formatted_cycle_number}/gap-analysis.md`
-- `{project_root}/.ideate/cycles/{formatted_cycle_number}/decision-log.md`
-- `{project_root}/.ideate/cycles/{NNN}/review-manifest.md`
+- `{project_root}/.ideate/cycles/{formatted_cycle_number}/code-quality.yaml`
+- `{project_root}/.ideate/cycles/{formatted_cycle_number}/spec-adherence.yaml`
+- `{project_root}/.ideate/cycles/{formatted_cycle_number}/gap-analysis.yaml`
+- `{project_root}/.ideate/cycles/{formatted_cycle_number}/decision-log.yaml`
+- `{project_root}/.ideate/cycles/{NNN}/review-manifest.yaml`
 - `{project_root}/.ideate/cycles/{NNN}/journal/` — appended (review summary + metrics summary)
 - `{project_root}/.ideate/metrics.jsonl` — one entry per agent spawned; quality_summary event appended
 - `{project_root}/.ideate/domains/` — policies, decisions, and questions updated by domain-curator

@@ -353,6 +353,11 @@ export const TOOLS: Tool[] = [
           type: "object",
           description: "YAML fields to write (type-specific content)",
         },
+        cycle: {
+          type: "integer",
+          description:
+            "Cycle number for cycle-scoped artifact types (finding, cycle_summary, review_output, review_manifest, decision_log). Required for these types, ignored for others.",
+        },
       },
       required: ["type", "id", "content"],
     },

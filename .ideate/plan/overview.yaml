@@ -1,20 +1,26 @@
 id: overview
 type: overview
-title: Change Plan — Cycle 032
+title: Change Plan — Cycle 033
 content: |-
-  # Change Plan — Cycle 032
+  # Change Plan — Cycle 033
 
-  **Trigger**: Remaining direct Write tool calls to .ideate/ files in review skill and brrr review phase. GP-8 requires all artifact writes go through MCP tools.
+  **Trigger**: Full audit found remaining markdown artifact production and a path routing gap in ideate_write_artifact for cycle-scoped files.
 
   **What is changing**:
 
-  1. **Review skill MCP writes** (WI-249) — Reviewer agents return findings in their response instead of writing directly. Skill captures output and writes via ideate_write_artifact. Summary, review-manifest, and domain curator output all written via MCP.
+  1. **Cycle-scoped path routing** (WI-251) — ideate_write_artifact gets optional cycle parameter. Cycle-scoped types (finding, cycle_summary, review_manifest, decision_log) route to cycles/{NNN}/ when cycle is provided.
 
-  2. **Brrr review phase MCP writes** (WI-250) — Same pattern for the brrr autonomous loop's review phase.
+  2. **brrr-state and proxy-human-log to YAML** (WI-252) — Convert brrr-state.md to brrr-state.yaml and proxy-human-log.md to proxy-human-log.yaml. All writes via ideate_write_artifact. Proxy-human agent gets MCP tool access.
 
-  **What is NOT changing**: MCP server code, agent definitions, guiding principles, constraints, other skills.
+  3. **Review output files .md to .yaml** (WI-253) — Review skill references updated: code-quality.yaml, spec-adherence.yaml, etc. All ideate_write_artifact calls include cycle parameter.
 
-  **Scope boundary**: 2 work items (WI-249–250). Touches review/SKILL.md and brrr/phases/review.md only.
-content_hash: 6b83b9854a68b1a4bfdba51fdab9d87ea30a4f0ede44a2e0fc285fa7643e0997
-token_count: 217
+  4. **Brrr review phase .md to .yaml** (WI-254) — Same for brrr review phase + convergence check references.
+
+  5. **Research suffix fix** (WI-255) — Refine skill research example changed from .md to .yaml.
+
+  **What is NOT changing**: MCP server core logic (except resolveArtifactPath), guiding principles, constraints.
+
+  **After this cycle**: Zero markdown artifacts produced by any ideate skill or agent. All .ideate/ writes go through MCP tools. YAML only.
+content_hash: 8d2b6d802b1bb99daddc0406977d9bd6ab56bcd7d05fd603bd4fcc6829857f92
+token_count: 342
 file_path: .ideate/plan/overview.yaml

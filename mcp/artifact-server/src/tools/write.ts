@@ -596,7 +596,22 @@ export async function handleWriteWorkItems(
  * Determine the output path for an artifact based on its type and id.
  * Returns the absolute file path.
  */
-function resolveArtifactPath(ideateDir: string, type: string, id: string): string {
+const CYCLE_SCOPED_TYPES = new Set([
+  "finding", "cycle_summary", "review_output", "review_manifest", "decision_log",
+]);
+
+function resolveArtifactPath(ideateDir: string, type: string, id: string, cycle?: number): string {
+  if (CYCLE_SCOPED_TYPES.has(type)) {
+    if (cycle === undefined || cycle === null) {
+      throw new Error(`Type '${type}' requires a cycle parameter`);
+    }
+    const paddedCycle = String(cycle).padStart(3, "0");
+    if (type === "finding") {
+      return path.join(ideateDir, "cycles", paddedCycle, "findings", `${id}.yaml`);
+    }
+    return path.join(ideateDir, "cycles", paddedCycle, `${id}.yaml`);
+  }
+
   switch (type) {
     case "overview":
     case "execution_strategy":
@@ -622,6 +637,7 @@ export async function handleWriteArtifact(
   const type = args.type as string;
   const id = args.id as string;
   const content = args.content as Record<string, unknown>;
+  const cycle = typeof args.cycle === "number" ? args.cycle : undefined;
 
   if (!type || !id) {
     throw new Error("Missing required parameters: type, id");
@@ -639,7 +655,7 @@ export async function handleWriteArtifact(
   }
 
   // Resolve output path
-  const absoluteFilePath = resolveArtifactPath(ctx.ideateDir, type, id);
+  const absoluteFilePath = resolveArtifactPath(ctx.ideateDir, type, id, cycle);
   ensureDir(path.dirname(absoluteFilePath));
 
   // Compute relative file_path from the .ideate/ directory name

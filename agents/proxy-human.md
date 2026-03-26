@@ -78,7 +78,7 @@ Based on your evaluation:
 
 ### Step 5: Record the Decision
 
-Append a structured entry to `{project_root}/.ideate/proxy-human-log.md`.
+Append a structured entry to `{project_root}/.ideate/proxy-human-log.yaml`.
 
 The log uses append semantics. Each invocation adds one entry. Never overwrite or delete existing entries.
 
@@ -100,13 +100,13 @@ If the decision is `DEFER`, the Rationale must state specifically: what informat
 
 ## Output Contract
 
-After appending to `proxy-human-log.md`, return a response with:
+After appending to `proxy-human-log.yaml`, return a response with:
 
 1. **Decision**: State the decision (or deferral) clearly in one sentence.
 2. **Rationale**: Two to four sentences explaining the reasoning.
 3. **Principles Cited**: List any guiding principles or constraints that governed the decision.
 4. **Confidence**: `HIGH`, `MEDIUM`, or `LOW`.
-5. **Log Entry Written**: Confirm the entry was appended to `{project_root}/.ideate/proxy-human-log.md`.
+5. **Log Entry Written**: Confirm the entry was appended to `{project_root}/.ideate/proxy-human-log.yaml`.
 
 ---
 

@@ -193,7 +193,7 @@ When an Andon event occurs (scope-changing finding, merge conflict, spec ambigui
    Event:
    {andon_event_description}
 
-   Write your decision to {project_root}/.ideate/proxy-human-log.md following the entry format defined in your agent definition."
+   Write your decision to {project_root}/.ideate/proxy-human-log.yaml following the entry format defined in your agent definition."
    ```
 
 3. Wait for the proxy-human agent to respond.
@@ -213,7 +213,7 @@ When an Andon event occurs (scope-changing finding, merge conflict, spec ambigui
    ```
    Do NOT interrupt the loop or ask the user. This is logging only.
 
-**If the Agent tool is not available**: Handle the event yourself — use the guiding principles and constraints from `{context_package}` (loaded via `ideate_get_context_package()` in the Prepare Context Digest step), apply them to the event, make the best decision, and record it in `{project_root}/.ideate/proxy-human-log.md` with heading: `## [brrr-fallback] {ISO date} — Cycle {cycle_number}` followed by the same Event/Decision/Confidence/Rationale fields.
+**If the Agent tool is not available**: Handle the event yourself — use the guiding principles and constraints from `{context_package}` (loaded via `ideate_get_context_package()` in the Prepare Context Digest step), apply them to the event, make the best decision, and record it in `{project_root}/.ideate/proxy-human-log.yaml` with heading: `## [brrr-fallback] {ISO date} — Cycle {cycle_number}` followed by the same Event/Decision/Confidence/Rationale fields.
 
 ### Worker Agent Failure
 
@@ -246,13 +246,13 @@ Rework: {N} minor, {N} significant findings fixed from incremental review.
 {Description of significant fixes if any.}
 ```
 
-Update `total_items_executed` in `{project_root}/.ideate/brrr-state.md` after each item completes.
+Update `total_items_executed` in `{project_root}/.ideate/brrr-state.yaml` after each item completes.
 
 ## Exit Conditions
 
 - All pending work items have been attempted (skipped, completed, or failed+deferred)
 - Each completed item has an incremental review written to `{project_root}/.ideate/cycles/{NNN}/findings/`
-- `brrr-state.md` `total_items_executed` is updated
+- `brrr-state.yaml` `total_items_executed` is updated
 - Journal has an entry for each completed item
 
 Return to the controller. The controller will proceed to Phase 6b (review.md).
@@ -261,6 +261,6 @@ Return to the controller. The controller will proceed to Phase 6b (review.md).
 
 - `{project_root}/.ideate/cycles/{NNN}/findings/F-{WI}-{SEQ}.yaml` — one per work item reviewed
 - `{project_root}/.ideate/cycles/{NNN}/journal/` — appended per work item and per Andon event
-- `{project_root}/.ideate/brrr-state.md` — `total_items_executed` updated
-- `{project_root}/.ideate/proxy-human-log.md` — if Andon events occurred
+- `{project_root}/.ideate/brrr-state.yaml` — `total_items_executed` updated
+- `{project_root}/.ideate/proxy-human-log.yaml` — if Andon events occurred
 - `{project_root}/.ideate/metrics.jsonl` — one entry per agent spawned
