@@ -144,8 +144,7 @@ function toYaml(obj, indent = 0) {
                 lines.push(`${pad}${key}:`);
                 for (const item of value) {
                     if (typeof item === "string") {
-                        if (
-                            item.includes("\n") ||
+                        if (item.includes("\n") ||
                             item.startsWith('"') ||
                             item.includes(":") ||
                             item.includes("#") ||
@@ -166,8 +165,7 @@ function toYaml(obj, indent = 0) {
                             item === "yes" ||
                             item === "no" ||
                             item === "on" ||
-                            item === "off"
-                        ) {
+                            item === "off") {
                             const escaped = item.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
                             lines.push(`${pad}  - "${escaped}"`);
                         }
@@ -580,7 +578,6 @@ function extractListField(body, label) {
 function migratePolicies(ctx, domain, filePath) {
     const content = readFile(filePath);
     if (!content) {
-        warn(ctx, `policies.md not found at ${filePath}`);
         return;
     }
     const sections = parseDomainSections(content, "P");
@@ -626,7 +623,6 @@ function migratePolicies(ctx, domain, filePath) {
 function migrateDecisions(ctx, domain, filePath) {
     const content = readFile(filePath);
     if (!content) {
-        warn(ctx, `decisions.md not found at ${filePath}`);
         return;
     }
     const sections = parseDomainSections(content, "D");
@@ -673,7 +669,6 @@ function migrateDecisions(ctx, domain, filePath) {
 function migrateQuestions(ctx, domain, filePath) {
     const content = readFile(filePath);
     if (!content) {
-        warn(ctx, `questions.md not found at ${filePath}`);
         return;
     }
     const sections = parseDomainSections(content, "Q");
@@ -731,6 +726,12 @@ function migrateDomains(ctx) {
             continue;
         const domain = entry.name;
         const domainPath = path.join(domainsDir, domain);
+        const hasFiles = ["policies.md", "decisions.md", "questions.md"]
+            .some(f => fs.existsSync(path.join(domainPath, f)));
+        if (!hasFiles) {
+            console.log(`Skipping empty domain: ${domain}`);
+            continue;
+        }
         migratePolicies(ctx, domain, path.join(domainPath, "policies.md"));
         migrateDecisions(ctx, domain, path.join(domainPath, "decisions.md"));
         migrateQuestions(ctx, domain, path.join(domainPath, "questions.md"));

@@ -1,29 +1,29 @@
 id: overview
 type: overview
-title: Change Plan — Cycle 027
+title: Change Plan — Cycle 028
 content: |
-  # Change Plan — Cycle 027
-  
-  **Trigger**: Pre-release v3.0 feature expansion — 6 feature areas plus v2 cleanup.
-  
+  # Change Plan — Cycle 028
+
+  **Trigger**: Pre-v3 work item audit revealed 48 stale items with no way to mark them as obsolete, plus still-valid documentation gaps and a migration script bug.
+
   **What is changing**:
-  
-  1. **Build on first startup** (WI-208) — start.sh runs npm run build on first startup per version. dist/ gitignored. No more shipping compiled artifacts.
-  
-  2. **Init skill** (WI-209, 210, 211) — New `/ideate:init` skill for existing codebases. Scaffolds `.ideate/`, runs architect survey, lightweight interview, bootstraps domain layer. Separate from plan (which is greenfield).
-  
-  3. **Telemetry + PPR metrics** (WI-212, 213, 214) — Extended metrics schema capturing context artifact IDs, outcome, finding counts, cache hit rates. New `ideate_get_metrics` MCP tool for aggregated analysis. Skills instrumented to capture extended fields. Driven by research at `steering/research/ppr-telemetry-metrics.md`.
-  
-  4. **Reporting** (WI-215, 216, 217, 223) — Three report scripts: cycle quality trends, cost analysis, executive summary. README updated with documentation.
-  
-  5. **SDLC hooks** (WI-218, 219, 220) — Event system matching Claude Code hook API pattern. Supports command (shell) and prompt (LLM) hook types. 7 SDLC events. Hook dispatcher + `ideate_emit_event` MCP tool. Skills emit events at key points.
-  
-  6. **v2 cleanup** (WI-221, 222) — Architecture.md refresh (outpost refs, stale sections, source index). Open domain questions resolved.
-  
-  **What is NOT changing**: Core SDLC workflow, existing MCP tools (11 tools preserved), schema v1 (additive changes only for metrics), existing agent definitions (except architect init mode).
-  
-  **Scope boundary**: 16 work items (WI-208–223). Touches skills/, agents/architect.md, mcp/artifact-server/, scripts/, .gitignore, CLAUDE.md, README.md, plugin manifest, specs/plan/architecture.md, specs/domains/.
-  
-  **Note**: Skills still write to `specs/` paths during this cycle. The user will run a final migration to `.ideate/` and retire `specs/` after confirming v3 is fully functional.
-content_hash: "2c7a256efe40b3c4cf7106c2dde8d2e4be3c19dffd7048650bfd85e388a7fa00"
-token_count: 515
+
+  1. **Obsolete status + resolution field** (WI-224) — Add `obsolete` as a recognized terminal status in execution.ts and analysis.ts. Add optional `resolution` field to work item YAML for human-readable rationale. Obsolete items are excluded from execution (like done) and reported separately in project status.
+
+  2. **ideate_update_work_items MCP tool** (WI-225) — New tool for partial field updates on existing work items. Reads existing YAML, merges specified fields, writes back. Enables bulk status changes without overwriting full work item definitions.
+
+  3. **Bulk status cleanup** (WI-226) — Use the new update tool to mark 40 pre-v3 items as `done` (with resolution: "Implemented during v3 migration") and 11 items as `obsolete` (with item-specific resolution reasons). Depends on WI-224 + WI-225.
+
+  4. **Migration script fix** (WI-227) — Handle empty domain directories in migrate-to-v3.ts. Change WARNING to info-level log for domains with no policies/decisions/questions files. Empty domain directories are a valid v2 state.
+
+  5. **README comprehensive update** (WI-228) — Addresses WI-070 + WI-131. Add: worked example tracing a full cycle with real file snippets, interview structure section, context loading table, custom models section (ANTHROPIC_DEFAULT_HAIKU_MODEL, minimum model requirements, known limitations).
+
+  **Dropped from plan**: RAG-based artifact retrieval (WI-229, WI-230, WI-231) removed. The v3 PPR-based MCP server with structured graph queries and explicit typed edges supersedes the embedding-based approach. The corpus is <1000 artifacts with explicit relationships — deterministic graph queries are faster and more precise than semantic search. Future PPR enhancements (edge-type weighting, usage tracking) are separate cycle work.
+
+  **What is NOT changing**: Core SDLC workflow, existing 13 MCP tools (additive only), guiding principles, constraints, agent definitions, skill logic.
+
+  **Scope boundary**: 5 work items (WI-224–228). Touches mcp/artifact-server/src/ (execution.ts, analysis.ts, tools/write.ts, tools/index.ts), scripts/migrate-to-v3.ts, README.md.
+
+  **Cycle 027 minor findings**: metrics tool reads SQLite instead of JSONL (not addressed this cycle), no tests for metrics/events tools (not addressed this cycle). These remain as known issues.
+content_hash: ""
+token_count: 0

@@ -1,0 +1,27 @@
+id: WI-232
+type: work_item
+title: "ARCHITECTURE.md — document context assembly algorithm"
+status: done
+complexity: medium
+scope:
+  - {path: ARCHITECTURE.md, op: modify}
+depends: []
+blocks: []
+criteria:
+  - New section on ideate_get_work_item_context assembly
+  - ideate_get_context_package documented
+  - Edge types and order explained
+  - Context by task type table
+  - Token budget/digest strategy documented
+  - PPR research referenced
+module: null
+domain: artifact-structure
+notes: |
+  # WI-232: Context Assembly Docs
+
+  Added Section 9 to ARCHITECTURE.md documenting both context tools, edge traversal, minimum viable context by task type, Phase 4.5 digest, and PPR future direction.
+cycle_created: 28
+cycle_modified: null
+content_hash: ""
+token_count: 0
+file_path: .ideate/work-items/WI-232.yaml
