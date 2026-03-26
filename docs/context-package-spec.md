@@ -14,7 +14,7 @@ The package is a single markdown document with five sections in this order:
 
 ### 1. `## Architecture`
 
-Source: `{artifact_dir}/plan/architecture.md`
+Source: `{project_root}/plan/architecture.yaml`
 
 Assembly rule: If the file is ≤300 lines, include in full. If >300 lines, include only:
 - The component map section (headings + subsections that list components)
@@ -23,13 +23,13 @@ Assembly rule: If the file is ≤300 lines, include in full. If >300 lines, incl
 
 ### 2. `## Guiding Principles`
 
-Source: `{artifact_dir}/steering/guiding-principles.md`
+Source: `{project_root}/steering/guiding-principles.yaml`
 
 Assembly rule: Include in full. Principles are short and all relevant — no filtering.
 
 ### 3. `## Constraints`
 
-Source: `{artifact_dir}/steering/constraints.md`
+Source: `{project_root}/steering/constraints.yaml`
 
 Assembly rule: Include in full.
 
@@ -58,9 +58,9 @@ Size target: ~2-5 lines per file. Omit files with no detectable exports (config 
 Absolute paths to the full source documents, for agents that need deeper detail beyond what the package provides:
 
 ```
-Full architecture: {absolute_path_to_plan/architecture.md}
-Full principles: {absolute_path_to_steering/guiding-principles.md}
-Full constraints: {absolute_path_to_steering/constraints.md}
+Full architecture: {absolute_path_to_plan/architecture.yaml}
+Full principles: {absolute_path_to_steering/guiding-principles.yaml}
+Full constraints: {absolute_path_to_steering/constraints.yaml}
 ```
 
 ---
@@ -88,7 +88,7 @@ Skills that can optionally use the MCP artifact server (082) for the context pac
 
 ```
 If MCP tool `ideate_get_context_package` is available:
-  package = call ideate_get_context_package({artifact_dir})
+  package = call ideate_get_context_package({project_root})
 Else:
   package = assemble_inline (follow steps above)
 ```

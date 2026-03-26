@@ -57,8 +57,8 @@ Then load remaining context via MCP tools:
 
 1. Call `ideate_artifact_query({type: "overview"})` — retrieves `.ideate/plan/overview.yaml`.
 2. Call `ideate_artifact_query({type: "modules"})` — retrieves `.ideate/modules/*.yaml` specs (if they exist).
-3. Call `ideate_artifact_query({type: "execution-strategy"})` — retrieves `.ideate/plan/execution-strategy.yaml`.
-4. Call `ideate_artifact_query({type: "work-items"})` — retrieves current work items from `.ideate/work-items/WI-*.yaml`. If prior cycles have been archived, note their existence but do not load them unless the user's changes specifically reference prior work.
+3. Call `ideate_artifact_query({type: "execution_strategy"})` — retrieves `.ideate/plan/execution-strategy.yaml`.
+4. Call `ideate_artifact_query({type: "work_item"})` — retrieves current work items from `.ideate/work-items/WI-*.yaml`. If prior cycles have been archived, note their existence but do not load them unless the user's changes specifically reference prior work.
 5. Call `ideate_artifact_query({type: "interview"})` — retrieves the original interview transcript from `.ideate/interviews/`.
 6. Call `ideate_artifact_query({type: "research"})` — retrieves all research findings from `.ideate/research/`.
 7. Call `ideate_artifact_query({type: "journal"})` — retrieves project history (if it exists).
@@ -163,7 +163,7 @@ Prompt for each researcher:
 
 > Investigate: {topic}
 > Questions: {specific questions from the interview}
-> Save findings to: {artifact-dir}/.ideate/research/{topic-slug}.yaml
+> Save findings to: {project_root}/.ideate/research/{topic-slug}.yaml
 >
 > Context: This is a refinement cycle. The project already uses {relevant existing technologies from codebase analysis}. Focus your research on how {new topic} integrates with or affects the existing system.
 

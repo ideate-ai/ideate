@@ -1,26 +1,45 @@
 id: overview
 type: overview
-title: Change Plan — Cycle 033
 content: |-
-  # Change Plan — Cycle 033
+  # Change Plan — Cycle 031
 
-  **Trigger**: Full audit found remaining markdown artifact production and a path routing gap in ideate_write_artifact for cycle-scoped files.
+  ## Trigger
+  Full audit 20260326 of Cycle 030 work revealed incomplete fixes:
+  1. Domain-curator line 166 has wrong path (missing .ideate/)
+  2. Domain-curator section headers still use .md (lines 96, 104, 134)
+  3. Review skill line 406 references .md pattern (WI-260 incomplete)
+  4. Context package spec references .md files (WI-262 incomplete)
+  5. MCP artifact-server README uses {artifact_dir} placeholder
 
-  **What is changing**:
+  ## Scope
 
-  1. **Cycle-scoped path routing** (WI-251) — ideate_write_artifact gets optional cycle parameter. Cycle-scoped types (finding, cycle_summary, review_manifest, decision_log) route to cycles/{NNN}/ when cycle is provided.
+  ### What is changing
+  - **WI-263**: Fix domain-curator path error (add .ideate/ to line 166)
+  - **WI-264**: Complete domain-curator .md header cleanup (lines 96, 104, 134)
+  - **WI-265**: Complete review skill .md cleanup (line 406)
+  - **WI-266**: Complete context package spec .md cleanup (lines 17, 26, 32, 61-63)
+  - **WI-267**: Standardize README placeholder to {project_root}
 
-  2. **brrr-state and proxy-human-log to YAML** (WI-252) — Convert brrr-state.md to brrr-state.yaml and proxy-human-log.md to proxy-human-log.yaml. All writes via ideate_write_artifact. Proxy-human agent gets MCP tool access.
+  ### What is NOT changing
+  - No changes to skill logic or workflow behavior
+  - No changes to MCP artifact server implementation
+  - No changes to domain policies or guiding principles (all principles unchanged)
+  - No changes to architecture (architecture unchanged)
 
-  3. **Review output files .md to .yaml** (WI-253) — Review skill references updated: code-quality.yaml, spec-adherence.yaml, etc. All ideate_write_artifact calls include cycle parameter.
+  ## Expected Impact
+  - Complete pattern standardization per P-25 (YAML-only source of truth)
+  - Consistent {project_root} placeholder across all documentation
+  - No remaining .md references in code paths
 
-  4. **Brrr review phase .md to .yaml** (WI-254) — Same for brrr review phase + convergence check references.
+  ## Architecture
+  Unchanged. These are documentation and pattern completion fixes.
 
-  5. **Research suffix fix** (WI-255) — Refine skill research example changed from .md to .yaml.
+  ## Dependencies
+  WI-263 through WI-267 are independent. Can run in parallel.
 
-  **What is NOT changing**: MCP server core logic (except resolveArtifactPath), guiding principles, constraints.
-
-  **After this cycle**: Zero markdown artifacts produced by any ideate skill or agent. All .ideate/ writes go through MCP tools. YAML only.
-content_hash: 8d2b6d802b1bb99daddc0406977d9bd6ab56bcd7d05fd603bd4fcc6829857f92
-token_count: 342
-file_path: .ideate/plan/overview.yaml
+  ## New Work Items
+  - WI-263: Fix domain-curator path error
+  - WI-264: Complete domain-curator .md header cleanup
+  - WI-265: Complete review skill .md cleanup
+  - WI-266: Complete context package spec .md cleanup
+  - WI-267: Standardize README placeholder to project_root

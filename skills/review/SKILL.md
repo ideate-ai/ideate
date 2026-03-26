@@ -115,12 +115,12 @@ At any point during context loading or review, if you need to search across arti
 
 Create the output directory based on the review mode determined in Phase 1:
 
-- **Cycle review**: `{artifact-dir}/.ideate/cycles/{NNN}/`
-- **Domain review**: `{artifact-dir}/.ideate/cycles/adhoc/{date}-domain-{name}/`
-- **Full audit**: `{artifact-dir}/.ideate/cycles/adhoc/{date}-full-audit/`
-- **Ad-hoc**: `{artifact-dir}/.ideate/cycles/adhoc/{date}-{slug}/`
+- **Cycle review**: `{project_root}/.ideate/cycles/{NNN}/`
+- **Domain review**: `{project_root}/.ideate/cycles/adhoc/{date}-domain-{name}/`
+- **Full audit**: `{project_root}/.ideate/cycles/adhoc/{date}-full-audit/`
+- **Ad-hoc**: `{project_root}/.ideate/cycles/adhoc/{date}-{slug}/`
 
-Also ensure `{artifact-dir}/.ideate/cycles/adhoc/` exists as a parent directory.
+Also ensure `{project_root}/.ideate/cycles/adhoc/` exists as a parent directory.
 
 Store the output directory path. All reviewer output goes here.
 
@@ -403,7 +403,7 @@ Where `{total_finding_count}` is the sum of all findings across all severity lev
 **Ad-hoc reviews** (domain, full audit, or natural language): run the curator only if the review produced at least one finding that is:
 - Policy-grade: implies a durable rule future workers must follow
 - Question-grade: an unresolved issue with impact if unanswered
-- Conflict-grade: contradicts an existing policy in `domains/*/policies.md`
+- Conflict-grade: contradicts an existing policy in `domains/*/policies/*.yaml`
 
 Read the summary file to make this determination. If no such findings exist, skip to Phase 8 (Update Journal). Note in the journal that the curator was not run.
 
@@ -411,7 +411,7 @@ Read the summary file to make this determination. If no such findings exist, ski
 
 **Pre-screening for conflict signals** (determines model to use):
 
-1. If `{artifact-dir}/.ideate/domains/` does not exist (first cycle), skip pre-screening. Use `model: sonnet`.
+1. If `{project_root}/.ideate/domains/` does not exist (first cycle), skip pre-screening. Use `model: sonnet`.
 
 2. Otherwise:
    a. Call `ideate_get_domain_state()` — returns all domain policies. For each policy, extract: policy IDs (P-N pattern), domain names, and file paths mentioned in the policy body.
@@ -429,11 +429,11 @@ Read the summary file to make this determination. If no such findings exist, ski
 
 Provide:
 
-> Artifact directory: {artifact-dir}
+> Artifact directory: {project_root}
 >
 > Review type: {cycle | adhoc}
 >
-> Review source: {output-dir}/*.md (all review files in the output directory)
+> Review source: {output-dir}/*.yaml (all review files in the output directory)
 >
 > Cycle number: {N} (for cycle reviews) or slug: {date-slug} (for ad-hoc reviews)
 >

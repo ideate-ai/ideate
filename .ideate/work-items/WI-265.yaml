@@ -1,0 +1,23 @@
+id: WI-265
+type: refinement
+title: Fix review skill .md pattern at line 406
+complexity: low
+status: completed
+depends: []
+blocks: []
+file_scope:
+  modify:
+    - skills/review/SKILL.md
+criteria:
+  - Line 406 references domains/*/policies/*.yaml not .md
+  - Pattern matches actual file naming convention
+notes: |
+  Full audit 20260326 found WI-260 was incomplete:
+
+  Line 406 currently references:
+  "- Conflict-grade: contradicts an existing policy in `domains/*/policies.md`"
+
+  Should be:
+  "- Conflict-grade: contradicts an existing policy in `domains/*/policies/*.yaml`"
+
+  WI-260 only fixed line 436 but missed this reference at line 406.

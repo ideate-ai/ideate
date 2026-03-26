@@ -1,0 +1,50 @@
+id: gap-analysis
+type: cycle_summary
+content: |-
+  ## Verdict: Partial compliance
+
+  WI-231, WI-232, WI-233, and WI-234 were addressed in the skills files, but gaps remain in agent files and the init skill.
+
+  ## Critical Findings
+
+  ### CF1: Domain-curator uses {artifact-dir}
+  - File: agents/domain-curator.md
+  - Lines: 34, 36, 38, 40, 42, 166
+  - Gap: Uses {artifact-dir} instead of {project_root}
+
+  ### CF2: Domain-curator references .md file names
+  - File: agents/domain-curator.md
+  - Lines: Multiple
+  - Gap: References policies.md, decisions.md, questions.md instead of YAML
+
+  ### CF3: Review skill references .md pattern
+  - File: skills/review/SKILL.md
+  - Line: 436
+  - Gap: Prompt references *.md files instead of *.yaml
+
+  ### CF4: Init skill missing plan/ directory
+  - File: skills/init/SKILL.md
+  - Lines: 51-61
+  - Gap: plan/ and steering/ directories not in scaffold
+
+  ## Significant Findings
+
+  ### SF1: Domain-curator uses direct Write tool
+  - File: agents/domain-curator.md
+  - Gap: Phase 4/5 describe creating files directly without MCP tools
+
+  ## Minor Findings
+
+  ### MF1: Legacy .md references in domain-curator headers
+  - File: agents/domain-curator.md
+  - Gap: Section headers use .md suffix
+
+  ## Recommendations
+  1. Update domain-curator to use {project_root}, YAML patterns, MCP tools
+  2. Update review skill line 436 to reference *.yaml
+  3. Add plan/ and steering/ to init skill scaffold
+cycle: 29
+reviewer: gap-analyst
+content_hash: 1b03472e0d09bb7517ed73002864c010b77bad8a43ecee42d8211a194c2a629b
+token_count: 365
+file_path: .ideate/cycles/029/gap-analysis.yaml

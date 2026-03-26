@@ -40,14 +40,14 @@ Hold as `{context_package}` in memory. Pass inline to all reviewer and journal-k
 
 Determine whether to use **full review** or **differential review**.
 
-Read `last_full_review_cycle` and `full_review_interval` from `{project_root}/.ideate/brrr-state.md`. Defaults: `last_full_review_cycle` = 0, `full_review_interval` = 3.
+Read `last_full_review_cycle` and `full_review_interval` from `{project_root}/.ideate/brrr-state.yaml`. Defaults: `last_full_review_cycle` = 0, `full_review_interval` = 3.
 
 **Full review conditions** (any one → use full review):
 - `{cycle_number}` is 1
 - `({cycle_number} - last_full_review_cycle) >= full_review_interval`
 - `{cycle_start_commit}` is null (git unavailable)
 
-**If full review**: Set `{diff_mode}` = `"full"`. Set `{changed_files}` = all source files. Update `{project_root}/.ideate/brrr-state.md`: `last_full_review_cycle: {cycle_number}`. Continue with Generate Review Manifest.
+**If full review**: Set `{diff_mode}` = `"full"`. Set `{changed_files}` = all source files. Update `{project_root}/.ideate/brrr-state.yaml`: `last_full_review_cycle: {cycle_number}`. Continue with Generate Review Manifest.
 
 **If differential** (cycles 2+ within the interval):
 

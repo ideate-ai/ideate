@@ -15,7 +15,7 @@ The server is **read-only** — it never writes to the artifact directory. It wa
 | `ideate_domain_policies` | Active domain policies, optionally filtered by domain name |
 | `ideate_source_index` | Source code index table: File | Language | Key Exports |
 
-All tools accept `artifact_dir` as a parameter — you can use multiple artifact directories in a single server session without reconfiguring.
+All tools accept `{project_root}` as a parameter — you can use multiple artifact directories in a single server session without reconfiguring.
 
 ## Requirements
 
@@ -86,7 +86,7 @@ Skills check for MCP tool availability at runtime and fall back to inline assemb
 
 ```
 If MCP tool `ideate_get_context_package` is available:
-  context_package = call ideate_get_context_package({artifact_dir})
+  context_package = call ideate_get_context_package({project_root})
 Else:
   [assemble inline from architecture.md, guiding-principles.md, constraints.md]
 ```
@@ -95,26 +95,26 @@ Else:
 
 ```
 ideate_get_work_item_context(
-  artifact_dir: "/path/to/specs",
+  project_root: "/path/to/specs",
   work_item_id: "082"
 )
 
 ideate_get_context_package(
-  artifact_dir: "/path/to/specs"
+  project_root: "/path/to/specs"
 )
 
 ideate_artifact_query(
-  artifact_dir: "/path/to/specs",
+  project_root: "/path/to/specs",
   query: "caching invalidation strategy"
 )
 
 ideate_domain_policies(
-  artifact_dir: "/path/to/specs",
+  project_root: "/path/to/specs",
   domain: "workflow"
 )
 
 ideate_source_index(
-  artifact_dir: "/path/to/specs",
+  project_root: "/path/to/specs",
   source_dir: "/path/to/project/src"
 )
 ```
@@ -128,7 +128,7 @@ ideate_source_index(
 
 ### Caching
 
-- Cache key: `{tool_name}:{artifact_dir}:{...tool-specific-args}`
+- Cache key: `{tool_name}:{project_root}:{...tool-specific-args}`
 - Each cached response records which files it depended on.
 - When chokidar detects a file change, all cache keys that depended on that file are invalidated.
 - LRU eviction keeps total cache size under 50MB.

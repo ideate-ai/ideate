@@ -1,0 +1,33 @@
+reviewer: gap-analyst
+cycle: 28
+content: |
+  ## Verdict: Fail
+
+  ## Critical Findings
+
+  **C1: Regression in brrr review phase - brrr-state.md reference**
+  - Location: `skills/brrr/phases/review.md` lines 43 and 50
+  - Issue: References `.ideate/brrr-state.md` but should be `.ideate/brrr-state.yaml`
+  - Regression from WI-252 which converted to YAML format
+  - Fix: Change `brrr-state.md` to `brrr-state.yaml`
+
+  ## Significant Findings
+
+  **S1: {artifact-dir} placeholder in review skill**
+  - Location: `skills/review/SKILL.md` Phase 3 (lines 118-123, 414, 432)
+  - Issue: Uses `{artifact-dir}` instead of `{project_root}`
+  - Per WI-257, should standardize on `{project_root}`
+  - Fix: Replace all `{artifact-dir}` with `{project_root}`
+
+  **S2: {artifact-dir} in refine skill researcher prompt**
+  - Location: `skills/refine/SKILL.md` line 166
+  - Issue: Uses `{artifact-dir}` in researcher agent prompt
+  - Fix: Change to `{project_root}` for consistency
+
+  ## Minor Findings
+  None.
+
+  ## Suggestions
+  1. Fix brrr-state.yaml reference
+  2. Standardize on {project_root} across all skills
+  3. Verify no other .md state file references remain

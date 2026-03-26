@@ -1,20 +1,24 @@
 id: WI-231
 type: work_item
-title: "RAG semantic search MCP tool + watcher integration"
-status: obsolete
-complexity: medium
+title: Fix brrr-state.yaml reference in brrr review phase
+status: done
+complexity: low
 scope:
-  - {path: mcp/artifact-server/src/tools/retrieval.ts, op: create}
+  - action: modify
+    file_path: skills/brrr/phases/review.md
+    lines:
+      - 43
+      - 50
 depends: []
 blocks: []
 criteria:
-  - New MCP tool ideate_artifact_semantic_search registered
-module: null
-domain: artifact-structure
-resolution: "Superseded by v3 PPR-based graph queries — future PPR enhancements (edge-type weighting, usage tracking) are the correct path forward"
-notes: null
-cycle_created: 28
+  - description: brrr-state.md references changed to brrr-state.yaml on lines 43 and 50
+    verification_method: file_read
+domain: workflow
+notes: "# WI-231: Fix brrr-state.yaml reference in brrr review phase"
+resolution: null
+cycle_created: null
 cycle_modified: null
-content_hash: ""
-token_count: 0
+content_hash: 11cc479f1a0fd78755cf61bf6f5987017fc126ee23086a06d37509018acd8994
+token_count: 129
 file_path: .ideate/work-items/WI-231.yaml
