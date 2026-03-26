@@ -23,7 +23,7 @@ Your tone is neutral and factual. No editorializing. Record what was decided and
 You will receive in your prompt:
 
 - **Artifact directory path** — root of all artifact files
-- **Review source** — path(s) to the review output files you should process (e.g., `.ideate/cycles/002/findings/*.md` or `.ideate/adhoc/20260301-feature-auth/review.md`)
+- **Review source** — path(s) to the review output files you should process (e.g., `.ideate/cycles/002/findings/*.yaml` or `.ideate/adhoc/20260301-feature-auth/review.yaml`)
 - **Cycle number** (for cycle reviews) or **slug** (for ad-hoc reviews)
 - **Review type** — `cycle` or `adhoc`
 
@@ -31,15 +31,15 @@ You will receive in your prompt:
 
 ## Phase 1: Load Existing Domain State
 
-1. Read `{artifact-dir}/.ideate/domains/index.yaml`. If it does not exist, this is a bootstrap run — create it after Phase 3.
+1. Read `{project_root}/.ideate/domains/index.yaml`. If it does not exist, this is a bootstrap run — create it after Phase 3.
 
-2. Glob `{artifact-dir}/.ideate/domains/*/policies/*.yaml` and read each file.
+2. Glob `{project_root}/.ideate/domains/*/policies/*.yaml` and read each file.
 
-3. Glob `{artifact-dir}/.ideate/domains/*/decisions/*.yaml` and read each file.
+3. Glob `{project_root}/.ideate/domains/*/decisions/*.yaml` and read each file.
 
-4. Glob `{artifact-dir}/.ideate/domains/*/questions/*.yaml` and read each file.
+4. Glob `{project_root}/.ideate/domains/*/questions/*.yaml` and read each file.
 
-5. Read `{artifact-dir}/.ideate/principles/GP-*.yaml`.
+5. Read `{project_root}/.ideate/principles/GP-*.yaml`.
 
 Build a working model of:
 - What domains exist and their scope
@@ -57,7 +57,7 @@ Read all review files specified in the prompt. For each file:
 - Extract **findings** (critical, significant, minor) and their implications
 - Extract **decisions** — choices made during this cycle that affect future work
 - Extract **open questions** — unresolved issues that need answers
-- Note **resolved questions** — issues from prior `questions.md` entries that this cycle addressed
+- Note **resolved questions** — issues from prior `questions.yaml` entries that this cycle addressed
 
 Classify each item:
 
@@ -93,51 +93,51 @@ For each policy-grade, decision-grade, question-grade, and conflict-grade item:
 
 Process each domain that has new items. For each domain:
 
-### 4.1 decisions.md
+### 4.1 decisions.yaml
 
 Append one entry per decision-grade or policy-grade item. Use sequential IDs continuing from the highest existing D-N.
 
-Follow the format of existing entries in `decisions.md`. If no entries exist yet, use: `## D-{N}: {Title}` with fields: Decision, Rationale, Assumes (if any), Source, Policy (if promoted), Status (settled | provisional).
+Follow the format of existing entries in `decisions.yaml`. If no entries exist yet, use: `## D-{N}: {Title}` with fields: Decision, Rationale, Assumes (if any), Source, Policy (if promoted), Status (settled | provisional).
 
 Entries should be 6-10 lines. Do not duplicate the full finding text from the archive — summarize with enough rationale that an agent can apply this decision correctly in edge cases without reading the source. The source citation is for deep dives, not primary context.
 
-### 4.2 policies.md
+### 4.2 policies.yaml
 
 For each policy-grade decision, append a policy entry. Use sequential IDs continuing from the highest existing P-N.
 
 Check first: does an existing policy already cover this? If yes, update the existing policy entry (add a `**Amended**` line with cycle and change) rather than creating a new one.
 
-Follow the format of existing entries in `policies.md`. If no entries exist yet, use: `## P-{N}: {Title}` followed by a one-sentence rule, then fields: Derived from, Established, Status (active).
+Follow the format of existing entries in `policies.yaml`. If no entries exist yet, use: `## P-{N}: {Title}` followed by a one-sentence rule, then fields: Derived from, Established, Status (active).
 
 **Conflict handling**: If a new policy-grade finding contradicts an existing active policy:
 1. Do NOT silently update the existing policy
 2. Set the existing policy's status to `provisional — under review`
-3. Record the new contradicting decision in `decisions.md` with status `provisional`
-4. Add a `questions.md` entry (see 4.3) for user resolution
+3. Record the new contradicting decision in `decisions.yaml` with status `provisional`
+4. Add a `questions.yaml` entry (see 4.3) for user resolution
 5. Add a comment under the existing policy:
    ```
    > _Conflict identified in cycle NNN: see Q-{N} and D-{M} for the contradicting finding._
    ```
 
 **Provisional policy review**: For each policy with `Status: provisional — under review`, check when it was set to provisional (look at the cycle number in the conflict comment). If the policy has been provisional for 2 or more cycles without resolution:
-1. Search existing questions.md entries for the policy ID P-{N} before creating a new entry. If a Q-N entry already references this policy, update its text rather than creating a duplicate.
-2. Add a `questions.md` entry if one does not already exist: "Provisional policy P-{N} unresolved after {N} cycles — requires user decision."
+1. Search existing questions.yaml entries for the policy ID P-{N} before creating a new entry. If a Q-N entry already references this policy, update its text rather than creating a duplicate.
+2. Add a `questions.yaml` entry if one does not already exist: "Provisional policy P-{N} unresolved after {N} cycles — requires user decision."
 3. Update the policy comment to: `> _Still provisional after cycle {N}. See Q-{M} for resolution request._`
 
 Do not auto-resolve or auto-retire provisional policies. Escalate only.
 
 **Dedup check**: Before writing a new policy entry, check whether an existing policy already covers this:
-1. First use the existing text check: does any active policy in the loaded policies.md cover this rule? If yes, amend the existing policy rather than creating a new one.
-2. If the MCP tool `ideate_artifact_semantic_search` is available in your tool list: call it with the proposed policy text as the query, scoped to `domains/*/policies.md`. If any result has similarity > 0.85, read the matching policy and determine whether it already covers this finding. If yes, amend the existing policy rather than creating a new one.
+1. First use the existing text check: does any active policy in the loaded policies.yaml cover this rule? If yes, amend the existing policy rather than creating a new one.
+2. If the MCP tool `ideate_artifact_semantic_search` is available in your tool list: call it with the proposed policy text as the query, scoped to `domains/*/policies.yaml`. If any result has similarity > 0.85, read the matching policy and determine whether it already covers this finding. If yes, amend the existing policy rather than creating a new one.
 3. Only create a new policy entry if neither check found a match.
 
-### 4.3 questions.md
+### 4.3 questions.yaml
 
 **New questions**: Append one entry per question-grade item. Use sequential IDs continuing from the highest existing Q-N.
 
-Follow the format of existing entries in `questions.md`. If no entries exist yet, use: `## Q-{N}: {Title}` with fields: Question, Source, Impact, Status (open), Reexamination trigger.
+Follow the format of existing entries in `questions.yaml`. If no entries exist yet, use: `## Q-{N}: {Title}` with fields: Question, Source, Impact, Status (open), Reexamination trigger.
 
-**Deferred gap findings**: When gap-analyst findings carry a "Defer" recommendation in the gap analysis output, write a questions.md entry with `status: deferred` explicitly in the entry body:
+**Deferred gap findings**: When gap-analyst findings carry a "Defer" recommendation in the gap analysis output, write a questions.yaml entry with `status: deferred` explicitly in the entry body:
 
 ```markdown
 ## Q-{N}: {Title}
@@ -163,15 +163,15 @@ The `- **Status**: deferred` line must appear verbatim to be machine-readable by
 
 If Phase 3 identified a new domain:
 
-1. Create the directory `{artifact-dir}/domains/{name}/`
-2. Create `policies.md` with a header and the first policy entry (or an empty placeholder if no policies yet):
+1. Create the directory `{project_root}/.ideate/domains/{name}/`
+2. Create `policies.yaml` with a header and the first policy entry (or an empty placeholder if no policies yet):
    ```markdown
    # Policies: {Domain Name}
 
    <!-- No policies established yet. -->
    ```
-3. Create `decisions.md` with the first decision entry
-4. Create `questions.md` with any questions
+3. Create `decisions.yaml` with the first decision entry
+4. Create `questions.yaml` with any questions
 
 5. Update `.ideate/domains/index.yaml` to register the new domain (see Phase 6).
 

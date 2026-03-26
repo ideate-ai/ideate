@@ -1,28 +1,23 @@
 id: WI-232
 type: work_item
-title: ARCHITECTURE.md — document context assembly algorithm
+title: Fix type name inconsistency on line 61 of refine skill
 status: done
-complexity: medium
+complexity: low
 scope:
-  - path: ARCHITECTURE.md
-    op: modify
+  - action: modify
+    file_path: skills/refine/SKILL.md
+    lines:
+      - 61
 depends: []
 blocks: []
 criteria:
-  - New section on ideate_get_work_item_context assembly
-  - ideate_get_context_package documented
-  - Edge types and order explained
-  - Context by task type table
-  - Token budget/digest strategy documented
-  - PPR research referenced
-module: null
+  - description: 'Line 61 uses `type: "work_item"` instead of `type: "work-items"`'
+    verification_method: file_read
 domain: artifact-structure
-notes: |
-  # WI-232: Context Assembly Docs
-
-  Added Section 9 to ARCHITECTURE.md documenting both context tools, edge traversal, minimum viable context by task type, Phase 4.5 digest, and PPR future direction.
-cycle_created: 28
+notes: "# WI-232: Fix type name inconsistency on line 61 of refine skill"
+resolution: null
+cycle_created: null
 cycle_modified: null
-content_hash: 65dda23f0829259b73085258ea9e8b3e03334ba2a84e8de8ff092b064570b286
-token_count: 181
+content_hash: 4d0d216a286da43075f773256c61fdd2cb7f0b0e0687aa501e6352ad554d515a
+token_count: 128
 file_path: .ideate/work-items/WI-232.yaml

@@ -1,0 +1,39 @@
+id: decision-log
+type: cycle_summary
+content: |-
+  ## Decision Log — Cycle 029
+
+  ### D-029-1: Fix brrr-state.yaml reference in brrr review phase
+  - **Decision**: Changed `.ideate/brrr-state.md` to `.ideate/brrr-state.yaml` in `skills/brrr/phases/review.md` lines 43 and 50
+  - **Rationale**: Functional regression from WI-252; P-25 establishes YAML as sole source of truth
+
+  ### D-029-2: Standardize type names to snake_case
+  - **Decision**: Changed `{type: "work-items"}` to `{type: "work_item"}` on line 61 of `skills/refine/SKILL.md`
+  - **Rationale**: D-028-2 identified partial fix from WI-256; MCP requires snake_case
+
+  ### D-029-3: Standardize path placeholders to {project_root}
+  - **Decision**: Replaced all `{artifact-dir}` with `{project_root}` in review and refine skills
+  - **Rationale**: D-028-1 established `{project_root}` as canonical placeholder
+
+  ### D-029-4: Add plan directory to setup script
+  - **Decision**: Added `'plan'` to subdirectories array in `scripts/setup-ideate-dir.js`
+  - **Rationale**: P-28 references plan/ directory for architecture documents
+
+  ## Open Questions
+
+  - OQ-029-1: Domain-curator still uses deprecated patterns — {artifact-dir}, .md files, direct Write tool
+  - OQ-029-2: Review skill line 436 references *.md instead of *.yaml
+  - OQ-029-3: Init skill scaffold missing steering/ directory
+  - OQ-029-4: Legacy documentation uses deprecated placeholders
+
+  ## Cross-References
+
+  - CR1: Code and gap reviewers independently identified domain-curator placeholder issues
+  - CR2: Code/spec reviewers verified brrr-state fix; no gap finding indicates coverage
+  - CR3: Gap analyst found review skill pattern issue not covered by work items
+  - CR4: WI-234 fixed setup script but init skill still has gap
+cycle: 29
+reviewer: journal-keeper
+content_hash: 9031126990e1979e46e0467eae3f32f9b5be87c10b2e231f1033dee6a571ef2f
+token_count: 449
+file_path: .ideate/cycles/029/decision-log.yaml

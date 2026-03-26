@@ -50,6 +50,8 @@ Create the `.ideate/` directory and its subdirectory structure using the Write t
 ```
 .ideate/
 ├── config.json
+├── plan/.gitkeep
+├── steering/.gitkeep
 ├── work-items/.gitkeep
 ├── principles/.gitkeep
 ├── constraints/.gitkeep

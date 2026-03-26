@@ -24,34 +24,34 @@ If `.ideate/` already exists in the current working directory, skip to Step 4 an
 
 **Step 2: Ask the user for initial idea (if not provided as argument).**
 
-If the user provided an initial idea as an argument, acknowledge it. Either way, ask:
+If the user provided an initial idea as an argument, acknowledge it. Otherwise ask:
 
-> Where should I store the planning artifacts? The default is `.ideate/` in the current directory. Press Enter to accept or provide a different path.
+> What do you want to build?
 
-If no `.ideate.json` exists, use `.ideate/` relative to the current working directory unless the user specifies otherwise. If `.ideate.json` exists, read it for any `artifactDir` override and confirm:
+**Step 3: Create the `.ideate/` directory structure using the setup script.**
 
-> I'll store planning artifacts in `{artifactDir}` (from .ideate.json). Proceed?
+Run the Node.js setup script to create the `.ideate/` directory structure:
 
-**Step 3: Create the directory structure using the Write tool.**
-
-Write `.ideate/config.json`:
-
-```json
-{"schema_version": 2}
+```bash
+node /path/to/ideate/scripts/setup-ideate-dir.js [target-directory]
 ```
 
-Create `.gitkeep` files in every subdirectory to ensure git tracks the structure:
+If no target directory is provided, the script uses the current directory.
+
+The script creates:
 
 ```
 .ideate/
-├── config.json
+├── config.json          # {"schema_version": 2}
 ├── work-items/.gitkeep
 ├── principles/.gitkeep
 ├── constraints/.gitkeep
 ├── modules/.gitkeep
 ├── research/.gitkeep
 ├── interviews/.gitkeep
-├── domains/.gitkeep
+├── policies/.gitkeep
+├── decisions/.gitkeep
+├── questions/.gitkeep
 └── cycles/.gitkeep
 ```
 

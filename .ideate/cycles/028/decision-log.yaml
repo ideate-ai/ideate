@@ -1,0 +1,30 @@
+reviewer: journal-keeper
+cycle: 28
+content: |
+  ## Decision Log
+
+  ### D-028-1: Standardize on `{project_root}` over `{artifact-dir}`
+  - Context: WI-257 eliminated `{artifact-dir}` prompt but gap-analysis found it still used in review and refine skills
+  - Decision: Adopt `{project_root}` as canonical placeholder across all skills
+  - Rationale: WI-257 established the pattern; both placeholders create inconsistency
+
+  ### D-028-2: Complete type name consistency fix in refine skill
+  - Context: WI-256 fixed line 60 but line 61 still uses `"work-items"` instead of `"work_item"`
+  - Decision: Extend WI-256 scope to fix line 61
+  - Rationale: Partial fixes create technical debt
+
+  ### D-028-3: brrr state file regression requires immediate fix
+  - Context: WI-252 migrated to YAML but brrr review phase still references `.md` file
+  - Decision: Create high-priority work item to fix brrr review phase state file reference
+  - Rationale: Functional regression that will cause skill failures
+
+  ## Open Questions
+
+  - Q-028-1: Should we audit for remaining `.md` state file references from WI-252?
+  - Q-028-2: What is the canonical subdirectory list for `.ideate/` scaffolding?
+  - Q-028-3: How should work items clarify project-wide versus single-skill pattern changes?
+
+  ## Cross-References
+  - WI-256: code-reviewer passed but spec-reviewer found additional issue at line 61
+  - WI-257: Cross-skill impact — {artifact-dir} persists in review/refine skills
+  - WI-252: brrr-state.md regression indicates scope verification gap

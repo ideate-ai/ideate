@@ -1,0 +1,43 @@
+id: code-quality
+type: cycle_summary
+content: |-
+  ## Verdict: Pass
+
+  The refinement cycle changes (WI-231 through WI-234) are correctly implemented in their target files. All four work items are complete and verified.
+
+  ## Critical Findings
+
+  None.
+
+  ## Significant Findings
+
+  ### S1: agents/domain-curator.md uses deprecated {artifact-dir} placeholder
+  - File: agents/domain-curator.md
+  - Lines: 34, 36, 38, 40, 42, 166
+  - Issue: Uses {artifact-dir} instead of {project_root} in six locations
+  - Suggested fix: Replace all with {project_root}
+
+  ## Minor Findings
+
+  ### M1: docs/context-package-spec.md uses {artifact_dir}
+  - File: docs/context-package-spec.md
+  - Lines: 17, 26, 32, 91
+
+  ### M2: mcp/artifact-server/README.md uses {artifact_dir}
+  - File: mcp/artifact-server/README.md
+  - Lines: 89, 131
+
+  ## Verification Summary
+
+  | Work Item | Target File | Change | Status |
+  |-----------|-------------|--------|--------|
+  | WI-231 | skills/brrr/phases/review.md | brrr-state.md → brrr-state.yaml | VERIFIED |
+  | WI-232 | skills/refine/SKILL.md | work-items → work_item | VERIFIED |
+  | WI-233 | skills/review/SKILL.md | {artifact-dir} → {project_root} | VERIFIED |
+  | WI-233 | skills/refine/SKILL.md | {artifact-dir} → {project_root} | VERIFIED |
+  | WI-234 | scripts/setup-ideate-dir.js | Added 'plan' directory | VERIFIED |
+cycle: 29
+reviewer: code-reviewer
+content_hash: 6d5d32a768aac84a055f07e5a4c8e80670356c225e7fe716f8f2421652f09c14
+token_count: 346
+file_path: .ideate/cycles/029/code-quality.yaml

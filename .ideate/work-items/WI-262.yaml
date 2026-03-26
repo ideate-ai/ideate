@@ -1,0 +1,23 @@
+id: WI-262
+type: refinement
+title: Update legacy documentation path placeholders
+complexity: low
+status: completed
+depends: []
+blocks: []
+file_scope:
+  modify:
+    - docs/context-package-spec.md
+    - mcp/artifact-server/README.md
+criteria:
+  - All {artifact_dir} changed to {project_root}
+  - Consistent placeholder style across docs
+notes: |
+  Cycle 029 code review found minor documentation inconsistency:
+
+  - docs/context-package-spec.md uses `{artifact_dir}`
+  - mcp/artifact-server/README.md uses `{artifact_dir}`
+
+  Per D-028-1 and D-029-3: {project_root} is the canonical placeholder. The underscore variant `{artifact_dir}` should also be standardized to `{project_root}`.
+
+  These are documentation-only changes — no functional impact.

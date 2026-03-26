@@ -1,0 +1,17 @@
+cycle: 28
+items:
+  - id: WI-256
+    title: Fix type name inconsistency in refine skill
+    file_scope: skills/refine/SKILL.md
+    incremental_verdict: pass
+    findings: {critical: 0, significant: 0, minor: 0}
+  - id: WI-257
+    title: Fix plan skill directory prompt
+    file_scope: skills/plan/SKILL.md
+    incremental_verdict: pass
+    findings: {critical: 0, significant: 0, minor: 0}
+  - id: WI-258
+    title: Create Node.js setup script for plan skill
+    file_scope: scripts/setup-ideate-dir.js, skills/plan/SKILL.md
+    incremental_verdict: pass
+    findings: {critical: 0, significant: 0, minor: 0}
