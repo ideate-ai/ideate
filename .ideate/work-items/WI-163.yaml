@@ -1,11 +1,13 @@
 id: WI-163
 type: work_item
 title: "Migration: plan + steering artifacts"
-status: pending
+status: done
 complexity: medium
 scope:
-  - {path: scripts/migrate-to-v3.ts, op: modify}
-  - {path: mcp/artifact-server/src/__tests__/migrate.test.ts, op: modify}
+  - path: scripts/migrate-to-v3.ts
+    op: modify
+  - path: mcp/artifact-server/src/__tests__/migrate.test.ts
+    op: modify
 depends:
   - "162"
 blocks:
@@ -23,32 +25,32 @@ module: null
 domain: null
 notes: |
   # WI-163: Migration — plan + steering artifacts
-  
+
   ## Context
-  
+
   `runMigration` in `scripts/migrate-to-v3.ts` (lines ~1157-1165) calls 9 migration functions but does not migrate plan artifacts or steering artifacts. The gap-analyst identified this as MR1: after running the migration, the `.ideate/` directory has no plan or steering artifacts — any MCP query for architecture, principles, or constraints returns nothing.
-  
+
   WI-146 specification (the original migration work item) listed these as required migration steps.
-  
+
   ## What to migrate
-  
+
   ### Plan artifacts
-  
+
   From `specs/plan/` (relative to the source ideate project root):
   - `plan/architecture.md` → `.ideate/plan/architecture.yaml` with `type: architecture`
   - `plan/overview.md` → `.ideate/plan/overview.yaml` with `type: overview`
   - `plan/execution-strategy.md` → `.ideate/plan/execution-strategy.yaml` with `type: execution_strategy`
   - `plan/modules/*.md` → `.ideate/plan/modules/{name}.yaml` each with `type: module_spec`
-  
+
   ### Steering artifacts
-  
+
   From `specs/steering/`:
   - `steering/guiding-principles.md` → `.ideate/steering/guiding-principles.yaml` with `type: guiding_principles`
   - `steering/constraints.md` → `.ideate/steering/constraints.yaml` with `type: constraints`
   - `steering/research/*.md` → `.ideate/steering/research/{name}.yaml` each with `type: research`
-  
+
   ## Function structure
-  
+
   ```typescript
   async function migratePlanArtifacts(
     ctx: MigrationContext,
@@ -58,7 +60,7 @@ notes: |
     // migrate plan/architecture.md, plan/overview.md, plan/execution-strategy.md
     // glob plan/modules/*.md and migrate each
   }
-  
+
   async function migrateSteeringArtifacts(
     ctx: MigrationContext,
     sourceDir: string,
@@ -68,11 +70,11 @@ notes: |
     // glob steering/research/*.md and migrate each
   }
   ```
-  
+
   ## YAML output format
-  
+
   Each migrated file is a YAML object with these fields:
-  
+
   ```yaml
   id: {type}-{slug}          # e.g., "architecture", "overview", "constraints"
   type: {type}               # e.g., "architecture", "guiding_principles"
@@ -82,29 +84,30 @@ notes: |
   content_hash: {sha256}
   token_count: {approx}
   ```
-  
+
   Use the existing `buildArtifact(canonical)` helper for `content_hash` and `token_count`.
-  
+
   For `plan/modules/{name}.md`, derive `id` as `module_spec-{name}` (slug the filename without extension).
-  
+
   ## Handling missing files
-  
+
   Not all plan artifacts will exist in every project. If a file does not exist, skip it silently (log a debug message if verbose). Do not fail the migration if `plan/modules/` is empty or does not exist.
-  
+
   ## Call sites in runMigration
-  
+
   Add after the existing migration calls:
   ```typescript
   await migratePlanArtifacts(ctx, sourceDir, ideateDir);
   await migrateSteeringArtifacts(ctx, sourceDir, ideateDir);
   ```
-  
+
   ## Files to examine
-  
+
   - `scripts/migrate-to-v3.ts` — `runMigration` function and `MigrationContext` type
   - `mcp/artifact-server/src/__tests__/migrate.test.ts` — existing test patterns and fixture setup
 cycle_created: 1
 cycle_modified: null
-content_hash: d3de8bf12101451781ad4b59c31902e9b57563d20e46f84e68257d1033a78c41
-token_count: 1156
+content_hash: 9a7b99c9f8b961812480a91f28fc3a4a99dbe650001177fdd9f43e0414dfeb85
+token_count: 1177
 file_path: .ideate/work-items/WI-163.yaml
+resolution: "Verified complete: migratePlanArtifacts and migrateSteeringArtifacts called from runMigration"

@@ -1,5 +1,7 @@
 import * as fs from "fs";
 import * as path from "path";
+import { eq, and } from "drizzle-orm";
+import { nodes, documentArtifacts } from "../db.js";
 import { ToolContext } from "./index.js";
 
 // ---------------------------------------------------------------------------
@@ -118,24 +120,56 @@ export async function handleGetConvergenceStatus(
   ctx: ToolContext,
   args: Record<string, unknown>
 ): Promise<string> {
-  // artifact_dir is now always ctx.ideateDir — resolved at server startup
-  const cycleNumber = args.cycle_number as number;
-  const cyclePad = padCycle(cycleNumber);
+  // Validate cycle_number
+  const cycleNumber = Number(args.cycle_number);
+  if (args.cycle_number === undefined || isNaN(cycleNumber)) {
+    throw new Error("Missing or invalid required parameter: cycle_number");
+  }
 
-  // Read spec-adherence.md
-  const adherencePath = path.join(ctx.ideateDir, "archive", "cycles", cyclePad, "spec-adherence.md");
-  const adherenceContent = readFileSafe(adherencePath);
+  // Query cycle_summary rows from SQLite for this cycle
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const rows = (ctx.drizzleDb as any).select().from(nodes)
+    .innerJoin(documentArtifacts, eq(documentArtifacts.id, nodes.id))
+    .where(and(
+      eq(nodes.type, "cycle_summary"),
+      eq(documentArtifacts.cycle, cycleNumber)
+    ))
+    .all() as Array<{
+      nodes: typeof nodes.$inferSelect;
+      document_artifacts: typeof documentArtifacts.$inferSelect;
+    }>;
+
+  // Find spec-adherence and summary rows by node id pattern.
+  // In the current structure, spec-adherence content is embedded in the cycle summary (CS-* nodes).
+  // SA-* nodes contain spec-adherence if written separately; fall back to CS-* content for both.
+  const adherenceRow = rows.find((r) =>
+    r.nodes.id.toUpperCase().startsWith("SA-") ||
+    r.nodes.id.toLowerCase().includes("adherence")
+  );
+  const summaryRow = rows.find((r) =>
+    r.nodes.id.toUpperCase().startsWith("CS-") ||
+    r.nodes.id.toLowerCase().includes("summary")
+  ) ?? rows[0];
+
+  // Resolve content: use document_artifacts.content if available, otherwise read from file_path
+  function resolveContent(row: typeof rows[0] | undefined): string | null {
+    if (!row) return null;
+    if (row.document_artifacts.content) return row.document_artifacts.content;
+    return readFileSafe(row.nodes.file_path);
+  }
+
+  // Use adherence-specific row if found, else fall back to summary row (which embeds verdict)
+  const adherenceContent = resolveContent(adherenceRow ?? summaryRow);
 
   let principleResult: PrincipleResult;
   if (adherenceContent === null) {
-    principleResult = { verdict: "unknown", source: "step3", warning: `file not found: ${adherencePath}` };
+    principleResult = { verdict: "unknown", source: "step3", warning: `no cycle_summary found for cycle ${cycleNumber}` };
   } else {
     principleResult = parsePrincipleVerdict(adherenceContent);
   }
 
-  // Read summary.md for finding counts
-  const summaryPath = path.join(ctx.ideateDir, "archive", "cycles", cyclePad, "summary.md");
-  const summaryContent = readFileSafe(summaryPath);
+  // Get summary content for finding counts
+  const summaryContent = resolveContent(summaryRow);
 
   let criticalCount = 0;
   let significantCount = 0;

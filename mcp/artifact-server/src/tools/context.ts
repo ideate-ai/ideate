@@ -1,6 +1,11 @@
 import * as fs from "fs";
 import * as path from "path";
+import { parse as parseYaml } from "yaml";
 import { ToolContext } from "./index.js";
+import { computePPR } from "../ppr.js";
+import { getConfigWithDefaults } from "../config.js";
+import { nodes } from "../db.js";
+import { eq } from "drizzle-orm";
 
 // ---------------------------------------------------------------------------
 // Internal types
@@ -130,6 +135,7 @@ function walkDir(dir: string, extensions: string[]): string[] {
     for (const entry of entries) {
       if (entry.name.startsWith(".")) continue;
       if (entry.name === "node_modules" || entry.name === "dist" || entry.name === "__pycache__") continue;
+      if (entry.isSymbolicLink()) continue; // skip symlinks to avoid traversing unintended targets
       const full = path.join(current, entry.name);
       if (entry.isDirectory()) {
         walk(full, depth + 1);
@@ -298,7 +304,7 @@ export async function handleGetWorkItemContext(
   // -------------------------------------------------------------------------
 
   if (workItemRow.notes) {
-    const projectRoot = path.dirname(path.dirname(ctx.ideateDir));
+    const projectRoot = path.dirname(ctx.ideateDir);
     const notesPath = path.resolve(projectRoot, workItemRow.notes);
     try {
       const notesContent = fs.readFileSync(notesPath, "utf8");
@@ -668,9 +674,9 @@ export async function handleGetContextPackage(
   // 4. Source Code Index
   // -------------------------------------------------------------------------
 
-  // Derive project source root: ideateDir is typically <project>/.ideate/
-  // or the specs dir passed in. The project root is typically 2 levels up.
-  const projectRoot = path.dirname(path.dirname(ctx.ideateDir));
+  // Derive project source root: ideateDir is <project>/.ideate/,
+  // so path.dirname gives <project>/.
+  const projectRoot = path.dirname(ctx.ideateDir);
 
   // Look for source directories: src/, lib/, agents/, skills/, scripts/
   const SOURCE_DIRS = ["src", "lib", "agents", "skills", "scripts", "mcp"];
@@ -771,4 +777,257 @@ export async function handleGetContextPackage(
   }
 
   return result;
+}
+
+// ---------------------------------------------------------------------------
+// handleAssembleContext — PPR-based context assembly with token budgeting
+// ---------------------------------------------------------------------------
+
+interface NodeRow {
+  id: string;
+  type: string;
+  file_path: string;
+  token_count: number | null;
+  status: string | null;
+}
+
+/**
+ * Estimate token count for a string using ~4 chars/token heuristic.
+ */
+function estimateTokens(text: string): number {
+  return Math.ceil(text.length / 4);
+}
+
+/**
+ * Read YAML file and return its raw text content. Returns empty string on error.
+ */
+function readArtifactContent(filePath: string): string {
+  try {
+    return fs.readFileSync(filePath, "utf8");
+  } catch {
+    return "";
+  }
+}
+
+/**
+ * Extract a human-readable label for an artifact based on its YAML content.
+ */
+function extractArtifactLabel(id: string, type: string, yamlContent: string): string {
+  if (!yamlContent) return id;
+  try {
+    const parsed = parseYaml(yamlContent) as Record<string, unknown>;
+    // Try common title fields
+    for (const field of ["title", "name", "topic", "domain"]) {
+      const val = parsed[field];
+      if (typeof val === "string" && val.trim()) {
+        return `${id} — ${val.trim()}`;
+      }
+    }
+  } catch {
+    // ignore parse errors
+  }
+  return `${id} (${type})`;
+}
+
+export async function handleAssembleContext(
+  ctx: ToolContext,
+  args: Record<string, unknown>
+): Promise<string> {
+  // -------------------------------------------------------------------------
+  // 1. Parse and validate arguments
+  // -------------------------------------------------------------------------
+
+  const seedIds = args.seed_ids;
+  if (!Array.isArray(seedIds) || seedIds.length === 0) {
+    throw new Error('Required argument "seed_ids" must be a non-empty array of artifact IDs.');
+  }
+  const seedNodeIds = seedIds.filter((s): s is string => typeof s === "string");
+  if (seedNodeIds.length === 0) {
+    throw new Error('"seed_ids" must contain at least one string ID.');
+  }
+
+  // -------------------------------------------------------------------------
+  // 2. Load config defaults for PPR and token budget
+  // -------------------------------------------------------------------------
+
+  const config = getConfigWithDefaults(ctx.ideateDir);
+  const pprConfig = config.ppr;
+
+  const tokenBudget: number = typeof args.token_budget === "number"
+    ? args.token_budget
+    : (pprConfig.default_token_budget ?? 50000);
+
+  const includeTypes: string[] = Array.isArray(args.include_types)
+    ? (args.include_types as unknown[]).filter((s): s is string => typeof s === "string")
+    : ["architecture", "guiding_principle", "constraint"];
+
+  const edgeTypeWeightsOverride: Record<string, number> | undefined =
+    args.edge_type_weights && typeof args.edge_type_weights === "object" && !Array.isArray(args.edge_type_weights)
+      ? (args.edge_type_weights as Record<string, number>)
+      : undefined;
+
+  const edgeTypeWeights = edgeTypeWeightsOverride
+    ? { ...pprConfig.edge_type_weights, ...edgeTypeWeightsOverride }
+    : pprConfig.edge_type_weights;
+
+  // -------------------------------------------------------------------------
+  // 3. Run PPR
+  // -------------------------------------------------------------------------
+
+  const pprResults = computePPR(ctx.drizzleDb, seedNodeIds, {
+    alpha: pprConfig.alpha,
+    maxIterations: pprConfig.max_iterations,
+    convergenceThreshold: pprConfig.convergence_threshold,
+    edgeTypeWeights,
+  });
+
+  // Build a map of nodeId → PPR score
+  const scoreMap = new Map<string, number>();
+  for (const r of pprResults) {
+    scoreMap.set(r.nodeId, r.score);
+  }
+
+  // -------------------------------------------------------------------------
+  // 4. Query node metadata for all PPR results + always-include types
+  // -------------------------------------------------------------------------
+
+  // Get all node IDs from PPR + seed IDs (seeds may not appear in PPR if graph is empty)
+  const pprNodeIds = new Set<string>([...pprResults.map((r) => r.nodeId), ...seedNodeIds]);
+
+  const pprNodeRows: NodeRow[] = [];
+  for (const id of pprNodeIds) {
+    const row = ctx.db
+      .prepare(`SELECT id, type, file_path, token_count, status FROM nodes WHERE id = ?`)
+      .get(id) as NodeRow | undefined;
+    if (row) {
+      pprNodeRows.push(row);
+    }
+  }
+
+  // -------------------------------------------------------------------------
+  // 5. Partition into always-include and ranked
+  // -------------------------------------------------------------------------
+
+  const includeTypeSet = new Set(includeTypes);
+  const seenIds = new Set<string>();
+
+  // Seed nodes are always included
+  const alwaysInclude: NodeRow[] = [];
+  const ranked: NodeRow[] = [];
+
+  // First, fetch ALL nodes of always-include types directly from the DB
+  // (they may not appear in PPR results if they have no edges to seeds)
+  if (includeTypeSet.size > 0) {
+    const typePlaceholders = Array.from(includeTypeSet).map(() => "?").join(", ");
+    const alwaysTypeRows = ctx.db
+      .prepare(`SELECT id, type, file_path, token_count, status FROM nodes WHERE type IN (${typePlaceholders})`)
+      .all(...Array.from(includeTypeSet)) as NodeRow[];
+    for (const row of alwaysTypeRows) {
+      if (!seenIds.has(row.id)) {
+        alwaysInclude.push(row);
+        seenIds.add(row.id);
+      }
+    }
+  }
+
+  // Then process PPR nodes: seeds go to alwaysInclude, others go to ranked
+  for (const row of pprNodeRows) {
+    if (seenIds.has(row.id)) continue; // already in always-include
+    if (seedNodeIds.includes(row.id)) {
+      alwaysInclude.push(row);
+      seenIds.add(row.id);
+    } else {
+      ranked.push(row);
+      seenIds.add(row.id);
+    }
+  }
+
+  // Sort ranked by PPR score descending
+  ranked.sort((a, b) => (scoreMap.get(b.id) ?? 0) - (scoreMap.get(a.id) ?? 0));
+
+  // -------------------------------------------------------------------------
+  // 6. Greedily assemble artifacts within token budget
+  // -------------------------------------------------------------------------
+
+  const includedIds: string[] = [];
+  const includedRows: NodeRow[] = [];
+  let usedTokens = 0;
+
+  // Always-include first (seeds + include_types)
+  for (const row of alwaysInclude) {
+    const content = readArtifactContent(row.file_path);
+    const tokenCount = row.token_count ?? estimateTokens(content);
+    usedTokens += tokenCount;
+    includedIds.push(row.id);
+    includedRows.push(row);
+  }
+
+  // Then add ranked artifacts by score until budget exhausted
+  for (const row of ranked) {
+    if (usedTokens >= tokenBudget) break;
+    const content = readArtifactContent(row.file_path);
+    const tokenCount = row.token_count ?? estimateTokens(content);
+    if (usedTokens + tokenCount > tokenBudget) continue; // skip if would bust budget
+    usedTokens += tokenCount;
+    includedIds.push(row.id);
+    includedRows.push(row);
+  }
+
+  // -------------------------------------------------------------------------
+  // 7. Assemble markdown context grouped by artifact type
+  // -------------------------------------------------------------------------
+
+  // Group included rows by type
+  const byType = new Map<string, NodeRow[]>();
+  for (const row of includedRows) {
+    const existing = byType.get(row.type) ?? [];
+    existing.push(row);
+    byType.set(row.type, existing);
+  }
+
+  const sections: string[] = [];
+
+  for (const [type, rows] of byType) {
+    const typeHeader = type
+      .replace(/_/g, " ")
+      .replace(/\b\w/g, (c) => c.toUpperCase());
+
+    const typeSection: string[] = [`## ${typeHeader}`];
+
+    for (const row of rows) {
+      const content = readArtifactContent(row.file_path);
+      const label = extractArtifactLabel(row.id, row.type, content);
+      typeSection.push("", `### ${label}`);
+      if (content) {
+        typeSection.push("", "```yaml", content.trim(), "```");
+      } else {
+        typeSection.push("", `*Content not available for \`${row.file_path}\`*`);
+      }
+    }
+
+    sections.push(typeSection.join("\n"));
+  }
+
+  const assembledContext = sections.join("\n\n---\n\n");
+
+  // -------------------------------------------------------------------------
+  // 8. Build top-20 PPR scores metadata
+  // -------------------------------------------------------------------------
+
+  const top20PprScores: Array<{ id: string; score: number }> = pprResults
+    .slice(0, 20)
+    .map((r) => ({ id: r.nodeId, score: r.score }));
+
+  // -------------------------------------------------------------------------
+  // 9. Return assembled context + metadata as JSON string
+  // -------------------------------------------------------------------------
+
+  const metadata = {
+    artifact_ids: includedIds,
+    total_tokens: usedTokens,
+    ppr_scores: top20PprScores,
+    context: assembledContext,
+  };
+
+  return JSON.stringify(metadata, null, 2);
 }

@@ -31,7 +31,7 @@ mcp/
   artifact-server/
     src/         # TypeScript source for the MCP server
     dist/        # Compiled output
-specs/           # Ideate's own artifact directory (uses the same structure it creates)
+.ideate/         # Ideate's own artifact directory (uses the same structure it creates)
 ```
 
 ### SDLC lifecycle
@@ -98,10 +98,15 @@ resolveArtifactDir()       # Find .ideate/ via env var or directory walk
   → open SQLite (WAL mode, foreign_keys = ON)
   → checkSchemaVersion()   # Delete and recreate DB if version mismatch
   → createSchema()         # CREATE TABLE IF NOT EXISTS (idempotent)
-  → rebuildIndex()         # Full YAML scan
-  → artifactWatcher.watch()# chokidar watcher on .ideate/
-  → server.connect(StdioServerTransport)
+  → create Server + register handlers
+  → server.connect(StdioServerTransport)   # MCP available immediately
+  → setImmediate:
+      → rebuildIndex()    # Full YAML scan (deferred)
+      → signalIndexReady()
+      → artifactWatcher.watch()  # starts after rebuild completes
 ```
+
+**Readiness gate**: tool calls arriving before the index rebuild completes block on the `indexReady` Promise (exported from tools/index.ts). Once `signalIndexReady()` is called after `rebuildIndex()` finishes, the gate opens and all pending tool calls proceed. If `rebuildIndex()` fails, the gate rejects and tool calls return errors.
 
 **Artifact directory**: The server operates on `.ideate/` — a structured subdirectory of the project root containing YAML artifact files organized by type. The `.ideate/config.json` file marks the directory and stores the schema version.
 
@@ -201,7 +206,7 @@ Artifact IDs include a type prefix to prevent cross-type collisions and aid read
 
 ## 4. Indexer Pipeline
 
-The indexer converts the YAML artifact files under `.ideate/` into the SQLite index. It runs once at startup (`rebuildIndex()`) and again whenever the file watcher fires.
+The indexer converts the YAML artifact files under `.ideate/` into the SQLite index. It runs once at startup (`rebuildIndex()`) and incrementally via `indexFiles()`/`removeFiles()` when the file watcher detects changes.
 
 ### Startup sequence detail
 
@@ -220,11 +225,18 @@ index.ts startup
   ├─ createSchema()
   │   CREATE TABLE IF NOT EXISTS (all tables, idempotent)
   │
-  ├─ rebuildIndex()
-  │   (see below)
+  ├─ create Server + register request handlers
   │
-  └─ artifactWatcher.watch(ideateDir)
+  ├─ server.connect(StdioServerTransport)
+  │   MCP transport is live — tool calls can arrive
+  │
+  └─ setImmediate:
+      ├─ rebuildIndex()            full YAML scan (deferred)
+      ├─ signalIndexReady()        opens the readiness gate
+      └─ artifactWatcher.watch()   starts AFTER rebuild completes
 ```
+
+**Readiness gate**: `server.connect()` is called before the index exists, so tool calls can arrive immediately. All tool handlers `await indexReady` — a Promise that blocks until `signalIndexReady()` fires after `rebuildIndex()` completes. If the rebuild fails, `signalIndexFailed(err)` rejects the Promise and all pending tool calls return errors.
 
 ### rebuildIndex() pipeline
 
@@ -305,12 +317,13 @@ interface ToolContext {
 
 The raw `db` is used for recursive CTE queries and other SQL that Drizzle cannot express. `drizzleDb` is used for CRUD operations. Both operate on the same underlying SQLite file.
 
-### 15 tools in 7 categories
+### 17 tools in 8 categories
 
 ```
-Context tools (2)
+Context tools (3)
   ideate_get_work_item_context    — work item + notes + module spec + domain policies + research
   ideate_get_context_package      — architecture + principles + constraints + source code index
+  ideate_assemble_context         — PPR-scored, token-budgeted context assembly from seed nodes
 
 Query tools (1)
   ideate_artifact_query           — filter by type/domain/status/cycle + graph traversal
@@ -336,6 +349,9 @@ Events tools (1)
 
 Metrics tools (1)
   ideate_get_metrics              — aggregated metrics from metrics_events table
+
+Config tools (1)
+  ideate_get_config               — parsed .ideate/config.json with defaults applied
 ```
 
 ### Hybrid query pattern
@@ -460,7 +476,7 @@ Direct YAML file reads require Glob + Read per file, O(N) in the number of artif
 
 The cache is invalidated at two points:
 1. **On startup**: full `rebuildIndex()` scan
-2. **On file change**: chokidar fires after 500ms debounce, triggers `rebuildIndex()`
+2. **On file change**: chokidar fires after 500ms debounce, triggers `indexFiles()` for changed files and `removeFiles()` for deleted files (incremental, not full rebuild)
 
 ### P-6 / P-26 / P-32: MCP as mandatory interface
 
@@ -502,15 +518,19 @@ file write C  ─┐ │  │  ──────────────►  em
 ### Lifecycle
 
 ```
-artifactWatcher.watch(ideateDir)   ← called once at server startup
+artifactWatcher.watch(ideateDir)   ← called once after rebuildIndex completes
   ↓
-server.on("change") → rebuildIndex(db, drizzleDb, ideateDir)
+watcher.on("change") → event: { changed: string[], deleted: string[] }
+  → indexFiles(db, drizzleDb, changed)     ← upsert changed YAML files
+  → removeFiles(db, drizzleDb, deleted)    ← delete nodes for removed files
 
 SIGINT / SIGTERM
   → artifactWatcher.close()   ← clears all timers, closes all chokidar watchers
   → db.close()
   → process.exit(0)
 ```
+
+The watcher emits batched change events with separate `changed` and `deleted` file lists. Only YAML files are processed; non-YAML changes are filtered out. This is incremental indexing -- individual files are upserted or removed rather than triggering a full `rebuildIndex()`.
 
 Multiple directories can be watched concurrently. Each directory has its own `FSWatcher` and debounce timer stored in `Map<string, ...>` keyed by directory path.
 
@@ -522,12 +542,13 @@ Multiple directories can be watched concurrently. Each directory has its own `FS
 
 The MCP artifact server assembles context via deterministic graph traversal from seed nodes. It does not use embedding-based search or similarity ranking. Context is assembled at query time by walking typed edges in the SQLite index, loading exactly the artifacts reachable by the prescribed traversal pattern, and truncating sections that exceed per-section line budgets.
 
-Two primary tools handle context assembly:
+Three tools handle context assembly:
 
 - **`ideate_get_work_item_context`** — per-item context for execution workers: the work item itself, implementation notes, module spec, domain policies, and relevant research.
 - **`ideate_get_context_package`** — base context shared across all workers: architecture document, guiding principles, constraints, and source code index.
+- **`ideate_assemble_context`** — token-budgeted context assembly using Personalized PageRank (PPR) scoring from seed nodes.
 
-Skills call both tools before spawning workers. The context package provides project-wide scaffolding. The work item context provides item-specific detail. The execute skill then further filters the context package into a per-batch digest (see Section 9.4).
+Skills call these tools before spawning workers. The context package provides project-wide scaffolding. The work item context provides item-specific detail. The execute skill then further filters the context package into a per-batch digest (see Section 9.4).
 
 The current approach reflects the graph-traversal-first direction from the PPR research (see `context-assembly-strategies.yaml`): explicit, typed edge traversal produces precise, predictable context at low latency. PPR and spreading activation are identified as future enhancements once the query-log infrastructure accumulates sufficient usage signal to calibrate edge weights adaptively.
 
@@ -535,7 +556,7 @@ The current approach reflects the graph-traversal-first direction from the PPR r
 
 Source: `mcp/artifact-server/src/tools/context.ts`, `handleGetWorkItemContext`.
 
-The function accepts `artifact_dir` and `work_item_id`. IDs are normalized to handle both `WI-185` and `185` forms.
+The function accepts `work_item_id` via the MCP tool's `ToolContext` (which includes `ctx.ideateDir`). IDs are normalized to handle both `WI-185` and `185` forms.
 
 **Assembly order** (sections joined with `---` dividers):
 
@@ -567,7 +588,7 @@ The function accepts `artifact_dir` and `work_item_id`. IDs are normalized to ha
 
 Source: `mcp/artifact-server/src/tools/context.ts`, `handleGetContextPackage`.
 
-The function accepts `artifact_dir` and returns project-wide context. It does not accept a work item id — the same package is returned for all queries against a given artifact directory.
+The function uses `ctx.ideateDir` from the MCP tool's `ToolContext` and returns project-wide context. It does not accept a work item id — the same package is returned for all queries against a given artifact directory.
 
 **Assembly order** (sections joined with `---` dividers):
 
@@ -577,7 +598,7 @@ The function accepts `artifact_dir` and returns project-wide context. It does no
 
 3. **Constraints** — all rows from `constraints` joined with `nodes`, ordered by `category, id`. Each description is capped at 10 lines. Constraints are grouped under their category as subheadings.
 
-4. **Source code index** — derived at query time by walking the filesystem (not the SQLite index). The project root is computed as `dirname(dirname(ideateDir))`. The directories `src`, `lib`, `agents`, `skills`, `scripts`, `mcp` are walked recursively (max depth 8) for `.ts`, `.js`, `.py` files. For each file, exports are extracted via regex patterns (TypeScript: `export function/const/class/interface/type/enum`, Python: `def`/`class` at module scope). Results are rendered as a Markdown table capped at 80 files.
+4. **Source code index** — derived at query time by walking the filesystem (not the SQLite index). The project root is computed as `dirname(ideateDir)` (since `ideateDir` is `<project>/.ideate/`, one level up gives the project root). The directories `src`, `lib`, `agents`, `skills`, `scripts`, `mcp` are walked recursively (max depth 8) for `.ts`, `.js`, `.py` files. For each file, exports are extracted via regex patterns (TypeScript: `export function/const/class/interface/type/enum`, Python: `def`/`class` at module scope). Results are rendered as a Markdown table capped at 80 files.
 
 5. **Full document paths** — all paths collected during assembly (architecture, principles, constraints) plus all `document_artifacts` rows from the DB, deduplicated. Formatted as a bullet list of label → path pairs.
 
@@ -636,14 +657,14 @@ Based on the context assembly research (`context-assembly-strategies.yaml`, Ques
 | `mcp/artifact-server/src/schema.ts` | SQLite DDL (`createSchema`), edge type registry, artifact interfaces |
 | `mcp/artifact-server/src/db.ts` | Drizzle ORM table definitions, `TYPE_TO_EXTENSION_TABLE` dispatch map |
 | `mcp/artifact-server/src/indexer.ts` | `rebuildIndex`, row builders, edge extraction, cycle detection |
-| `mcp/artifact-server/src/config.ts` | `.ideate/config.json` read/write, `resolveArtifactDir`, `createIdeateDir` |
+| `mcp/artifact-server/src/config.ts` | `getConfigWithDefaults`, `IdeateConfigJson`, `DEFAULT_AGENT_BUDGETS`, `DEFAULT_PPR_CONFIG` |
 | `mcp/artifact-server/src/watcher.ts` | `ArtifactWatcher` class (chokidar wrapper with debounce) |
 | `mcp/artifact-server/src/hooks.ts` | Hook registry loading, execution, variable substitution |
-| `mcp/artifact-server/src/tools/index.ts` | `ToolContext`, TOOLS array (14 definitions), `handleTool` dispatcher |
-| `mcp/artifact-server/src/tools/context.ts` | `ideate_get_work_item_context`, `ideate_get_context_package` |
+| `mcp/artifact-server/src/tools/index.ts` | `ToolContext`, TOOLS array (17 definitions), `handleTool` dispatcher |
+| `mcp/artifact-server/src/tools/context.ts` | `handleGetWorkItemContext`, `handleGetContextPackage`, `handleAssembleContext` |
 | `mcp/artifact-server/src/tools/query.ts` | `ideate_artifact_query` (filter mode + recursive CTE traversal) |
 | `mcp/artifact-server/src/tools/execution.ts` | `ideate_get_execution_status`, `ideate_get_review_manifest` |
 | `mcp/artifact-server/src/tools/analysis.ts` | `ideate_get_convergence_status`, `ideate_get_domain_state`, `ideate_get_project_status` |
-| `mcp/artifact-server/src/tools/write.ts` | `ideate_append_journal`, `ideate_archive_cycle`, `ideate_write_work_items`, `ideate_update_work_items` |
+| `mcp/artifact-server/src/tools/write.ts` | `ideate_append_journal`, `ideate_archive_cycle`, `ideate_write_work_items`, `ideate_update_work_items`, `ideate_write_artifact` |
 | `mcp/artifact-server/src/tools/events.ts` | `ideate_emit_event` (hook dispatch) |
 | `mcp/artifact-server/src/tools/metrics.ts` | `ideate_get_metrics` (agent/work_item/cycle aggregations) |

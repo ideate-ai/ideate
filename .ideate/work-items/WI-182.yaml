@@ -1,31 +1,32 @@
 id: WI-182
 type: work_item
 title: Drizzle table definitions for v7 schema
-status: pending
+status: done
 complexity: small
 scope:
-  - {path: mcp/artifact-server/src/db.ts, op: modify}
+  - path: mcp/artifact-server/src/db.ts
+    op: modify
 depends:
   - "181"
 blocks:
   - "183"
 criteria:
   - Drizzle nodes table defined with all 8 common columns
-  - "12 Drizzle extension tables defined, each with id referencing nodes"
+  - 12 Drizzle extension tables defined, each with id referencing nodes
   - Drizzle edges table defined without source_type and target_type columns
   - Drizzle nodeFileRefs table defined without node_type column
   - TYPE_TO_EXTENSION_TABLE mapping exported (replaces TYPE_TO_DRIZZLE_TABLE) with 20 type string entries mapping to 12 extension table objects
-  - "10 document sub-types (decision_log, cycle_summary, review_manifest, architecture, overview, execution_strategy, guiding_principles, constraints, research, interview) all map to documentArtifacts"
+  - 10 document sub-types (decision_log, cycle_summary, review_manifest, architecture, overview, execution_strategy, guiding_principles, constraints, research, interview) all map to documentArtifacts
   - AnyTable union type updated to include all 12 extension tables
 module: null
 domain: null
 notes: |
   # WI-182: Drizzle Table Definitions for v7 Schema
-  
+
   ## Changes
-  
+
   Rewrite `db.ts` to match the v7 DDL from WI-181.
-  
+
   ### New: `nodes` table
   ```typescript
   export const nodes = sqliteTable("nodes", {
@@ -39,7 +40,7 @@ notes: |
     status: text("status"),
   });
   ```
-  
+
   ### Extension tables
   Each extension table changes from standalone PK to FK-based PK. Example for work_items:
   ```typescript
@@ -48,24 +49,25 @@ notes: |
     // ... type-specific columns unchanged
   });
   ```
-  
+
   ### Edges table
   Remove `source_type` and `target_type` columns. Add FK references:
   ```typescript
   source_id: text("source_id").notNull().references(() => nodes.id, { onDelete: "cascade" }),
   target_id: text("target_id").notNull().references(() => nodes.id, { onDelete: "cascade" }),
   ```
-  
+
   ### nodeFileRefs table
   Remove `node_type` column. Add FK reference:
   ```typescript
   node_id: text("node_id").notNull().references(() => nodes.id, { onDelete: "cascade" }),
   ```
-  
+
   ### TYPE_TO_EXTENSION_TABLE
   Rename from `TYPE_TO_DRIZZLE_TABLE` to `TYPE_TO_EXTENSION_TABLE`. Same 20-entry mapping. Add `nodes` export for the base table. Update `AnyTable` union type.
 cycle_created: 1
 cycle_modified: null
-content_hash: da42a084b950c7c14e0c55174dd7c0c6dc4c2a096da512cad57814abd4d10ddc
-token_count: 642
+content_hash: 63a05820d899fae0c51156526ccd942adf90720972a6bb82810235e1ed316f23
+token_count: 656
 file_path: .ideate/work-items/WI-182.yaml
+resolution: "Verified complete: Drizzle nodes + all extension tables with cascade, TYPE_TO_EXTENSION_TABLE exported"

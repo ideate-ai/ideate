@@ -1,13 +1,12 @@
 id: WI-261
-type: refinement
+type: work_item
 title: Complete init skill scaffold directories
 complexity: low
-status: completed
+status: done
 depends: []
 blocks: []
-file_scope:
-  modify:
-    - skills/init/SKILL.md
+scope:
+  - {path: skills/init/SKILL.md, op: modify}
 criteria:
   - plan/ directory included in scaffold
   - steering/ directory included in scaffold

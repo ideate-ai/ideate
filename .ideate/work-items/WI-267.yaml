@@ -1,13 +1,12 @@
 id: WI-267
-type: refinement
+type: work_item
 title: Standardize README placeholder to project_root
 complexity: low
-status: completed
+status: done
 depends: []
 blocks: []
-file_scope:
-  modify:
-    - mcp/artifact-server/README.md
+scope:
+  - {path: mcp/artifact-server/README.md, op: modify}
 criteria:
   - All documentation examples use {project_root} not {artifact_dir}
   - Consistent with D-028-1 and D-029-3 canonical placeholder

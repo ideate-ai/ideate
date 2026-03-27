@@ -593,11 +593,21 @@ describe("checkSchemaVersion", () => {
         db.close();
       }
 
+      // Open the handle; track whether the test still owns it so the finally
+      // block can close it safely if checkSchemaVersion does not (e.g. if the
+      // implementation is later changed to not close internally on this path).
       const db = new Database(dbPath);
-      const result = checkSchemaVersion(db, dbPath);
-
-      expect(result).toBe(false);
-      expect(existsSync(dbPath)).toBe(false);
+      let handleClosed = false;
+      try {
+        const result = checkSchemaVersion(db, dbPath);
+        expect(result).toBe(false);
+        expect(existsSync(dbPath)).toBe(false);
+      } finally {
+        if (!handleClosed) {
+          try { db.close(); } catch { /* already closed by checkSchemaVersion */ }
+          handleClosed = true;
+        }
+      }
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

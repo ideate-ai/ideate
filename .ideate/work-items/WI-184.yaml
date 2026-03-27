@@ -1,11 +1,13 @@
 id: WI-184
 type: work_item
 title: Tool infrastructure and server wiring
-status: pending
+status: done
 complexity: medium
 scope:
-  - {path: mcp/artifact-server/src/tools/index.ts, op: create}
-  - {path: mcp/artifact-server/src/index.ts, op: modify}
+  - path: mcp/artifact-server/src/tools/index.ts
+    op: create
+  - path: mcp/artifact-server/src/index.ts
+    op: modify
 depends:
   - "183"
 blocks:
@@ -28,9 +30,9 @@ module: null
 domain: null
 notes: |
   # WI-184: Tool Infrastructure and Server Wiring
-  
+
   ## ToolContext Interface
-  
+
   ```typescript
   export interface ToolContext {
     db: Database.Database;
@@ -38,11 +40,11 @@ notes: |
     ideateDir: string;
   }
   ```
-  
+
   Created once in `index.ts` after DB initialization. Passed to every `handleTool` call.
-  
+
   ## tools/index.ts Structure
-  
+
   ```typescript
   import { Tool } from "@modelcontextprotocol/sdk/types.js";
   import { ToolContext } from "./types.js";
@@ -52,7 +54,7 @@ notes: |
   import { executionTools, handleExecutionTool } from "./execution.js";
   import { analysisTools, handleAnalysisTool } from "./analysis.js";
   import { writeTools, handleWriteTool } from "./write.js";
-  
+
   export const TOOLS: Tool[] = [
     ...contextTools,
     ...queryTools,
@@ -60,7 +62,7 @@ notes: |
     ...analysisTools,
     ...writeTools,
   ];
-  
+
   export async function handleTool(
     ctx: ToolContext, name: string, args: Record<string, unknown>
   ): Promise<string> {
@@ -69,20 +71,20 @@ notes: |
     // Throw Error("Unknown tool: {name}") if no handler matches
   }
   ```
-  
+
   ## index.ts Changes
-  
+
   ### Startup Pragmas
   Add immediately after `new Database(dbPath)`:
   ```typescript
   db.pragma('foreign_keys = ON');  // CRITICAL — enables FK enforcement
   ```
-  
+
   ### Tool Registration
   Replace current TOOLS import and handleTool call with:
   ```typescript
   import { TOOLS, handleTool } from "./tools/index.js";
-  
+
   // In CallToolRequestSchema handler:
   const ctx: ToolContext = { db, drizzleDb, ideateDir };
   try {
@@ -92,12 +94,12 @@ notes: |
     return { content: [{ type: "text", text: String(err) }], isError: true };
   }
   ```
-  
+
   ### Remove Old tools.ts
   Delete `src/tools.ts` (replaced by `src/tools/` directory).
-  
+
   ## Tool Definition Format
-  
+
   Each tool group file exports its tools as an array of `Tool` objects:
   ```typescript
   export const contextTools: Tool[] = [
@@ -109,14 +111,15 @@ notes: |
     // ...
   ];
   ```
-  
+
   The inputSchema for all 11 tools must be defined in this WI even though the handlers are stubs. The actual handler implementations are in WI-185 through WI-189. This WI creates the skeleton; those WIs fill in the logic.
-  
+
   ## Error Handling Pattern
-  
+
   Tools throw on error. The MCP handler catches and returns `isError: true`. Standard across all 11 tools. No try/catch inside individual tool handlers unless they need to translate a specific error.
 cycle_created: 1
 cycle_modified: null
-content_hash: "523a737e27eb17bd2931e05a9b631054101852d91424e212379892ad8d606aae"
-token_count: 1047
+content_hash: 9182f32335e2d6bfb3b16e3bf95a4488a03a0920421e2acfc43d71cd6cea8e72
+token_count: 1074
 file_path: .ideate/work-items/WI-184.yaml
+resolution: "Verified complete: ToolContext interface, TOOLS array, handleTool dispatcher, old tools.ts removed"

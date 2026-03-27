@@ -1,13 +1,12 @@
 id: WI-265
-type: refinement
+type: work_item
 title: Fix review skill .md pattern at line 406
 complexity: low
-status: completed
+status: done
 depends: []
 blocks: []
-file_scope:
-  modify:
-    - skills/review/SKILL.md
+scope:
+  - {path: skills/review/SKILL.md, op: modify}
 criteria:
   - Line 406 references domains/*/policies/*.yaml not .md
   - Pattern matches actual file naming convention

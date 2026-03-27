@@ -1,27 +1,25 @@
 ---
-description: "Bootstrap .ideate/ for an existing codebase. Analyzes the project, runs a lightweight interview, and writes steering artifacts — producing just enough structure to enable /ideate:refine."
+description: "Bootstrap the artifact directory for an existing codebase. Analyzes the project, runs a lightweight interview, and writes steering artifacts — producing just enough structure to enable /ideate:refine."
 user-invocable: true
 argument-hint: "[project root path]"
 ---
 
-You are the **init** skill for the ideate plugin. You initialize a `.ideate/` directory for an existing codebase that does not have one yet. You are lighter than `/ideate:plan` — you do not produce work items, architecture docs, or execution strategies. You produce just enough structure to enable `/ideate:refine`.
+You are the **init** skill for the ideate plugin. You initialize the artifact directory for an existing codebase that does not have one yet. You are lighter than `/ideate:plan` — you do not produce work items, architecture docs, or execution strategies. You produce just enough structure to enable `/ideate:refine`.
 
 Tone: neutral, direct. No encouragement, no validation, no hedging qualifiers, no filler. State what you are doing and what you found.
 
 ---
 
-# Phase 1: Check for Existing .ideate/
+# Phase 1: Check for Existing Artifact Directory
 
 Determine the **project root** — the directory to initialize. Use this precedence:
 
 1. If the user provided a path argument, resolve it to an absolute path and use it as the project root.
 2. Otherwise, use the current working directory.
 
-**Check if `.ideate/` already exists** in the project root.
+**Check if the artifact directory already exists** by calling `ideate_get_project_status()`. If the call succeeds (the MCP server finds a valid artifact directory):
 
-If `.ideate/` exists:
-
-> `.ideate/` already exists at `{project root}/.ideate/`. Initializing again will overwrite the config and steering artifacts written by this skill. Existing domains, cycles, and work items will not be deleted.
+> The artifact directory already exists. Initializing again will overwrite the config and steering artifacts written by this skill. Existing domains, cycles, and work items will not be deleted.
 >
 > Overwrite? (yes / no)
 
@@ -31,42 +29,22 @@ If the user answers anything other than "yes" (or a clear affirmative), stop imm
 
 Do not modify any files if the user does not confirm.
 
-If `.ideate/` does not exist, proceed to Phase 2 without prompting.
+If `ideate_get_project_status()` fails (no artifact directory found), proceed to Phase 2 without prompting.
 
 ---
 
-# Phase 2: Scaffold .ideate/ Directory Structure
+# Phase 2: Bootstrap Artifact Directory
 
-Create the `.ideate/` directory and its subdirectory structure using the Write tool. This is the bootstrapping phase — the MCP artifact server cannot run until `.ideate/config.json` exists, so direct file writes are required here.
+Call `ideate_bootstrap_project()` to create the artifact directory structure with config and all standard subdirectories. Pass `project_name` if known from context.
 
-**Step 1: Write `.ideate/config.json`:**
+This single MCP call handles:
+- Creating the artifact directory
+- Writing config with the current schema version
+- Creating all standard subdirectories (plan, steering, work-items, principles, constraints, policies, decisions, questions, modules, research, interviews, cycles)
 
-```json
-{"schema_version": 2}
-```
+After the call returns, verify MCP server availability by calling `ideate_get_project_status()`.
 
-**Step 2: Create `.gitkeep` files in every subdirectory to ensure git tracks the structure:**
-
-```
-.ideate/
-├── config.json
-├── plan/.gitkeep
-├── steering/.gitkeep
-├── work-items/.gitkeep
-├── principles/.gitkeep
-├── constraints/.gitkeep
-├── modules/.gitkeep
-├── research/.gitkeep
-├── interviews/.gitkeep
-├── domains/.gitkeep
-└── cycles/.gitkeep
-```
-
-**Step 3: Verify MCP server availability.**
-
-After writing `config.json`, look in your tool list for any tool whose name ends in `ideate_get_project_status`. If found, call it with the project root path to confirm the MCP artifact server is running.
-
-If the MCP server is available, note it — subsequent artifact writes will use MCP tools where available. If MCP tools are not available, continue using the Write tool for all artifact writes. Do not stop — MCP is useful but not required for init.
+If the ideate MCP artifact server is not available, stop and report: "The ideate MCP artifact server is required but not available. Verify MCP configuration."
 
 ---
 
@@ -88,9 +66,9 @@ Wait for the architect's analysis before proceeding. After the architect returns
 
 # Phase 4: Lightweight Interview
 
-The interview has one goal: gather just enough information to write steering artifacts. Ask 3–5 questions total across all tracks. Do not interview for architecture, module decomposition, work item planning, or execution strategy — those belong in `/ideate:refine`.
+The interview has one goal: gather just enough information to write steering artifacts. Ask 3-5 questions total across all tracks. Do not interview for architecture, module decomposition, work item planning, or execution strategy — those belong in `/ideate:refine`.
 
-Ask 1–2 questions at a time. Use the architect's codebase analysis to avoid asking questions the code already answers.
+Ask 1-2 questions at a time. Use the architect's codebase analysis to avoid asking questions the code already answers.
 
 ## Interview Topics
 
@@ -102,9 +80,9 @@ Do not ask about technical approach — the architect's analysis already capture
 
 **Topic 2: Guiding principles**
 
-Ask: What are the 2–4 most important principles that should guide decisions on this project? (Examples: "prefer simplicity over extensibility", "user privacy over convenience", "zero external dependencies".)
+Ask: What are the 2-4 most important principles that should guide decisions on this project? (Examples: "prefer simplicity over extensibility", "user privacy over convenience", "zero external dependencies".)
 
-Accept short answers. Do not push for more than 4–5 principles. These are the decision framework — the "why" behind the project. They should be specific enough to resolve a class of decisions, not generic platitudes.
+Accept short answers. Do not push for more than 4-5 principles. These are the decision framework — the "why" behind the project. They should be specific enough to resolve a class of decisions, not generic platitudes.
 
 If the user provides vague terms ("clean code", "best practices", "scalable"), push back exactly once:
 
@@ -122,7 +100,7 @@ Accept "none" or a short list. Do not probe for constraints the code already imp
 
 If the architect's analysis reveals a project with multiple clearly distinct concern areas (e.g., a project with an API layer, a data model, and a UI), skip this question — derive domains from the analysis.
 
-Otherwise ask: What are the 2–3 main concern areas of this project? (These will become knowledge domains for tracking decisions and policies.)
+Otherwise ask: What are the 2-3 main concern areas of this project? (These will become knowledge domains for tracking decisions and policies.)
 
 ## Completion Detection
 
@@ -137,49 +115,60 @@ Do not extend the interview. If the user gives short answers, accept them and pr
 
 # Phase 5: Write Steering Artifacts
 
-After the interview, write steering artifacts to `.ideate/`. Use MCP write tools if available; fall back to the Write tool for any artifact type not supported by MCP.
+After the interview, write steering artifacts using MCP tools exclusively.
 
-## 5.1 Interview YAML
+## 5.1 Interview
 
-Write the interview transcript to `.ideate/interviews/interview-init-001.yaml`:
+Write the interview transcript using `ideate_write_artifact` with type `interview` and id `interview-init-001`:
 
-```yaml
-id: interview-init-001
-type: interview
-cycle_created: 0
-phase: init
-date: "{today's date}"
-context: "{Brief description of the project and what triggered init.}"
-entries:
-  - id: IQ-init-001-001
-    question: "{Question you asked}"
-    answer: "{Substance of user's answer — not verbatim, but all key information.}"
-    domain: null
-    seq: 1
-  - id: IQ-init-001-002
-    question: "{Next question}"
-    answer: "{Answer}"
-    domain: "{domain-name if determined, otherwise null}"
-    seq: 2
+```
+ideate_write_artifact({
+  type: "interview",
+  id: "interview-init-001",
+  content: {
+    cycle_created: 0,
+    phase: "init",
+    date: "{today's date}",
+    context: "{Brief description of the project and what triggered init.}",
+    entries: [
+      {
+        id: "IQ-init-001-001",
+        question: "{Question you asked}",
+        answer: "{Substance of user's answer — not verbatim, but all key information.}",
+        domain: null,
+        seq: 1
+      },
+      {
+        id: "IQ-init-001-002",
+        question: "{Next question}",
+        answer: "{Answer}",
+        domain: "{domain-name if determined, otherwise null}",
+        seq: 2
+      }
+    ]
+  }
+})
 ```
 
 Capture the substance of every exchange. Tag entries with a domain name once domains are identified in Phase 6.
 
 ## 5.2 Guiding Principles
 
-Derive guiding principles from the interview answers. Write one YAML file per principle to `.ideate/principles/GP-{NN}.yaml`:
+Derive guiding principles from the interview answers. Write one artifact per principle using `ideate_write_artifact` with type `guiding_principle` and id `GP-{NN}`:
 
-```yaml
-id: GP-{NN}
-type: guiding_principle
-name: {Principle Name}
-status: active
-description: |
-  {One paragraph explaining what this principle means and why it matters for this project.
-  Grounded in specific things the user said.}
-amendment_history: []
-cycle_created: 0
-cycle_modified: null
+```
+ideate_write_artifact({
+  type: "guiding_principle",
+  id: "GP-{NN}",
+  content: {
+    name: "{Principle Name}",
+    status: "active",
+    description: "{One paragraph explaining what this principle means and why it matters for this project. Grounded in specific things the user said.}",
+    amendment_history: [],
+    cycle_created: 0,
+    cycle_modified: null
+  }
+})
 ```
 
 Rules for principles:
@@ -190,43 +179,44 @@ Rules for principles:
 
 ## 5.3 Constraints
 
-Extract hard constraints from the interview. Write one YAML file per constraint to `.ideate/constraints/C-{NN}.yaml`:
+Extract hard constraints from the interview. Write one artifact per constraint using `ideate_write_artifact` with type `constraint` and id `C-{NN}`:
 
-```yaml
-id: C-{NN}
-type: constraint
-category: {technology | design | process | scope}
-status: active
-description: "{Constraint name}. {Explanation.}"
-cycle_created: 0
-cycle_modified: null
+```
+ideate_write_artifact({
+  type: "constraint",
+  id: "C-{NN}",
+  content: {
+    category: "{technology | design | process | scope}",
+    status: "active",
+    description: "{Constraint name}. {Explanation.}",
+    cycle_created: 0,
+    cycle_modified: null
+  }
+})
 ```
 
-If the user stated no constraints, do not create any constraint files — do not invent constraints.
+If the user stated no constraints, do not create any constraint artifacts — do not invent constraints.
 
 Number sequentially: C-01, C-02, etc.
 
 ## 5.4 Journal Entry
 
-Write the init journal entry to `.ideate/cycles/000/journal/J-000-001.yaml`:
+Write the init journal entry using `ideate_append_journal`:
 
-```yaml
-id: J-000-001
-type: journal_entry
-cycle: 0
-seq: 1
-phase: init
-date: "{today's date}"
-summary: |
-  {Summary of the init session: codebase analyzed, principles established, constraints captured,
-  domains identified. 2–4 sentences.}
+```
+ideate_append_journal({
+  skill: "plan",
+  date: "{today's date}",
+  entry_type: "init-complete",
+  body: "{Summary of the init session: codebase analyzed, principles established, constraints captured, domains identified. 2-4 sentences.}"
+})
 ```
 
 ---
 
 # Phase 6: Bootstrap Domain Layer
 
-After steering artifacts are written, identify 2–4 domains from the architect's codebase analysis and the interview.
+After steering artifacts are written, identify 2-4 domains from the architect's codebase analysis and the interview.
 
 ## 6.1 Identify Domains
 
@@ -235,96 +225,105 @@ Domains are areas of the project with:
 - **Different decision authorities**: different concerns belong to different domain owners
 - **Different change cadences**: some parts stabilize fast, others stay in flux
 
-Start coarse — 2–3 domains is usually right for an init. Do not create a domain for every module.
+Start coarse — 2-3 domains is usually right for an init. Do not create a domain for every module.
 
 Use the architect's structural analysis as the primary input. If the user answered the domain question in the interview, use that as a signal — but do not create domains the codebase does not support.
 
-## 6.2 Create Domain Files
+## 6.2 Create Domain Artifacts
 
-For each domain, create the following files using the Write tool (or MCP write tools if available).
+For each domain, write the domain index and seed artifacts using MCP tools.
 
-**Domain index** — create `.ideate/domains/index.yaml`:
+**Domain index** — write using `ideate_write_artifact`:
 
-```yaml
-id: domain-index
-type: domain_index
-current_cycle: 0
-domains:
-  - name: "{domain-name}"
-    description: "{One sentence: what concern area this domain covers.}"
-    files:
-      - ".ideate/domains/{domain-name}/policies/"
-      - ".ideate/domains/{domain-name}/decisions/"
-      - ".ideate/domains/{domain-name}/questions/"
+```
+ideate_write_artifact({
+  type: "domain_index",
+  id: "domain-index",
+  content: {
+    current_cycle: 0,
+    domains: [
+      {
+        name: "{domain-name}",
+        description: "{One sentence: what concern area this domain covers.}"
+      }
+    ]
+  }
+})
 ```
 
-**Per-domain directories and seed files** — for each domain, create:
+**Seed policies** — derive initial policies from guiding principles. A GP becomes a domain policy when its application in this domain is substantively more specific than the GP alone.
 
-`.ideate/domains/{name}/policies/.gitkeep`
-`.ideate/domains/{name}/decisions/.gitkeep`
-`.ideate/domains/{name}/questions/.gitkeep`
+Write one artifact per policy using `ideate_write_artifact` with type `domain_policy` and id `P-{N}`:
 
-Then seed initial policies derived from guiding principles. A GP becomes a domain policy when its application in this domain is substantively more specific than the GP alone.
-
-Write one YAML file per policy to `.ideate/domains/{name}/policies/P-{N}.yaml`:
-
-```yaml
-id: P-{N}
-type: policy
-domain: "{name}"
-title: "{Short title}"
-rule: "{One-sentence rule. Actionable and unambiguous.}"
-derived_from: "GP-{NN} ({Principle Name})"
-established: init phase
-status: active
-amended_by: null
-cycle_created: 0
-cycle_modified: null
+```
+ideate_write_artifact({
+  type: "domain_policy",
+  id: "P-{N}",
+  content: {
+    domain: "{name}",
+    title: "{Short title}",
+    rule: "{One-sentence rule. Actionable and unambiguous.}",
+    derived_from: "GP-{NN} ({Principle Name})",
+    established: "init phase",
+    status: "active",
+    amended_by: null,
+    cycle_created: 0,
+    cycle_modified: null
+  }
+})
 ```
 
-Write initial decisions from the architect's analysis and interview to `.ideate/domains/{name}/decisions/D-{N}.yaml`:
+**Seed decisions** — write initial decisions from the architect's analysis and interview using `ideate_write_artifact` with type `domain_decision` and id `D-{N}`:
 
-```yaml
-id: D-{N}
-type: decision
-domain: "{name}"
-title: "{Short title}"
-decision: "{What was decided or observed — one sentence}"
-rationale: "{Why — from codebase analysis or interview}"
-assumes: "{Key assumptions — omit field if none}"
-source: "{interviews/interview-init-001.yaml#IQ-init-001-{N} | architect analysis}"
-status: settled
-cycle_created: 0
-cycle_modified: null
+```
+ideate_write_artifact({
+  type: "domain_decision",
+  id: "D-{N}",
+  content: {
+    domain: "{name}",
+    title: "{Short title}",
+    decision: "{What was decided or observed — one sentence}",
+    rationale: "{Why — from codebase analysis or interview}",
+    assumes: "{Key assumptions — omit field if none}",
+    source: "interview-init-001#IQ-init-001-{N} | architect analysis",
+    status: "settled",
+    cycle_created: 0,
+    cycle_modified: null
+  }
+})
 ```
 
 Record meaningful planning-phase decisions: technology selections, architectural observations, key constraints that affect this domain. Do not record obvious or trivial facts.
 
-If there are open questions — things the interview or architect analysis left unresolved that matter for this domain — write them to `.ideate/domains/{name}/questions/Q-{N}.yaml`:
+**Open questions** — if there are unresolved issues that matter for this domain, write them using `ideate_write_artifact` with type `domain_question` and id `Q-{N}`:
 
-```yaml
-id: Q-{N}
-type: question
-domain: "{name}"
-title: "{Short title}"
-question: "{What is unresolved}"
-source: "init phase"
-impact: "{What goes wrong without an answer}"
-status: open
-reexamination_trigger: "{When or what event should trigger revisiting this question}"
-cycle_created: 0
-cycle_modified: null
+```
+ideate_write_artifact({
+  type: "domain_question",
+  id: "Q-{N}",
+  content: {
+    domain: "{name}",
+    title: "{Short title}",
+    question: "{What is unresolved}",
+    source: "init phase",
+    impact: "{What goes wrong without an answer}",
+    status: "open",
+    reexamination_trigger: "{When or what event should trigger revisiting this question}",
+    cycle_created: 0,
+    cycle_modified: null
+  }
+})
 ```
 
 ## 6.3 Update Interview Tags
 
-Go back through the interview YAML (`interview-init-001.yaml`) and update the `domain` field on each entry to reflect the most relevant domain. Write the updated file back to disk.
+Rewrite the interview artifact with updated `domain` fields on each entry. Call `ideate_write_artifact` again with type `interview` and id `interview-init-001`, passing the full updated content with domain tags populated.
 
 ---
 
 # Phase 7: Present Init Summary
 
-After all artifacts are written, present a summary:
+After all artifacts are written, call `ideate_get_project_status()` to confirm the artifact state, then present a summary:
 
 ```
 ## Init Complete
@@ -345,12 +344,12 @@ After all artifacts are written, present a summary:
 {List: domain name — one-sentence description. Or "None — domains will be established in /ideate:refine."}
 
 ### Artifacts Written
-- .ideate/config.json
-- .ideate/principles/GP-{NN}.yaml ({N} principles)
-- .ideate/constraints/C-{NN}.yaml ({N} constraints, or "none")
-- .ideate/interviews/interview-init-001.yaml
-- .ideate/domains/index.yaml ({N} domains)
-- .ideate/cycles/000/journal/J-000-001.yaml
+- Config bootstrapped via ideate_bootstrap_project
+- GP-01 through GP-{NN} ({N} principles)
+- C-01 through C-{NN} ({N} constraints, or "none")
+- Interview: interview-init-001
+- Domain index ({N} domains)
+- Journal entry (init-complete)
 
 ### Next Step
 Run `/ideate:refine` to plan changes to this codebase.
@@ -374,11 +373,29 @@ These are produced by `/ideate:refine` (which plans the delta) and `/ideate:plan
 
 # Metrics Instrumentation
 
-After the architect agent spawn (Phase 3), append one JSON entry to `{project root}/.ideate/metrics.jsonl`. Best-effort only: if writing fails, continue without interruption.
+After the architect agent spawn (Phase 3), emit one metric entry via `ideate_emit_metric`. Best-effort only: if the call fails, continue without interruption.
 
-**Entry schema (one JSON object per line):**
-
-    {"timestamp":"<ISO8601>","skill":"init","phase":"3","cycle":0,"agent_type":"architect","model":"opus","work_item":null,"wall_clock_ms":<ms>,"turns_used":<N or null>,"context_files_read":["<path>",...],"input_tokens":<N or null>,"output_tokens":<N or null>,"cache_read_tokens":<N or null>,"cache_write_tokens":<N or null>,"mcp_tools_called":["<tool_name>",...]}
+```
+ideate_emit_metric({
+  payload: {
+    timestamp: "{ISO 8601}",
+    skill: "init",
+    phase: "3",
+    cycle: 0,
+    agent_type: "architect",
+    model: "opus",
+    work_item: null,
+    wall_clock_ms: {ms},
+    turns_used: {N or null},
+    context_files_read: ["{path}", ...],
+    input_tokens: {N or null},
+    output_tokens: {N or null},
+    cache_read_tokens: {N or null},
+    cache_write_tokens: {N or null},
+    mcp_tools_called: ["{tool_name}", ...]
+  }
+})
+```
 
 - `timestamp` — ISO 8601 when the agent was spawned.
 - `skill` — `"init"` (constant for this skill).
@@ -398,13 +415,18 @@ After the architect agent spawn (Phase 3), append one JSON entry to `{project ro
 
 Record timestamp immediately before the Agent tool call; compute `wall_clock_ms` after it returns.
 
-**Journal summary**: After presenting the init summary, append to `.ideate/cycles/000/journal/J-000-001.yaml` a metrics note (or write a second journal entry `J-000-002.yaml`):
+**Journal summary**: After presenting the init summary, append a second journal entry via `ideate_append_journal`:
 
-> Agents spawned: 1 (architect × 1)
-> Total wall-clock: {total_ms}ms
-> Models used: opus
+```
+ideate_append_journal({
+  skill: "plan",
+  date: "{today's date}",
+  entry_type: "init-metrics",
+  body: "Agents spawned: 1 (architect x 1)\nTotal wall-clock: {total_ms}ms\nModels used: opus"
+})
+```
 
-If `metrics.jsonl` could not be written, note "metrics unavailable" and omit the breakdown.
+If the metric could not be emitted, note "metrics unavailable" and omit the breakdown.
 
 ---
 
@@ -413,5 +435,18 @@ If `metrics.jsonl` could not be written, note "metrics unavailable" and omit the
 - If the architect agent fails to analyze the codebase, inform the user and ask whether to proceed without codebase analysis. If yes, conduct the interview without codebase context — the interview will need to cover more ground to compensate. If no, stop.
 - If the user provides fewer than 2 guiding principles, write what was provided. Do not invent principles. Note in the summary that the domain bootstrap may be sparse.
 - If the project root does not exist or is not a directory, stop and report the error. Do not create a project root that does not exist.
-- If a write fails during Phase 2 (scaffolding), stop immediately — the directory structure is required for all subsequent writes.
-- If a write fails during Phase 5 or 6, note the failure and continue. Partial artifact sets are better than nothing. List failed writes in the summary.
+- If `ideate_bootstrap_project` fails during Phase 2, stop immediately — the artifact directory structure is required for all subsequent writes.
+- If an MCP write call fails during Phase 5 or 6, note the failure and continue. Partial artifact sets are better than nothing. List failed writes in the summary.
+
+---
+
+# Self-Check
+
+Before presenting the init summary, verify:
+
+1. **No direct file I/O**: Every artifact was written through an MCP tool (`ideate_write_artifact`, `ideate_append_journal`, `ideate_emit_metric`, `ideate_bootstrap_project`). No Write tool calls targeting the artifact directory.
+2. **No path references**: No instructions in this run referenced filesystem paths within the artifact directory. All artifacts are identified by type and designation (e.g., GP-01, C-02, interview-init-001).
+3. **Bootstrap via MCP**: The artifact directory was created by `ideate_bootstrap_project`, not by manual directory creation.
+4. **Designations, not filenames**: Artifacts are referenced by their designation (GP-01, C-01, D-1, P-1, Q-1, interview-init-001) throughout, never by filename.
+5. **Metrics via MCP**: The metrics entry was emitted through `ideate_emit_metric`, not appended to a file directly.
+6. **Journal via MCP**: Journal entries were written through `ideate_append_journal`, not as direct YAML file writes.

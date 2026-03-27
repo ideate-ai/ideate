@@ -7,14 +7,22 @@ export interface FileChangeEvent {
   filePath: string;
 }
 
+export interface BatchChangeEvent {
+  artifactDir: string;
+  changed: string[];
+  deleted: string[];
+}
+
 /**
  * Watches one or more artifact directories for file changes.
- * Emits "change" events with the artifact directory and file path.
- * Used by the cache layer to invalidate stale entries.
+ * Emits "change" events with separate changed and deleted file lists.
+ * Used by the index layer for incremental re-indexing.
  */
 export class ArtifactWatcher extends EventEmitter {
   private watchers: Map<string, FSWatcher> = new Map();
   private debounceTimers: Map<string, ReturnType<typeof setTimeout>> = new Map();
+  private pendingChanged: Map<string, Set<string>> = new Map();
+  private pendingDeleted: Map<string, Set<string>> = new Map();
   private extraOptions: WatchOptions;
   readonly debounceMs: number;
 
@@ -40,24 +48,60 @@ export class ArtifactWatcher extends EventEmitter {
       ...this.extraOptions,
     });
 
-    const onEvent = (filePath: string) => {
+    const scheduleFlush = () => {
       const existing = this.debounceTimers.get(artifactDir);
       if (existing) {
         clearTimeout(existing);
       }
       const timer = setTimeout(() => {
         this.debounceTimers.delete(artifactDir);
-        this.emit("change", {
-          artifactDir,
-          filePath: path.resolve(filePath),
-        } satisfies FileChangeEvent);
+        const changed = this.pendingChanged.get(artifactDir) ?? new Set();
+        const deleted = this.pendingDeleted.get(artifactDir) ?? new Set();
+
+        // If a file was changed then deleted, only process the delete
+        for (const f of deleted) {
+          changed.delete(f);
+        }
+
+        this.pendingChanged.delete(artifactDir);
+        this.pendingDeleted.delete(artifactDir);
+
+        if (changed.size > 0 || deleted.size > 0) {
+          this.emit("change", {
+            artifactDir,
+            changed: [...changed],
+            deleted: [...deleted],
+          } satisfies BatchChangeEvent);
+        }
       }, this.debounceMs);
       this.debounceTimers.set(artifactDir, timer);
     };
 
-    watcher.on("add", onEvent);
-    watcher.on("change", onEvent);
-    watcher.on("unlink", onEvent);
+    const onAddOrChange = (filePath: string) => {
+      const resolved = path.resolve(filePath);
+      if (!this.pendingChanged.has(artifactDir)) {
+        this.pendingChanged.set(artifactDir, new Set());
+      }
+      this.pendingChanged.get(artifactDir)!.add(resolved);
+      // Remove from deleted if re-created
+      this.pendingDeleted.get(artifactDir)?.delete(resolved);
+      scheduleFlush();
+    };
+
+    const onUnlink = (filePath: string) => {
+      const resolved = path.resolve(filePath);
+      if (!this.pendingDeleted.has(artifactDir)) {
+        this.pendingDeleted.set(artifactDir, new Set());
+      }
+      this.pendingDeleted.get(artifactDir)!.add(resolved);
+      // Remove from changed since it's gone
+      this.pendingChanged.get(artifactDir)?.delete(resolved);
+      scheduleFlush();
+    };
+
+    watcher.on("add", onAddOrChange);
+    watcher.on("change", onAddOrChange);
+    watcher.on("unlink", onUnlink);
 
     this.watchers.set(artifactDir, watcher);
   }
@@ -68,6 +112,8 @@ export class ArtifactWatcher extends EventEmitter {
       clearTimeout(timer);
       this.debounceTimers.delete(artifactDir);
     }
+    this.pendingChanged.delete(artifactDir);
+    this.pendingDeleted.delete(artifactDir);
     const watcher = this.watchers.get(artifactDir);
     if (watcher) {
       watcher.close();

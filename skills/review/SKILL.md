@@ -1,7 +1,7 @@
 ---
 description: "Comprehensive review of completed work. Supports cycle review (default), domain review (--domain name), full audit (--full), and ad-hoc review (natural language scope). Spawns specialized reviewers and the domain curator."
 user-invocable: true
-argument-hint: "[artifact directory path] [--domain name | --full | \"natural language scope\"]"
+argument-hint: "[--domain name | --full | \"natural language scope\"]"
 ---
 
 You are the **review** skill for the ideate plugin. You coordinate a comprehensive, multi-perspective evaluation of completed work. You are a coordinator — you spawn specialized reviewers and synthesize their findings. You do not do the reviewing yourself.
@@ -16,22 +16,28 @@ Tone: neutral, factual. No encouragement, no validation, no hedging qualifiers. 
 
 ---
 
+# Phase 0: Read Project Configuration
+
+Call `ideate_get_config()` to read project configuration. Hold the response as `{config}`. Use `{config}.agent_budgets.{agent_name}` as the maxTurns value when spawning agents. If `ideate_get_config` is unavailable or returns no agent_budgets, use the agent's frontmatter maxTurns as fallback.
+
+---
+
 # Phase 1: Parse Arguments and Determine Review Mode
 
 ## 1.1 Parse Invocation Arguments
 
 Parse the invocation for:
 
-1. **Project root** — Determine the directory containing `.ideate/config.json`. If a positional argument is provided, resolve it: if it points to a directory containing `.ideate/config.json`, use it; if it points to a subdirectory, walk up to find `.ideate/config.json` in an ancestor. If no argument, check the current working directory and walk up. If `.ideate.json` exists, use its `artifactDir` to locate the project root. If none found, ask: "Where is the project root? (The directory containing `.ideate/`)"
+1. **Project root** — Call `ideate_get_config()` to resolve the project root. If a positional argument is provided, pass it as a hint. If none found, ask: "Where is the project root?"
 
 2. **Review mode flags and arguments**:
    - No arguments (beyond project root): **cycle review** (default)
-   - `--domain {name}`: **domain review** — load that domain's files, scope reviewers to it
-   - `--full`: **full audit** — load all domain files + latest cycle summary + full source tree
+   - `--domain {name}`: **domain review** — load that domain's artifacts, scope reviewers to it
+   - `--full`: **full audit** — load all domain artifacts + latest cycle summary + full source tree
    - `--scope "{description}"`: combined with `--domain`, narrows the focus further
    - Any other argument (natural language): **ad-hoc review** — classify intent and select agent set
 
-Store the project root path. All MCP tool calls use this implicitly — the server resolves paths from `.ideate/config.json`.
+All MCP tool calls resolve paths internally from the project configuration — the skill never constructs artifact paths.
 
 Validate by calling `ideate_get_project_status` with the resolved path. If the MCP server cannot find artifacts, stop and report the error.
 
@@ -41,18 +47,18 @@ Based on parsed arguments:
 
 | Arguments | Mode | Output location | Curator runs |
 |---|---|---|---|
-| None | Cycle review | `.ideate/cycles/{NNN}/` | Always |
-| `--domain {name}` | Domain review | `.ideate/cycles/adhoc/{date}-domain-{name}/` | If policy/question/conflict-grade findings |
-| `--full` | Full audit | `.ideate/cycles/adhoc/{date}-full-audit/` | If policy/question/conflict-grade findings |
-| Natural language string | Ad-hoc (feature-fit or retrospective) | `.ideate/cycles/adhoc/{date}-{slug}/` | If policy/question/conflict-grade findings |
+| None | Cycle review | Cycle-scoped output (MCP derives location from cycle number) | Always |
+| `--domain {name}` | Domain review | Ad-hoc output (MCP derives location from date + domain name) | If policy/question/conflict-grade findings |
+| `--full` | Full audit | Ad-hoc output (MCP derives location from date + "full-audit") | If policy/question/conflict-grade findings |
+| Natural language string | Ad-hoc (feature-fit or retrospective) | Ad-hoc output (MCP derives location from date + slug) | If policy/question/conflict-grade findings |
 
-**Slug generation for ad-hoc**: lowercase the natural language argument, replace spaces with hyphens, truncate to 40 characters. E.g., "how does auth fit the current model" → `how-does-auth-fit-the-current-model`.
+**Slug generation for ad-hoc**: lowercase the natural language argument, replace spaces with hyphens, truncate to 40 characters. E.g., "how does auth fit the current model" becomes `how-does-auth-fit-the-current-model`.
 
 **Date format**: `YYYYMMDD` using today's date.
 
 **Cycle number for cycle reviews**: Call `ideate_get_domain_state()` — the response includes `current_cycle`. Add 1 to get the new cycle number. If the domain state is unavailable, use `001`.
 
-Store the determined mode, output directory path, and cycle number (if applicable).
+Store the determined mode, cycle number (if applicable), and the slug or scope label for ad-hoc modes.
 
 ---
 
@@ -107,22 +113,20 @@ The source code location is determinable from work item file scopes or the archi
 
 ## 2.7 Ad-Hoc Artifact Queries
 
-At any point during context loading or review, if you need to search across artifact content by keyword or topic, use the tool whose name ends in `ideate_artifact_query` (it will be prefixed, e.g. `mcp__ideate_artifact_server__ideate_artifact_query` or `mcp__plugin_ideate_ideate_artifact_server__ideate_artifact_query`). Use it to perform ad-hoc queries against the artifact index — for example, searching for all decisions related to a specific domain, finding work items touching a particular file, or locating research notes on a topic. This tool is always available and can reduce manual file reading for exploratory queries.
+At any point during context loading or review, if you need to search across artifact content by keyword or topic, use `ideate_artifact_query`. Use it to perform ad-hoc queries against the artifact index — for example, searching for all decisions related to a specific domain, finding work items touching a particular file, or locating research notes on a topic. This tool is always available and can reduce manual file reading for exploratory queries.
 
 ---
 
-# Phase 3: Ensure Output Directory
+# Phase 3: Ensure Output Location
 
-Create the output directory based on the review mode determined in Phase 1:
+The MCP server derives output paths internally. The skill does not construct or create directories. Instead, use the appropriate `ideate_write_artifact` call with the review mode's type and scope identifiers:
 
-- **Cycle review**: `{project_root}/.ideate/cycles/{NNN}/`
-- **Domain review**: `{project_root}/.ideate/cycles/adhoc/{date}-domain-{name}/`
-- **Full audit**: `{project_root}/.ideate/cycles/adhoc/{date}-full-audit/`
-- **Ad-hoc**: `{project_root}/.ideate/cycles/adhoc/{date}-{slug}/`
+- **Cycle review**: `ideate_write_artifact({type: "cycle_summary", ...})` with `cycle: N`
+- **Domain review**: `ideate_write_artifact({type: "cycle_summary", ...})` with `scope: "domain-{name}"` and `date: "{YYYYMMDD}"`
+- **Full audit**: `ideate_write_artifact({type: "cycle_summary", ...})` with `scope: "full-audit"` and `date: "{YYYYMMDD}"`
+- **Ad-hoc**: `ideate_write_artifact({type: "cycle_summary", ...})` with `scope: "{slug}"` and `date: "{YYYYMMDD}"`
 
-Also ensure `{project_root}/.ideate/cycles/adhoc/` exists as a parent directory.
-
-Store the output directory path. All reviewer output goes here.
+All reviewer output is written through these MCP calls. The skill never creates directories or constructs file paths.
 
 ---
 
@@ -130,25 +134,27 @@ Store the output directory path. All reviewer output goes here.
 
 For **cycle reviews only**, generate a lightweight manifest that reviewers use as an index instead of reading all work items and incremental reviews upfront.
 
-Call the tool whose name ends in `ideate_get_review_manifest` (it will be prefixed, e.g. `mcp__ideate_artifact_server__ideate_get_review_manifest` or `mcp__plugin_ideate_ideate_artifact_server__ideate_get_review_manifest`). It returns a pre-built manifest table matching work items to incremental reviews with verdicts and finding counts. Hold the response as `{manifest_content}`.
+Call `ideate_get_review_manifest()`. It returns a pre-built manifest table matching work items to incremental reviews with verdicts and finding counts. Hold the response as `{manifest_content}`.
 
-Call `ideate_write_artifact({type: "cycle_summary", id: "review-manifest", content: {cycle: N, content: {manifest_content}}})` to write the manifest file.
+Call `ideate_write_artifact({type: "cycle_summary", id: "review-manifest", content: {cycle: N, content: {manifest_content}}})` to persist the manifest.
 
-If this tool call fails, stop and report: "The ideate MCP artifact server is required but not available. Verify .mcp.json configuration."
+If this tool call fails, stop and report: "The ideate MCP artifact server is required but not available. Verify MCP configuration."
 
-The manifest is ~2-3 lines per work item. For 50 items, this is ~150 lines vs reading 50 full work item files + 50 review files.
+The manifest is ~2-3 lines per work item. For 50 items, this is ~150 lines vs reading 50 full work item artifacts + 50 review artifacts.
 
 ---
 
 # Phase 3.6: Build Shared Context Package
 
-Before spawning reviewers, assemble a single context package document and hold it in memory. This replaces the pattern where each reviewer independently reads the same architecture, principles, and constraints files.
+Before spawning reviewers, assemble a single context package document and hold it in memory. This replaces the pattern where each reviewer independently reads the same architecture, principles, and constraints.
 
-Call the tool whose name ends in `ideate_get_context_package` (it will be prefixed, e.g. `mcp__ideate_artifact_server__ideate_get_context_package` or `mcp__plugin_ideate_ideate_artifact_server__ideate_get_context_package`). It returns the pre-assembled context package. Hold the result as `{context_package}` — it is passed inline to all reviewer prompts.
+Call `ideate_get_context_package()`. It returns the pre-assembled context package. Hold the result as `{context_package}` — it is passed inline to all reviewer prompts.
 
-If this tool call fails, stop and report: "The ideate MCP artifact server is required but not available. Verify .mcp.json configuration."
+If this tool call fails, stop and report: "The ideate MCP artifact server is required but not available. Verify MCP configuration."
 
 **Target size**: ~500-800 lines.
+
+**PPR-based context assembly (optional)**: For reviews scoped to specific artifacts, `ideate_assemble_context` can provide focused, graph-aware context. Call with seed artifact IDs and a token budget. This is useful when reviewing a specific module or feature area rather than the full project. For capstone reviews covering the full project, `ideate_get_context_package` remains the primary context source.
 
 ---
 
@@ -162,23 +168,23 @@ All three agents run in parallel. Do not wait for one to finish before starting 
 
 **Agent**: code-reviewer
 **Model**: sonnet
-**MaxTurns**: 40
+**MaxTurns**: `{config}.agent_budgets.code-reviewer` (fallback to agent frontmatter default)
 **Tools**: Read, Grep, Glob, Bash
 
-**Prompt** (adapt paths to the actual artifact directory and project source location):
+**Prompt** (adapt to the actual project source location):
 
 > You are conducting a comprehensive code review of the entire project — not a single work item.
 >
-> **Shared context package** (inline — do not re-read architecture, principles, or constraints files individually):
+> **Shared context package** (inline — do not re-read architecture, principles, or constraints individually):
 > {context_package}
 >
-> **Review manifest**: {output-dir}/review-manifest.yaml — your index of all work items and their incremental review status. Read individual work items only when investigating specific findings. Read individual incremental reviews only when you find an issue in the same file scope and need to check whether it was already caught.
+> **Review manifest**: {manifest_content} — your index of all work items and their incremental review status. Read individual work items only when investigating specific findings. Read individual incremental reviews only when you find an issue in the same file scope and need to check whether it was already caught.
 >
 > Project source code is at: {project source path} — read source files as needed to investigate specific findings.
 >
 > This is a capstone review. Focus on cross-cutting concerns: consistency across modules, patterns that span multiple work items, integration between components, systemic issues that no single-item review could see.
 >
-> **Dynamic testing (comprehensive scope)**: After your static review, perform the dynamic checks defined in your agent instructions under "Dynamic Testing > Comprehensive review scope". Discover the project's test model and run the full test suite. Report test failures per the severity guidance in your agent instructions.
+> **Dynamic testing (comprehensive scope)**: After your static review, perform the dynamic checks defined in your agent instructions under "Step 3 — Comprehensive review scope (full project)". Discover the project's test model and run the full test suite. Report test failures per the severity guidance in your agent instructions.
 >
 > Follow the output format defined in your agent instructions. Verdict is Fail if there are any Critical or Significant findings or unmet acceptance criteria. Otherwise Pass.
 >
@@ -186,26 +192,26 @@ All three agents run in parallel. Do not wait for one to finish before starting 
 
 After this agent returns:
 1. Extract the findings content from the agent's response.
-2. Call `ideate_write_artifact({type: "cycle_summary", id: "code-quality", content: {cycle: N, reviewer: "code-reviewer", content: <extracted findings>}})` to write the file.
+2. Call `ideate_write_artifact({type: "cycle_summary", id: "code-quality", content: {cycle: N, reviewer: "code-reviewer", content: <extracted findings>}})` to persist the review.
 3. Record a metrics entry (see Metrics Instrumentation).
 
 ## 4.2 spec-reviewer
 
 **Agent**: spec-reviewer
 **Model**: sonnet
-**MaxTurns**: 50
+**MaxTurns**: `{config}.agent_budgets.spec-reviewer` (fallback to agent frontmatter default)
 **Tools**: Read, Grep, Glob
 
 **Prompt**:
 
 > Verify that the implementation matches the plan, architecture, and guiding principles.
 >
-> **Shared context package** (inline — do not re-read architecture, principles, or constraints files individually):
+> **Shared context package** (inline — do not re-read architecture, principles, or constraints individually):
 > {context_package}
 >
 > **Module specs**: Call `ideate_artifact_query({type: "module_spec"})` to retrieve all module specs (if they exist — use these for interface contracts).
 >
-> **Review manifest**: {output-dir}/review-manifest.yaml — use as an index. Read individual work items and incremental reviews only when investigating specific findings in their file scope.
+> **Review manifest**: {manifest_content} — use as an index. Read individual work items and incremental reviews only when investigating specific findings in their file scope.
 >
 > Project source code is at: {project source path} — read source files as needed to investigate specific findings.
 >
@@ -217,28 +223,28 @@ After this agent returns:
 
 After this agent returns:
 1. Extract the findings content from the agent's response.
-2. Call `ideate_write_artifact({type: "cycle_summary", id: "spec-adherence", content: {cycle: N, reviewer: "spec-reviewer", content: <extracted findings>}})` to write the file.
+2. Call `ideate_write_artifact({type: "cycle_summary", id: "spec-adherence", content: {cycle: N, reviewer: "spec-reviewer", content: <extracted findings>}})` to persist the review.
 3. Record a metrics entry (see Metrics Instrumentation).
 
 ## 4.3 gap-analyst
 
 **Agent**: gap-analyst
 **Model**: sonnet
-**MaxTurns**: 50
+**MaxTurns**: `{config}.agent_budgets.gap-analyst` (fallback to agent frontmatter default)
 **Tools**: Read, Grep, Glob
 
 **Prompt**:
 
 > Find what is missing from the implementation — things that should exist but do not.
 >
-> **Shared context package** (inline — do not re-read architecture, principles, or constraints files individually):
+> **Shared context package** (inline — do not re-read architecture, principles, or constraints individually):
 > {context_package}
 >
-> **Interview transcript**: Call `ideate_artifact_query({type: "interview"})` to retrieve the most recent interview YAML (to identify requirements from the original interview).
+> **Interview transcript**: Call `ideate_artifact_query({type: "interview"})` to retrieve the most recent interview (to identify requirements from the original interview).
 >
 > **Module specs**: Call `ideate_artifact_query({type: "module_spec"})` to retrieve all module specs (if they exist).
 >
-> **Review manifest**: {output-dir}/review-manifest.yaml — use as an index. Read individual work items and incremental reviews only when investigating specific gaps in their file scope.
+> **Review manifest**: {manifest_content} — use as an index. Read individual work items and incremental reviews only when investigating specific gaps in their file scope.
 >
 > Project source code is at: {project source path} — read source files as needed to investigate specific gaps.
 >
@@ -250,43 +256,43 @@ After this agent returns:
 
 After this agent returns:
 1. Extract the findings content from the agent's response.
-2. Call `ideate_write_artifact({type: "cycle_summary", id: "gap-analysis", content: {cycle: N, reviewer: "gap-analyst", content: <extracted findings>}})` to write the file.
+2. Call `ideate_write_artifact({type: "cycle_summary", id: "gap-analysis", content: {cycle: N, reviewer: "gap-analyst", content: <extracted findings>}})` to persist the review.
 3. Record a metrics entry (see Metrics Instrumentation).
 
-Wait for all three reviewers to complete. Verify their output files were written via `ideate_write_artifact` before proceeding.
+Wait for all three reviewers to complete. Verify their outputs were persisted via `ideate_write_artifact` before proceeding.
 
 ---
 
 # Phase 4b: Spawn Journal-Keeper (Sequential)
 
-Spawn the journal-keeper only AFTER all three reviewers from Phase 4a have completed and their output files have been written via `ideate_write_artifact`. The journal-keeper depends on these files for cross-referencing.
+Spawn the journal-keeper only AFTER all three reviewers from Phase 4a have completed and their outputs have been persisted via `ideate_write_artifact`. The journal-keeper depends on these outputs for cross-referencing.
 
 ## 4b.1 journal-keeper
 
 **Agent**: journal-keeper
 **Model**: sonnet
-**MaxTurns**: 30
+**MaxTurns**: `{config}.agent_budgets.journal-keeper` (fallback to agent frontmatter default)
 **Tools**: Read, Grep, Glob
 
-**Prompt** (adapt paths to the actual artifact directory):
+**Prompt** (adapt to the actual project source location):
 
 > Synthesize the project's history into a decision log and open questions list.
 >
-> **Shared context package** (inline — do not re-read architecture or principles files individually):
+> **Shared context package** (inline — do not re-read architecture or principles individually):
 > {context_package}
 >
-> **Review manifest**: {output-dir}/review-manifest.yaml — use as an index of all work items and their review status. Read individual incremental reviews only when cross-referencing specific findings.
+> **Review manifest**: {manifest_content} — use as an index of all work items and their review status. Read individual incremental reviews only when cross-referencing specific findings.
 >
 > **Journal**: call `ideate_artifact_query({type: "journal_entry"})` to retrieve the most recent journal entries (last 20 entries).
 >
 > **Plan overview**: call `ideate_artifact_query({type: "overview"})` to retrieve the plan overview.
 >
-> For cycle reviews, also call `ideate_artifact_query({type: "interview"})` to retrieve the latest interview YAML.
+> For cycle reviews, also call `ideate_artifact_query({type: "interview"})` to retrieve the latest interview.
 >
-> The following three review files have been completed by the other reviewers. Read all three for cross-referencing:
-> - Code quality review: {output-dir}/code-quality.yaml
-> - Spec adherence review: {output-dir}/spec-adherence.yaml
-> - Gap analysis: {output-dir}/gap-analysis.yaml
+> The following three review outputs have been completed by the other reviewers. Retrieve all three for cross-referencing:
+> - Code quality review: call `ideate_artifact_query({type: "cycle_summary", id: "code-quality", cycle: N})`
+> - Spec adherence review: call `ideate_artifact_query({type: "cycle_summary", id: "spec-adherence", cycle: N})`
+> - Gap analysis: call `ideate_artifact_query({type: "cycle_summary", id: "gap-analysis", cycle: N})`
 >
 > Follow the output format defined in your agent instructions. Build the decision log chronologically. Include cross-references where findings from different reviewers relate to the same concern.
 >
@@ -294,28 +300,28 @@ Spawn the journal-keeper only AFTER all three reviewers from Phase 4a have compl
 
 After this agent returns:
 1. Extract the decision log content from the agent's response.
-2. Call `ideate_write_artifact({type: "cycle_summary", id: "decision-log", content: {cycle: N, reviewer: "journal-keeper", content: <extracted decision log>}})` to write the file.
+2. Call `ideate_write_artifact({type: "cycle_summary", id: "decision-log", content: {cycle: N, reviewer: "journal-keeper", content: <extracted decision log>}})` to persist the decision log.
 3. Record a metrics entry (see Metrics Instrumentation).
 
 ---
 
 # Phase 5: Collect and Verify Results
 
-After the journal-keeper completes (all four reviewers are now done) and all four files have been written via `ideate_write_artifact`:
+After the journal-keeper completes (all four reviewers are now done) and all four outputs have been persisted via `ideate_write_artifact`:
 
-1. Read all four output files using the MCP server (or directly via Read if needed for synthesis):
-   - `{output-dir}/code-quality.yaml`
-   - `{output-dir}/spec-adherence.yaml`
-   - `{output-dir}/gap-analysis.yaml`
-   - `{output-dir}/decision-log.yaml`
+1. Retrieve all four reviewer outputs via MCP:
+   - `ideate_artifact_query({type: "cycle_summary", id: "code-quality", cycle: N})`
+   - `ideate_artifact_query({type: "cycle_summary", id: "spec-adherence", cycle: N})`
+   - `ideate_artifact_query({type: "cycle_summary", id: "gap-analysis", cycle: N})`
+   - `ideate_artifact_query({type: "cycle_summary", id: "decision-log", cycle: N})`
 
-2. Verify each file was written and contains substantive content. If a reviewer failed to produce output (session timeout, error, empty response), note the failure and proceed with the outputs that do exist. Do not re-run failed reviewers automatically — note the gap in the summary.
+2. Verify each artifact contains substantive content. If a reviewer failed to produce output (session timeout, error, empty response), note the failure and proceed with the outputs that do exist. Do not re-run failed reviewers automatically — note the gap in the summary.
 
 ---
 
 # Phase 6: Synthesize into Summary
 
-Read all four reviewer outputs and produce `{output-dir}/summary.yaml`. This is the single document that captures the full picture.
+Read all four reviewer outputs and produce a summary artifact. This is the single document that captures the full picture.
 
 ## 6.1 Classify All Findings by Severity
 
@@ -355,9 +361,9 @@ If there are critical or significant findings, outline what `/ideate:refine` sho
 
 If no critical or significant findings exist, state that no refinement cycle is needed. The project is ready for user evaluation.
 
-## 6.5 Write Summary File
+## 6.5 Write Summary Artifact
 
-Compose the summary content in memory using this format, then call `ideate_write_artifact({type: "cycle_summary", id: "summary", content: {cycle: N, content: <summary text>}})` to write the file. Do NOT use the Write tool for this file.
+Compose the summary content in memory using this format, then call `ideate_write_artifact({type: "cycle_summary", id: "summary", content: {cycle: N, content: <summary text>}})` to persist it. Do NOT use the Write tool for this artifact.
 
 ```markdown
 # Review Summary
@@ -386,7 +392,7 @@ Compose the summary content in memory using this format, then call `ideate_write
 
 Omit severity sections that have no findings. Include the "Findings Requiring User Input" section even if empty (state "None — all findings can be resolved from existing context.").
 
-After writing the summary file, call `ideate_emit_event` with:
+After writing the summary artifact, call `ideate_emit_event` with:
 - event: "review.complete"
 - variables: { "CYCLE_NUMBER": "{cycle_number}", "FINDING_COUNT": "{total_finding_count}" }
 
@@ -403,19 +409,19 @@ Where `{total_finding_count}` is the sum of all findings across all severity lev
 **Ad-hoc reviews** (domain, full audit, or natural language): run the curator only if the review produced at least one finding that is:
 - Policy-grade: implies a durable rule future workers must follow
 - Question-grade: an unresolved issue with impact if unanswered
-- Conflict-grade: contradicts an existing policy in `domains/*/policies/*.yaml`
+- Conflict-grade: contradicts an existing domain policy
 
-Read the summary file to make this determination. If no such findings exist, skip to Phase 8 (Update Journal). Note in the journal that the curator was not run.
+Read the summary artifact to make this determination. If no such findings exist, skip to Phase 8 (Update Journal). Note in the journal that the curator was not run.
 
 ## 7.2 Spawn Curator
 
 **Pre-screening for conflict signals** (determines model to use):
 
-1. If `{project_root}/.ideate/domains/` does not exist (first cycle), skip pre-screening. Use `model: sonnet`.
+1. Call `ideate_get_domain_state()`. If no domain state exists (first cycle), skip pre-screening. Use `model: sonnet`.
 
 2. Otherwise:
-   a. Call `ideate_get_domain_state()` — returns all domain policies. For each policy, extract: policy IDs (P-N pattern), domain names, and file paths mentioned in the policy body.
-   b. Read `{output-dir}/summary.yaml`. For each Critical or Significant finding, extract: the domain name (if stated) and any file paths referenced.
+   a. From the domain state response, extract: policy IDs (P-N pattern), domain names, and file paths mentioned in the policy body.
+   b. Retrieve the summary artifact via `ideate_artifact_query({type: "cycle_summary", id: "summary", cycle: N})`. For each Critical or Significant finding, extract: the domain name (if stated) and any file paths referenced.
    c. Check for conflict signals — any of:
       - A finding references the same file path as a path mentioned in an existing policy
       - A finding's domain name matches an existing policy's domain name
@@ -429,67 +435,56 @@ Read the summary file to make this determination. If no such findings exist, ski
 
 Provide:
 
-> Artifact directory: {project_root}
+> Project root: {project_root}
 >
 > Review type: {cycle | adhoc}
 >
-> Review source: {output-dir}/*.yaml (all review files in the output directory)
+> Review source: Retrieve all review outputs for this cycle/scope via `ideate_artifact_query({type: "cycle_summary", cycle: N})`.
 >
 > Cycle number: {N} (for cycle reviews) or slug: {date-slug} (for ad-hoc reviews)
 >
-> Process the review output and determine all domain layer updates. Follow your agent instructions to identify new/updated policies, decisions, and questions. **Do NOT use the Write tool to write domain files.** Instead, return all proposed domain updates as structured content in the final section of your response. For each file to be written, include the target path relative to `.ideate/` and the full file content.
+> Process the review output and determine all domain layer updates. Follow your agent instructions to identify new/updated policies, decisions, and questions. **Do NOT use the Write tool to write domain files.** Instead, return all proposed domain updates as structured content in the final section of your response. For each update, include the artifact type, designation, and the full content.
 
-**Wait for the curator to complete.** The curator runs in the foreground because it writes domain files that downstream skills depend on.
+**Wait for the curator to complete.** The curator runs in the foreground because it writes domain artifacts that downstream skills depend on.
 
 After the curator returns:
-1. Parse its response to extract each domain file it proposes to write (target path + content).
-2. For each proposed domain file, call `ideate_write_artifact({type: "domain_file", id: "<relative-path>", content: {content: <file content>}})` to write the file via MCP.
+1. Parse its response to extract each domain artifact it proposes to write (type, designation, content).
+2. For each proposed domain update, call `ideate_write_artifact({type: "domain_file", id: "<designation>", content: {content: <artifact content>}})` to persist the artifact via MCP.
 3. Record a metrics entry (see Metrics Instrumentation).
 
 ## 7.3 After Curator Completes (Cycle Reviews Only)
 
-After writing the curator's domain files via `ideate_write_artifact`:
+After writing the curator's domain artifacts via `ideate_write_artifact`:
 
-1. Update `.ideate/domains/index.yaml`: call `ideate_write_artifact({type: "domain_file", id: "domains/index.yaml", content: {current_cycle: N}})` to set `current_cycle` to the current cycle number N.
-2. Verify that at least one domain file was written via `ideate_write_artifact`. If not, note the failure in the journal.
+1. Update the domain index: call `ideate_write_artifact({type: "domain_index", content: {current_cycle: N}})` to set `current_cycle` to the current cycle number N.
+2. Verify that at least one domain artifact was written via `ideate_write_artifact`. If not, note the failure in the journal.
 
 ---
 
 # Phase 7.5: Archive Completed Work Items (Cycle Reviews Only)
 
-For **cycle reviews only**, after the domain curator completes, archive the current cycle's work items and incremental reviews into the cycle directory. This keeps `plan/work-items/` containing only active/pending items.
+For **cycle reviews only**, after the domain curator completes, archive the current cycle's work items and incremental reviews into the cycle output. This keeps only active/pending work items in the working set.
 
-Call `ideate_archive_cycle({cycle_number})`. It archives completed work items and findings into the cycle directory.
+Call `ideate_archive_cycle({cycle_number})`. It archives completed work items and findings into the cycle-scoped storage.
 
-If this tool call fails, stop and report: "The ideate MCP artifact server is required but not available. Verify .mcp.json configuration."
+If this tool call fails, stop and report: "The ideate MCP artifact server is required but not available. Verify MCP configuration."
 
-Verify:
-   - `{output-dir}/work-items/` contains the archived work items
-   - `{output-dir}/findings/` contains the archived findings
-   - `.ideate/work-items/` contains only items not completed this cycle (if any)
+Verify by calling `ideate_artifact_query` to confirm:
+   - Archived work items are accessible under the cycle scope
+   - Archived findings are accessible under the cycle scope
+   - Only items not completed this cycle remain in the active working set (if any)
 
-After archival, the cycle directory structure is:
-```
-.ideate/cycles/{NNN}/
-  review-manifest.yaml   # Generated in Phase 3.5
-  work-items/            # Completed work items from this cycle
-  findings/              # Findings from this cycle
-  code-quality.yaml      # From Phase 4a
-  spec-adherence.yaml    # From Phase 4a
-  gap-analysis.yaml      # From Phase 4a
-  decision-log.yaml      # From Phase 4b
-  summary.yaml           # From Phase 6
-```
+After archival, the cycle's artifacts include: the review manifest, archived work items, archived findings, code-quality review, spec-adherence review, gap-analysis review, decision log, and summary.
 
 ---
 
 # Phase 7.6: Quality Metrics Event
 
-After the domain curator completes (and after Phase 7.5 archival for cycle reviews), emit a `quality_summary` event to `.ideate/metrics.jsonl`. This is a best-effort operation — if it fails for any reason, skip it and continue to Phase 8 without blocking.
+After the domain curator completes (and after Phase 7.5 archival for cycle reviews), emit a `quality_summary` metric. This is a best-effort operation — if it fails for any reason, skip it and continue to Phase 8 without blocking.
 
-## 7.6.1 Derive Counts from summary.yaml
+## 7.6.1 Derive Counts from Summary
 
-Read `{output-dir}/summary.yaml` (already produced in Phase 6). Derive the following counts by parsing its contents:
+Retrieve the summary artifact via `ideate_artifact_query({type: "cycle_summary", id: "summary", cycle: N})` (already produced in Phase 6). Derive the following counts from its content:
 
 **Severity counts** — count bullet points under each severity heading:
 - `findings.by_severity.critical`: count items under `## Critical Findings`
@@ -499,7 +494,7 @@ Read `{output-dir}/summary.yaml` (already produced in Phase 6). Derive the follo
 - `findings.total`: sum of all four severity counts
 
 **Per-reviewer counts** — each finding line includes a `[reviewer-name]` prefix. Count findings per severity per reviewer:
-- `findings.by_reviewer.code-reviewer`: count lines prefixed `[code-reviewer]` in each severity section, separated into `critical`, `significant`, `minor`, `suggestion`
+- `findings.by_reviewer.code-reviewer`: count lines prefixed `[code-reviewer]` in each severity section, separated into `critical`, `significant`, `minor`
 - `findings.by_reviewer.spec-reviewer`: same for `[spec-reviewer]`
 - `findings.by_reviewer.gap-analyst`: same for `[gap-analyst]`
 
@@ -510,18 +505,18 @@ Read `{output-dir}/summary.yaml` (already produced in Phase 6). Derive the follo
 - `implementation_gaps`: gap-analyst findings that are minor, or gap-analyst findings describing incomplete coverage or integration (look for words like "incomplete", "partial", "not connected", "missing integration")
 - `other`: all findings not matching any of the above categories
 
-**work_items_reviewed**: Count distinct work item numbers referenced in `{output-dir}/review-manifest.yaml` (the `#` column). If the manifest does not exist: for cycle reviews (Phase 7.5 already ran), count files in `{output-dir}/incremental/`; for ad-hoc, domain, or full-audit reviews (Phase 7.5 did not run), query findings via `ideate_artifact_query`.
+**work_items_reviewed**: Count distinct work item numbers referenced in the review manifest content (`{manifest_content}` from Phase 3.5). If the manifest is unavailable, query findings via `ideate_artifact_query`.
 
 **andon_events**: Call `ideate_artifact_query({type: "journal_entry"})` to retrieve the most recent journal entries (last 20 entries). Count entries for the current cycle number N that mention "Andon" (case-insensitive). Use 0 if journal entries cannot be retrieved.
 
 **cycle**: Use the cycle number N determined in Phase 1.2. If not a cycle review (ad-hoc, domain, or full audit), use `null`.
 
-## 7.6.2 Emit the Event
+## 7.6.2 Emit the Metric
 
-Append one JSON line to `.ideate/metrics.jsonl`:
+Call `ideate_emit_metric` with the following payload:
 
 ```json
-{"timestamp":"<ISO8601>","event_type":"quality_summary","skill":"review","cycle":<N>,"findings":{"total":<N>,"by_severity":{"critical":<N>,"significant":<N>,"minor":<N>,"suggestion":<N>},"by_reviewer":{"code-reviewer":{"critical":<N>,"significant":<N>,"minor":<N>,"suggestion":<N>},"spec-reviewer":{"critical":<N>,"significant":<N>,"minor":<N>,"suggestion":<N>},"gap-analyst":{"critical":<N>,"significant":<N>,"minor":<N>,"suggestion":<N>}},"by_category":{"requirements_missed":<N>,"bugs_introduced":<N>,"principles_violated":<N>,"implementation_gaps":<N>,"other":<N>}},"work_items_reviewed":<N>,"andon_events":<N>}
+{"timestamp":"<ISO8601>","event_type":"quality_summary","skill":"review","cycle":<N>,"findings":{"total":<N>,"by_severity":{"critical":<N>,"significant":<N>,"minor":<N>,"suggestion":<N>},"by_reviewer":{"code-reviewer":{"critical":<N>,"significant":<N>,"minor":<N>},"spec-reviewer":{"critical":<N>,"significant":<N>,"minor":<N>},"gap-analyst":{"critical":<N>,"significant":<N>,"minor":<N>}},"by_category":{"requirements_missed":<N>,"bugs_introduced":<N>,"principles_violated":<N>,"implementation_gaps":<N>,"other":<N>}},"work_items_reviewed":<N>,"andon_events":<N>}
 ```
 
 - `timestamp`: ISO 8601 timestamp at the moment of emission.
@@ -532,7 +527,7 @@ Append one JSON line to `.ideate/metrics.jsonl`:
 
 ## 7.6.3 Best-Effort Clause
 
-If count derivation fails (e.g., summary.yaml is missing, cannot be parsed, or the format does not match expected headings), or if the event cannot be written to `metrics.jsonl`, skip the quality_summary event entirely and proceed to Phase 8 without interruption. Log `quality_summary event skipped: {reason}` in the output so the user is aware.
+If count derivation fails (e.g., summary artifact is missing, cannot be parsed, or the format does not match expected headings), or if the metric cannot be emitted, skip the quality_summary metric entirely and proceed to Phase 8 without interruption. Log `quality_summary metric skipped: {reason}` in the output so the user is aware.
 
 Do not retry. Do not block the review on this step.
 
@@ -542,9 +537,9 @@ Do not retry. Do not block the review on this step.
 
 Append a review journal entry via `ideate_append_journal`. This is strictly append — do not modify any existing entries.
 
-Call the tool whose name ends in `ideate_append_journal` (it will be prefixed, e.g. `mcp__ideate_artifact_server__ideate_append_journal` or `mcp__plugin_ideate_ideate_artifact_server__ideate_append_journal`) with `("review", {date}, {entry_type}, {body})`. It appends a structured journal entry atomically.
+Call `ideate_append_journal` with `("review", {date}, {entry_type}, {body})`. It appends a structured journal entry atomically.
 
-If this tool call fails, stop and report: "The ideate MCP artifact server is required but not available. Verify .mcp.json configuration."
+If this tool call fails, stop and report: "The ideate MCP artifact server is required but not available. Verify MCP configuration."
 
 The journal body format:
 
@@ -579,7 +574,7 @@ Work items reviewed: {N} (from review manifest)
 
 ## 9.2 Critical and Significant Findings
 
-Present each critical and significant finding with enough context for the user to understand the issue without reading the full review files. Include:
+Present each critical and significant finding with enough context for the user to understand the issue without reading the full review artifacts. Include:
 - What the problem is
 - Where it is (file references)
 - Which principle or work item it relates to
@@ -603,7 +598,7 @@ After the user has responded to decision points, append their decisions via `ide
 
 ## 9.5 Minor Findings and Suggestions
 
-Briefly summarize minor findings and suggestions. Tell the user they are documented in the review files for reference. Do not walk through each one unless the user asks.
+Briefly summarize minor findings and suggestions. Tell the user they are documented in the review artifacts for reference. Do not walk through each one unless the user asks.
 
 ## 9.6 Refinement Recommendation
 
@@ -622,11 +617,13 @@ If no refinement is needed:
 
 # Metrics Instrumentation
 
-After each agent spawn (via the Agent tool), append one JSON entry to `.ideate/metrics.jsonl`. Best-effort only: if writing fails, continue without interruption.
+After each agent spawn (via the Agent tool), emit one metric entry via `ideate_emit_metric`. Best-effort only: if the call fails, continue without interruption.
 
-**Entry schema (one JSON object per line):**
+**Payload schema (one call per agent spawn):**
 
-    {"timestamp":"<ISO8601>","skill":"review","phase":"<id>","cycle":null,"agent_type":"<type>","model":"<model>","work_item":null,"wall_clock_ms":<ms>,"turns_used":<N or null>,"context_files_read":["<path>",...],"input_tokens":<N or null>,"output_tokens":<N or null>,"cache_read_tokens":<N or null>,"cache_write_tokens":<N or null>,"mcp_tools_called":["<tool_name>",...],"finding_count":<N or null>,"finding_severities":{"critical":<N>,"significant":<N>,"minor":<N>} or null}
+```json
+{"timestamp":"<ISO8601>","skill":"review","phase":"<id>","cycle":null,"agent_type":"<type>","model":"<model>","work_item":null,"wall_clock_ms":<ms>,"turns_used":<N or null>,"context_files_read":["<path>",...],"input_tokens":<N or null>,"output_tokens":<N or null>,"cache_read_tokens":<N or null>,"cache_write_tokens":<N or null>,"mcp_tools_called":["<tool_name>",...],"finding_count":<N or null>,"finding_severities":{"critical":<N>,"significant":<N>,"minor":<N>} or null}
+```
 
 - `timestamp` — ISO 8601 when the agent was spawned.
 - `skill` — `"review"` (constant for this skill).
@@ -643,7 +640,7 @@ After each agent spawn (via the Agent tool), append one JSON entry to `.ideate/m
 - `cache_write_tokens` — integer or null. Prompt caching write tokens if available. Null if not available.
 - `mcp_tools_called` — array of strings. Names of MCP tools called to assemble context for this agent spawn (e.g., `["ideate_get_context_package", "ideate_get_work_item_context"]`). Empty array `[]` if no MCP tools were called.
 - `finding_count` — optional (null if not available). For reviewer spawns (`code-reviewer`, `spec-reviewer`, `gap-analyst`): total number of findings across all severities produced by that reviewer. Null for `journal-keeper` and `domain-curator` entries, and null if the reviewer output cannot be parsed.
-- `finding_severities` — optional (null if not available). For reviewer spawns: object with keys `critical`, `significant`, `minor` and integer values derived from parsing the reviewer's output file. Null for `journal-keeper` and `domain-curator` entries, and null if the output cannot be parsed.
+- `finding_severities` — optional (null if not available). For reviewer spawns: object with keys `critical`, `significant`, `minor` and integer values derived from parsing the reviewer's output. Null for `journal-keeper` and `domain-curator` entries, and null if the output cannot be parsed.
 
 Before each Agent tool call, record which MCP tool calls (if any) were made to assemble context for that spawn. Include the tool names in the `mcp_tools_called` array. If no MCP tools were called, use an empty array `[]`.
 
@@ -651,7 +648,7 @@ Extract from agent response metadata if available. Set to null if token counts a
 
 Record timestamp immediately before the Agent tool call; compute `wall_clock_ms` after it returns.
 
-**Turns tracking and budget warning**: After each Agent tool call returns, extract `tool_uses` from the response `<usage>` block as `turns_used`. Use the following maxTurns budget per agent type: `code-reviewer`: 40, `spec-reviewer`: 50, `gap-analyst`: 50, `journal-keeper`: 30, `domain-curator`: 50. After recording the metrics entry, if `turns_used` is non-null and the agent's maxTurns is known, compute the utilization: `turns_used / maxTurns`. If utilization > 0.80, append a warning to the Phase 8 journal entry (via `ideate_append_journal`):
+**Turns tracking and budget warning**: After each Agent tool call returns, extract `tool_uses` from the response `<usage>` block as `turns_used`. Use the maxTurns value from `{config}.agent_budgets` for each agent type (`code-reviewer`, `spec-reviewer`, `gap-analyst`, `journal-keeper`, `domain-curator`). If config was not loaded or the agent type is not present in `agent_budgets`, use the agent's frontmatter default. After recording the metric, if `turns_used` is non-null and the agent's maxTurns is known, compute the utilization: `turns_used / maxTurns`. If utilization > 0.80, append a warning to the Phase 8 journal entry (via `ideate_append_journal`):
 
 > Agent {agent_type} used {turns_used}/{maxTurns} turns ({pct}%) — near budget limit
 
@@ -665,7 +662,7 @@ where `{pct}` is `round(turns_used / maxTurns * 100)`. This warning is best-effo
 > Models used: {list of distinct models}
 > Slowest agent: {agent_type} — {ms}ms
 
-If `metrics.jsonl` could not be written, note "metrics unavailable" and omit the breakdown.
+If metrics could not be emitted, note "metrics unavailable" and omit the breakdown.
 
 ---
 
@@ -673,7 +670,7 @@ If `metrics.jsonl` could not be written, note "metrics unavailable" and omit the
 
 ## Subagent spawning unavailable
 
-If the Agent tool is not available for spawning subagents, you cannot run reviewers in parallel. In this case, run all four reviews yourself, sequentially, following each agent's instructions. Write the output files as you go. This is slower but produces the same artifacts. Maintain the Phase 4a/4b ordering: run code-reviewer, spec-reviewer, and gap-analyst first, then run journal-keeper last so it can cross-reference the other three outputs.
+If the Agent tool is not available for spawning subagents, you cannot run reviewers in parallel. In this case, run all four reviews yourself, sequentially, following each agent's instructions. Write the output artifacts via `ideate_write_artifact` as you go. This is slower but produces the same artifacts. Maintain the Phase 4a/4b ordering: run code-reviewer, spec-reviewer, and gap-analyst first, then run journal-keeper last so it can cross-reference the other three outputs.
 
 When reviewing sequentially yourself, follow each agent's checklist and output format exactly. Do not blend concerns — keep code quality, spec adherence, gap analysis, and decision synthesis in separate outputs. The separation is the point.
 
@@ -689,14 +686,14 @@ If a reviewer session fails or times out:
 
 - Missing findings for the current cycle: proceed without them. The capstone review does not depend on incremental findings existing — it accounts for them when they do.
 - Missing work items: this suggests execution was incomplete. Note this in the summary as a significant finding.
-- Missing steering documents (beyond the required principles/GP-*.yaml and modules/overview.yaml): note the absence and review against whatever context is available.
+- Missing steering documents (beyond the required principles and overview): note the absence and review against whatever context is available.
 
 ## Curator fails
 
 If the domain-curator agent fails to produce output:
 1. Note the failure in the journal
 2. Do not block the review presentation — continue to Phase 9
-3. Note in the summary that domain files were not updated this cycle
+3. Note in the summary that domain artifacts were not updated this cycle
 4. The user can re-run the curator manually by spawning the domain-curator agent directly
 
 ## No source code found
@@ -706,3 +703,18 @@ If the project source code cannot be located from the plan artifacts, ask the us
 > I cannot determine where the project source code is from the plan artifacts. What is the path to the project source code?
 
 Do not proceed with the review without access to the source code. The review requires reading actual implementation, not just plan artifacts.
+
+---
+
+# Self-Check
+
+Before completing this skill, verify all of the following:
+
+1. **No artifact path references**: The skill contains zero references to paths like `.ideate/`, `.ideate/cycles/`, `.ideate/domains/`, `.ideate/work-items/`, or any other filesystem paths under the artifact directory. All artifact access goes through MCP tools.
+2. **No filename references**: The skill does not reference filenames like `review-manifest.yaml`, `code-quality.yaml`, `spec-adherence.yaml`, `gap-analysis.yaml`, `decision-log.yaml`, `summary.yaml`, `metrics.jsonl`, `index.yaml`, or any other artifact filenames. Artifacts are referenced by type and designation.
+3. **Output location via MCP**: Output locations are derived by the MCP server from type, cycle number, scope, and date parameters passed to `ideate_write_artifact`. The skill never constructs directory paths.
+4. **Review manifest via tool**: The review manifest is retrieved via `ideate_get_review_manifest()`, not by reading a file path.
+5. **Reviewer outputs by type/id**: Reviewer outputs are retrieved via `ideate_artifact_query({type: "cycle_summary", id: "...", cycle: N})`, not by reading file paths.
+6. **Metrics via ideate_emit_metric**: All metric emissions use `ideate_emit_metric` with a payload object. No direct file appends.
+7. **Domain check via MCP**: Domain existence and state are checked via `ideate_get_domain_state()`, not by checking filesystem existence.
+8. **Review orchestration preserved**: The phase structure, reviewer spawn order (4a parallel, 4b sequential), curator logic, archival, and user presentation remain unchanged from the original.

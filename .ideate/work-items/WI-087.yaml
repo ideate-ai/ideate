@@ -1,7 +1,7 @@
 id: WI-087
 type: work_item
 title: Dense Machine-Parseable Spec Format
-status: pending
+status: obsolete
 complexity: high
 scope:
   - {path: plan/work-items.yaml, op: create}
@@ -25,15 +25,15 @@ blocks:
   - "082"
 criteria:
   - "All structured work item data (id, title, scope, dependencies, criteria, complexity) is stored in a single file: `plan/work-items.yaml`"
-  - Implementation notes (prose detail for workers) are stored separately in `plan/notes/{id}.md` — one file per item, loaded only by the worker executing that item
-  - A CLI validation tool exists at `scripts/validate-specs.sh` (or `.py`) that performs DAG validation, scope overlap detection, coverage checks, and criteria linting (viewer tool is deferred — not MVP)
+  - "Implementation notes (prose detail for workers) are stored separately in `plan/notes/{id}.md` — one file per item, loaded only by the worker executing that item"
+  - "A CLI validation tool exists at `scripts/validate-specs.sh` (or `.py`) that performs DAG validation, scope overlap detection, coverage checks, and criteria linting (viewer tool is deferred — not MVP)"
   - The consolidated format is ≤50% of the token count of the equivalent per-file markdown for the structured fields (measured on a 15-item plan)
-  - `skills/plan/SKILL.md` Phase 7 writes work items in the new format
-  - `skills/execute/SKILL.md` Phase 2 reads work items from the new format
-  - `skills/review/SKILL.md` Phase 3.5 (manifest generation) reads from the new format — or is replaced entirely, since the consolidated file IS effectively a manifest
-  - `skills/refine/SKILL.md` Phase 3 (line 60) reads work items from the new format (not just Phase 7h write path — the read path in Phase 3 must also be updated)
-  - `skills/refine/SKILL.md` Phase 7h appends new items to the consolidated file and determines next available ID from `work-items.yaml` (not from globbing `plan/work-items/*.md`)
-  - `skills/brrr/SKILL.md` Phase 3 reads from the new format
+  - "`skills/plan/SKILL.md` Phase 7 writes work items in the new format"
+  - "`skills/execute/SKILL.md` Phase 2 reads work items from the new format"
+  - "`skills/review/SKILL.md` Phase 3.5 (manifest generation) reads from the new format — or is replaced entirely, since the consolidated file IS effectively a manifest"
+  - "`skills/refine/SKILL.md` Phase 3 (line 60) reads work items from the new format (not just Phase 7h write path — the read path in Phase 3 must also be updated)"
+  - "`skills/refine/SKILL.md` Phase 7h appends new items to the consolidated file and determines next available ID from `work-items.yaml` (not from globbing `plan/work-items/*.md`)"
+  - "`skills/brrr/SKILL.md` Phase 3 reads from the new format"
   - "076's review manifest generation in brrr is updated to read from `work-items.yaml` instead of globbing `plan/work-items/*.md` (076's manifest code must work with the new format, not be preserved as-is against a deleted format)"
   - "All prior changes to skill files are preserved: metrics logging (084), worker self-check (086), convergence check parsing (077), conditional curator model (078)"
   - "Non-LLM tooling can parse `work-items.yaml` to: build the dependency DAG, detect cycles, compute topological sort, find file scope overlaps, validate 100% coverage, and generate execution strategy groups"
@@ -82,6 +82,7 @@ notes: |
   ### Backward compatibility
   
   Skills check: if `work-items.yaml` exists, use it; otherwise fall back to `plan/work-items/*.md`.
+resolution: "Dense spec format superseded by YAML work-items in .ideate/work-items/ with MCP artifact server."
 cycle_created: 1
 cycle_modified: null
 content_hash: "672fea444de9f70b6433a36195d97d86da66235f32eb5a8533b2e5a982e820d6"

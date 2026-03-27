@@ -13,7 +13,7 @@ Available from controller context:
 - `{max_cycles}` — the configured maximum
 - `{convergence_achieved}` — true or false
 - `{last_cycle_findings}` — final cycle's finding counts (critical, significant, minor)
-- `{started_at}` — ISO 8601 timestamp from `brrr-state.yaml`
+- `{started_at}` — ISO 8601 timestamp from `ideate_get_brrr_state()`
 
 ## Instructions
 
@@ -27,12 +27,7 @@ Print:
 Zero critical findings. Zero significant findings. All guiding principles satisfied.
 ```
 
-Update `{project_root}/.ideate/brrr-state.yaml`:
-
-```
-convergence_achieved: true
-cycles_completed: {N}
-```
+Call `ideate_update_brrr_state({state: {convergence_achieved: true, cycles_completed: {N}}})` to persist the final state.
 
 Append via `ideate_append_journal`:
 
@@ -79,9 +74,9 @@ Total agents spawned across all cycles: {N}
 Total wall-clock across all cycles: {total_ms}ms
 ```
 
-If `metrics.jsonl` could not be written, note "metrics unavailable".
+If `ideate_emit_metric` calls failed, note "metrics unavailable".
 
-**Reconstructing per-cycle data**: `brrr-state.yaml` stores only aggregates. Read journal entries from `{project_root}/.ideate/cycles/*/journal/J-*.yaml` — collect all `[brrr]` entries. For each cycle N, collect: work item completions, review summaries, and proxy-human decisions. Read `{project_root}/.ideate/proxy-human-log.yaml` if it exists and extract entries by cycle. For each proxy-human decision where the decision is `DEFER`, record it as a deferred item for that cycle.
+**Reconstructing per-cycle data**: The brrr session state (via `ideate_get_brrr_state()`) stores only aggregates. Retrieve journal entries via `ideate_artifact_query({type: "journal_entry"})` — collect all `[brrr]` entries. For each cycle N, collect: work item completions, review summaries, and proxy-human decisions. Also retrieve proxy-human decisions from the journal entries. For each proxy-human decision where the decision is `DEFER`, record it as a deferred item for that cycle.
 
 Present the full activity report:
 
@@ -110,14 +105,14 @@ Deferred decisions: {N} — {list of deferred event topics, or "None."}
 ...
 
 ### Proxy-Human Decision Log Summary
-{If proxy-human-log.yaml exists: summarize each decision entry — cycle number, event, decision, confidence.}
+{If proxy-human journal entries exist: summarize each decision entry — cycle number, event, decision, confidence.}
 {If no decisions were made: "No proxy-human decisions were required."}
 
 ### Open Items
 
 **Deferred Andon Events**
 {For each deferred proxy-human decision across all cycles, list:}
-- Cycle {N} — {event description} — Rationale: {proxy-human's deferral rationale from proxy-human-log.yaml}
+- Cycle {N} — {event description} — Rationale: {proxy-human's deferral rationale from journal entries}
 {If no deferred Andon events: "None."}
 
 **Other Unresolved Items**
@@ -133,7 +128,7 @@ Deferred decisions: {N} — {list of deferred event topics, or "None."}
 
 Activity report presented to user. Session ends.
 
-## Artifacts Written
+## Artifacts Written (all via MCP)
 
-- `{project_root}/.ideate/brrr-state.yaml` — `convergence_achieved`, `cycles_completed` updated (Phase 7 only)
-- `{project_root}/.ideate/cycles/{NNN}/journal/` — convergence/stop entry and overall metrics summary appended
+- Brrr session state — `convergence_achieved`, `cycles_completed` updated via `ideate_update_brrr_state` (Phase 7 only)
+- Journal entries — convergence/stop entry and overall metrics summary appended via `ideate_append_journal`

@@ -10,10 +10,9 @@ tools:
   - Glob
   - WebSearch
   - WebFetch
-  - Write
 model: sonnet
 background: true
-maxTurns: 40
+maxTurns: 80
 ---
 
 You are a research agent. You have been spawned to investigate a specific topic for a software planning session.
@@ -54,9 +53,10 @@ Known issues, gotchas, deprecation timelines, common failure modes, security con
 ## Sources
 URLs consulted, file paths read, or documentation referenced. List each on its own line. If relying on training knowledge (no web sources), state that explicitly.
 
-## Saving findings
+## Output
 
-Save the structured report to the output file path specified in your spawn prompt.
+Return your complete structured report in your response. Do not write files to disk.
+The spawning skill will persist your findings via MCP tools.
 
 ## Web search fallback
 

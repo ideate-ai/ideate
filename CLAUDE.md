@@ -28,7 +28,7 @@ Skills produce YAML artifacts in `.ideate/`, accessed exclusively through MCP to
 
 ```
 .ideate/
-├── config.json              # Schema version
+├── config.json              # Schema version, agent budgets, PPR config
 ├── plan/                    # architecture.yaml, overview.yaml, execution-strategy.yaml
 ├── steering/                # guiding-principles.yaml, constraints.yaml, research/
 ├── work-items/              # WI-{NNN}.yaml per work item

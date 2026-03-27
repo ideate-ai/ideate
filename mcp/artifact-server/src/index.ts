@@ -7,11 +7,11 @@ import {
 import Database from "better-sqlite3";
 import { drizzle } from "drizzle-orm/better-sqlite3";
 import * as path from "path";
-import { TOOLS, handleTool, ToolContext } from "./tools/index.js";
-import { artifactWatcher } from "./watcher.js";
+import { TOOLS, handleTool, ToolContext, signalIndexReady, signalIndexFailed } from "./tools/index.js";
+import { artifactWatcher, BatchChangeEvent } from "./watcher.js";
 import { resolveArtifactDir } from "./config.js";
 import { createSchema, checkSchemaVersion } from "./schema.js";
-import { rebuildIndex, RebuildStats } from "./indexer.js";
+import { rebuildIndex, indexFiles, removeFiles, RebuildStats } from "./indexer.js";
 import * as dbSchema from "./db.js";
 
 // ---------------------------------------------------------------------------
@@ -50,31 +50,8 @@ const drizzleDb = drizzle(db, { schema: dbSchema });
 
 const ctx: ToolContext = { db, drizzleDb, ideateDir };
 
-let stats: RebuildStats;
-try {
-  stats = rebuildIndex(db, drizzleDb, ideateDir);
-} catch (err) {
-  console.error(`[ideate-artifact-server] Index rebuild failed: ${(err as Error).message}`);
-  process.exit(1);
-}
-
-console.error(`[ideate-artifact-server] started, ${stats.files_scanned} files indexed`);
-
 // ---------------------------------------------------------------------------
-// File watcher: re-run rebuild on any change under .ideate/
-// ---------------------------------------------------------------------------
-
-artifactWatcher.watch(ideateDir);
-artifactWatcher.on("change", () => {
-  try {
-    rebuildIndex(db, drizzleDb, ideateDir);
-  } catch (err) {
-    console.error("[watcher] rebuildIndex failed:", err);
-  }
-});
-
-// ---------------------------------------------------------------------------
-// MCP server
+// MCP server — connect transport BEFORE indexing so MCP is available immediately
 // ---------------------------------------------------------------------------
 
 const server = new Server(
@@ -118,3 +95,31 @@ process.on("SIGTERM", () => {
 
 const transport = new StdioServerTransport();
 await server.connect(transport);
+
+// ---------------------------------------------------------------------------
+// Deferred indexing: rebuild index after transport is connected, then start watcher
+// ---------------------------------------------------------------------------
+
+setImmediate(() => {
+  try {
+    const stats: RebuildStats = rebuildIndex(db, drizzleDb, ideateDir);
+    signalIndexReady();
+    console.error(`[ideate-artifact-server] started, ${stats.files_scanned} files indexed`);
+
+    // File watcher: incrementally index changed files
+    artifactWatcher.watch(ideateDir);
+    artifactWatcher.on("change", (event: BatchChangeEvent) => {
+      try {
+        const yamlChanged = event.changed.filter(f => f.endsWith('.yaml') || f.endsWith('.yml'));
+        const yamlDeleted = event.deleted.filter(f => f.endsWith('.yaml') || f.endsWith('.yml'));
+        if (yamlChanged.length > 0) indexFiles(db, drizzleDb, yamlChanged);
+        if (yamlDeleted.length > 0) removeFiles(db, drizzleDb, yamlDeleted);
+      } catch (err) {
+        console.error("[watcher] incremental index failed:", err);
+      }
+    });
+  } catch (err) {
+    console.error(`[ideate-artifact-server] rebuildIndex failed: ${(err as Error).message}`);
+    signalIndexFailed(err as Error);
+  }
+});

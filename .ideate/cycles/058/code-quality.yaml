@@ -1,0 +1,33 @@
+id: code-quality
+type: cycle_summary
+cycle: 58
+reviewer: code-reviewer
+content: |-
+  ## Verdict: Fail
+
+  The incremental watcher introduced by WI-302 does not filter file paths to .yaml/.yml before calling indexFiles, causing parse failure logging on every write to non-YAML files in .ideate/ (e.g., config.json, metrics.jsonl).
+
+  ## Critical Findings
+  None.
+
+  ## Significant Findings
+
+  ### S1: Watcher passes non-YAML files to indexFiles, producing spurious parse errors
+  - File: mcp/artifact-server/src/index.ts:111-122
+  - Issue: The change event handler calls indexFiles with every file path the watcher emits. Non-YAML files (config.json, metrics.jsonl) are passed to indexFiles, producing parse failures. This is a regression from rebuildIndex which filters to .yaml/.yml.
+  - Impact: Spurious parse failures on every non-YAML file change. If the handler ever logs errors, this produces high-frequency noise.
+  - Fix: Filter to .yaml/.yml in the watcher event handler before calling indexFiles/removeFiles.
+
+  ## Minor Findings
+
+  ### M1: pretest script warns but does not compile
+  - WI-172 criterion says 'compiles' but implementation only checks timestamps and exits 1 when stale.
+
+  ### M2: 11 pre-existing question files fail YAML parsing
+  - Q-03, Q-21, Q-39, Q-45, Q-46, Q-49, Q-50, Q-52, Q-61, Q-65, Q-79 have unquoted backticks in description field. Outside WI-303 scope but worth noting.
+
+  ### M3: indexFiles has no type guard for non-YAML files
+  - rebuildIndex filters to .yaml/.yml but indexFiles does not. Inconsistent intake behavior.
+content_hash: 9ef10cc4d2594e28b35e65657ad43cfe50b37fac2bd4015548e3cb1519d082da
+token_count: 390
+file_path: .ideate/cycles/058/code-quality.yaml

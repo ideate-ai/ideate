@@ -8,7 +8,10 @@ import {
   resolveArtifactDir,
   createIdeateDir,
   writeConfig,
+  getConfigWithDefaults,
   CONFIG_SCHEMA_VERSION,
+  DEFAULT_AGENT_BUDGETS,
+  DEFAULT_PPR_CONFIG,
 } from "../config.js";
 import type { IdeateConfigJson } from "../config.js";
 
@@ -271,5 +274,100 @@ describe("writeConfig", () => {
       schema_version: 2,
       project_name: "updated",
     });
+  });
+});
+
+// -----------------------------------------------------------------------
+// getConfigWithDefaults
+// -----------------------------------------------------------------------
+
+describe("getConfigWithDefaults", () => {
+  it("returns all fields with defaults when config has only schema_version", () => {
+    const ideateDir = path.join(tmpDir, ".ideate");
+    fs.mkdirSync(ideateDir, { recursive: true });
+    writeConfig(ideateDir, { schema_version: 2 });
+
+    const result = getConfigWithDefaults(ideateDir);
+
+    expect(result.schema_version).toBe(2);
+    // agent_budgets should be the full defaults
+    expect(result.agent_budgets).toEqual(DEFAULT_AGENT_BUDGETS);
+    // ppr should be fully populated with defaults
+    expect(result.ppr.alpha).toBe(DEFAULT_PPR_CONFIG.alpha);
+    expect(result.ppr.max_iterations).toBe(DEFAULT_PPR_CONFIG.max_iterations);
+    expect(result.ppr.convergence_threshold).toBe(
+      DEFAULT_PPR_CONFIG.convergence_threshold
+    );
+    expect(result.ppr.edge_type_weights).toEqual(
+      DEFAULT_PPR_CONFIG.edge_type_weights
+    );
+    expect(result.ppr.default_token_budget).toBe(
+      DEFAULT_PPR_CONFIG.default_token_budget
+    );
+  });
+
+  it("returns merged config when all optional fields are explicitly set", () => {
+    const ideateDir = path.join(tmpDir, ".ideate");
+    fs.mkdirSync(ideateDir, { recursive: true });
+
+    const customConfig: IdeateConfigJson = {
+      schema_version: 2,
+      project_name: "my-project",
+      agent_budgets: {
+        "code-reviewer": 200,
+        "custom-agent": 50,
+      },
+      ppr: {
+        alpha: 0.25,
+        max_iterations: 100,
+        convergence_threshold: 1e-8,
+        edge_type_weights: { depends_on: 2.0 },
+        default_token_budget: 100000,
+      },
+    };
+    writeConfig(ideateDir, customConfig);
+
+    const result = getConfigWithDefaults(ideateDir);
+
+    expect(result.schema_version).toBe(2);
+    expect(result.project_name).toBe("my-project");
+    // custom agent budget overrides default, and extra agent is present
+    expect(result.agent_budgets["code-reviewer"]).toBe(200);
+    expect(result.agent_budgets["custom-agent"]).toBe(50);
+    // default agent budgets not overridden remain
+    expect(result.agent_budgets["architect"]).toBe(160);
+    // ppr scalars from config
+    expect(result.ppr.alpha).toBe(0.25);
+    expect(result.ppr.max_iterations).toBe(100);
+    expect(result.ppr.convergence_threshold).toBe(1e-8);
+    expect(result.ppr.default_token_budget).toBe(100000);
+    // edge_type_weights: custom overrides default, others from default remain
+    expect(result.ppr.edge_type_weights!["depends_on"]).toBe(2.0);
+    expect(result.ppr.edge_type_weights!["governed_by"]).toBe(0.8);
+  });
+
+  it("applies defaults for missing ppr sub-fields when ppr is partially specified", () => {
+    const ideateDir = path.join(tmpDir, ".ideate");
+    fs.mkdirSync(ideateDir, { recursive: true });
+    writeConfig(ideateDir, { schema_version: 2, ppr: { alpha: 0.5 } });
+
+    const result = getConfigWithDefaults(ideateDir);
+
+    expect(result.ppr.alpha).toBe(0.5);
+    expect(result.ppr.max_iterations).toBe(DEFAULT_PPR_CONFIG.max_iterations);
+    expect(result.ppr.convergence_threshold).toBe(
+      DEFAULT_PPR_CONFIG.convergence_threshold
+    );
+  });
+
+  it("returns defaults when config.json does not exist", () => {
+    const ideateDir = path.join(tmpDir, ".ideate");
+    fs.mkdirSync(ideateDir, { recursive: true });
+    // No config.json written
+
+    const result = getConfigWithDefaults(ideateDir);
+
+    expect(result.agent_budgets).toEqual(DEFAULT_AGENT_BUDGETS);
+    expect(result.ppr.alpha).toBe(DEFAULT_PPR_CONFIG.alpha);
   });
 });

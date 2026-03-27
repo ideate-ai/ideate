@@ -331,12 +331,14 @@ content: |
   
   **Query approach**: Hybrid — Drizzle ORM for type-safe CRUD (inserts, single-table selects, deletes), raw `db.prepare()` for graph traversal (recursive CTEs, multi-table JOINs across nodes + extensions + edges).
   
-  **Tools (11)**: Organized in `src/tools/` directory. `ToolContext` interface provides `db`, `drizzleDb`, and `ideateDir` to all tool handlers. Write tools write YAML first (GP-8), then synchronously upsert affected SQLite rows.
-  
+  **Tools (17)**: Organized in `src/tools/` directory. `ToolContext` interface provides `db`, `drizzleDb`, and `ideateDir` to all tool handlers. Write tools write YAML first (GP-8), then synchronously upsert affected SQLite rows.
+
   | Tool | Category | File |
   |------|----------|------|
   | `ideate_get_work_item_context` | Context assembly | tools/context.ts |
   | `ideate_get_context_package` | Context assembly | tools/context.ts |
+  | `ideate_assemble_context` | Context assembly | tools/context.ts |
+  | `ideate_get_config` | Configuration | tools/index.ts (handler inline; reads src/config.ts) |
   | `ideate_artifact_query` | Graph query | tools/query.ts |
   | `ideate_get_execution_status` | Execution status | tools/execution.ts |
   | `ideate_get_review_manifest` | Execution status | tools/execution.ts |
@@ -346,6 +348,10 @@ content: |
   | `ideate_append_journal` | Write | tools/write.ts |
   | `ideate_archive_cycle` | Write | tools/write.ts |
   | `ideate_write_work_items` | Write | tools/write.ts |
+  | `ideate_update_work_items` | Write | tools/write.ts |
+  | `ideate_write_artifact` | Write | tools/write.ts |
+  | `ideate_emit_event` | Events | tools/events.ts |
+  | `ideate_get_metrics` | Metrics | tools/metrics.ts |
   
   Session orchestration and remote work dispatch remain in external MCP servers.
   
@@ -598,11 +604,13 @@ content: |
   | mcp/artifact-server/src/indexer.ts | TypeScript | RebuildStats, MAX_DEPENDENCY_NODES, MAX_DEPENDENCY_EDGES, detectCycles, rebuildIndex |
   | mcp/artifact-server/src/watcher.ts | TypeScript | FileChangeEvent, ArtifactWatcher, artifactWatcher |
   | mcp/artifact-server/src/tools/index.ts | TypeScript | ToolContext, TOOLS, handleTool |
-  | mcp/artifact-server/src/tools/context.ts | TypeScript | handleGetWorkItemContext, handleGetContextPackage |
+  | mcp/artifact-server/src/tools/context.ts | TypeScript | handleGetWorkItemContext, handleGetContextPackage, handleAssembleContext |
   | mcp/artifact-server/src/tools/query.ts | TypeScript | handleArtifactQuery |
   | mcp/artifact-server/src/tools/execution.ts | TypeScript | handleGetExecutionStatus, handleGetReviewManifest |
   | mcp/artifact-server/src/tools/analysis.ts | TypeScript | handleGetConvergenceStatus, handleGetDomainState, handleGetProjectStatus |
-  | mcp/artifact-server/src/tools/write.ts | TypeScript | handleAppendJournal, handleArchiveCycle, handleWriteWorkItems |
+  | mcp/artifact-server/src/tools/write.ts | TypeScript | handleAppendJournal, handleArchiveCycle, handleWriteWorkItems, handleUpdateWorkItems, handleWriteArtifact |
+  | mcp/artifact-server/src/tools/events.ts | TypeScript | handleEmitEvent |
+  | mcp/artifact-server/src/tools/metrics.ts | TypeScript | handleGetMetrics |
   | mcp/artifact-server/src/index.ts | TypeScript | (MCP server entry point — no public exports) |
   | scripts/migrate-to-v3.ts | TypeScript | MigrationContext, sha256, toYaml, buildArtifact, parsePrinciples, parseYamlFlowArray, parseWorkItemsYaml, migrateJournal, migrateArchiveCycles, extractSection, migratePlanArtifacts, migrateSteeringArtifacts, migrateInterviews, migrateMetrics, MigrationOptions, runMigration |
   | scripts/migrate-to-v3.js | JavaScript | sha256, toYaml, buildArtifact, parsePrinciples, parseYamlFlowArray, parseWorkItemsYaml, migrateJournal, migrateArchiveCycles, extractSection, migratePlanArtifacts, migrateSteeringArtifacts, migrateInterviews, migrateMetrics, runMigration |

@@ -1,5 +1,10 @@
 #!/usr/bin/env bash
 # validate-specs.sh — Non-LLM validation of work-items.yaml
+# NOTE (2026-03-26): This script is NOT functional for the v3 per-file
+# WI-{NNN}.yaml format. It expects a consolidated plan/work-items.yaml
+# file that no longer exists. Needs rewriting to glob individual YAML
+# files from work-items/ directory.
+#
 #
 # Usage: ./scripts/validate-specs.sh <subcommand> [artifact-dir]
 #

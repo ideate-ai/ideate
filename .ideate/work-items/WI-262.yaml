@@ -1,14 +1,13 @@
 id: WI-262
-type: refinement
+type: work_item
 title: Update legacy documentation path placeholders
 complexity: low
-status: completed
+status: done
 depends: []
 blocks: []
-file_scope:
-  modify:
-    - docs/context-package-spec.md
-    - mcp/artifact-server/README.md
+scope:
+  - {path: docs/context-package-spec.md, op: modify}
+  - {path: mcp/artifact-server/README.md, op: modify}
 criteria:
   - All {artifact_dir} changed to {project_root}
   - Consistent placeholder style across docs

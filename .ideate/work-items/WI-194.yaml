@@ -1,10 +1,11 @@
 id: WI-194
 type: work_item
 title: Update architecture Section 9 source code index
-status: pending
+status: done
 complexity: small
 scope:
-  - {path: specs/plan/architecture.md, op: modify}
+  - path: specs/plan/architecture.md
+    op: modify
 depends: []
 blocks: []
 criteria:
@@ -19,16 +20,16 @@ module: null
 domain: null
 notes: |
   # WI-194: Update architecture Section 9 source code index
-  
+
   ## Changes
-  
+
   Replace the stale `tools.ts` row in `specs/plan/architecture.md` Section 9 table with the current tool file structure.
-  
+
   ### Remove
   ```
   | mcp/artifact-server/src/tools.ts | TypeScript | TOOLS, handleTool |
   ```
-  
+
   ### Add
   ```
   | mcp/artifact-server/src/tools/index.ts | TypeScript | ToolContext, TOOLS, handleTool |
@@ -38,10 +39,11 @@ notes: |
   | mcp/artifact-server/src/tools/analysis.ts | TypeScript | handleGetConvergenceStatus, handleGetDomainState, handleGetProjectStatus |
   | mcp/artifact-server/src/tools/write.ts | TypeScript | handleAppendJournal, handleArchiveCycle, handleWriteWorkItems |
   ```
-  
+
   Also verify the `index.ts` row is updated if its exports changed (it now imports from `./tools/index.js` instead of `./tools.js`).
 cycle_created: 1
 cycle_modified: null
-content_hash: "45c1f312e501f29741d51b95ecef544254f3aac61ef7fbf41866dbdf74aa7fb0"
-token_count: 534
+content_hash: ebad685912f3beb637d2a27495b982a79a9e3a0d5dd0027292970ed64ad49f65
+token_count: 549
 file_path: .ideate/work-items/WI-194.yaml
+resolution: "Verified complete: ARCHITECTURE.md lists all tools/ directory files individually"

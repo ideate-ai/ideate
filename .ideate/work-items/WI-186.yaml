@@ -1,10 +1,11 @@
 id: WI-186
 type: work_item
 title: Graph query tool (artifact_query)
-status: pending
+status: done
 complexity: large
 scope:
-  - {path: mcp/artifact-server/src/tools/query.ts, op: create}
+  - path: mcp/artifact-server/src/tools/query.ts
+    op: create
 depends:
   - "184"
 blocks:
@@ -17,23 +18,23 @@ criteria:
   - "Graph traversal mode: uses recursive CTE on edges table from related_to node, returns markdown table with ID, Type, Edge, Dir, Depth, Status, Summary columns"
   - "Combined mode: related_to + type/filters filters traversal results"
   - Summary column is type-dependent, truncated at 80 characters
-  - "Error responses: unknown type lists valid types, non-existent related_to node returns \"Node not found\", depth without related_to returns parameter error"
+  - 'Error responses: unknown type lists valid types, non-existent related_to node returns "Node not found", depth without related_to returns parameter error'
   - "Pagination: total count shown in header, offset/limit applied, footer hint when results exceed limit"
   - depth > 10 returns error, limit > 200 silently capped
 module: null
 domain: null
 notes: |
   # WI-186: Graph Query Tool (artifact_query)
-  
+
   ## Two Modes
-  
+
   ### Filter Mode
   When `type` and/or `filters` are provided without `related_to`:
   1. Build WHERE clause from type + filters
   2. JOIN nodes with the appropriate extension table
   3. Apply pagination (LIMIT/OFFSET)
   4. Format as markdown table
-  
+
   SQL pattern (example: findings by severity):
   ```sql
   SELECT n.id, n.type, n.status, n.file_path, f.severity, f.verdict, f.reviewer, f.work_item
@@ -43,7 +44,7 @@ notes: |
   ORDER BY n.id
   LIMIT ? OFFSET ?
   ```
-  
+
   For domain-based queries across types, UNION multiple extension tables:
   ```sql
   SELECT n.id, n.type, n.status FROM nodes n
@@ -53,10 +54,10 @@ notes: |
   JOIN domain_policies dp ON dp.id = n.id WHERE dp.domain = ?
   ...
   ```
-  
+
   ### Graph Traversal Mode
   When `related_to` is provided:
-  
+
   Depth 1 (default):
   ```sql
   SELECT n.id, n.type, n.status, e.edge_type,
@@ -67,7 +68,7 @@ notes: |
     AND (? IS NULL OR e.edge_type IN (?))  -- edge_types filter
     AND (? = 'both' OR (? = 'outgoing' AND e.source_id = ?) OR (? = 'incoming' AND e.target_id = ?))
   ```
-  
+
   Depth > 1: recursive CTE:
   ```sql
   WITH RECURSIVE traverse(id, edge_type, dir, depth) AS (
@@ -84,16 +85,16 @@ notes: |
   ORDER BY t.depth, n.id
   LIMIT ? OFFSET ?
   ```
-  
+
   ### Combined Mode
   When both `related_to` and `type`/`filters`:
   1. Run graph traversal
   2. Filter results by type and/or attribute filters
   3. Apply pagination to filtered results
-  
+
   ## Summary Column
   Type-dependent helper function. Maps each type to the key identifying field(s), truncated at 80 chars. Uses extension table JOIN only for the summary — this is already available from the main query JOIN.
-  
+
   ## Error Handling
   - No parameters → `"Error: At least one of 'type', 'related_to', or 'filters' is required"`
   - Unknown type → `"Error: Unknown type '{value}'. Valid types: work_item, finding, ..."`
@@ -103,6 +104,7 @@ notes: |
   - limit > 200 → silently cap at 200
 cycle_created: 1
 cycle_modified: null
-content_hash: e21a387e4c9b2dd11c7527e419b5684e18423646fff71957e5ca9e8b48e55796
-token_count: 1056
+content_hash: 82798b86479158a0d6b188555ebf904d92c0a6841e9119f148978d5a8db158f4
+token_count: 1086
 file_path: .ideate/work-items/WI-186.yaml
+resolution: "Verified complete: handleArtifactQuery with filter, graph traversal, combined mode, pagination"

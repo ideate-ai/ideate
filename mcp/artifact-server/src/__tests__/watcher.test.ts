@@ -4,8 +4,8 @@ import os from "os";
 import path from "path";
 import Database from "better-sqlite3";
 import { drizzle } from "drizzle-orm/better-sqlite3";
-import { ArtifactWatcher, FileChangeEvent } from "../watcher.js";
-import { rebuildIndex } from "../indexer.js";
+import { ArtifactWatcher, BatchChangeEvent } from "../watcher.js";
+import { rebuildIndex, indexFiles, removeFiles } from "../indexer.js";
 import { createSchema } from "../schema.js";
 
 let tmpDir: string;
@@ -33,13 +33,13 @@ afterEach(async () => {
 function waitForChange(
   w: ArtifactWatcher,
   timeoutMs = 2000
-): Promise<FileChangeEvent> {
+): Promise<BatchChangeEvent> {
   return new Promise((resolve, reject) => {
     const timer = setTimeout(() => {
       reject(new Error(`No change event received within ${timeoutMs}ms`));
     }, timeoutMs);
 
-    w.once("change", (event: FileChangeEvent) => {
+    w.once("change", (event: BatchChangeEvent) => {
       clearTimeout(timer);
       resolve(event);
     });
@@ -47,7 +47,7 @@ function waitForChange(
 }
 
 describe("ArtifactWatcher — .ideate/ directory", () => {
-  it("emits a change event when a YAML file is written to .ideate/", async () => {
+  it("emits a change event with file in changed array when a YAML file is written to .ideate/", async () => {
     watcher.watch(ideateDir);
 
     // Allow the polling watcher to take its initial directory snapshot
@@ -60,10 +60,11 @@ describe("ArtifactWatcher — .ideate/ directory", () => {
 
     const event = await changePromise;
     expect(event.artifactDir).toBe(ideateDir);
-    expect(event.filePath).toBe(path.resolve(yamlPath));
+    expect(event.changed).toContain(path.resolve(yamlPath));
+    expect(event.deleted).toEqual([]);
   });
 
-  it("emits a change event when an existing YAML file is modified", async () => {
+  it("emits a change event with file in changed array when an existing YAML file is modified", async () => {
     const yamlPath = path.join(ideateDir, "existing.yaml");
     fs.writeFileSync(yamlPath, "id: WI-002\ntitle: Original\n", "utf8");
 
@@ -77,10 +78,10 @@ describe("ArtifactWatcher — .ideate/ directory", () => {
 
     const event = await changePromise;
     expect(event.artifactDir).toBe(ideateDir);
-    expect(event.filePath).toBe(path.resolve(yamlPath));
+    expect(event.changed).toContain(path.resolve(yamlPath));
   });
 
-  it("emits a change event when a YAML file is deleted from .ideate/", async () => {
+  it("emits a change event with file in deleted array when a YAML file is deleted from .ideate/", async () => {
     const yamlPath = path.join(ideateDir, "to-delete.yaml");
     fs.writeFileSync(yamlPath, "id: WI-003\ntitle: Delete me\n", "utf8");
 
@@ -93,7 +94,8 @@ describe("ArtifactWatcher — .ideate/ directory", () => {
 
     const event = await changePromise;
     expect(event.artifactDir).toBe(ideateDir);
-    expect(event.filePath).toBe(path.resolve(yamlPath));
+    expect(event.deleted).toContain(path.resolve(yamlPath));
+    expect(event.changed).toEqual([]);
   });
 });
 
@@ -149,21 +151,54 @@ describe("ArtifactWatcher — debounce coalescing", () => {
       fs.rmSync(coalesceDir, { recursive: true, force: true });
     }
   }, 10000);
+
+  it("batches changed files into the changed array within debounce window", async () => {
+    const debounceMs = 150;
+    const debounceWatcher = new ArtifactWatcher(
+      { usePolling: true, interval: 50, awaitWriteFinish: false },
+      debounceMs
+    );
+
+    const batchDir = fs.mkdtempSync(
+      path.join(os.tmpdir(), "ideate-watcher-batch-")
+    );
+
+    try {
+      debounceWatcher.watch(batchDir);
+      await new Promise((r) => setTimeout(r, 300));
+
+      const changePromise = waitForChange(debounceWatcher, 3000);
+
+      // Write 3 files rapidly
+      for (let i = 0; i < 3; i++) {
+        fs.writeFileSync(
+          path.join(batchDir, `batch-${i}.yaml`),
+          `id: WI-BATCH-00${i}\n`,
+          "utf8"
+        );
+        await new Promise((r) => setTimeout(r, 20));
+      }
+
+      const event = await changePromise;
+      expect(event.changed.length).toBe(3);
+      expect(event.deleted).toEqual([]);
+    } finally {
+      debounceWatcher.close();
+      fs.rmSync(batchDir, { recursive: true, force: true });
+    }
+  }, 10000);
 });
 
 // ---------------------------------------------------------------------------
-// Integration test: file write → watcher event → rebuildIndex → DB updated
+// Integration test: file write → watcher event → incremental index → DB updated
 // ---------------------------------------------------------------------------
 
-describe("ArtifactWatcher integration — event triggers rebuildIndex", () => {
-  it("inserts a work_items row after file write triggers rebuildIndex via watcher event", async () => {
-    // Create a separate temp dir for this test to avoid interaction with the
-    // shared beforeEach watcher.
+describe("ArtifactWatcher integration — event triggers incremental indexing", () => {
+  it("inserts a work_items row after file write triggers indexFiles via watcher event", async () => {
     const integrationTmpDir = fs.mkdtempSync(
       path.join(os.tmpdir(), "ideate-watcher-integration-")
     );
     const integrationIdeateDir = path.join(integrationTmpDir, ".ideate");
-    // Create required subdirectories
     const subdirs = [
       "work-items",
       "principles",
@@ -186,9 +221,14 @@ describe("ArtifactWatcher integration — event triggers rebuildIndex", () => {
     const integrationWatcher = new ArtifactWatcher({ usePolling: true, interval: 100 });
 
     try {
-      // Register event handler: when the watcher fires, call rebuildIndex
-      integrationWatcher.on("change", () => {
-        rebuildIndex(db, drizzle(db),integrationIdeateDir);
+      // Register event handler: when the watcher fires, call indexFiles for changed files
+      integrationWatcher.on("change", (event: BatchChangeEvent) => {
+        if (event.changed.length > 0) {
+          indexFiles(db, drizzle(db), event.changed);
+        }
+        if (event.deleted.length > 0) {
+          removeFiles(db, drizzle(db), event.deleted);
+        }
       });
 
       integrationWatcher.watch(integrationIdeateDir);
@@ -231,12 +271,10 @@ describe("ArtifactWatcher integration — event triggers rebuildIndex", () => {
         "utf8"
       );
 
-      // Wait for the watcher event (which triggers rebuildIndex)
+      // Wait for the watcher event (which triggers indexFiles)
       await changePromise;
 
-      // rebuildIndex runs in the `on` handler registered before the `once` resolver,
-      // so it has already completed when changePromise resolves. This delay is a
-      // precaution only.
+      // Small delay to ensure indexFiles has completed
       await new Promise((r) => setTimeout(r, 50));
 
       // Assert the work_items table has the expected row

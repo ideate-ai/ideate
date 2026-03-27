@@ -1,45 +1,19 @@
 id: overview
 type: overview
-content: |-
-  # Change Plan — Cycle 031
+text: |-
+  # Change Plan — Cycle 061
 
   ## Trigger
-  Full audit 20260326 of Cycle 030 work revealed incomplete fixes:
-  1. Domain-curator line 166 has wrong path (missing .ideate/)
-  2. Domain-curator section headers still use .md (lines 96, 104, 134)
-  3. Review skill line 406 references .md pattern (WI-260 incomplete)
-  4. Context package spec references .md files (WI-262 incomplete)
-  5. MCP artifact-server README uses {artifact_dir} placeholder
+  Cycle 060 review: 5 significant findings in MCP server path routing and type registration.
 
-  ## Scope
+  ## What is changing
+  - WI-320: Fix resolveArtifactPath type routing (guiding_principle, constraint, domain types), add domain_index to TYPE_TO_EXTENSION_TABLE, export IDEATE_SUBDIRS, fix bootstrap return value
+  - WI-322: Fix plan/SKILL.md wrong type strings, remove internal path leaks from init/domain-curator domain_index content, remove stale .ideate.json ref from brrr
 
-  ### What is changing
-  - **WI-263**: Fix domain-curator path error (add .ideate/ to line 166)
-  - **WI-264**: Complete domain-curator .md header cleanup (lines 96, 104, 134)
-  - **WI-265**: Complete review skill .md cleanup (line 406)
-  - **WI-266**: Complete context package spec .md cleanup (lines 17, 26, 32, 61-63)
-  - **WI-267**: Standardize README placeholder to {project_root}
-
-  ### What is NOT changing
-  - No changes to skill logic or workflow behavior
-  - No changes to MCP artifact server implementation
-  - No changes to domain policies or guiding principles (all principles unchanged)
-  - No changes to architecture (architecture unchanged)
-
-  ## Expected Impact
-  - Complete pattern standardization per P-25 (YAML-only source of truth)
-  - Consistent {project_root} placeholder across all documentation
-  - No remaining .md references in code paths
-
-  ## Architecture
-  Unchanged. These are documentation and pattern completion fixes.
-
-  ## Dependencies
-  WI-263 through WI-267 are independent. Can run in parallel.
-
-  ## New Work Items
-  - WI-263: Fix domain-curator path error
-  - WI-264: Complete domain-curator .md header cleanup
-  - WI-265: Complete review skill .md cleanup
-  - WI-266: Complete context package spec .md cleanup
-  - WI-267: Standardize README placeholder to project_root
+  ## What is NOT changing
+  - GP-14 abstraction boundary (verified clean)
+  - All 22 MCP tools (existing functionality preserved)
+  - Architecture, principles, constraints
+content_hash: 9a6bc4bed3b526a70d384c72773687cf8850e99dc6ba56105529438fb231ed52
+token_count: 180
+file_path: .ideate/plan/overview.yaml

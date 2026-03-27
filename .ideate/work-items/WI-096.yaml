@@ -1,16 +1,16 @@
 id: WI-096
 type: work_item
 title: Document metrics.jsonl in artifact-conventions.md
-status: pending
+status: obsolete
 complexity: low
 scope:
   - {path: specs/artifact-conventions.md, op: modify}
 depends: []
 blocks: []
 criteria:
-  - `metrics.jsonl` appears in the directory tree listing in artifact-conventions.md
+  - "`metrics.jsonl` appears in the directory tree listing in artifact-conventions.md"
   - "A schema section for `metrics.jsonl` exists documenting: purpose, agent-spawn event field list (referencing WI-092 fields), quality_summary event schema (referencing WI-093 structure), best-effort write semantics, and that report.sh is the consumer"
-  - quality_summary nested structure (`findings.by_severity.{critical,significant,minor}`) is documented
+  - "quality_summary nested structure (`findings.by_severity.{critical,significant,minor}`) is documented"
 module: null
 domain: null
 notes: |
@@ -105,6 +105,7 @@ notes: |
   ## Placement
   
   The `metrics.jsonl` section should follow the `journal.md` section and precede the `archive/` sections.
+resolution: "specs/artifact-conventions.md no longer exists. Documentation migrated to .ideate/ structure."
 cycle_created: 1
 cycle_modified: null
 content_hash: a9918829ae858f96143089a27589f910fef6091fa159b1e01fb037965aba15d6

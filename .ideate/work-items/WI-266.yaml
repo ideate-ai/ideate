@@ -1,13 +1,12 @@
 id: WI-266
-type: refinement
+type: work_item
 title: Complete context package spec .md cleanup
 complexity: low
-status: completed
+status: done
 depends: []
 blocks: []
-file_scope:
-  modify:
-    - docs/context-package-spec.md
+scope:
+  - {path: docs/context-package-spec.md, op: modify}
 criteria:
   - Line 17 references architecture.yaml not .md
   - Line 26 references guiding-principles.yaml not .md

@@ -1,11 +1,13 @@
 id: WI-142
 type: work_item
 title: Major version bump to 3.0.0
-status: pending
+status: done
 complexity: low
 scope:
-  - {path: .claude-plugin/plugin.json, op: modify}
-  - {path: .claude-plugin/marketplace.json, op: modify}
+  - path: .claude-plugin/plugin.json
+    op: modify
+  - path: .claude-plugin/marketplace.json
+    op: modify
 depends: []
 blocks: []
 criteria:
@@ -17,17 +19,18 @@ module: null
 domain: null
 notes: |
   # Implementation Notes — WI-142
-  
+
   Bump version from 2.1.0 to 3.0.0 in two files:
-  
+
   1. .claude-plugin/plugin.json: "version": "2.1.0" → "version": "3.0.0"
   2. .claude-plugin/marketplace.json: two locations
      - metadata.version: "2.1.0" → "3.0.0"
      - plugins[0].version: "2.1.0" → "3.0.0"
-  
+
   Major version bump signals the benchmark extraction as a breaking change.
 cycle_created: 1
 cycle_modified: null
-content_hash: f0be2ed4a1bc0a36421a42fef4ab4bd318d553c3f1fe365bd5d6b46a879d044b
-token_count: 246
+content_hash: 8761cc3e0cb60ceaea9637675f4f5b1b33672b4c11bcda7217c7b2b460301711
+token_count: 238
 file_path: .ideate/work-items/WI-142.yaml
+resolution: "Verified complete: plugin version is 3.0.5"

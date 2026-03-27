@@ -1,11 +1,11 @@
 id: Q-22
 type: domain_question
 domain: artifact-structure
-status: open
+status: obsolete
 impact: Document hierarchy is inconsistent. The `metrics.jsonl` section appears one level deeper than adjacent sections, which may confuse readers navigating by heading structure. No functional impact.
 source: archive/cycles/005/spec-adherence.md M1; archive/cycles/005/decision-log.md OQ1
-resolution: null
-resolved_in: null
+resolution: "specs/artifact-conventions.md no longer exists."
+resolved_in: 37
 description: "The `metrics.jsonl` section added by WI-096 uses `####` heading level at `specs/artifact-conventions.md:710`, while every other top-level artifact section in the same document uses `###`. Should the heading be corrected to `###`?"
 cycle_created: 1
 cycle_modified: null

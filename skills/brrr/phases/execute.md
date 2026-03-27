@@ -13,9 +13,19 @@ Called by the brrr loop controller at the start of each cycle. The following var
 
 Execute all pending work items following the execution strategy (loaded by the controller via `ideate_artifact_query({type: "execution_strategy"})`).
 
+### Read Project Configuration
+
+Call `ideate_get_config()` to read project configuration. Hold the response as `{config}`. Use `{config}.agent_budgets.{agent_name}` as the maxTurns value when spawning agents. If `ideate_get_config` is unavailable or returns no agent_budgets, use the agent's frontmatter maxTurns as fallback.
+
 ### Prepare Context Digest
 
-Before spawning workers, prepare a filtered context digest for this cycle's pending work items. This reduces context sent to each worker without losing relevant information.
+Before spawning workers, assemble a **context digest** for each pending work item using PPR-based context assembly. This provides graph-aware, relevance-ranked context within a token budget.
+
+**PPR-based context assembly**: For each pending work item, call `ideate_assemble_context({seed_ids: [{current_work_item_id}], token_budget: {config}.ppr.default_token_budget, include_types: ["architecture", "guiding_principle", "constraint"]})`. The tool runs Personalized PageRank over the artifact graph, ranks all artifacts by relevance to the seed work item, and assembles context within the token budget. Always-include types (architecture, principles, constraints) are included regardless of PPR score.
+
+Hold the returned context as `{ppr_context[item_id]}`. Pass it to the worker as their context digest.
+
+**Fallback**: If `ideate_assemble_context` is unavailable or returns an error, fall back to the existing manual context digest construction:
 
 Call `ideate_get_context_package()` — returns the architecture document, guiding principles, and constraints as a single pre-assembled package. Hold the result as `{context_package}`.
 
@@ -34,15 +44,15 @@ Store as `{work_item_context_digest[item_id]}`. Pass to the worker instead of th
 
 ### Context for Every Worker
 
-**Call `ideate_get_work_item_context`**: Look in your tool list for a tool whose name ends in `ideate_get_work_item_context` (it will be prefixed, e.g. `mcp__ideate_artifact_server__ideate_get_work_item_context` or `mcp__plugin_ideate_ideate_artifact_server__ideate_get_work_item_context`). If not found, stop and report: "The ideate MCP artifact server is required but not available. Verify .mcp.json configuration."
+Call `ideate_get_work_item_context({work_item_id})` — returns pre-assembled context including work item spec, module spec, domain policies, and research. Also provide the project source root path and relevant domain policies (if not already included). Skip the manual file reads in steps 1–8 below.
 
-Call it with `({work_item_id})` — returns pre-assembled context including work item spec, module spec, domain policies, and research. Also provide the project source root path and relevant domain policies (if not already included). Skip the manual file reads in steps 1–8 below.
+If the ideate MCP artifact server is not available, stop and report: "The ideate MCP artifact server is required but not available. Verify .mcp.json configuration."
 
 Every worker subagent receives:
 
 1. The work item context — from `ideate_get_work_item_context({work_item_id})`, which returns the work item spec (including inline implementation notes), module spec, domain policies, and relevant research as a single pre-assembled package.
 2. _(Implementation notes are inline in the work item YAML `notes` field, included in the response above.)_
-3. The context digest — `{work_item_context_digest[item_id]}` prepared in the "Prepare Context Digest" step above, derived from `{context_package}`. Includes a note that full documents are available via MCP tools if more detail is needed.
+3. The context digest — `{ppr_context[item_id]}` from the PPR-based context assembly in the "Prepare Context Digest" step above, or `{work_item_context_digest[item_id]}` if fallback was used. Includes a note that full documents are available via MCP tools if more detail is needed.
 4. The relevant module spec — included in the `ideate_get_work_item_context` response if applicable; otherwise the full architecture doc from `{context_package}`.
 5. _(Included in context digest)_
 6. _(Included in context digest)_
@@ -89,7 +99,7 @@ This call is best-effort — if it fails, continue without interruption.
 
 Where `{review_verdict}` is `"pass"` if the review passed without rework, `"rework"` if it passed after rework, or `"fail"` if unresolvable. This call is best-effort — if it fails, continue without interruption.
 
-**Refreshing execution status mid-cycle**: If the `{completed_items}` set needs to be refreshed mid-cycle (e.g., after a partial failure and retry), look in your tool list for a tool whose name ends in `ideate_get_execution_status` (it will be prefixed, e.g. `mcp__ideate_artifact_server__ideate_get_execution_status` or `mcp__plugin_ideate_ideate_artifact_server__ideate_get_execution_status`). If not found, stop and report: "The ideate MCP artifact server is required but not available. Verify .mcp.json configuration." Call it — returns current completed, pending, and blocked sets. Use the returned `completed` set to update `{completed_items}` before skipping decisions.
+**Refreshing execution status mid-cycle**: If the `{completed_items}` set needs to be refreshed mid-cycle (e.g., after a partial failure and retry), call `ideate_get_execution_status()` — returns current completed, pending, and blocked sets. Use the returned `completed` set to update `{completed_items}` before skipping decisions. If the ideate MCP artifact server is not available, stop and report: "The ideate MCP artifact server is required but not available. Verify .mcp.json configuration."
 
 ### Execution Modes
 
@@ -103,7 +113,7 @@ Execute according to the mode in the execution strategy (loaded by the controlle
 
 **Worktree isolation**: If the execution strategy specifies worktrees, create a git worktree for each concurrent subagent before spawning it (`git worktree add` with branch `ideate/NNN-{name}`). After a work item's incremental review passes, merge back using `git merge --no-ff ideate/NNN-{name}`. Resolve trivial conflicts (whitespace, import ordering) automatically. For substantive merge conflicts, route to the Andon cord → proxy-human (see below). After a successful merge: `git worktree remove {path}` and `git branch -d ideate/NNN-{name}`.
 
-**Metrics**: After each worker agent returns, record a metrics entry with `phase: "6a"`, `agent_type: "worker"` (schema in controller SKILL.md). Extract `turns_used` from the `tool_uses` field in the Agent response `<usage>` block (integer; `null` if not available — do NOT leave as `null` if the usage block is present). Include `input_tokens`, `output_tokens`, `cache_read_tokens`, `cache_write_tokens` from agent response metadata (null if unavailable), and `mcp_tools_called` (array of MCP tool names used to assemble context for the spawn, or `[]` if none). Before each Agent tool call, record which MCP tool calls (if any) were made to assemble context for that spawn. Set `outcome`, `finding_count`, `finding_severities`, `first_pass_accepted` to `null` for worker entries. Set `rework_count` to the number of fix-and-re-review cycles completed for this work item (0 if first review passed without rework). If `turns_used` is non-null and the worker's maxTurns is known, and `turns_used / maxTurns > 0.80`, append to the journal entry for this work item: `Agent worker used {turns_used}/{maxTurns} turns ({pct}%) — near budget limit`.
+**Metrics**: After each worker agent returns, emit a metric via `ideate_emit_metric({payload: {phase: "6a", agent_type: "worker", ...}})` (full field schema in controller SKILL.md). Best-effort only: if the call fails, continue without interruption. Extract `turns_used` from the `tool_uses` field in the Agent response `<usage>` block (integer; `null` if not available — do NOT leave as `null` if the usage block is present). Include `input_tokens`, `output_tokens`, `cache_read_tokens`, `cache_write_tokens` from agent response metadata (null if unavailable), and `mcp_tools_called` (array of MCP tool names used to assemble context for the spawn, or `[]` if none). Before each Agent tool call, record which MCP tool calls (if any) were made to assemble context for that spawn. Set `outcome`, `finding_count`, `finding_severities`, `first_pass_accepted` to `null` for worker entries. Set `rework_count` to the number of fix-and-re-review cycles completed for this work item (0 if first review passed without rework). If `turns_used` is non-null and the worker's maxTurns is known, and `turns_used / maxTurns > 0.80`, append to the journal entry for this work item: `Agent worker used {turns_used}/{maxTurns} turns ({pct}%) — near budget limit`.
 
 ### Incremental Review (Per Work Item)
 
@@ -123,9 +133,9 @@ Include the following in the code-reviewer's prompt:
   > 2. Attempt to verify at least 2 of them by reading the relevant source files. If verifiable by file inspection, reclassify as `satisfied` or `unsatisfied`.
   > 3. Only accept `unverifiable` for criteria requiring runtime testing, external system dependencies, or human judgment that cannot be derived from file contents.
   >
-  > **Dynamic testing (incremental scope)**: After your static review, perform the dynamic checks defined in your agent instructions under "Dynamic Testing > Incremental review scope". Discover the project's test model, run the smoke test, and run tests scoped to the changed files. If the smoke test fails, report a Critical finding titled "Startup failure after [work item name]".
+  > **Dynamic testing (incremental scope)**: After your static review, perform the dynamic checks defined in your agent instructions under "Step 2 — Incremental review scope (single work item)". Discover the project's test model, run the smoke test, and run tests scoped to the changed files. If the smoke test fails, report a Critical finding titled "Startup failure after [work item name]".
 
-Write the result to `{project_root}/.ideate/cycles/{NNN}/findings/F-{WI}-{SEQ}.yaml`. After the code-reviewer returns, record a metrics entry with `phase: "6a"`, `agent_type: "code-reviewer"`. Extract `turns_used` from the `tool_uses` field in the Agent response `<usage>` block (integer; `null` if not available — do NOT leave as `null` if the usage block is present). The maxTurns budget for `code-reviewer` is 40. If `turns_used` is non-null and `turns_used / 40 > 0.80`, append to the journal entry for this work item: `Agent code-reviewer used {turns_used}/40 turns ({pct}%) — near budget limit`. Include `input_tokens`, `output_tokens`, `cache_read_tokens`, `cache_write_tokens` from agent response metadata (null if unavailable), and `mcp_tools_called` (array of MCP tool names used to assemble context, or `[]` if none). Also set: `outcome` to `"pass"`, `"rework"`, or `"fail"` based on the review verdict and whether rework was required; `finding_count` to the total number of findings across all severities from the review (null if output cannot be parsed); `finding_severities` to `{"critical": N, "significant": N, "minor": N}` (null if output cannot be parsed); `first_pass_accepted` to `true` if the review passes with no rework required, `false` otherwise; `rework_count` to `null`. (Full schema including `skill` and `cycle` fields defined in controller SKILL.md.)
+Write the result via `ideate_write_artifact({type: "finding", id: "F-{WI}-{SEQ}", content: {cycle: {cycle_number}, work_item: "{WI}", content: <findings from response>}})`. After the code-reviewer returns, emit a metric via `ideate_emit_metric({payload: {phase: "6a", agent_type: "code-reviewer", ...}})`. Best-effort only: if the call fails, continue without interruption. Extract `turns_used` from the `tool_uses` field in the Agent response `<usage>` block (integer; `null` if not available — do NOT leave as `null` if the usage block is present). The maxTurns budget for `code-reviewer` is `{config}.agent_budgets.code-reviewer` (fallback to agent frontmatter default). If `turns_used` is non-null and `turns_used / maxTurns > 0.80`, append to the journal entry for this work item: `Agent code-reviewer used {turns_used}/{maxTurns} turns ({pct}%) — near budget limit`. Include `input_tokens`, `output_tokens`, `cache_read_tokens`, `cache_write_tokens` from agent response metadata (null if unavailable), and `mcp_tools_called` (array of MCP tool names used to assemble context, or `[]` if none). Also set: `outcome` to `"pass"`, `"rework"`, or `"fail"` based on the review verdict and whether rework was required; `finding_count` to the total number of findings across all severities from the review (null if output cannot be parsed); `finding_severities` to `{"critical": N, "significant": N, "minor": N}` (null if output cannot be parsed); `first_pass_accepted` to `true` if the review passes with no rework required, `false` otherwise; `rework_count` to `null`. (Full field schema in controller SKILL.md.)
 
 **Review format**:
 
@@ -193,7 +203,7 @@ When an Andon event occurs (scope-changing finding, merge conflict, spec ambigui
    Event:
    {andon_event_description}
 
-   Write your decision to {project_root}/.ideate/proxy-human-log.yaml following the entry format defined in your agent definition."
+   Write your decision via ideate_append_journal following the entry format defined in your agent definition."
    ```
 
 3. Wait for the proxy-human agent to respond.
@@ -204,7 +214,7 @@ When an Andon event occurs (scope-changing finding, merge conflict, spec ambigui
    ## [brrr] {date} — Proxy-human decision (Cycle {N})
    Event: {one-sentence summary of the Andon event}
    Decision: {proxy-human's decision}
-   Confidence: {HIGH | MEDIUM | LOW}
+   Confidence: {high | medium | low}
    ```
 
 5. Apply the decision. If the decision is `DEFER`, add it to the cycle's deferred items list and continue with other work items where possible. Immediately print to running output:
@@ -213,7 +223,7 @@ When an Andon event occurs (scope-changing finding, merge conflict, spec ambigui
    ```
    Do NOT interrupt the loop or ask the user. This is logging only.
 
-**If the Agent tool is not available**: Handle the event yourself — use the guiding principles and constraints from `{context_package}` (loaded via `ideate_get_context_package()` in the Prepare Context Digest step), apply them to the event, make the best decision, and record it in `{project_root}/.ideate/proxy-human-log.yaml` with heading: `## [brrr-fallback] {ISO date} — Cycle {cycle_number}` followed by the same Event/Decision/Confidence/Rationale fields.
+**If the Agent tool is not available**: Handle the event yourself — use the guiding principles and constraints from `{context_package}` (loaded via `ideate_get_context_package()` in the Prepare Context Digest step), apply them to the event, make the best decision, and record it via `ideate_append_journal("brrr-fallback", {ISO date}, "proxy_human_fallback", {body})` with heading: `## [brrr-fallback] {ISO date} — Cycle {cycle_number}` followed by the same Event/Decision/Confidence/Rationale fields.
 
 ### Worker Agent Failure
 
@@ -227,9 +237,9 @@ If a subagent fails (crashes, times out, produces no output):
 
 After each work item completes (and after any rework), append a journal entry via `ideate_append_journal`.
 
-**Call `ideate_append_journal`**: Look in your tool list for a tool whose name ends in `ideate_append_journal` (it will be prefixed, e.g. `mcp__ideate_artifact_server__ideate_append_journal` or `mcp__plugin_ideate_ideate_artifact_server__ideate_append_journal`). If not found, stop and report: "The ideate MCP artifact server is required but not available. Verify .mcp.json configuration."
+Call `ideate_append_journal("brrr", {date}, {entry_type}, {body})` — appends a structured journal entry atomically.
 
-Call it with `("brrr", {date}, {entry_type}, {body})` — appends a structured journal entry atomically.
+If the ideate MCP artifact server is not available, stop and report: "The ideate MCP artifact server is required but not available. Verify .mcp.json configuration."
 
 ```markdown
 ## [brrr] {date} — Cycle {cycle_N} — Work item NNN: {title}
@@ -246,21 +256,21 @@ Rework: {N} minor, {N} significant findings fixed from incremental review.
 {Description of significant fixes if any.}
 ```
 
-Update `total_items_executed` in `{project_root}/.ideate/brrr-state.yaml` after each item completes.
+After each item completes, call `ideate_get_brrr_state()` to read the current `total_items_executed`, increment it, then call `ideate_update_brrr_state({state: {total_items_executed: {N+1}}})` to persist the update.
 
 ## Exit Conditions
 
 - All pending work items have been attempted (skipped, completed, or failed+deferred)
-- Each completed item has an incremental review written to `{project_root}/.ideate/cycles/{NNN}/findings/`
-- `brrr-state.yaml` `total_items_executed` is updated
-- Journal has an entry for each completed item
+- Each completed item has an incremental review finding written via `ideate_write_artifact`
+- `total_items_executed` is updated via `ideate_update_brrr_state`
+- Journal has an entry for each completed item (via `ideate_append_journal`)
 
 Return to the controller. The controller will proceed to Phase 6b (review.md).
 
-## Artifacts Written
+## Artifacts Written (all via MCP)
 
-- `{project_root}/.ideate/cycles/{NNN}/findings/F-{WI}-{SEQ}.yaml` — one per work item reviewed
-- `{project_root}/.ideate/cycles/{NNN}/journal/` — appended per work item and per Andon event
-- `{project_root}/.ideate/brrr-state.yaml` — `total_items_executed` updated
-- `{project_root}/.ideate/proxy-human-log.yaml` — if Andon events occurred
-- `{project_root}/.ideate/metrics.jsonl` — one entry per agent spawned
+- Findings (F-{WI}-{SEQ}) — one per work item reviewed, via `ideate_write_artifact`
+- Journal entries — appended per work item and per Andon event, via `ideate_append_journal`
+- Brrr session state — `total_items_executed` updated via `ideate_update_brrr_state`
+- Proxy-human decisions — if Andon events occurred, via `ideate_append_journal`
+- Metrics — one entry per agent spawned, via `ideate_emit_metric`

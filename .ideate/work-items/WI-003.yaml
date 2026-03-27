@@ -1,7 +1,7 @@
 id: WI-003
 type: work_item
 title: Architect Agent
-status: pending
+status: obsolete
 complexity: medium
 scope:
   - {path: agents/architect.md, op: create}
@@ -11,7 +11,7 @@ blocks:
   - "005"
   - "006"
 criteria:
-  - `agents/architect.md` exists with valid frontmatter
+  - "`agents/architect.md` exists with valid frontmatter"
   - "Agent has access to: Read, Grep, Glob, Bash"
   - "System prompt covers two modes: analyzing existing codebases and designing new architecture"
   - "When analyzing: maps directory structure, languages, frameworks, module boundaries, data flows, test coverage, dependencies, patterns"
@@ -32,6 +32,7 @@ notes: |
   3. The 100% coverage check: union of all module scopes must equal the full project scope with no gaps or overlaps
   
   When designing for an existing codebase (refine phase), the architect should report facts without evaluating whether choices are "good" or "bad."
+resolution: "Architect agent exists at agents/architect.md but has been rewritten multiple times since cycle 1. Original spec superseded."
 cycle_created: 1
 cycle_modified: null
 content_hash: "8b4b17b28a0e15e25eb17b32b500e01a8511ab1e8ac0194de9a66a29455c400c"

@@ -1,13 +1,12 @@
 id: WI-259
-type: refinement
+type: work_item
 title: Fix domain-curator agent deprecated patterns
 complexity: low
-status: completed
+status: done
 depends: []
 blocks: []
-file_scope:
-  modify:
-    - agents/domain-curator.md
+scope:
+  - {path: agents/domain-curator.md, op: modify}
 criteria:
   - All {artifact-dir} placeholders changed to {project_root}
   - All references to .md files changed to YAML patterns

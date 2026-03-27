@@ -1,7 +1,7 @@
 id: WI-092
 type: work_item
 title: Extend metrics.jsonl schema with token and MCP fields in all skills
-status: pending
+status: obsolete
 complexity: medium
 scope:
   - {path: skills/plan/SKILL.md, op: modify}
@@ -18,7 +18,7 @@ criteria:
   - "Field documentation in each skill defines: `input_tokens` (integer | null) — input token count from agent response metadata; `output_tokens` (integer | null) — output token count; `cache_read_tokens` (integer | null) — prompt caching read tokens if available; `cache_write_tokens` (integer | null) — prompt caching write tokens if available; `mcp_tools_called` (array of strings) — names of MCP tools called to assemble context for this agent spawn, empty array if none"
   - "Each skill's Metrics Instrumentation section includes an instruction: \"Before each Agent tool call, record which MCP tool calls (if any) were made to assemble context for that spawn. Include the tool names in the `mcp_tools_called` array. If no MCP tools were called, use an empty array `[]`.\""
   - "Token fields documentation includes: \"Extract from agent response metadata if available. Set to null if token counts are not available in the response.\""
-  - `skills/brrr/phases/execute.md` metrics references are updated to include the new fields in any inline schema examples or field lists
+  - "`skills/brrr/phases/execute.md` metrics references are updated to include the new fields in any inline schema examples or field lists"
 module: null
 domain: null
 notes: |
@@ -72,6 +72,7 @@ notes: |
   ## brrr/phases/execute.md
   
   This file references the metrics schema inline. Find any JSON schema examples or field lists and add the new fields in the same positions.
+resolution: "Metrics schema extension superseded by later skill rewrites and MCP artifact server."
 cycle_created: 1
 cycle_modified: null
 content_hash: "93524722ebac236341804d6fbecef0d00ff1baa80de1b3235729f2070faad5d9"

@@ -1,14 +1,14 @@
 id: WI-015
 type: work_item
 title: Top-Level README
-status: pending
+status: done
 complexity: low
 scope:
   - {path: README.md, op: create}
 depends: []
 blocks: []
 criteria:
-  - `README.md` exists at project root
+  - "`README.md` exists at project root"
   - Describes what ideate is (1-2 paragraphs)
   - Lists prerequisites (Claude Code CLI)
   - "Documents installation: how to add the plugin to Claude Code"
@@ -27,6 +27,7 @@ notes: |
   For plugin installation, use `claude plugin add` or document the manual installation path (clone repo, add to plugin search path).
   
   For MCP setup, reference the session-spawner README for detailed configuration and document the one-line setup: `claude mcp add ideate-session-spawner -- python /path/to/mcp/session-spawner/server.py`.
+resolution: "README.md exists at project root."
 cycle_created: 1
 cycle_modified: null
 content_hash: "66e52810349bf1f640490af16d7419f4448a3f07413d0c016daa9e7c8bac0633"

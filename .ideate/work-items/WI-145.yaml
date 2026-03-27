@@ -1,17 +1,25 @@
 id: WI-145
 type: work_item
 title: SQLite rebuild pipeline and old infrastructure removal
-status: pending
+status: done
 complexity: large
 scope:
-  - {path: mcp/artifact-server/src/indexer.ts, op: modify}
-  - {path: mcp/artifact-server/src/watcher.ts, op: modify}
-  - {path: mcp/artifact-server/src/index.ts, op: modify}
-  - {path: mcp/artifact-server/src/tools.ts, op: modify}
-  - {path: mcp/artifact-server/src/embeddings.ts, op: delete}
-  - {path: mcp/artifact-server/src/chunker.ts, op: delete}
-  - {path: mcp/artifact-server/src/retrieval.ts, op: delete}
-  - {path: mcp/artifact-server/package.json, op: modify}
+  - path: mcp/artifact-server/src/indexer.ts
+    op: modify
+  - path: mcp/artifact-server/src/watcher.ts
+    op: modify
+  - path: mcp/artifact-server/src/index.ts
+    op: modify
+  - path: mcp/artifact-server/src/tools.ts
+    op: modify
+  - path: mcp/artifact-server/src/embeddings.ts
+    op: delete
+  - path: mcp/artifact-server/src/chunker.ts
+    op: delete
+  - path: mcp/artifact-server/src/retrieval.ts
+    op: delete
+  - path: mcp/artifact-server/package.json
+    op: modify
 depends:
   - "143"
   - "144"
@@ -34,21 +42,21 @@ module: null
 domain: null
 notes: |
   # WI-145: SQLite rebuild pipeline and old infrastructure removal
-  
+
   ## Files to delete
-  
+
   - `mcp/artifact-server/src/embeddings.ts` — SQLite embedding index (replaced by new schema)
   - `mcp/artifact-server/src/chunker.ts` — markdown/YAML chunking (no longer needed)
   - `mcp/artifact-server/src/retrieval.ts` — hybrid BM25 + semantic search (replaced by SQLite queries)
-  
+
   ## Files to modify
-  
+
   ### tools.ts
   Strip all 7 tool definitions and the dispatch function. Export an empty tools array. The MCP server runs but exposes no tools — tools are added in Phase 2.
-  
+
   ### indexer.ts — Complete rewrite
   Current indexer.ts contains implementations for the 7 read tools. Replace entirely with:
-  
+
   ```typescript
   export interface RebuildStats {
     files_scanned: number;
@@ -57,7 +65,7 @@ notes: |
     edges_created: number;
     cycles_detected: string[][];
   }
-  
+
   export function rebuildIndex(db: Database, ideateDir: string): RebuildStats {
     // 1. Scan all YAML files in .ideate/ subdirectories
     // 2. For each file:
@@ -73,11 +81,11 @@ notes: |
     // 5. Return stats
   }
   ```
-  
+
   The rebuild function runs in a single SQLite transaction for atomicity.
-  
+
   ### Kahn's algorithm for DAG validation
-  
+
   ```typescript
   function detectCycles(db: Database): string[][] {
     // 1. SELECT all depends_on edges from edges table
@@ -88,12 +96,12 @@ notes: |
     // 6. Return array of cycle arrays (empty if no cycles)
   }
   ```
-  
+
   Log warnings for detected cycles but do not fail the rebuild.
-  
+
   ### watcher.ts
   Update to watch `.ideate/` directory for YAML file changes. On change, trigger incremental rebuild (only the changed file). On delete, trigger removal of the file's rows from all tables.
-  
+
   ### index.ts
   Update startup sequence:
   1. Resolve .ideate/ directory using config.ts
@@ -104,25 +112,26 @@ notes: |
   6. Call rebuildIndex(db, ideateDir)
   7. Start file watcher
   8. Start MCP server (no tools registered)
-  
+
   ### package.json
   Remove `@xenova/transformers` from dependencies. It was used only by embeddings.ts. All other deps (better-sqlite3, chokidar, lru-cache, @modelcontextprotocol/sdk) are retained. Evaluate whether lru-cache is still needed — if the rebuild pipeline doesn't benefit from caching, remove it.
-  
+
   ## Performance considerations
-  
+
   - Content-hash comparison avoids reparsing unchanged files
   - Single-transaction rebuild prevents partial state
   - WAL mode allows concurrent reads during rebuild
   - Incremental updates (watcher-triggered) reprocess only the changed file
   - Kahn's algorithm is O(V+E) — negligible for hundreds of work items
-  
+
   ## Notes
-  
+
   - The `dist/` directory is committed. After making changes, `npm run build` must be run and dist/ committed.
   - No import of deleted modules (embeddings, chunker, retrieval) may remain in any source file.
   - YAML parsing: use the `yaml` npm package (or js-yaml). Check if already in dependencies; add if not.
 cycle_created: 1
 cycle_modified: null
-content_hash: "6473963f4bf18f4e97f8f39d07750f85966022de568351c0af3c52e073aea1bb"
-token_count: 1400
+content_hash: ef5ee7c0e0752e0984de32abd65e4cf97879763a80db7d5d152f5896f326b067
+token_count: 1429
 file_path: .ideate/work-items/WI-145.yaml
+resolution: "Verified complete: old files deleted, rebuildIndex with Drizzle, @xenova/transformers removed"

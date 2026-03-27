@@ -1,7 +1,7 @@
 id: WI-237
 type: work_item
 title: Remove artifact_dir from all MCP tool schemas and handlers
-status: pending
+status: done
 complexity: medium
 scope:
   - path: mcp/artifact-server/src/tools/index.ts
@@ -38,9 +38,9 @@ notes: |-
   # WI-237: Remove artifact_dir
 
   Remove artifact_dir from all 13+ tool inputSchemas in index.ts. Update each handler to use ctx.ideateDir directly. resolveArtifactDir may still be used at startup.
-resolution: null
+resolution: "Verified complete: no artifact_dir in any MCP tool inputSchema, handlers use ctx.ideateDir"
 cycle_created: 29
 cycle_modified: null
-content_hash: 642acbeb0034e7e272404d951a9bdbf8b5375933211108ea14b8782e0328c93e
-token_count: 337
+content_hash: 8c667b66bef221266ede897cde1c8e4a60f91096c5f0bc1f2fac4f8f1fd3b550
+token_count: 359
 file_path: .ideate/work-items/WI-237.yaml

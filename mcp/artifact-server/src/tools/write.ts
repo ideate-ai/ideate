@@ -42,28 +42,26 @@ export async function handleAppendJournal(
     throw new Error("Missing required parameters: skill, date, entry_type, body");
   }
 
-  // 1. Determine cycle number from domains/index.md
+  // 1. Determine cycle number: use caller-supplied cycle_number, or query SQLite for max
   let cycleNumber = 0;
-  const indexMdPath = path.join(ctx.ideateDir, "domains", "index.md");
-  if (fs.existsSync(indexMdPath)) {
-    const indexContent = fs.readFileSync(indexMdPath, "utf8");
-    const match = indexContent.match(/current_cycle:\s*(\d+)/);
-    if (match) {
-      cycleNumber = parseInt(match[1], 10);
-    }
+  if (args.cycle_number !== undefined && args.cycle_number !== null) {
+    cycleNumber = args.cycle_number as number;
+  } else {
+    const maxCycleRow = ctx.db.prepare(
+      `SELECT MAX(cycle_created) as max_cycle FROM nodes WHERE type = 'journal_entry'`
+    ).get() as { max_cycle: number | null };
+    cycleNumber = maxCycleRow?.max_cycle ?? 0;
   }
   const cycleStr = String(cycleNumber).padStart(3, "0");
 
-  // 2. Determine sequence number from existing files in the journal directory
+  // 2. Determine sequence number from SQLite COUNT to prevent concurrent collision
   const journalDir = path.join(ctx.ideateDir, "cycles", cycleStr, "journal");
   ensureDir(journalDir);
 
-  let seq = 0;
-  const prefix = `J-${cycleStr}-`;
-  const existingFiles = fs.readdirSync(journalDir).filter(
-    (f) => f.startsWith(prefix) && f.endsWith(".yaml")
-  );
-  seq = existingFiles.length;
+  const seqRow = ctx.db.prepare(
+    `SELECT COUNT(*) as cnt FROM nodes WHERE type = 'journal_entry' AND cycle_created = ?`
+  ).get(cycleNumber) as { cnt: number };
+  const seq = seqRow?.cnt ?? 0;
   const seqStr = String(seq).padStart(3, "0");
 
   // 3. Generate ID
@@ -141,16 +139,16 @@ export async function handleArchiveCycle(
   }
 
   const cycleStr = String(cycleNumber).padStart(3, "0");
-  const incrementalDir = path.join(ctx.ideateDir, "archive", "incremental");
+  const findingsDir = path.join(ctx.ideateDir, "cycles", cycleStr, "findings");
   const cycleDir = path.join(ctx.ideateDir, "archive", "cycles", cycleStr);
   const cycleWorkItemsDir = path.join(cycleDir, "work-items");
   const cycleIncrementalDir = path.join(cycleDir, "incremental");
 
-  // Identify incremental review files (these are passing reviews)
+  // Identify findings files (these are passing reviews)
   const incrementalFiles: string[] = [];
-  if (fs.existsSync(incrementalDir)) {
-    for (const entry of fs.readdirSync(incrementalDir)) {
-      const fullPath = path.join(incrementalDir, entry);
+  if (fs.existsSync(findingsDir)) {
+    for (const entry of fs.readdirSync(findingsDir)) {
+      const fullPath = path.join(findingsDir, entry);
       const stat = fs.statSync(fullPath);
       if (stat.isFile()) {
         incrementalFiles.push(fullPath);
@@ -164,7 +162,7 @@ export async function handleArchiveCycle(
 
   // Identify work item files referenced by the incremental reviews
   // Parse each review to find the work item ID, then find the work item file
-  const workItemsDir = path.join(ctx.ideateDir, "plan", "work-items");
+  const workItemsDir = path.join(ctx.ideateDir, "work-items");
   const workItemFiles: { src: string; name: string }[] = [];
   const seenWorkItems = new Set<string>();
 
@@ -177,7 +175,7 @@ export async function handleArchiveCycle(
       const wiId = match[1];
       if (!seenWorkItems.has(wiId)) {
         seenWorkItems.add(wiId);
-        // Look for the work item file in plan/work-items/
+        // Look for the work item file in work-items/
         if (fs.existsSync(workItemsDir)) {
           const wiEntries = fs.readdirSync(workItemsDir);
           const wiFile = wiEntries.find((e) => e.startsWith(wiId + "-") || e === wiId + ".md" || e === wiId + ".yaml");
@@ -454,8 +452,7 @@ export async function handleWriteWorkItems(
     const itemCycleCreated = item.cycle_created ?? null;
     const notesContent = item.notes_content ?? `# ${id}: ${item.title ?? ""}`;
 
-    // Build the relative file_path stored in the YAML and SQLite
-    const relativeFilePath = path.join(".ideate", "work-items", `${id}.yaml`);
+    // Build the absolute file_path stored in both YAML and SQLite for consistency
     const absoluteFilePath = path.join(workItemsDir, `${id}.yaml`);
 
     // Build complete YAML object with all required fields
@@ -482,17 +479,17 @@ export async function handleWriteWorkItems(
     const contentHash = sha256(yamlForHash);
     const tokens = tokenCount(yamlForHash);
 
-    // Now add the computed fields and file_path
+    // Now add the computed fields and file_path (use absolute path for consistency with SQLite)
     yamlObj.content_hash = contentHash;
     yamlObj.token_count = tokens;
-    yamlObj.file_path = relativeFilePath;
+    yamlObj.file_path = absoluteFilePath;
 
     const finalYaml = stringifyYaml(yamlObj, { lineWidth: 0 });
 
     // Write the YAML file
     fs.writeFileSync(absoluteFilePath, finalYaml, "utf8");
 
-    results.push({ id, result: "created", file_path: relativeFilePath });
+    results.push({ id, result: "created", file_path: absoluteFilePath });
   }
 
   // Synchronously upsert into SQLite (GP-8)
@@ -620,6 +617,20 @@ function resolveArtifactPath(ideateDir: string, type: string, id: string, cycle?
     case "guiding_principles":
     case "constraints":
       return path.join(ideateDir, "steering", `${id}.yaml`);
+    case "guiding_principle":
+      return path.join(ideateDir, "principles", `${id}.yaml`);
+    case "constraint":
+      return path.join(ideateDir, "constraints", `${id}.yaml`);
+    case "domain_policy":
+      return path.join(ideateDir, "policies", `${id}.yaml`);
+    case "domain_decision":
+      return path.join(ideateDir, "decisions", `${id}.yaml`);
+    case "domain_question":
+      return path.join(ideateDir, "questions", `${id}.yaml`);
+    case "domain_index":
+      return path.join(ideateDir, "domains", "index.yaml");
+    case "module_spec":
+      return path.join(ideateDir, "modules", `${id}.yaml`);
     case "interview":
       // id may include path segments like "refine-029/_general"
       return path.join(ideateDir, "interviews", `${id}.yaml`);
@@ -788,7 +799,7 @@ export async function handleUpdateWorkItems(
           indexContent = fs.readFileSync(indexMdPath, "utf8");
         }
         if (indexContent) {
-          const match = indexContent.match(/current_cycle:\s*(\d+)/);
+          const match = indexContent.match(/^current_cycle:\s*(\d+)/m);
           if (match) {
             cycleNumber = parseInt(match[1], 10);
           }
@@ -893,6 +904,19 @@ export async function handleUpdateWorkItems(
             target: (workItems as any).id,
             set: wiRow as any,
           }).run();
+
+          // Delete old dependency edges for this item
+          ctx.db.prepare(`DELETE FROM edges WHERE source_id = ? AND edge_type IN ('depends_on', 'blocks')`).run(id);
+
+          // Insert new depends_on edges
+          for (const dep of (parsedObj.depends as string[] | undefined) || []) {
+            ctx.db.prepare(`INSERT OR IGNORE INTO edges (source_id, target_id, edge_type) VALUES (?, ?, 'depends_on')`).run(id, dep);
+          }
+
+          // Insert new blocks edges
+          for (const blk of (parsedObj.blocks as string[] | undefined) || []) {
+            ctx.db.prepare(`INSERT OR IGNORE INTO edges (source_id, target_id, edge_type) VALUES (?, ?, 'blocks')`).run(id, blk);
+          }
         }
       });
 

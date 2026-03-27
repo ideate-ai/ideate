@@ -1,0 +1,42 @@
+id: gap-analysis
+type: cycle_summary
+cycle: 58
+reviewer: gap-analyst
+content: |-
+  ## Verdict: Fail
+
+  Several acceptance criteria from WI-301 and WI-302 are unmet and ARCHITECTURE.md contains stale startup sequence documentation.
+
+  ## Critical Findings
+  None.
+
+  ## Significant Findings
+
+  ### S1: No startup-sequence test for WI-301
+  - WI-301 notes specify testing that server can be connected before rebuildIndex runs. readiness-gate.test.ts tests the Promise mechanism but not the actual startup order in index.ts.
+
+  ### S2: indexFiles and removeFiles have no unit tests in indexer.test.ts
+  - WI-302 scope includes indexer.test.ts:modify but no direct tests for these functions. Only indirect coverage via watcher.test.ts integration test.
+
+  ### S3: ARCHITECTURE.md startup sequence stale after WI-301
+  - Section 2 and 4 still show rebuildIndex before server.connect. Actual code now does server.connect first.
+
+  ### S4: rebuildIndex not refactored to call indexFiles
+  - WI-302 states rebuildIndex should use indexFiles internally. Implementation uses shared indexSingleFile helper instead. Functionally equivalent but criterion as written is unmet.
+
+  ## Minor Findings
+
+  ### M1: ARCHITECTURE.md Section 4 says watcher calls rebuildIndex
+  - After WI-302 the watcher calls indexFiles/removeFiles, not rebuildIndex.
+
+  ### M2: WI-304 resolution field not written
+  - Criterion requires Q-075/Q-076 note in resolution field. Field is null; note is only in notes.
+
+  ### M3: Q-75 and Q-76 now exist as files
+  - WI-304 states they don't exist but they appear in .ideate/questions/. May have been relocated by WI-303.
+
+  ### M4: Phase 1 bootstrap Write tool language is legitimate exception
+  - Not a gap — documented correctly.
+content_hash: ac90ba957dca078253187bc41a967c97f848db626efad1c3dd43d6ccffe6ef4b
+token_count: 435
+file_path: .ideate/cycles/058/gap-analysis.yaml

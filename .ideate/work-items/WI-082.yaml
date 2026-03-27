@@ -1,7 +1,7 @@
 id: WI-082
 type: work_item
 title: MCP Artifact Server
-status: pending
+status: done
 complexity: high
 scope:
   - {path: mcp/artifact-server/, op: create}
@@ -24,7 +24,7 @@ criteria:
   - "- `artifact_context(work_item: string)` — returns the work item spec + relevant module spec + applicable domain policies + relevant research, pre-assembled"
   - "- `artifact_context(review_scope: \"full\" | \"differential\", changed_files?: string[])` — returns the shared context package for review agents"
   - "- `artifact_query(query: string)` — free-text search across all artifacts, returns relevant chunks with source citations"
-  - - `artifact_index()` — returns the full artifact directory structure with metadata (file sizes, last modified, type classification)
+  - "- `artifact_index()` — returns the full artifact directory structure with metadata (file sizes, last modified, type classification)"
   - "- `domain_policies(domain?: string)` — returns active policies, optionally filtered by domain"
   - "- `source_index(path?: string)` — returns the source code index (file tree + key exports) for the project or a subtree"
   - The server loads artifacts from a specified artifact directory (configurable)
@@ -35,7 +35,7 @@ criteria:
   - Response sizes are bounded — large artifacts are summarized with a pointer to the full file
   - The server works with the existing skill prompts — skills can use MCP tools alongside Read/Glob/Grep
   - "`skills/review/SKILL.md` Phase 3.6 is updated with an MCP availability check: if `mcp__artifact_server__artifact_context` is available, use it for context assembly; otherwise fall back to Read/Glob (proof of integration)"
-  - The availability check pattern is documented in `docs/context-package-spec.md` (from 079) so other skills can adopt it
+  - "The availability check pattern is documented in `docs/context-package-spec.md` (from 079) so other skills can adopt it"
 module: null
 domain: null
 notes: |
@@ -62,6 +62,7 @@ notes: |
   ### Integration
   
   Additive — skills check for MCP tool availability and fall back to Read/Glob if not configured.
+resolution: "mcp/artifact-server/ exists with full implementation (src/, package.json, tsconfig.json, etc)."
 cycle_created: 1
 cycle_modified: null
 content_hash: b93de13ea534c005447ea3bc6c489a1a8a0ac72a2880594d5ac9747cf5e54caa

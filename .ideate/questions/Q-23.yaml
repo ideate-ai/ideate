@@ -1,11 +1,11 @@
 id: Q-23
 type: domain_question
 domain: artifact-structure
-status: open
+status: obsolete
 impact: Readers scanning only the schema block may infer `cycle` is always null and `wall_clock_ms` is always 0 for agent-spawn entries. The semantics prose at line 768 clarifies intent, but the example is misleading in isolation.
 source: archive/cycles/005/gap-analysis.md MG2; archive/cycles/005/code-quality.md M1; archive/cycles/005/decision-log.md OQ3
-resolution: null
-resolved_in: null
+resolution: "specs/artifact-conventions.md no longer exists."
+resolved_in: 37
 description: "`specs/artifact-conventions.md:720,724` shows `\"cycle\": null` and `\"wall_clock_ms\": 0` as literal values, while every other field in the same schema block uses `<placeholder>` notation. Should these be changed to `\"cycle\": \"<N or null>\"` and `\"wall_clock_ms\": <N>` to match the parameterized convention?"
 cycle_created: 1
 cycle_modified: null

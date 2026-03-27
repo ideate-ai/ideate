@@ -1,7 +1,7 @@
 id: WI-099
 type: work_item
 title: Fix stale archive path in three agent definitions
-status: pending
+status: obsolete
 complexity: low
 scope:
   - {path: agents/spec-reviewer.md, op: modify}
@@ -10,9 +10,9 @@ scope:
 depends: []
 blocks: []
 criteria:
-  - No occurrences of `reviews/incremental/` remain in agents/spec-reviewer.md, agents/gap-analyst.md, or agents/journal-keeper.md
-  - Each file now references `archive/incremental/` where it previously referenced `reviews/incremental/`
-  - `grep -r "reviews/incremental" agents/` returns zero matches
+  - "No occurrences of `reviews/incremental/` remain in agents/spec-reviewer.md, agents/gap-analyst.md, or agents/journal-keeper.md"
+  - "Each file now references `archive/incremental/` where it previously referenced `reviews/incremental/`"
+  - "`grep -r \"reviews/incremental\" agents/` returns zero matches"
 module: null
 domain: null
 notes: |
@@ -65,6 +65,7 @@ notes: |
   ## Verification
   
   After changes: `grep -r "reviews/incremental" agents/` should return zero matches.
+resolution: "Agent definitions have been rewritten multiple times. Stale archive paths fixed in later cycles."
 cycle_created: 1
 cycle_modified: null
 content_hash: c2572a3513aa8fe9f6b95158226567c01f7f6ed6d5bc7b51db056ab574894f79

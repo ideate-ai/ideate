@@ -1,11 +1,13 @@
 id: WI-143
 type: work_item
 title: .ideate/ directory scaffolding and config schema
-status: pending
+status: done
 complexity: small
 scope:
-  - {path: mcp/artifact-server/src/config.ts, op: modify}
-  - {path: .gitignore, op: modify}
+  - path: mcp/artifact-server/src/config.ts
+    op: modify
+  - path: .gitignore
+    op: modify
 depends: []
 blocks:
   - "145"
@@ -21,13 +23,13 @@ module: null
 domain: null
 notes: |
   # WI-143: .ideate/ directory scaffolding and config schema
-  
+
   ## Existing code to modify
-  
+
   `mcp/artifact-server/src/config.ts` — currently discovers `.ideate.json` by walking up from CWD (`config.ts:30-41`). Replace with `.ideate/` directory discovery: look for a directory named `.ideate` containing `config.json`.
-  
+
   ## .ideate/ directory structure
-  
+
   ```
   .ideate/
   ├── config.json
@@ -52,26 +54,26 @@ notes: |
   │           └── J-{NNN}-{seq}.yaml  # per-entry journal files
   └── metrics.jsonl               # append-only
   ```
-  
+
   ## config.json schema
-  
+
   ```json
   {
     "schema_version": 2,
     "project_name": "optional project name"
   }
   ```
-  
+
   ## .gitignore entries to add
-  
+
   ```
   .ideate/index.db
   .ideate/index.db-wal
   .ideate/index.db-shm
   ```
-  
+
   ## Implementation notes
-  
+
   - `createIdeateDir(path)` creates the full directory tree. It does not populate any files except config.json.
   - The `.ideate.json` file at project root is no longer used. The presence of `.ideate/config.json` replaces it.
   - Keep the walk-up-from-CWD pattern but look for `.ideate/` directory instead of `.ideate.json` file.
@@ -79,6 +81,7 @@ notes: |
   - Update existing config.ts tests to cover the new discovery logic.
 cycle_created: 1
 cycle_modified: null
-content_hash: "6b657c9fdbc1b98138e2dcfa2b796efb83430f62553e55b577478770912d9319"
-token_count: 792
+content_hash: c755f63edfe45de58df1f53045c7479b64b7f0f25fe3f26c7b5434cbb9f6cda9
+token_count: 815
 file_path: .ideate/work-items/WI-143.yaml
+resolution: "Verified complete: config.ts exports all required symbols, .gitignore entries present, tests pass"

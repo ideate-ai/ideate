@@ -9,7 +9,7 @@
  *   a real temp directory structure mirroring .ideate/ layout.
  */
 
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, beforeAll, beforeEach, afterEach } from "vitest";
 import Database from "better-sqlite3";
 import { drizzle } from "drizzle-orm/better-sqlite3";
 import fs from "fs";
@@ -18,15 +18,24 @@ import path from "path";
 
 import { createSchema } from "../schema.js";
 import { ToolContext } from "../tools/index.js";
-import { handleGetWorkItemContext, handleGetContextPackage } from "../tools/context.js";
-import { handleArtifactQuery } from "../tools/query.js";
+import { handleGetWorkItemContext, handleGetContextPackage, handleAssembleContext } from "../tools/context.js";
+import { handleArtifactQuery, handleGetNextId } from "../tools/query.js";
 import { handleGetExecutionStatus, handleGetReviewManifest } from "../tools/execution.js";
 import { handleGetConvergenceStatus, handleGetDomainState, handleGetProjectStatus } from "../tools/analysis.js";
 import { handleAppendJournal, handleArchiveCycle, handleWriteWorkItems, handleUpdateWorkItems, handleWriteArtifact } from "../tools/write.js";
+import { handleTool, signalIndexReady } from "../tools/index.js";
+import { handleEmitMetric } from "../tools/metrics.js";
+import { handleBootstrapProject } from "../tools/bootstrap.js";
+import { handleGetBrrrState, handleUpdateBrrrState } from "../tools/brrr-state.js";
 
 // ---------------------------------------------------------------------------
 // Setup / teardown
 // ---------------------------------------------------------------------------
+
+// Signal the readiness gate so handleTool calls don't block
+beforeAll(() => {
+  signalIndexReady();
+});
 
 let tmpDir: string;
 let artifactDir: string;
@@ -428,19 +437,19 @@ describe("handleGetReviewManifest", () => {
 // ---------------------------------------------------------------------------
 
 describe("handleGetConvergenceStatus", () => {
-  it("happy path: converged=true when no critical/significant findings and principle passes", async () => {
-    const cycleDir = path.join(artifactDir, "archive", "cycles", "001");
-    fs.mkdirSync(cycleDir, { recursive: true });
+  /** Helper: insert a cycle_summary node + document_artifacts row */
+  function insertCycleSummary(id: string, cycle: number, content: string): void {
+    insertNode(id, "cycle_summary", { cycle_created: cycle });
+    db.prepare(
+      `INSERT OR REPLACE INTO document_artifacts (id, cycle, content) VALUES (?, ?, ?)`
+    ).run(id, cycle, content);
+  }
 
-    fs.writeFileSync(
-      path.join(cycleDir, "spec-adherence.md"),
-      "**Principle Violation Verdict**: Pass\n\nNo violations.",
-      "utf8"
-    );
-    fs.writeFileSync(
-      path.join(cycleDir, "summary.md"),
-      "## Summary\nAll good.\n",
-      "utf8"
+  it("happy path: converged=true when no critical/significant findings and principle passes", async () => {
+    insertCycleSummary(
+      "CS-001",
+      1,
+      "**Principle Violation Verdict**: Pass\n\n## Summary\nAll good.\n"
     );
 
     const result = await handleGetConvergenceStatus(ctx, {
@@ -453,18 +462,10 @@ describe("handleGetConvergenceStatus", () => {
   });
 
   it("happy path: converged=false when critical findings exist", async () => {
-    const cycleDir = path.join(artifactDir, "archive", "cycles", "001");
-    fs.mkdirSync(cycleDir, { recursive: true });
-
-    fs.writeFileSync(
-      path.join(cycleDir, "spec-adherence.md"),
-      "**Principle Violation Verdict**: Pass\n",
-      "utf8"
-    );
-    fs.writeFileSync(
-      path.join(cycleDir, "summary.md"),
-      "## Critical Findings\n- C1: Something broke\n- C2: Something else broke\n",
-      "utf8"
+    insertCycleSummary(
+      "CS-001",
+      1,
+      "**Principle Violation Verdict**: Pass\n\n## Critical Findings\n- C1: Something broke\n- C2: Something else broke\n"
     );
 
     const result = await handleGetConvergenceStatus(ctx, {
@@ -475,14 +476,23 @@ describe("handleGetConvergenceStatus", () => {
     expect(result).toContain("critical: 2");
   });
 
-  it("error path: missing cycle files returns unknown/false convergence", async () => {
-    // Cycle 999 does not exist
+  it("error path: missing cycle_summary for cycle returns unknown/false convergence", async () => {
+    // Cycle 999 has no cycle_summary rows in the DB
     const result = await handleGetConvergenceStatus(ctx, {
       cycle_number: 999,
     });
 
     expect(result).toContain("converged: false");
     expect(result).toContain("principle_verdict: unknown");
+  });
+
+  it("error path: missing or invalid cycle_number throws", async () => {
+    await expect(handleGetConvergenceStatus(ctx, {})).rejects.toThrow(
+      "Missing or invalid required parameter: cycle_number"
+    );
+    await expect(handleGetConvergenceStatus(ctx, { cycle_number: "bad" })).rejects.toThrow(
+      "Missing or invalid required parameter: cycle_number"
+    );
   });
 });
 
@@ -559,6 +569,7 @@ describe("handleAppendJournal", () => {
       date: "2026-03-25",
       entry_type: "work-item-complete",
       body: "Completed WI-001: Build schema.",
+      cycle_number: 3,
     });
 
     // Result should reference the YAML file path
@@ -580,6 +591,7 @@ describe("handleAppendJournal", () => {
       date: "2026-03-24",
       entry_type: "cycle-start",
       body: "Starting cycle 4.",
+      cycle_number: 3,
     });
 
     await handleAppendJournal(ctx, {
@@ -587,6 +599,7 @@ describe("handleAppendJournal", () => {
       date: "2026-03-25",
       entry_type: "work-item-complete",
       body: "WI-001 done.",
+      cycle_number: 3,
     });
 
     const journalDir = path.join(artifactDir, "cycles", "003", "journal");
@@ -653,6 +666,41 @@ describe("handleArchiveCycle", () => {
     await expect(
       handleArchiveCycle(ctx, {})
     ).rejects.toThrow();
+  });
+
+  it("archive path fix: reads findings from cycles/{NNN}/findings/ not archive/incremental/", async () => {
+    // Create findings in the correct new location: cycles/002/findings/
+    const findingsDir = path.join(artifactDir, "cycles", "002", "findings");
+    fs.mkdirSync(findingsDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(findingsDir, "F-001-build-schema.yaml"),
+      "id: F-001\ntype: finding\nverdict: pass\n",
+      "utf8"
+    );
+
+    // Create a work item YAML in the correct new location: work-items/ (not plan/work-items/)
+    const wiDir = path.join(artifactDir, "work-items");
+    fs.mkdirSync(wiDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(wiDir, "001-build-schema.yaml"),
+      "id: WI-001\ntype: work_item\ntitle: Build schema\nstatus: done\n",
+      "utf8"
+    );
+
+    const result = await handleArchiveCycle(ctx, {
+      cycle_number: 2,
+    });
+
+    // Should have found and archived the finding file
+    expect(result).toContain("Archived cycle 2");
+    expect(result).toContain("1"); // at least 1 finding archived
+
+    // Finding file should have been moved (deleted from source)
+    expect(fs.existsSync(path.join(findingsDir, "F-001-build-schema.yaml"))).toBe(false);
+
+    // archive/cycles/002/incremental/ should contain the finding
+    const archivedIncremental = path.join(artifactDir, "archive", "cycles", "002", "incremental");
+    expect(fs.existsSync(path.join(archivedIncremental, "F-001-build-schema.yaml"))).toBe(true);
   });
 });
 
@@ -1064,6 +1112,41 @@ describe("handleUpdateWorkItems", () => {
     expect(result).toContain("failed: 0");
   });
 
+  it("updating depends replaces old edges in SQLite", async () => {
+    // Create two work items: WI-U10 (the dependency) and WI-U11 (the dependent)
+    await createWorkItem("WI-U10");
+    await createWorkItem("WI-U11");
+
+    // Initially WI-U11 has no depends edges
+    const edgesBefore = db
+      .prepare(`SELECT * FROM edges WHERE source_id = 'WI-U11' AND edge_type = 'depends_on'`)
+      .all();
+    expect(edgesBefore).toHaveLength(0);
+
+    // Update WI-U11 to depend on WI-U10
+    const result = await handleUpdateWorkItems(ctx, {
+      updates: [{ id: "WI-U11", depends: ["WI-U10"] }],
+    });
+    expect(result).toContain("updated: 1");
+    expect(result).toContain("failed: 0");
+
+    // Verify the depends_on edge was created in SQLite
+    const edgesAfter = db
+      .prepare(`SELECT source_id, target_id, edge_type FROM edges WHERE source_id = 'WI-U11' AND edge_type = 'depends_on'`)
+      .all() as { source_id: string; target_id: string; edge_type: string }[];
+    expect(edgesAfter).toHaveLength(1);
+    expect(edgesAfter[0].target_id).toBe("WI-U10");
+
+    // Update WI-U11 again with a different depends to verify old edges are removed
+    await handleUpdateWorkItems(ctx, {
+      updates: [{ id: "WI-U11", depends: [] }],
+    });
+    const edgesCleared = db
+      .prepare(`SELECT * FROM edges WHERE source_id = 'WI-U11' AND edge_type = 'depends_on'`)
+      .all();
+    expect(edgesCleared).toHaveLength(0);
+  });
+
   it("throws when updates param is missing", async () => {
     await expect(
       handleUpdateWorkItems(ctx, {})
@@ -1249,6 +1332,267 @@ describe("handleWriteArtifact", () => {
 });
 
 // ---------------------------------------------------------------------------
+// handleAssembleContext — PPR-based context assembly with token budgeting
+// ---------------------------------------------------------------------------
+
+describe("handleAssembleContext", () => {
+  /** Insert an edge between two existing nodes */
+  function insertEdge(sourceId: string, targetId: string, edgeType: string): void {
+    db.prepare(`
+      INSERT OR IGNORE INTO edges (source_id, target_id, edge_type, props)
+      VALUES (?, ?, ?, '{}')
+    `).run(sourceId, targetId, edgeType);
+  }
+
+  /** Write a YAML file to the artifact directory and return its path */
+  function writeArtifactFile(relPath: string, content: string): string {
+    const fullPath = path.join(artifactDir, relPath);
+    fs.mkdirSync(path.dirname(fullPath), { recursive: true });
+    fs.writeFileSync(fullPath, content, "utf8");
+    return fullPath;
+  }
+
+  it("basic assembly: seed a work item, verify related artifacts appear in output", async () => {
+    // Set up a work item node with a YAML file
+    const wiFilePath = writeArtifactFile("work-items/WI-001.yaml", [
+      "id: WI-001",
+      "type: work_item",
+      "title: Test Work Item",
+      "content: Implementation of the test feature.",
+    ].join("\n"));
+
+    insertNode("WI-001", "work_item", {
+      file_path: wiFilePath,
+      status: "pending",
+    });
+    insertWorkItem("WI-001", "Test Work Item");
+
+    // Add a related guiding principle
+    const gpFilePath = writeArtifactFile("principles/GP-01.yaml", [
+      "id: GP-01",
+      "type: guiding_principle",
+      "name: Test Principle",
+      "description: Always test your code.",
+    ].join("\n"));
+
+    insertNode("GP-01", "guiding_principle", { file_path: gpFilePath });
+    db.prepare(`INSERT OR REPLACE INTO guiding_principles (id, name, description) VALUES (?, ?, ?)`)
+      .run("GP-01", "Test Principle", "Always test your code.");
+
+    // Connect them via a governed_by edge
+    insertEdge("WI-001", "GP-01", "governed_by");
+
+    const resultStr = await handleAssembleContext(ctx, {
+      seed_ids: ["WI-001"],
+      token_budget: 100000,
+      include_types: [],
+    });
+
+    const result = JSON.parse(resultStr) as {
+      artifact_ids: string[];
+      total_tokens: number;
+      ppr_scores: Array<{ id: string; score: number }>;
+      context: string;
+    };
+
+    // Both the seed and the related artifact should appear
+    expect(result.artifact_ids).toContain("WI-001");
+    expect(result.artifact_ids).toContain("GP-01");
+    expect(result.context).toContain("WI-001");
+    expect(result.context).toContain("GP-01");
+    expect(result.total_tokens).toBeGreaterThan(0);
+    expect(result.ppr_scores.length).toBeGreaterThan(0);
+  });
+
+  it("token budget cutoff: small budget limits included artifacts", async () => {
+    // Create multiple nodes, each with some content
+    for (let i = 1; i <= 5; i++) {
+      const id = `WI-B0${i}`;
+      // Each file is about 200 characters = ~50 tokens
+      const content = `id: ${id}\ntype: work_item\ntitle: Budget Test Item ${i}\ncontent: ${"x".repeat(150)}\n`;
+      const filePath = writeArtifactFile(`work-items/${id}.yaml`, content);
+      insertNode(id, "work_item", { file_path: filePath, status: "pending" });
+      insertWorkItem(id, `Budget Test Item ${i}`);
+    }
+
+    // Link them all: WI-B01 → WI-B02 → WI-B03 → WI-B04 → WI-B05
+    for (let i = 1; i <= 4; i++) {
+      insertEdge(`WI-B0${i}`, `WI-B0${i + 1}`, "depends_on");
+    }
+
+    // Token budget tight enough to exclude some artifacts (~50 tokens each, budget = 120)
+    const resultStr = await handleAssembleContext(ctx, {
+      seed_ids: ["WI-B01"],
+      token_budget: 120,
+      include_types: [],
+    });
+
+    const result = JSON.parse(resultStr) as {
+      artifact_ids: string[];
+      total_tokens: number;
+    };
+
+    // Should have included the seed (WI-B01) plus at most 1-2 more due to budget
+    expect(result.artifact_ids).toContain("WI-B01");
+    // Should not include all 5 — total_tokens should be within budget
+    expect(result.total_tokens).toBeLessThanOrEqual(120);
+    // Not all 5 items should be included
+    expect(result.artifact_ids.length).toBeLessThan(5);
+  });
+
+  it("always-include types: artifacts matching include_types appear even without PPR connection", async () => {
+    // Create the seed work item
+    const wiFilePath = writeArtifactFile("work-items/WI-AIT-01.yaml", [
+      "id: WI-AIT-01",
+      "type: work_item",
+      "title: Always Include Test",
+    ].join("\n"));
+    insertNode("WI-AIT-01", "work_item", { file_path: wiFilePath, status: "pending" });
+    insertWorkItem("WI-AIT-01", "Always Include Test");
+
+    // Create a guiding_principle with NO edge to the seed (zero PPR score)
+    const gpFilePath = writeArtifactFile("principles/GP-AIT-01.yaml", [
+      "id: GP-AIT-01",
+      "type: guiding_principle",
+      "name: Isolated Principle",
+      "description: This principle has no edge to the work item.",
+    ].join("\n"));
+    insertNode("GP-AIT-01", "guiding_principle", { file_path: gpFilePath });
+    db.prepare(`INSERT OR REPLACE INTO guiding_principles (id, name, description) VALUES (?, ?, ?)`)
+      .run("GP-AIT-01", "Isolated Principle", "This principle has no edge to the work item.");
+
+    // No edge between WI-AIT-01 and GP-AIT-01
+
+    const resultStr = await handleAssembleContext(ctx, {
+      seed_ids: ["WI-AIT-01"],
+      token_budget: 100000,
+      include_types: ["guiding_principle"],
+    });
+
+    const result = JSON.parse(resultStr) as {
+      artifact_ids: string[];
+      context: string;
+    };
+
+    // The guiding principle should be included despite having no PPR score
+    expect(result.artifact_ids).toContain("GP-AIT-01");
+    expect(result.context).toContain("GP-AIT-01");
+    expect(result.context).toContain("Isolated Principle");
+  });
+
+  it("error path: empty seed_ids array throws error", async () => {
+    await expect(
+      handleAssembleContext(ctx, { seed_ids: [], token_budget: 50000, include_types: [] })
+    ).rejects.toThrow(/seed_ids/i);
+  });
+
+  it("edge case: seed_ids with non-existent IDs returns always-include items only", async () => {
+    // Insert a guiding_principle that will be always-included
+    const gpFilePath = path.join(artifactDir, "principles", "GP-ONLY.yaml");
+    fs.mkdirSync(path.dirname(gpFilePath), { recursive: true });
+    fs.writeFileSync(gpFilePath, [
+      "id: GP-ONLY",
+      "type: guiding_principle",
+      "name: Only Principle",
+      "description: This should always be included.",
+    ].join("\n"), "utf8");
+    insertNode("GP-ONLY", "guiding_principle", { file_path: gpFilePath });
+    db.prepare(`INSERT OR REPLACE INTO guiding_principles (id, name, description) VALUES (?, ?, ?)`)
+      .run("GP-ONLY", "Only Principle", "This should always be included.");
+
+    // Seed with an ID that does not exist in the DB
+    const resultStr = await handleAssembleContext(ctx, {
+      seed_ids: ["WI-DOES-NOT-EXIST"],
+      token_budget: 100000,
+      include_types: ["guiding_principle"],
+    });
+
+    const result = JSON.parse(resultStr) as {
+      artifact_ids: string[];
+      context: string;
+    };
+
+    // Always-include type should be present
+    expect(result.artifact_ids).toContain("GP-ONLY");
+    // The non-existent seed should not appear in the output
+    expect(result.artifact_ids).not.toContain("WI-DOES-NOT-EXIST");
+  });
+
+  it("edge case: token_budget of 0 returns always-include items only", async () => {
+    // Insert a seed work item
+    const wiFilePath = path.join(artifactDir, "work-items", "WI-TB0.yaml");
+    fs.mkdirSync(path.dirname(wiFilePath), { recursive: true });
+    fs.writeFileSync(wiFilePath, [
+      "id: WI-TB0",
+      "type: work_item",
+      "title: Token Budget Zero",
+    ].join("\n"), "utf8");
+    insertNode("WI-TB0", "work_item", { file_path: wiFilePath, status: "pending" });
+    insertWorkItem("WI-TB0", "Token Budget Zero");
+
+    // Insert a ranked node connected via edge (should be excluded by budget)
+    const relFilePath = path.join(artifactDir, "work-items", "WI-TB0-REL.yaml");
+    fs.writeFileSync(relFilePath, [
+      "id: WI-TB0-REL",
+      "type: work_item",
+      "title: Related Item",
+    ].join("\n"), "utf8");
+    insertNode("WI-TB0-REL", "work_item", { file_path: relFilePath, status: "pending" });
+    insertWorkItem("WI-TB0-REL", "Related Item");
+    db.prepare(`INSERT OR IGNORE INTO edges (source_id, target_id, edge_type, props) VALUES (?, ?, 'depends_on', '{}')`)
+      .run("WI-TB0", "WI-TB0-REL");
+
+    const resultStr = await handleAssembleContext(ctx, {
+      seed_ids: ["WI-TB0"],
+      token_budget: 0,
+      include_types: [],
+    });
+
+    const result = JSON.parse(resultStr) as {
+      artifact_ids: string[];
+      total_tokens: number;
+    };
+
+    // The seed (always-include) should be present
+    expect(result.artifact_ids).toContain("WI-TB0");
+    // The ranked related item should be excluded since budget is 0
+    expect(result.artifact_ids).not.toContain("WI-TB0-REL");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// ideate_get_config dispatch
+// ---------------------------------------------------------------------------
+
+describe("ideate_get_config", () => {
+  it("handleTool dispatch returns JSON with agent_budgets and ppr keys with correct defaults", async () => {
+    const resultStr = await handleTool(ctx, "ideate_get_config", {});
+
+    const result = JSON.parse(resultStr) as Record<string, unknown>;
+
+    // Must have both top-level keys
+    expect(result).toHaveProperty("agent_budgets");
+    expect(result).toHaveProperty("ppr");
+
+    // agent_budgets should contain default entries
+    const agentBudgets = result.agent_budgets as Record<string, number>;
+    expect(agentBudgets["code-reviewer"]).toBe(80);
+    expect(agentBudgets["architect"]).toBe(160);
+    expect(agentBudgets["proxy-human"]).toBe(160);
+
+    // ppr should contain default sub-keys
+    const ppr = result.ppr as Record<string, unknown>;
+    expect(ppr).toHaveProperty("alpha");
+    expect(ppr).toHaveProperty("max_iterations");
+    expect(ppr).toHaveProperty("convergence_threshold");
+    expect(ppr).toHaveProperty("edge_type_weights");
+    expect(ppr).toHaveProperty("default_token_budget");
+    expect(ppr.alpha).toBe(0.15);
+    expect(ppr.default_token_budget).toBe(50000);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Integration: write → read (append_journal → artifact_query)
 // ---------------------------------------------------------------------------
 
@@ -1260,6 +1604,7 @@ describe("integration: append_journal → artifact_query sync", () => {
       date: "2026-03-25",
       entry_type: "integration-test",
       body: "Integration test body.",
+      cycle_number: 3,
     });
 
     // Query the artifact index for journal_entry type
@@ -1278,5 +1623,259 @@ describe("integration: append_journal → artifact_query sync", () => {
     expect(row).toBeDefined();
     expect(row!.file_path).toContain("J-003-000.yaml");
     expect(row!.file_path).not.toContain("journal.md");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// handleEmitMetric
+// ---------------------------------------------------------------------------
+
+describe("handleEmitMetric", () => {
+  it("appends a metric line as valid JSON to metrics.jsonl", async () => {
+    const payload = { event: "test", tokens: 1234, phase: "execute" };
+    const result = await handleEmitMetric(ctx, { payload });
+
+    expect(result).toBe("Metric appended successfully");
+
+    const metricsPath = path.join(artifactDir, "metrics.jsonl");
+    expect(fs.existsSync(metricsPath)).toBe(true);
+
+    const content = fs.readFileSync(metricsPath, "utf8").trim();
+    const parsed = JSON.parse(content);
+    expect(parsed.event).toBe("test");
+    expect(parsed.tokens).toBe(1234);
+  });
+
+  it("throws when payload is missing", async () => {
+    await expect(handleEmitMetric(ctx, {})).rejects.toThrow("Missing required parameter: payload");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// handleBootstrapProject
+// ---------------------------------------------------------------------------
+
+describe("handleBootstrapProject", () => {
+  it("creates .ideate/ directory structure with config.json", async () => {
+    // Use a fresh temp dir as the project root (not the existing artifactDir)
+    const projectRoot = fs.mkdtempSync(path.join(os.tmpdir(), "ideate-bootstrap-test-"));
+    const bootstrapIdeateDir = path.join(projectRoot, ".ideate");
+
+    // Create a temporary context pointing to the new .ideate dir
+    const bootstrapCtx: ToolContext = { ...ctx, ideateDir: bootstrapIdeateDir };
+
+    const result = await handleBootstrapProject(bootstrapCtx, { project_name: "test-project" });
+    const parsed = JSON.parse(result);
+
+    expect(parsed.created_dir).toBe(bootstrapIdeateDir);
+    expect(parsed.subdirectories).toContain("work-items");
+    expect(parsed.subdirectories).toContain("plan");
+
+    // Verify config.json exists with correct content
+    const configPath = path.join(bootstrapIdeateDir, "config.json");
+    expect(fs.existsSync(configPath)).toBe(true);
+    const config = JSON.parse(fs.readFileSync(configPath, "utf8"));
+    expect(config.schema_version).toBe(2);
+    expect(config.project_name).toBe("test-project");
+
+    // Verify subdirectories exist
+    expect(fs.existsSync(path.join(bootstrapIdeateDir, "work-items"))).toBe(true);
+    expect(fs.existsSync(path.join(bootstrapIdeateDir, "cycles"))).toBe(true);
+
+    // Cleanup
+    fs.rmSync(projectRoot, { recursive: true, force: true });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// handleGetNextId
+// ---------------------------------------------------------------------------
+
+describe("handleGetNextId", () => {
+  it("returns correct next ID with existing work items indexed", async () => {
+    // Insert some work item nodes
+    insertNode("WI-001", "work_item", { status: "done" });
+    insertNode("WI-002", "work_item", { status: "done" });
+    insertNode("WI-010", "work_item", { status: "pending" });
+
+    const result = await handleGetNextId(ctx, { type: "work_item" });
+    expect(result).toBe("WI-011");
+  });
+
+  it("returns first ID when no artifacts exist", async () => {
+    const result = await handleGetNextId(ctx, { type: "guiding_principle" });
+    expect(result).toBe("GP-01");
+  });
+
+  it("throws on unknown type", async () => {
+    await expect(handleGetNextId(ctx, { type: "invalid" })).rejects.toThrow("Unknown type");
+  });
+
+  it("throws when type is missing", async () => {
+    await expect(handleGetNextId(ctx, {})).rejects.toThrow("Missing required parameter: type");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// handleGetBrrrState
+// ---------------------------------------------------------------------------
+
+describe("handleGetBrrrState", () => {
+  it("returns default state when no file exists", async () => {
+    const result = await handleGetBrrrState(ctx, {});
+    const state = JSON.parse(result);
+
+    expect(state.cycles_completed).toBe(0);
+    expect(state.convergence_achieved).toBe(false);
+    expect(state.started_at).toBeNull();
+    expect(state.last_phase).toBeNull();
+    expect(state.deferred).toBe(false);
+  });
+
+  it("returns persisted state when file exists", async () => {
+    // Write a brrr-state.yaml directly
+    const statePath = path.join(artifactDir, "brrr-state.yaml");
+    fs.writeFileSync(statePath, "cycles_completed: 3\nconvergence_achieved: true\nstarted_at: '2026-03-25T10:00:00Z'\n", "utf8");
+
+    const result = await handleGetBrrrState(ctx, {});
+    const state = JSON.parse(result);
+
+    expect(state.cycles_completed).toBe(3);
+    expect(state.convergence_achieved).toBe(true);
+    expect(state.started_at).toBe("2026-03-25T10:00:00Z");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// handleUpdateBrrrState
+// ---------------------------------------------------------------------------
+
+describe("handleUpdateBrrrState", () => {
+  it("creates state file and merges update when no file exists", async () => {
+    const result = await handleUpdateBrrrState(ctx, {
+      state: { cycles_completed: 1, started_at: "2026-03-26T09:00:00Z" },
+    });
+    const state = JSON.parse(result);
+
+    expect(state.cycles_completed).toBe(1);
+    expect(state.started_at).toBe("2026-03-26T09:00:00Z");
+    expect(state.convergence_achieved).toBe(false); // default preserved
+
+    // Verify file was written
+    const statePath = path.join(artifactDir, "brrr-state.yaml");
+    expect(fs.existsSync(statePath)).toBe(true);
+  });
+
+  it("merges partial update onto existing state", async () => {
+    // Create initial state
+    await handleUpdateBrrrState(ctx, {
+      state: { cycles_completed: 2, started_at: "2026-03-26T09:00:00Z" },
+    });
+
+    // Update only convergence
+    const result = await handleUpdateBrrrState(ctx, {
+      state: { convergence_achieved: true, last_phase: "review" },
+    });
+    const state = JSON.parse(result);
+
+    expect(state.cycles_completed).toBe(2); // preserved
+    expect(state.convergence_achieved).toBe(true); // updated
+    expect(state.last_phase).toBe("review"); // added
+    expect(state.started_at).toBe("2026-03-26T09:00:00Z"); // preserved
+  });
+
+  it("throws when state parameter is missing", async () => {
+    await expect(handleUpdateBrrrState(ctx, {})).rejects.toThrow("Missing required parameter: state");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// resolveArtifactPath routing via handleWriteArtifact
+// ---------------------------------------------------------------------------
+
+describe("handleWriteArtifact routing", () => {
+  it("routes guiding_principle to principles/ directory", async () => {
+    fs.mkdirSync(path.join(artifactDir, "principles"), { recursive: true });
+
+    const result = await handleWriteArtifact(ctx, {
+      type: "guiding_principle",
+      id: "GP-99",
+      content: { name: "Test Principle", description: "A test guiding principle" },
+    });
+
+    expect(result).toContain("principles");
+    expect(result).toContain("GP-99");
+    const filePath = path.join(artifactDir, "principles", "GP-99.yaml");
+    expect(fs.existsSync(filePath)).toBe(true);
+  });
+
+  it("routes constraint to constraints/ directory", async () => {
+    fs.mkdirSync(path.join(artifactDir, "constraints"), { recursive: true });
+
+    const result = await handleWriteArtifact(ctx, {
+      type: "constraint",
+      id: "C-99",
+      content: { category: "technical", description: "A test constraint" },
+    });
+
+    expect(result).toContain("constraints");
+    const filePath = path.join(artifactDir, "constraints", "C-99.yaml");
+    expect(fs.existsSync(filePath)).toBe(true);
+  });
+
+  it("routes domain_policy to policies/ directory", async () => {
+    fs.mkdirSync(path.join(artifactDir, "policies"), { recursive: true });
+
+    const result = await handleWriteArtifact(ctx, {
+      type: "domain_policy",
+      id: "P-99",
+      content: { domain: "workflow", description: "Test policy" },
+    });
+
+    expect(result).toContain("policies");
+    const filePath = path.join(artifactDir, "policies", "P-99.yaml");
+    expect(fs.existsSync(filePath)).toBe(true);
+  });
+
+  it("routes domain_decision to decisions/ directory", async () => {
+    fs.mkdirSync(path.join(artifactDir, "decisions"), { recursive: true });
+
+    const result = await handleWriteArtifact(ctx, {
+      type: "domain_decision",
+      id: "D-99",
+      content: { domain: "workflow", description: "Test decision" },
+    });
+
+    expect(result).toContain("decisions");
+    const filePath = path.join(artifactDir, "decisions", "D-99.yaml");
+    expect(fs.existsSync(filePath)).toBe(true);
+  });
+
+  it("routes domain_question to questions/ directory", async () => {
+    fs.mkdirSync(path.join(artifactDir, "questions"), { recursive: true });
+
+    const result = await handleWriteArtifact(ctx, {
+      type: "domain_question",
+      id: "Q-99",
+      content: { domain: "workflow", description: "Test question" },
+    });
+
+    expect(result).toContain("questions");
+    const filePath = path.join(artifactDir, "questions", "Q-99.yaml");
+    expect(fs.existsSync(filePath)).toBe(true);
+  });
+
+  it("routes domain_index to domains/index.yaml", async () => {
+    // domains dir already created in beforeEach
+
+    const result = await handleWriteArtifact(ctx, {
+      type: "domain_index",
+      id: "index",
+      content: { current_cycle: 5, domains: ["workflow", "infra"] },
+    });
+
+    expect(result).toContain("domains");
+    const filePath = path.join(artifactDir, "domains", "index.yaml");
+    expect(fs.existsSync(filePath)).toBe(true);
   });
 });

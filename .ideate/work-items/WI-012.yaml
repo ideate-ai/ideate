@@ -1,7 +1,7 @@
 id: WI-012
 type: work_item
 title: MCP Server Security and Correctness Fixes
-status: pending
+status: obsolete
 complexity: medium
 scope:
   - {path: mcp/session-spawner/server.py, op: modify}
@@ -11,10 +11,10 @@ blocks:
   - "014"
 criteria:
   - "`max_depth` is enforced server-side via `IDEATE_MAX_DEPTH` environment variable (default: 3). The caller-supplied `max_depth` parameter is ignored or capped to the server-side value."
-  - `TimeoutExpired` handler correctly handles `None` stdout/stderr — no `str(None)` producing literal "None" string. Uses `(e.stdout or b"").decode("utf-8", errors="ignore")` or equivalent.
-  - Semaphore creation moved inside `main()` or a startup handler, OR `requirements.txt` / `pyproject.toml` enforces `python_requires >= 3.10`.
+  - "`TimeoutExpired` handler correctly handles `None` stdout/stderr — no `str(None)` producing literal \"None\" string. Uses `(e.stdout or b\"\").decode(\"utf-8\", errors=\"ignore\")` or equivalent."
+  - "Semaphore creation moved inside `main()` or a startup handler, OR `requirements.txt` / `pyproject.toml` enforces `python_requires >= 3.10`."
   - Prompt length is validated — prompts exceeding 100KB are rejected with a descriptive error before subprocess launch.
-  - `working_dir` is validated to be an existing directory (already done) AND to be within the process cwd or a configurable safe root (`IDEATE_SAFE_ROOT` env var). If `IDEATE_SAFE_ROOT` is not set, any existing directory is accepted (current behavior).
+  - "`working_dir` is validated to be an existing directory (already done) AND to be within the process cwd or a configurable safe root (`IDEATE_SAFE_ROOT` env var). If `IDEATE_SAFE_ROOT` is not set, any existing directory is accepted (current behavior)."
   - Unknown tool names return an MCP protocol error, not a success response with error text.
   - "Token budget logging: the response includes a `token_estimate` field. Parse the `claude --print --output-format json` response for token usage fields if available in the JSON output. If token data is not available in the output, omit the field (do not estimate)."
 module: null
@@ -35,6 +35,7 @@ notes: |
   For unknown tool: Import and raise `McpError` or use the appropriate MCP SDK error mechanism instead of returning `TextContent`.
   
   For token budget: After parsing the JSON output from `claude --print`, look for token usage fields in the parsed response. Include them in the return value if present.
+resolution: "mcp/session-spawner/server.py no longer exists. Architecture replaced by mcp/artifact-server."
 cycle_created: 1
 cycle_modified: null
 content_hash: ea82ff0b1946d463242b98b17142fe95a75542977bbd8e88322960cd8f6f1473

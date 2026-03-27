@@ -2,6 +2,51 @@ import { ToolContext } from "./index.js";
 import { TYPE_TO_EXTENSION_TABLE } from "../db.js";
 
 // ---------------------------------------------------------------------------
+// handleGetNextId — return next available ID for an artifact type
+// ---------------------------------------------------------------------------
+
+const TYPE_PREFIX_MAP: Record<string, { prefix: string; padWidth: number }> = {
+  work_item: { prefix: "WI-", padWidth: 3 },
+  guiding_principle: { prefix: "GP-", padWidth: 2 },
+  constraint: { prefix: "C-", padWidth: 2 },
+  policy: { prefix: "P-", padWidth: 2 },
+  decision: { prefix: "D-", padWidth: 2 },
+  question: { prefix: "Q-", padWidth: 2 },
+};
+
+export async function handleGetNextId(
+  ctx: ToolContext,
+  args: Record<string, unknown>
+): Promise<string> {
+  const type = args.type as string | undefined;
+
+  if (!type) {
+    throw new Error("Missing required parameter: type");
+  }
+
+  const mapping = TYPE_PREFIX_MAP[type];
+  if (!mapping) {
+    const validTypes = Object.keys(TYPE_PREFIX_MAP).join(", ");
+    throw new Error(`Unknown type '${type}'. Valid types: ${validTypes}`);
+  }
+
+  const { prefix, padWidth } = mapping;
+
+  // Query SQLite for max numeric ID matching this prefix
+  const row = ctx.db.prepare(
+    `SELECT MAX(CAST(REPLACE(id, ?, '') AS INTEGER)) as max_num
+     FROM nodes
+     WHERE id LIKE ? || '%'`
+  ).get(prefix, prefix) as { max_num: number | null } | undefined;
+
+  const maxNum = row?.max_num ?? 0;
+  const nextNum = maxNum + 1;
+  const nextId = prefix + String(nextNum).padStart(padWidth, "0");
+
+  return nextId;
+}
+
+// ---------------------------------------------------------------------------
 // Valid artifact types
 // ---------------------------------------------------------------------------
 
@@ -321,7 +366,7 @@ function runGraphDepth1(
 
   if (direction === "outgoing") {
     sql = `
-      SELECT n.id, n.type, e.edge_type, 'outgoing' AS direction, 1 AS depth, n.status, n.file_path
+      SELECT n.id AS node_id, n.type, e.edge_type, 'outgoing' AS direction, 1 AS depth, n.status, n.file_path
       FROM edges e
       JOIN nodes n ON n.id = e.target_id
       WHERE e.source_id = ?
@@ -330,7 +375,7 @@ function runGraphDepth1(
     params.push(relatedTo, ...edgeTypeParams);
   } else if (direction === "incoming") {
     sql = `
-      SELECT n.id, n.type, e.edge_type, 'incoming' AS direction, 1 AS depth, n.status, n.file_path
+      SELECT n.id AS node_id, n.type, e.edge_type, 'incoming' AS direction, 1 AS depth, n.status, n.file_path
       FROM edges e
       JOIN nodes n ON n.id = e.source_id
       WHERE e.target_id = ?
@@ -340,13 +385,13 @@ function runGraphDepth1(
   } else {
     // both
     sql = `
-      SELECT n.id, n.type, e.edge_type, 'outgoing' AS direction, 1 AS depth, n.status, n.file_path
+      SELECT n.id AS node_id, n.type, e.edge_type, 'outgoing' AS direction, 1 AS depth, n.status, n.file_path
       FROM edges e
       JOIN nodes n ON n.id = e.target_id
       WHERE e.source_id = ?
       ${edgeTypeFilter}
-      UNION ALL
-      SELECT n.id, n.type, e.edge_type, 'incoming' AS direction, 1 AS depth, n.status, n.file_path
+      UNION
+      SELECT n.id AS node_id, n.type, e.edge_type, 'incoming' AS direction, 1 AS depth, n.status, n.file_path
       FROM edges e
       JOIN nodes n ON n.id = e.source_id
       WHERE e.target_id = ?

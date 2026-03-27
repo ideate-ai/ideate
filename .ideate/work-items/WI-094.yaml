@@ -1,7 +1,7 @@
 id: WI-094
 type: work_item
 title: Metrics report script
-status: pending
+status: done
 complexity: high
 scope:
   - {path: scripts/report.sh, op: create}
@@ -10,10 +10,10 @@ depends:
   - "093"
 blocks: []
 criteria:
-  - `scripts/report.sh` exists and is executable
-  - Running `scripts/report.sh --help` prints a usage message describing arguments and all report sections, then exits 0
-  - Running `scripts/report.sh` with no arguments attempts auto-discovery via `.ideate.json` walk; if not found, prints error to stderr and exits 1
-  - Running `scripts/report.sh path/to/metrics.jsonl` produces a markdown report to stdout
+  - "`scripts/report.sh` exists and is executable"
+  - "Running `scripts/report.sh --help` prints a usage message describing arguments and all report sections, then exits 0"
+  - "Running `scripts/report.sh` with no arguments attempts auto-discovery via `.ideate.json` walk; if not found, prints error to stderr and exits 1"
+  - "Running `scripts/report.sh path/to/metrics.jsonl` produces a markdown report to stdout"
   - "Report contains exactly these H2 sections in order: Executive Summary, Per-Cycle Breakdown, Per-Task Breakdown, Phase Analysis, Agent Performance, RAG vs Flat-File Usage, Quality Trends"
   - "Executive Summary includes: total agent spawns, total input+output tokens, total wall-clock time (human-readable), cycles completed, work items completed"
   - "Per-Cycle Breakdown table columns: Cycle, Tokens, Wall Clock, Work Items, Critical, Significant, Minor"
@@ -138,6 +138,7 @@ notes: |
   - No quality_summary events: Quality Trends prints `No quality data recorded. Run /ideate:review to generate quality metrics.`
   - No mcp_tools_called in any entry: RAG section prints `No MCP tool usage recorded. Update skills to WI-092 schema to enable this report.`
   - Null fields: treated as 0 for numeric aggregations, empty array for mcp_tools_called
+resolution: "scripts/report.sh exists."
 cycle_created: 1
 cycle_modified: null
 content_hash: c7e8dcec35435bf1ffa60ec390649b046ca7a3a311520d2e81070e685e6a698f

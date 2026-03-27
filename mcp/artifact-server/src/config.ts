@@ -9,7 +9,47 @@ export const CONFIG_SCHEMA_VERSION = 2;
 export interface IdeateConfigJson {
   schema_version: number;
   project_name?: string;
+  agent_budgets?: Record<string, number>;
+  ppr?: {
+    alpha?: number;
+    max_iterations?: number;
+    convergence_threshold?: number;
+    edge_type_weights?: Record<string, number>;
+    default_token_budget?: number;
+  };
 }
+
+/**
+ * Default agent_budgets used when the field is absent from config.json.
+ */
+export const DEFAULT_AGENT_BUDGETS: Record<string, number> = {
+  "code-reviewer": 80,
+  "spec-reviewer": 100,
+  "gap-analyst": 100,
+  "journal-keeper": 60,
+  "domain-curator": 100,
+  decomposer: 100,
+  architect: 160,
+  researcher: 80,
+  "proxy-human": 160,
+};
+
+/**
+ * Default PPR configuration used when the field is absent from config.json.
+ */
+export const DEFAULT_PPR_CONFIG = {
+  alpha: 0.15,
+  max_iterations: 50,
+  convergence_threshold: 1e-6,
+  edge_type_weights: {
+    depends_on: 1.0,
+    governed_by: 0.8,
+    informed_by: 0.6,
+    references: 0.4,
+    blocks: 0.3,
+  },
+  default_token_budget: 50000,
+};
 
 /**
  * Resolved config used internally.
@@ -21,7 +61,9 @@ export interface IdeateConfig {
 /**
  * Subdirectories created inside .ideate/ by createIdeateDir().
  */
-const IDEATE_SUBDIRS = [
+export const IDEATE_SUBDIRS = [
+  "plan",
+  "steering",
   "work-items",
   "principles",
   "constraints",
@@ -32,6 +74,7 @@ const IDEATE_SUBDIRS = [
   "research",
   "interviews",
   "cycles",
+  "domains",
 ] as const;
 
 /**
@@ -124,4 +167,52 @@ export function writeConfig(
 ): void {
   const configPath = path.join(ideateDir, "config.json");
   writeFileSync(configPath, JSON.stringify(config, null, 2) + "\n", "utf8");
+}
+
+/**
+ * Read config.json from the given .ideate/ directory and deep-merge with
+ * defaults for any missing optional fields (agent_budgets, ppr).
+ *
+ * @param ideateDir - Path to the .ideate/ directory
+ * @returns Config object with defaults applied for missing fields
+ */
+export function getConfigWithDefaults(ideateDir: string): Required<
+  Pick<IdeateConfigJson, "schema_version" | "agent_budgets" | "ppr">
+> &
+  Omit<IdeateConfigJson, "agent_budgets" | "ppr"> {
+  const configPath = path.join(ideateDir, "config.json");
+  let raw: IdeateConfigJson = { schema_version: CONFIG_SCHEMA_VERSION };
+
+  if (existsSync(configPath)) {
+    try {
+      raw = JSON.parse(readFileSync(configPath, "utf8")) as IdeateConfigJson;
+    } catch {
+      // fallback to defaults if parsing fails
+    }
+  }
+
+  const agent_budgets: Record<string, number> = {
+    ...DEFAULT_AGENT_BUDGETS,
+    ...(raw.agent_budgets ?? {}),
+  };
+
+  const rawPpr = raw.ppr ?? {};
+  const ppr = {
+    alpha: rawPpr.alpha ?? DEFAULT_PPR_CONFIG.alpha,
+    max_iterations: rawPpr.max_iterations ?? DEFAULT_PPR_CONFIG.max_iterations,
+    convergence_threshold:
+      rawPpr.convergence_threshold ?? DEFAULT_PPR_CONFIG.convergence_threshold,
+    edge_type_weights: {
+      ...DEFAULT_PPR_CONFIG.edge_type_weights,
+      ...(rawPpr.edge_type_weights ?? {}),
+    },
+    default_token_budget:
+      rawPpr.default_token_budget ?? DEFAULT_PPR_CONFIG.default_token_budget,
+  };
+
+  return {
+    ...raw,
+    agent_budgets,
+    ppr,
+  };
 }

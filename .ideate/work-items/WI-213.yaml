@@ -1,11 +1,13 @@
 id: WI-213
 type: work_item
 title: ideate_get_metrics MCP tool
-status: pending
+status: done
 complexity: medium
 scope:
-  - {path: mcp/artifact-server/src/tools/metrics.ts, op: create}
-  - {path: mcp/artifact-server/src/tools/index.ts, op: modify}
+  - path: mcp/artifact-server/src/tools/metrics.ts
+    op: create
+  - path: mcp/artifact-server/src/tools/index.ts
+    op: modify
 depends:
   - "212"
 blocks: []
@@ -24,21 +26,22 @@ module: null
 domain: null
 notes: |
   # WI-213: ideate_get_metrics MCP Tool
-  
+
   ## Tool design
-  
+
   New file: `mcp/artifact-server/src/tools/metrics.ts`
-  
+
   ### Parameters:
   - `artifact_dir` (required): Absolute path to artifact directory
   - `scope` (optional): "agent" | "work_item" | "cycle" — determines aggregation level
   - `filter` (optional): { cycle?: number, work_item?: string, agent_type?: string, phase?: string }
-  
+
   ### Queries:
-  
+
   **Agent scope**: Group metrics_events by event_name (agent type), aggregate:
 cycle_created: 1
 cycle_modified: null
-content_hash: "0b5bc875ea1536ec2449a8fb55d4452ee59cc3b0bb2e608e3cceb1aefe549bca"
-token_count: 516
+content_hash: 21a9f60ec7ee41064698dd768a1e357d4b4b06e2d406e1424832fd7bfe74a45c
+token_count: 530
 file_path: .ideate/work-items/WI-213.yaml
+resolution: "Verified complete: tools/metrics.ts exports handleGetMetrics, registered in tools/index.ts"

@@ -1,4 +1,27 @@
+import * as fs from "fs";
+import * as path from "path";
 import { ToolContext } from "./index.js";
+
+// ---------------------------------------------------------------------------
+// handleEmitMetric — append a metric line to metrics.jsonl
+// ---------------------------------------------------------------------------
+
+export async function handleEmitMetric(
+  ctx: ToolContext,
+  args: Record<string, unknown>
+): Promise<string> {
+  const payload = args.payload;
+
+  if (payload === undefined || payload === null) {
+    throw new Error("Missing required parameter: payload");
+  }
+
+  const line = JSON.stringify(payload) + "\n";
+  const metricsPath = path.join(ctx.ideateDir, "metrics.jsonl");
+  fs.appendFileSync(metricsPath, line, "utf8");
+
+  return "Metric appended successfully";
+}
 
 // ---------------------------------------------------------------------------
 // Types

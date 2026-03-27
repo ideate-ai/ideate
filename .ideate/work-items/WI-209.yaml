@@ -1,10 +1,11 @@
 id: WI-209
 type: work_item
 title: Init skill definition
-status: pending
+status: done
 complexity: medium
 scope:
-  - {path: skills/init/SKILL.md, op: create}
+  - path: skills/init/SKILL.md
+    op: create
 depends: []
 blocks:
   - "211"
@@ -22,20 +23,21 @@ criteria:
   - "Phase 6 bootstraps domain layer from architect analysis: creates domain directories with initial policies.md, decisions.md, questions.md"
   - Skill does NOT produce work items, execution strategy, or architecture doc
   - Skill does NOT produce plan/overview.md or plan/architecture.md
-  - "Final output message tells user the project is ready for /ideate:refine to plan changes"
+  - Final output message tells user the project is ready for /ideate:refine to plan changes
   - Metrics instrumentation section follows the same pattern as skills/refine/SKILL.md (agent-spawn JSON to metrics.jsonl)
 module: null
 domain: null
 notes: |
   # WI-209: Init Skill Definition
-  
+
   ## Purpose
-  
+
   The init skill handles the case where a user has an existing codebase but no `.ideate/` directory. It is lighter than `/ideate:plan` — it does not produce work items, architecture docs, or execution strategies. It produces just enough structure to enable `/ideate:refine`.
-  
+
   ## Flow
 cycle_created: 1
 cycle_modified: null
-content_hash: b64cc15b37ef5e22f1a34fb7a02f32b5a08fb0dbc3887dbbc9fc3bb05f6c09d6
-token_count: 589
+content_hash: 2e47268e581c87c7e64bdbfe0d7e670bc33b5cb388583154a680da08c8526da7
+token_count: 601
 file_path: .ideate/work-items/WI-209.yaml
+resolution: "Verified complete: skills/init/SKILL.md exists with all 6 phases"

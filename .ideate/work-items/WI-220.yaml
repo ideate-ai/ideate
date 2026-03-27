@@ -1,15 +1,21 @@
 id: WI-220
 type: work_item
 title: Skill integration for hook event emission
-status: pending
+status: done
 complexity: medium
 scope:
-  - {path: skills/plan/SKILL.md, op: modify}
-  - {path: skills/execute/SKILL.md, op: modify}
-  - {path: skills/review/SKILL.md, op: modify}
-  - {path: skills/brrr/SKILL.md, op: modify}
-  - {path: skills/brrr/phases/execute.md, op: modify}
-  - {path: skills/brrr/phases/review.md, op: modify}
+  - path: skills/plan/SKILL.md
+    op: modify
+  - path: skills/execute/SKILL.md
+    op: modify
+  - path: skills/review/SKILL.md
+    op: modify
+  - path: skills/brrr/SKILL.md
+    op: modify
+  - path: skills/brrr/phases/execute.md
+    op: modify
+  - path: skills/brrr/phases/review.md
+    op: modify
 depends:
   - "219"
 blocks: []
@@ -28,13 +34,14 @@ module: null
 domain: null
 notes: |
   # WI-220: Skill Integration for Hook Event Emission
-  
+
   ## Event emission points
-  
+
   ### skills/plan/SKILL.md
   After Phase 8 (presenting plan summary), before the closing section:
 cycle_created: 1
 cycle_modified: null
-content_hash: f22bdb92b10f59955180c38ddec233ffe696fb3d4b7201ee1023476b05cdbc6c
-token_count: 507
+content_hash: 544d3d19221812c381d434d6b7a91c1ee4323095d6243c20fc756cb2be20c165
+token_count: 520
 file_path: .ideate/work-items/WI-220.yaml
+resolution: "Verified complete: all skills emit hook events at documented lifecycle points"

@@ -1,13 +1,12 @@
 id: WI-264
-type: refinement
+type: work_item
 title: Complete domain-curator .md header cleanup
 complexity: low
-status: completed
+status: done
 depends: []
 blocks: []
-file_scope:
-  modify:
-    - agents/domain-curator.md
+scope:
+  - {path: agents/domain-curator.md, op: modify}
 criteria:
   - Line 96 header uses .yaml not .md
   - Line 104 header uses .yaml not .md

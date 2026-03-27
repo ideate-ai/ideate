@@ -1,11 +1,13 @@
 id: WI-200
 type: work_item
 title: Create ARCHITECTURE.md and update README
-status: pending
+status: done
 complexity: medium
 scope:
-  - {path: ARCHITECTURE.md, op: create}
-  - {path: README.md, op: modify}
+  - path: ARCHITECTURE.md
+    op: create
+  - path: README.md
+    op: modify
 depends: []
 blocks: []
 criteria:
@@ -18,62 +20,62 @@ module: null
 domain: null
 notes: |
   # WI-200: Create ARCHITECTURE.md and Update README
-  
+
   ## ARCHITECTURE.md (new file at repo root)
-  
+
   Deep technical documentation covering:
-  
+
   ### 1. System Overview
   - Plugin structure (skills, agents, MCP server)
   - Data flow between components
   - The SDLC lifecycle (plan → execute → review → refine → brrr)
-  
+
   ### 2. MCP Artifact Server
   - Purpose: runtime index over YAML artifacts
   - v1 schema: class table inheritance (nodes base + 12 extension tables + edges + node_file_refs)
   - FK integrity with ON DELETE CASCADE
   - PRAGMA foreign_keys = ON requirement
-  
+
   ### 3. Schema Design
   - nodes table (8 common columns)
   - Extension table pattern (PK as FK to nodes)
   - Edge types and EDGE_TYPE_REGISTRY
   - Interview questions (entries array → per-question nodes)
   - Type-prefixed IDs (P-31)
-  
+
   ### 4. Indexer Pipeline
   - Startup: resolveArtifactDir → open DB → createSchema → rebuildIndex → start watcher
   - Rebuild: walk YAML → hash check → two-pass insert (nodes + extension) → edge extraction → file ref extraction → stale deletion (CASCADE)
   - FK OFF during insert phase, FK ON for cascade delete phase
   - Cycle detection (Kahn's algorithm via Drizzle)
-  
+
   ### 5. Tool Architecture
   - ToolContext: { db, drizzleDb, ideateDir }
   - 11 tools in 5 categories (context, query, execution, analysis, write)
   - Hybrid query pattern: Drizzle for CRUD, raw SQL for recursive CTEs
   - Write tools: YAML first (GP-8), then sync SQLite upsert
-  
+
   ### 6. Graph Model
   - 10 edge types with source/target type constraints
   - Recursive CTE for depth > 1 traversal
   - UNION deduplication for cycle protection
   - Query modes: filter, traversal, combined
-  
+
   ### 7. YAML Source of Truth
   - GP-8 architecture
   - MCP server as mandatory interface (P-6, P-26, P-32)
   - Write path: skill → MCP write tool → YAML file → sync SQLite
   - Read path: skill → MCP read tool → SQLite query → response
-  
+
   ### 8. File Watcher
   - Chokidar with 500ms debounce
   - Triggers incremental rebuild on .ideate/ changes
   - Hash-based skip for unchanged files
-  
+
   Include Mermaid diagrams for data flow and component relationships.
-  
+
   ## README.md update
-  
+
   Strip deep technical content. Keep:
   - What ideate is (1 paragraph)
   - Installation instructions
@@ -84,6 +86,7 @@ notes: |
   - Link to specs/ for ideate's own development artifacts
 cycle_created: 1
 cycle_modified: null
-content_hash: a7c164742dde7d2cc3cd66094240376f42e2447a77ca50c7139565ff5bd11cfc
-token_count: 873
+content_hash: f672ca7cd3b503514b0babd1677bdaff5b55abe3529b429cf7c7cea7950d704e
+token_count: 890
 file_path: .ideate/work-items/WI-200.yaml
+resolution: "Verified complete: ARCHITECTURE.md (649 lines) and README.md (410 lines) exist"

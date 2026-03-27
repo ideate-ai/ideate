@@ -1,0 +1,33 @@
+id: summary
+type: cycle_summary
+cycle: 34
+content: |-
+  # Review Summary — Cycle 034
+
+  ## Overview
+  Cycle 034 was a v3 backlog cleanup. 72 phantom-pending items were triaged (60 marked done, 6 obsolete). 6 items were executed: a CTE deduplication fix, MCP availability check removal from refine and brrr skills, ARCHITECTURE.md tool count update, write_artifact test verification, and a researcher direct-write bypass fix. All code changes are correct. Two significant housekeeping gaps and four minor documentation issues were identified.
+
+  ## Critical Findings
+  None.
+
+  ## Significant Findings
+  - [gap-analyst] Q-75 and Q-76 not marked resolved after WI-192 fixed the CTE bugs they describe — relates to: artifact-structure domain knowledge
+  - [gap-analyst] marketplace.json version (3.0.2) not bumped to match plugin.json (3.0.5) despite cycle 034 modifying agents and skills — relates to: P-16
+
+  ## Minor Findings
+  - [spec-reviewer] plan/SKILL.md Phase 3 retains Write tool fallback language — relates to: GP-08
+  - [spec-reviewer] ARCHITECTURE.md Section 9.2/9.3 still references artifact_dir parameter — relates to: documentation accuracy
+  - [gap-analyst] domain-curator Write access bypass not tracked as open question — relates to: GP-08
+  - [gap-analyst] plan/SKILL.md Phase 3 Write tool fallback (duplicate of spec-reviewer M1) — relates to: GP-08
+
+  ## Suggestions
+  None.
+
+  ## Findings Requiring User Input
+  - WI-172 was listed in the plan overview as a cycle 034 deliverable but was skipped (execution status showed it as already completed from a prior cycle). Should it remain in the backlog for re-execution, or was the prior execution sufficient?
+
+  ## Proposed Refinement Plan
+  The two significant findings are mechanical fixes (Q-75/Q-76 resolution metadata, marketplace.json version bump). They do not require a refinement cycle — they can be addressed as direct fixes. The minor findings (plan/SKILL.md Phase 3 fallback, ARCHITECTURE.md Section 9 signatures, domain-curator question tracking) should be captured as work items in the next refinement cycle.
+content_hash: 90fc319199bba31b812c0c214c61061bb18049facdd33ce1f85cdb05551ea42d
+token_count: 522
+file_path: .ideate/cycles/034/summary.yaml

@@ -1,10 +1,11 @@
 id: WI-216
 type: work_item
 title: Cost reporting script
-status: pending
+status: done
 complexity: small
 scope:
-  - {path: scripts/report-cost.sh, op: create}
+  - path: scripts/report-cost.sh
+    op: create
 depends: []
 blocks: []
 criteria:
@@ -22,23 +23,24 @@ module: null
 domain: null
 notes: |
   # WI-216: Cost Reporting Script
-  
+
   ## Design
-  
+
   `scripts/report-cost.sh` — focused on token and cost analysis.
-  
+
   ### Sections:
-  
+
   1. **Per-Work-Item Token Cost** — Group entries by work_item field. Sum input_tokens + output_tokens per item. Sort descending by total. Table: Work Item | Total Tokens | Input | Output | Cache Read | Spawns.
-  
+
   2. **Per-Cycle Token Cost** — Group by cycle. Sum tokens per cycle with phase breakdown. Table: Cycle | Total Tokens | Plan | Execute | Review | Refine.
-  
+
   3. **Cost Trends** — Cycle-over-cycle total token comparison with trend indicator. If cycle_total_cost_estimate is available, include dollar amounts.
-  
+
   ### Cost estimation
   If entries have cycle_total_cost_estimate fields, use those directly. Otherwise, provide token counts only without dollar estimates. Do not hardcode token pricing — that changes frequently.
 cycle_created: 1
 cycle_modified: null
-content_hash: dc5594867533511389dfc410e842211cc0c0d33e142548b636fa41971e92d94a
-token_count: 491
+content_hash: 05735b364bb4f41b57f6da467f35c1b4e95ca290e89681068ff09cc2e69833fb
+token_count: 499
 file_path: .ideate/work-items/WI-216.yaml
+resolution: "Verified complete: scripts/report-cost.sh exists, documented in README"

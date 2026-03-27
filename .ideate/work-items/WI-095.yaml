@@ -1,7 +1,7 @@
 id: WI-095
 type: work_item
 title: Fix report.sh integration bugs (schema mismatch and key name)
-status: pending
+status: obsolete
 complexity: low
 scope:
   - {path: scripts/report.sh, op: modify}
@@ -10,8 +10,8 @@ blocks: []
 criteria:
   - Per-Cycle Breakdown table shows non-zero Critical, Significant, Minor values when quality_summary events exist in metrics.jsonl with non-zero findings
   - Quality Trends table shows non-zero severity counts and correct trend indicator when quality_summary events span two or more cycles
-  - Auto-discovery reads `artifactDir` key from `.ideate.json`; falls back to `artifact_dir` for backwards compatibility
-  - `--help` output names `artifactDir` as the key expected in `.ideate.json`
+  - "Auto-discovery reads `artifactDir` key from `.ideate.json`; falls back to `artifact_dir` for backwards compatibility"
+  - "`--help` output names `artifactDir` as the key expected in `.ideate.json`"
   - fmt_ms returns "-" for missing or zero timing data (0ms)
 module: null
 domain: null
@@ -101,6 +101,7 @@ notes: |
   1. A metrics.jsonl file containing a `quality_summary` event with non-zero `findings.by_severity.critical` — confirm Per-Cycle Breakdown and Quality Trends show non-zero counts
   2. A `.ideate.json` with `artifactDir` key — confirm auto-discovery resolves correctly
   3. An entry with no `wall_clock_ms` field — confirm wall clock column shows "-" not "0s"
+resolution: "scripts/report.sh exists but has been rewritten. Original bugs from cycle 4 no longer apply."
 cycle_created: 1
 cycle_modified: null
 content_hash: "6a90ea99e649822df168cf68160ab2dcda8b33d1b1be832fb7013f32abf202a2"

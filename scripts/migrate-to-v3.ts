@@ -85,6 +85,7 @@ export function toYaml(obj: Record<string, unknown>, indent = 0): string {
         value.startsWith("&") ||
         value.startsWith("!") ||
         value.startsWith("|") ||
+        value.startsWith("`") ||
         value.includes("\t") ||
         /^\d/.test(value) ||
         value === "true" ||
@@ -122,6 +123,7 @@ export function toYaml(obj: Record<string, unknown>, indent = 0): string {
               item.startsWith("&") ||
               item.startsWith("!") ||
               item.startsWith("|") ||
+              item.startsWith("`") ||
               /^\d/.test(item) ||
               item === "true" ||
               item === "false" ||

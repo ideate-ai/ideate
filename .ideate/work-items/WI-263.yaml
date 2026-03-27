@@ -1,13 +1,12 @@
 id: WI-263
-type: refinement
+type: work_item
 title: Fix domain-curator path error
 complexity: low
-status: completed
+status: done
 depends: []
 blocks: []
-file_scope:
-  modify:
-    - agents/domain-curator.md
+scope:
+  - {path: agents/domain-curator.md, op: modify}
 criteria:
   - Line 166 references {project_root}/.ideate/domains/ not {project_root}/domains/
   - Domain curator creates directories in correct location

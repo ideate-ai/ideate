@@ -1,12 +1,15 @@
 id: WI-212
 type: work_item
 title: Telemetry metrics schema extension
-status: pending
+status: done
 complexity: medium
 scope:
-  - {path: mcp/artifact-server/src/schema.ts, op: modify}
-  - {path: mcp/artifact-server/src/db.ts, op: modify}
-  - {path: mcp/artifact-server/src/indexer.ts, op: modify}
+  - path: mcp/artifact-server/src/schema.ts
+    op: modify
+  - path: mcp/artifact-server/src/db.ts
+    op: modify
+  - path: mcp/artifact-server/src/indexer.ts
+    op: modify
 depends: []
 blocks:
   - "213"
@@ -23,14 +26,15 @@ module: null
 domain: null
 notes: |
   # WI-212: Telemetry Metrics Schema Extension
-  
+
   ## Schema changes
-  
+
   The existing metrics_events table has: id, event_name, timestamp, payload. We extend it with typed columns for the core telemetry metrics.
-  
+
   ### New columns in metricsEvents (db.ts):
 cycle_created: 1
 cycle_modified: null
-content_hash: ff993f1de7ef1a3b297ba8f51a6e47b88347994a7cc2fab28424e72b442ec1dd
-token_count: 404
+content_hash: d2d7c03ac4cac3cc3e18081284d8ddd0c8cb3192cf5d0653b790390496debaa2
+token_count: 416
 file_path: .ideate/work-items/WI-212.yaml
+resolution: "Verified complete: all extended metrics columns in db.ts, schema.ts DDL, and indexer.ts"

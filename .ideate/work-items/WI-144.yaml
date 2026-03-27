@@ -1,10 +1,11 @@
 id: WI-144
 type: work_item
 title: YAML artifact schemas and SQLite runtime index schema
-status: pending
+status: done
 complexity: medium
 scope:
-  - {path: mcp/artifact-server/src/schema.ts, op: create}
+  - path: mcp/artifact-server/src/schema.ts
+    op: create
 depends: []
 blocks:
   - "145"
@@ -25,11 +26,11 @@ module: null
 domain: null
 notes: |
   # WI-144: YAML artifact schemas and SQLite runtime index schema
-  
+
   ## Artifact types and YAML file layout
-  
+
   Each artifact is a single YAML file. No markdown bodies — all content is structured YAML fields.
-  
+
   ### WorkItem (work-items/WI-NNN.yaml)
   ```yaml
   id: WI-143
@@ -50,7 +51,7 @@ notes: |
   notes: |
     Implementation notes inline.
   ```
-  
+
   ### Finding (archive/cycles/{NNN}/F-{WI}-{SEQ}.yaml)
   ```yaml
   id: F-143-001
@@ -67,7 +68,7 @@ notes: |
   suggestion: |
     Optional suggested fix.
   ```
-  
+
   ### DomainPolicy (policies/P-NN.yaml)
   ```yaml
   id: P-01
@@ -80,7 +81,7 @@ notes: |
   description: |
     Policy text.
   ```
-  
+
   ### DomainDecision (decisions/D-NN.yaml)
   ```yaml
   id: D-01
@@ -94,7 +95,7 @@ notes: |
   rationale: |
     Rationale.
   ```
-  
+
   ### DomainQuestion (questions/Q-NN.yaml)
   ```yaml
   id: Q-01
@@ -109,7 +110,7 @@ notes: |
   description: |
     Question text.
   ```
-  
+
   ### GuidingPrinciple (principles/GP-NN.yaml)
   ```yaml
   id: GP-01
@@ -120,7 +121,7 @@ notes: |
     Principle text.
   amendment_history: []  # array of {cycle, change_summary}
   ```
-  
+
   ### Constraint (constraints/C-NN.yaml)
   ```yaml
   id: C-01
@@ -129,7 +130,7 @@ notes: |
   description: |
     Constraint text.
   ```
-  
+
   ### ModuleSpec (modules/M-name.yaml)
   ```yaml
   id: M-artifact-server
@@ -141,7 +142,7 @@ notes: |
   requires: []
   boundary_rules: []
   ```
-  
+
   ### ResearchFinding (research/RF-slug.yaml)
   ```yaml
   id: RF-storage-format-tradeoffs
@@ -152,7 +153,7 @@ notes: |
     Full research content in a single YAML field.
   sources: []
   ```
-  
+
   ### JournalEntry (cycles/{NNN}/journal/J-{NNN}-{seq}.yaml)
   ```yaml
   id: J-001-001
@@ -164,14 +165,14 @@ notes: |
   content: |
     Entry text.
   ```
-  
+
   ### MetricsEvent (metrics.jsonl)
   Unchanged — stays JSONL. No YAML migration needed.
-  
+
   ## SQLite schema
-  
+
   Typed node tables + universal edges table (Option 1 from artifact-graph-schema.md).
-  
+
   Common columns on every typed table:
   - `id TEXT PRIMARY KEY`
   - `type TEXT NOT NULL` (redundant with table name, useful for edge joins)
@@ -181,7 +182,7 @@ notes: |
   - `token_count INTEGER`
   - `file_path TEXT NOT NULL`
   - `status TEXT`
-  
+
   Universal edges table:
   ```sql
   CREATE TABLE edges (
@@ -198,9 +199,9 @@ notes: |
   CREATE INDEX idx_edges_target ON edges(target_id, edge_type);
   CREATE INDEX idx_edges_composite ON edges(source_id, target_id, edge_type);
   ```
-  
+
   > Note: `idx_edges_composite` was not created in the implementation — the `UNIQUE(source_id, target_id, edge_type)` constraint on the `edges` table creates an implicit B-tree index that provides equivalent lookup performance. The explicit index definition above is aspirational and was dropped as redundant.
-  
+
   Bridge table for file references:
   ```sql
   CREATE TABLE node_file_refs (
@@ -211,9 +212,9 @@ notes: |
   );
   CREATE INDEX idx_file_refs_path ON node_file_refs(file_path);
   ```
-  
+
   ## Edge type enumeration
-  
+
   | Edge type | Source | Target | Extracted from YAML field |
   |---|---|---|---|
   | depends_on | work_item | work_item | WorkItem.depends |
@@ -225,9 +226,9 @@ notes: |
   | addressed_by | finding, domain_question | work_item | Finding.addressed_by |
   | supersedes | domain_decision | domain_decision | DomainDecision.supersedes |
   | amended_by | domain_policy | domain_policy | DomainPolicy.amended_by |
-  
+
   ## Implementation notes
-  
+
   - Use better-sqlite3 synchronous API for all operations
   - WAL mode for concurrent read access
   - Content hash is SHA-256 of the full YAML file content
@@ -237,6 +238,7 @@ notes: |
   - Export field mapping functions: YAML field name → SQLite column name per artifact type
 cycle_created: 1
 cycle_modified: null
-content_hash: ea7c77315db3d81c699602ecebd107b6b1d589adb6ab864408faca97d1839ff6
-token_count: 1976
+content_hash: 51a227dd79b9bda8e1c344fd5c5c9c2558cd0b1c887cf462565934b7a20bf87e
+token_count: 2034
 file_path: .ideate/work-items/WI-144.yaml
+resolution: "Verified complete: all TypeScript interfaces, DDL tables, edges table, indexes, and edge types present"

@@ -24,30 +24,30 @@ Or clone the repository and add it manually to your Claude Code plugin search pa
 /ideate:plan
 ```
 
-Ideate interviews you about what you want to build, spawns background research agents, produces an architecture and work item plan, and bootstraps the domain knowledge layer. Everything lands in a `specs/` directory (or a path you specify) in your project root.
+Ideate interviews you about what you want to build, spawns background research agents, produces an architecture and work item plan, and bootstraps the domain knowledge layer. Everything lands in a `.ideate/` directory in your project root.
 
 After planning:
 
 ```
-/ideate:execute specs/
+/ideate:execute
 ```
 
 Builds all work items, writing incremental reviews as each completes. Then run a capstone review:
 
 ```
-/ideate:review specs/
+/ideate:review
 ```
 
 And plan the next round of changes:
 
 ```
-/ideate:refine specs/
+/ideate:refine
 ```
 
 Or let it run autonomously until convergence:
 
 ```
-/ideate:brrr specs/
+/ideate:brrr
 ```
 
 ---
@@ -56,6 +56,7 @@ Or let it run autonomously until convergence:
 
 | Skill | What it does |
 |-------|-------------|
+| `/ideate:init` | Bootstrap `.ideate/` for an existing codebase — survey, interview, write steering artifacts |
 | `/ideate:plan` | Interview → research → architecture → work items → domain bootstrap |
 | `/ideate:execute` | Build work items with per-item incremental review |
 | `/ideate:review` | Capstone review: cycle (default), `--domain`, `--full`, or natural language scope |
@@ -173,10 +174,10 @@ What each skill reads and writes through MCP tools:
 
 | Skill | MCP Tools Read | MCP Tools Written | Key Artifacts |
 |-------|---------------|-------------------|---------------|
-| `plan` | `get_context_package` | `write_work_items`, `append_journal` | overview, architecture, work items |
-| `execute` | `get_work_item_context`, `get_execution_status` | `append_journal`, `emit_event` | findings, journal entries |
-| `review` | `get_review_manifest`, `get_context_package` | `archive_cycle`, `append_journal` | cycle summary, findings |
-| `refine` | `get_context_package`, `get_domain_state` | `write_work_items`, `append_journal` | new work items |
+| `plan` | `ideate_get_context_package`, `ideate_get_config` | `ideate_write_work_items`, `ideate_append_journal` | overview, architecture, work items |
+| `execute` | `ideate_get_work_item_context`, `ideate_get_execution_status`, `ideate_assemble_context` | `ideate_append_journal`, `ideate_emit_event`, `ideate_write_artifact` | findings, journal entries |
+| `review` | `ideate_get_review_manifest`, `ideate_get_context_package` | `ideate_archive_cycle`, `ideate_append_journal`, `ideate_write_artifact` | cycle summary, findings |
+| `refine` | `ideate_get_context_package`, `ideate_get_domain_state` | `ideate_write_work_items`, `ideate_append_journal` | new work items |
 | `brrr` | all of the above | all of the above | autonomous loop |
 
 Skills access artifacts exclusively through MCP tools. Direct file reads by skills are not permitted.
@@ -185,23 +186,27 @@ Skills access artifacts exclusively through MCP tools. Direct file reads by skil
 
 ## Artifact Directory Structure
 
-All artifacts live in one directory (conventionally `specs/` in the project root, but user-configurable):
+All artifacts live in `.ideate/` in the project root:
 
 ```
-specs/
-├── manifest.json           # Schema version identifier
-├── steering/               # Guiding principles, constraints, research, interviews
-├── plan/                   # Architecture, modules, work items, execution strategy
-├── journal.md              # Append-only project history
-├── archive/
-│   ├── incremental/        # Per work-item reviews (written by execute)
-│   └── cycles/{NNN}/       # Capstone review suites (written by review)
-└── domains/
-    ├── index.md            # Domain registry + current cycle number
-    └── {name}/             # policies.md, decisions.md, questions.md per domain
+.ideate/
+├── config.json
+├── plan/
+├── work-items/
+├── principles/
+├── constraints/
+├── policies/
+├── decisions/
+├── questions/
+├── cycles/
+├── interviews/
+├── research/
+├── modules/
+├── steering/
+└── metrics.jsonl
 ```
 
-`archive/` is immutable once written. `domains/` is maintained by the domain-curator agent after each review cycle.
+`cycles/` is immutable once written. `policies/`, `decisions/`, and `questions/` are maintained by the domain-curator agent after each review cycle.
 
 ### Interview Structure
 
@@ -265,6 +270,72 @@ npm install
 npm run build
 ```
 
+### Agent budgets (`config.json`)
+
+Skills read agent turn budgets from `.ideate/config.json` at startup. The `agent_budgets` key maps agent names to maxTurns values:
+
+```json
+{
+  "schema_version": 2,
+  "agent_budgets": {
+    "code-reviewer": 80,
+    "spec-reviewer": 100,
+    "gap-analyst": 100,
+    "journal-keeper": 60,
+    "domain-curator": 100,
+    "architect": 160,
+    "researcher": 80,
+    "decomposer": 100,
+    "proxy-human": 160
+  }
+}
+```
+
+Skills fall back to each agent's frontmatter `maxTurns` default if `agent_budgets` is absent or does not include a given agent type. Override individual budgets by editing `config.json` directly.
+
+### PPR configuration (`config.json`)
+
+The `ppr` key in `config.json` controls the Personalized PageRank context assembly used by `ideate_assemble_context`:
+
+```json
+{
+  "ppr": {
+    "alpha": 0.15,
+    "max_iterations": 50,
+    "convergence_threshold": 1e-6,
+    "edge_type_weights": {
+      "depends_on": 1.0,
+      "governed_by": 0.8,
+      "informed_by": 0.6,
+      "references": 0.4,
+      "blocks": 0.3
+    },
+    "default_token_budget": 50000
+  }
+}
+```
+
+- `alpha` — teleportation probability (lower = more focus on seeds; default 0.15)
+- `max_iterations` — maximum PPR iterations before stopping (default 50)
+- `convergence_threshold` — PPR convergence threshold (default 1e-6)
+- `edge_type_weights` — relative weight of each artifact relationship type
+- `default_token_budget` — default token budget for assembled context packages (default 50000)
+
+All PPR configuration fields are optional. Omitted fields use built-in defaults.
+
+### PPR-based context assembly
+
+`ideate_assemble_context` provides graph-aware context assembly using Personalized PageRank. It ranks all artifacts by relevance to a set of seed work item IDs and assembles context within a token budget — prioritizing the most relevant work items, module specs, domain policies, and research findings.
+
+```
+ideate_assemble_context({
+  seed_ids: ["WI-042", "WI-043"],
+  token_budget: 50000
+})
+```
+
+Use this tool in execute and brrr phases when work item dependency graphs are dense or cross many module boundaries. It replaces manual digest construction with a ranked, budget-bounded alternative that ensures no relevant artifact is omitted.
+
 ### Model tiers
 
 Ideate uses three model tiers:
@@ -274,6 +345,8 @@ Ideate uses three model tiers:
 | `sonnet` | `claude-sonnet-4-6` | Most agents: workers, reviewers, researchers |
 | `opus` | `claude-opus-4-6` | Architect, decomposer, domain-curator, proxy-human |
 | `haiku` | `claude-haiku-4-5-20251001` | Not currently used |
+
+> **Note**: domain-curator has `model: opus` in its agent frontmatter and always uses opus. Architect, decomposer, and proxy-human default to sonnet in their agent frontmatter but are overridden to opus at spawn time by skills. All four respond to `ANTHROPIC_DEFAULT_OPUS_MODEL` for tier-level overrides.
 
 #### Custom models
 
@@ -285,7 +358,7 @@ Override each tier independently with environment variables:
 | `ANTHROPIC_DEFAULT_OPUS_MODEL` | Opus (architect, decomposer, domain-curator) |
 | `ANTHROPIC_DEFAULT_HAIKU_MODEL` | Haiku (reserved, not currently assigned) |
 
-Set `ANTHROPIC_BASE_URL` to route all requests to a custom or local endpoint (e.g., Ollama):
+Set `ANTHROPIC_BASE_URL` to route all requests to a custom or local endpoint (e.g., Ollama).
 
 **Minimum model requirements**: 64k+ context window, tool-use support, instruction-following. Models that do not support tool calls cannot invoke MCP tools and will fail.
 
@@ -303,19 +376,21 @@ export ANTHROPIC_DEFAULT_OPUS_MODEL=qwen3:235b
 export ANTHROPIC_DEFAULT_HAIKU_MODEL=qwen3:8b
 ```
 
-**Note**: `ANTHROPIC_BASE_URL` applies to the entire session — you cannot mix Anthropic and Ollama agents within a single run.
+#### Single-model override
+
+For configurations where all agents should use the same model — for example, a single-model Ollama setup — set `CLAUDE_CODE_SUBAGENT_MODEL` to the desired model name. This overrides the model for all subagents spawned in the session, regardless of their tier. It is simpler than setting all three `ANTHROPIC_DEFAULT_*_MODEL` variables individually, but provides no per-tier control.
 
 ---
 
 ## Domain Layer
 
-Domains are knowledge units — areas of the project with distinct conceptual language, different decision authorities, or different change cadences. Each domain has three files:
+Domains are knowledge units — areas of the project with distinct conceptual language, different decision authorities, or different change cadences. Each domain has three artifact types, stored as individual YAML files:
 
-- **`policies.md`** — Durable rules future workers must follow
-- **`decisions.md`** — Significant choices with rationale and archive citations
-- **`questions.md`** — Open and resolved questions
+- **`policies/P-NN.yaml`** — Durable rules future workers must follow
+- **`decisions/D-NN.yaml`** — Significant choices with rationale and cycle citations
+- **`questions/Q-NN.yaml`** — Open and resolved questions
 
-The domain-curator agent maintains these files automatically after each review cycle. A domain policy links to the decision that established it, which links back to the specific archive file and finding. The chain: `policies.md#P-7` → `decisions.md#D-15` → `archive/cycles/003/code-quality.md#C3`.
+The domain-curator agent maintains these files automatically after each review cycle. A domain policy links to the decision that established it, which links back to the specific cycle finding. The chain: `P-07` → `D-15` → `.ideate/cycles/003/findings/FI-003-001.yaml`.
 
 Typical project: 2–4 domains. Start coarse. See the [design notes](#design-notes) for when and how to split.
 
@@ -325,10 +400,10 @@ Typical project: 2–4 domains. Start coarse. See the [design notes](#design-not
 
 | Invocation | Mode | Output |
 |-----------|------|--------|
-| `/ideate:review` | Cycle review | `archive/cycles/{N}/` |
-| `/ideate:review --domain architecture` | Domain review | `archive/adhoc/{date}-domain-architecture/` |
-| `/ideate:review --full` | Full audit | `archive/adhoc/{date}-full-audit/` |
-| `/ideate:review "how does auth fit the model"` | Ad-hoc | `archive/adhoc/{date}-{slug}/` |
+| `/ideate:review` | Cycle review | `.ideate/cycles/{NNN}/` |
+| `/ideate:review --domain architecture` | Domain review | `.ideate/cycles/adhoc/{date}-domain-architecture/` |
+| `/ideate:review --full` | Full audit | `.ideate/cycles/adhoc/{date}-full-audit/` |
+| `/ideate:review "how does auth fit the model"` | Ad-hoc | `.ideate/cycles/adhoc/{date}-{slug}/` |
 
 ---
 
@@ -399,12 +474,12 @@ High-level executive summary: project summary, quality metrics, cost summary, an
 
 ## Design Notes
 
-The rationale for the archive/domain separation, interview structure, and the GP → domain policy derivation pattern is documented in `specs/steering/research/domain-knowledge-layer.md`.
+The rationale for the cycles/domain separation, interview structure, and the GP → domain policy derivation pattern is documented in `.ideate/steering/`.
 
 For deep technical documentation covering the MCP artifact server schema, indexer pipeline, tool architecture, and graph model, see [ARCHITECTURE.md](ARCHITECTURE.md).
 
-Ideate's own development artifacts (work items, cycle reviews, domain knowledge) are in `specs/`.
+Ideate's own development artifacts (work items, cycle reviews, domain knowledge) are in `.ideate/`.
 
 ---
 
-For orchestration infrastructure (session spawning, remote workers, parallel execution at scale), see the companion project **[Outpost](https://github.com/devnill/outpost)**.
+For orchestration infrastructure (session spawning, remote workers, parallel execution at scale), see the companion project **Outpost**. <!-- Q-09: Outpost repo URL (https://github.com/devnill/outpost) is unverified / may be private. Update link when repo is public. -->

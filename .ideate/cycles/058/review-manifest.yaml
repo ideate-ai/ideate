@@ -1,0 +1,17 @@
+id: review-manifest
+type: cycle_summary
+cycle: 58
+content: |-
+  Review manifest for cycle 058 — focused on 6 work items executed this cycle:
+
+  | WI | Title | Files Changed | Incremental Review |
+  |---|---|---|---|
+  | WI-172 | Migration script fixes | scripts/migrate-to-v3.ts, scripts/migrate-to-v3.js | None (capstone only) |
+  | WI-301 | MCP deferred startup with readiness gate | mcp/artifact-server/src/index.ts, src/tools/index.ts, src/__tests__/readiness-gate.test.ts, src/__tests__/tools.test.ts | None (capstone only) |
+  | WI-302 | Incremental watcher re-index | mcp/artifact-server/src/indexer.ts, src/watcher.ts, src/index.ts, src/__tests__/watcher.test.ts | None (capstone only) |
+  | WI-303 | Phantom work item cleanup | 37 .ideate/work-items/*.yaml, .ideate/questions/*.yaml, removed 3 directories | None (capstone only) |
+  | WI-304 | Metadata and version fixes | mcp/artifact-server/package.json | None (capstone only) |
+  | WI-305 | Documentation and stale reference fixes | skills/plan/SKILL.md, ARCHITECTURE.md, scripts/validate-specs.sh | None (capstone only) |
+content_hash: c3763843ae8162e7beb18e00409f436a6c7d9a27ddbc869681d6ecd60dad4970
+token_count: 271
+file_path: .ideate/cycles/058/review-manifest.yaml

@@ -1,11 +1,11 @@
 id: Q-17
 type: domain_question
 domain: artifact-structure
-status: open
+status: obsolete
 impact: "Refine skill entries written without a `cycle` field are bucketed as `(none)` by report.sh — a distinct bucket from entries that write `\"cycle\": null`. The per-cycle breakdown in report.sh may split a single logical bucket into two rows for any project that uses the refine skill."
 source: archive/cycles/006/decision-log.md OQ4; archive/cycles/006/code-quality.md M4
-resolution: null
-resolved_in: null
+resolution: "specs/artifact-conventions.md no longer exists. Metrics schema defined in code."
+resolved_in: 37
 description: "Should `skills/refine/SKILL.md:373` add `\"cycle\": null` between `\"phase\"` and `\"agent_type\"` to match the canonical schema in `specs/artifact-conventions.md:719`?"
 cycle_created: 1
 cycle_modified: null

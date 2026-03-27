@@ -1,6 +1,6 @@
 {
   "name": "@ideate/artifact-server",
-  "version": "3.0.5",
+  "version": "3.2.0",
   "description": "MCP server that serves ideate artifact content on demand",
   "type": "module",
   "main": "dist/index.js",
@@ -8,7 +8,7 @@
     "build": "tsc",
     "start": "node dist/index.js",
     "dev": "node --loader ts-node/esm src/index.ts",
-    "pretest": "node --input-type=module -e \"import { statSync } from 'fs'; try { const ts=statSync('../../scripts/migrate-to-v3.ts').mtimeMs; let js; try { js=statSync('../../scripts/migrate-to-v3.js').mtimeMs; } catch(e) { if(e.code==='ENOENT'){process.stderr.write('WARNING: migrate-to-v3.js not found — run: cd mcp/artifact-server && npm run build:migration\\n');process.exit(1);} throw e; } if(js<ts){process.stderr.write('WARNING: migrate-to-v3.js may be stale — run: cd mcp/artifact-server && npm run build:migration\\n');process.exit(1);} } catch(e) {}\"",
+    "pretest": "node scripts/pretest.js",
     "test": "vitest run",
     "build:migration": "tsc ../../scripts/migrate-to-v3.ts --target ES2022 --module NodeNext --moduleResolution NodeNext --esModuleInterop --skipLibCheck --outDir ../../scripts --declaration false",
     "prebuild:migration": "node -e \"['../../scripts/migrate-to-v3.d.ts','../../scripts/migrate-to-v3.d.ts.map','../../scripts/migrate-to-v3.js.map'].forEach(f=>{try{require('fs').rmSync(f)}catch(e){}})\"",

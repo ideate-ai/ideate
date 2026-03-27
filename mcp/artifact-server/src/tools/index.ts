@@ -2,13 +2,16 @@ import Database from "better-sqlite3";
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 import { BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
 import { Tool } from "@modelcontextprotocol/sdk/types.js";
-import { handleGetWorkItemContext, handleGetContextPackage } from "./context.js";
-import { handleArtifactQuery } from "./query.js";
+import { handleGetWorkItemContext, handleGetContextPackage, handleAssembleContext } from "./context.js";
+import { handleArtifactQuery, handleGetNextId } from "./query.js";
 import { handleGetExecutionStatus, handleGetReviewManifest } from "./execution.js";
 import { handleGetConvergenceStatus, handleGetDomainState, handleGetProjectStatus } from "./analysis.js";
 import { handleAppendJournal, handleArchiveCycle, handleWriteWorkItems, handleUpdateWorkItems, handleWriteArtifact } from "./write.js";
 import { handleEmitEvent } from "./events.js";
-import { handleGetMetrics } from "./metrics.js";
+import { handleEmitMetric, handleGetMetrics } from "./metrics.js";
+import { handleBootstrapProject } from "./bootstrap.js";
+import { handleGetBrrrState, handleUpdateBrrrState } from "./brrr-state.js";
+import { getConfigWithDefaults } from "../config.js";
 
 // ---------------------------------------------------------------------------
 // ToolContext
@@ -22,7 +25,7 @@ export interface ToolContext {
 }
 
 // ---------------------------------------------------------------------------
-// TOOLS — all 11 tool definitions with inputSchema
+// TOOLS — all 22 tool definitions with inputSchema
 // ---------------------------------------------------------------------------
 
 export const TOOLS: Tool[] = [
@@ -45,6 +48,16 @@ export const TOOLS: Tool[] = [
     name: "ideate_get_context_package",
     description:
       "Returns the full project context package: guiding principles, constraints, architecture overview, domain policies, and current execution strategy. Use at the start of a session to orient yourself.",
+    inputSchema: {
+      type: "object",
+      properties: {},
+      required: [],
+    },
+  },
+  {
+    name: "ideate_get_config",
+    description:
+      "Returns the parsed contents of .ideate/config.json with defaults applied for any missing optional fields (agent_budgets, ppr). Use to read agent token budgets and PPR configuration.",
     inputSchema: {
       type: "object",
       properties: {},
@@ -403,6 +416,35 @@ export const TOOLS: Tool[] = [
     },
   },
   {
+    name: "ideate_assemble_context",
+    description:
+      "Assembles a token-budgeted context package using Personalized PageRank (PPR) scoring. Seeds the graph from the given artifact IDs, ranks all reachable artifacts by relevance, and greedily includes them until the token budget is exhausted. Always-include types (e.g. architecture, principles, constraints) are included regardless of PPR score. Returns assembled markdown context and metadata.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        seed_ids: {
+          type: "array",
+          items: { type: "string" },
+          description: "PPR seed node IDs (e.g. ['WI-275', 'GP-01']).",
+        },
+        token_budget: {
+          type: "number",
+          description: "Max tokens in assembled output (default from config, typically 50000).",
+        },
+        include_types: {
+          type: "array",
+          items: { type: "string" },
+          description: "Artifact types always included regardless of PPR score (default: ['architecture', 'guiding_principle', 'constraint']).",
+        },
+        edge_type_weights: {
+          type: "object",
+          description: "Override edge type weights for PPR (merged with config defaults).",
+        },
+      },
+      required: ["seed_ids"],
+    },
+  },
+  {
     name: "ideate_emit_event",
     description:
       "Fires all hooks registered for the given event name. Returns a JSON summary with the event name, number of hooks matched, number successfully executed, and any per-hook errors.",
@@ -424,7 +466,95 @@ export const TOOLS: Tool[] = [
       required: ["event"],
     },
   },
+  {
+    name: "ideate_emit_metric",
+    description:
+      "Appends a metric payload as a single JSON line to metrics.jsonl. Use this instead of direct file writes for all metric emissions.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        payload: {
+          type: "object",
+          description:
+            "Any JSON-serializable metric payload object. Will be stringified and appended as one line.",
+        },
+      },
+      required: ["payload"],
+    },
+  },
+  {
+    name: "ideate_bootstrap_project",
+    description:
+      "Creates the .ideate/ directory structure with config.json and all standard subdirectories. Use during project initialization instead of direct directory creation.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        project_name: {
+          type: "string",
+          description:
+            "Optional project name to store in config.json.",
+        },
+      },
+      required: [],
+    },
+  },
+  {
+    name: "ideate_get_next_id",
+    description:
+      "Returns the next available ID for a given artifact type by querying the SQLite index. Replaces the glob + max-ID extraction pattern.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        type: {
+          type: "string",
+          enum: ["work_item", "guiding_principle", "constraint", "policy", "decision", "question"],
+          description:
+            "Artifact type to generate the next ID for.",
+        },
+      },
+      required: ["type"],
+    },
+  },
+  {
+    name: "ideate_get_brrr_state",
+    description:
+      "Reads the current brrr session state from brrr-state.yaml. Returns a default state object if the file does not exist.",
+    inputSchema: {
+      type: "object",
+      properties: {},
+      required: [],
+    },
+  },
+  {
+    name: "ideate_update_brrr_state",
+    description:
+      "Updates the brrr session state by merging the provided partial state into the existing brrr-state.yaml. Creates the file with defaults if it does not exist.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        state: {
+          type: "object",
+          description:
+            "Partial state update object. Any subset of brrr-state fields (cycles_completed, convergence_achieved, started_at, last_phase, last_cycle, deferred, deferred_reason).",
+        },
+      },
+      required: ["state"],
+    },
+  },
 ];
+
+// ---------------------------------------------------------------------------
+// Readiness gate — tool calls block until the index is ready
+// ---------------------------------------------------------------------------
+
+let resolveReady: () => void;
+let rejectReady: (err: Error) => void;
+export const indexReady = new Promise<void>((resolve, reject) => {
+  resolveReady = resolve;
+  rejectReady = reject;
+});
+export function signalIndexReady(): void { resolveReady(); }
+export function signalIndexFailed(err: Error): void { rejectReady(err); }
 
 // ---------------------------------------------------------------------------
 // handleTool — dispatcher
@@ -435,12 +565,16 @@ export async function handleTool(
   name: string,
   _args: Record<string, unknown>
 ): Promise<string> {
+  await indexReady; // block until index rebuild completes
   switch (name) {
     case "ideate_get_work_item_context":
       return handleGetWorkItemContext(ctx, _args);
 
     case "ideate_get_context_package":
       return handleGetContextPackage(ctx, _args);
+
+    case "ideate_get_config":
+      return JSON.stringify(getConfigWithDefaults(ctx.ideateDir), null, 2);
 
     case "ideate_artifact_query":
       return handleArtifactQuery(ctx, _args);
@@ -475,11 +609,29 @@ export async function handleTool(
     case "ideate_write_artifact":
       return handleWriteArtifact(ctx, _args);
 
+    case "ideate_assemble_context":
+      return handleAssembleContext(ctx, _args);
+
     case "ideate_emit_event":
       return handleEmitEvent(ctx, _args);
 
     case "ideate_get_metrics":
       return handleGetMetrics(ctx, _args);
+
+    case "ideate_emit_metric":
+      return handleEmitMetric(ctx, _args);
+
+    case "ideate_bootstrap_project":
+      return handleBootstrapProject(ctx, _args);
+
+    case "ideate_get_next_id":
+      return handleGetNextId(ctx, _args);
+
+    case "ideate_get_brrr_state":
+      return handleGetBrrrState(ctx, _args);
+
+    case "ideate_update_brrr_state":
+      return handleUpdateBrrrState(ctx, _args);
 
     default:
       throw new Error(`Unknown tool: ${name}`);

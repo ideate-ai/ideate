@@ -10,18 +10,24 @@ Tone: neutral, direct. No encouragement, no validation, no hedging qualifiers, n
 
 ---
 
+# Phase 0: Read Project Configuration
+
+Call `ideate_get_config()` to read project configuration. Hold the response as `{config}`. Use `{config}.agent_budgets.{agent_name}` as the maxTurns value when spawning agents. If `ideate_get_config` is unavailable or returns no agent_budgets, use the agent's frontmatter maxTurns as fallback.
+
+---
+
 # Phase 1: Locate Artifact Directory
 
-Determine the **project root** — the directory containing `.ideate/config.json`. Use this precedence:
+Determine the **project root** — the directory containing the ideate artifact directory. Use this precedence:
 
-1. If the user provided a path argument, resolve it. If it points to a directory containing `.ideate/config.json`, use it as the project root. If it points to a subdirectory, walk up to find `.ideate/config.json` in an ancestor.
-2. Check the current working directory and walk up to find `.ideate/config.json`.
-3. Check for `.ideate.json` in the current working directory — if found, use its `artifactDir` value (resolved relative to that file's location) to locate the project root.
-4. Otherwise ask: "Where is the project root? (The directory containing `.ideate/`)"
+1. If the user provided a path argument, resolve it. If it points to a directory containing an ideate configuration, use it as the project root. If it points to a subdirectory, walk up to find the configuration in an ancestor.
+2. Check the current working directory and walk up to find the ideate configuration.
+3. Check for a project-level ideate pointer in the current working directory — if found, use its `artifactDir` value (resolved relative to that file's location) to locate the project root.
+4. Otherwise ask: "Where is the project root? (The directory containing the ideate artifact directory)"
 
-Validate by calling `ideate_get_project_status` with the resolved path. If the MCP server cannot find artifacts, stop and report the error. Do not proceed without a valid `.ideate/` directory.
+Validate by calling `ideate_get_project_status` with the resolved path. If the MCP server cannot find artifacts, stop and report the error. Do not proceed without a valid artifact directory.
 
-Store the project root path. All MCP tool calls use this implicitly — the server resolves paths from `.ideate/config.json`.
+Store the project root path. All MCP tool calls use this implicitly — the server resolves paths from the project configuration.
 
 Next, determine the **project source root** — the directory containing the actual source code being refined. In most cases this is the same as the project root. If the architecture or overview documents specify a different source path, use that instead. If ambiguous, ask: "Where is the project source code?"
 
@@ -47,37 +53,35 @@ Wait for the architect's analysis before proceeding. You need this to ask inform
 
 # Phase 3: Load Prior Context
 
-**MCP required**: Look in your tool list for a tool whose name ends in `ideate_get_context_package` (it will be prefixed, e.g. `mcp__ideate_artifact_server__ideate_get_context_package` or `mcp__plugin_ideate_ideate_artifact_server__ideate_get_context_package`). If not found, stop with:
-
-> The ideate MCP artifact server is required but not available. Verify .mcp.json configuration.
-
 Call `ideate_get_context_package()` — returns architecture, guiding principles, and constraints pre-assembled.
+
+If the ideate MCP artifact server is not available, stop and report: "The ideate MCP artifact server is required but not available. Verify .mcp.json configuration."
+
+**PPR-based context assembly (optional)**: For reviews scoped to specific artifacts, `ideate_assemble_context` can provide focused, graph-aware context. Call with seed artifact IDs and a token budget. This is useful when reviewing a specific module or feature area rather than the full project. For capstone reviews covering the full project, `ideate_get_context_package` remains the primary context source.
 
 Then load remaining context via MCP tools:
 
-1. Call `ideate_artifact_query({type: "overview"})` — retrieves `.ideate/plan/overview.yaml`.
-2. Call `ideate_artifact_query({type: "modules"})` — retrieves `.ideate/modules/*.yaml` specs (if they exist).
-3. Call `ideate_artifact_query({type: "execution_strategy"})` — retrieves `.ideate/plan/execution-strategy.yaml`.
-4. Call `ideate_artifact_query({type: "work_item"})` — retrieves current work items from `.ideate/work-items/WI-*.yaml`. If prior cycles have been archived, note their existence but do not load them unless the user's changes specifically reference prior work.
-5. Call `ideate_artifact_query({type: "interview"})` — retrieves the original interview transcript from `.ideate/interviews/`.
-6. Call `ideate_artifact_query({type: "research"})` — retrieves all research findings from `.ideate/research/`.
+1. Call `ideate_artifact_query({type: "overview"})` — retrieves the project overview.
+2. Call `ideate_artifact_query({type: "module_spec"})` — retrieves module specs (if they exist).
+3. Call `ideate_artifact_query({type: "execution_strategy"})` — retrieves the execution strategy.
+4. Call `ideate_artifact_query({type: "work_item"})` — retrieves current work items. If prior cycles have been archived, note their existence but do not load them unless the user's changes specifically reference prior work.
+5. Call `ideate_artifact_query({type: "interview"})` — retrieves the original interview transcript.
+6. Call `ideate_artifact_query({type: "research"})` — retrieves all research findings.
 7. Call `ideate_artifact_query({type: "journal"})` — retrieves project history (if it exists).
 
 ## 3.1 Domain Layer (Primary Source for Current State)
 
-**MCP required**: Look in your tool list for a tool whose name ends in `ideate_get_domain_state` (it will be prefixed, e.g. `mcp__ideate_artifact_server__ideate_get_domain_state` or `mcp__plugin_ideate_ideate_artifact_server__ideate_get_domain_state`). If not found, stop with:
-
-> The ideate MCP artifact server is required but not available. Verify .mcp.json configuration.
-
 Call `ideate_get_domain_state()` — returns domain policies, open questions, and current cycle number pre-assembled across all domains.
+
+If the ideate MCP artifact server is not available, stop and report: "The ideate MCP artifact server is required but not available. Verify .mcp.json configuration."
 
 Then load the latest cycle summary from the archive:
 
-- `.ideate/cycles/{NNN}/summary.yaml` — where NNN is the current cycle number returned by `ideate_get_domain_state`.
+- Call `ideate_artifact_query({type: "cycle_summary", cycle: NNN})` — where NNN is the current cycle number returned by `ideate_get_domain_state`.
 
 Do NOT load all incremental reviews. The domain layer already distills what matters from prior cycles.
 
-If any artifact does not exist, note its absence and continue. The MCP server validation in Phase 1 already confirmed the project has a valid `.ideate/` directory.
+If any artifact does not exist, note its absence and continue. The MCP server validation in Phase 1 already confirmed the project has a valid artifact directory.
 
 Combine the architect's codebase analysis with these artifacts to form your complete understanding of the project's current state.
 
@@ -91,7 +95,7 @@ Assess what is driving this refinement. There are two primary modes:
 
 **Requirement evolution** — The user wants to change or extend what the project does. Prior review findings may or may not be relevant. In this mode, the user's stated intent drives the interview.
 
-If review findings exist (any file in `.ideate/cycles/`), note this to the user and ask:
+If review findings exist (check via `ideate_get_project_status`), note this to the user and ask:
 
 > Review findings exist from a previous cycle. Are you here to address those findings, to make other changes, or both?
 
@@ -107,7 +111,7 @@ The interview adapts based on the refinement mode. Ask 1-2 questions at a time. 
 
 1. **Do not re-ask questions that existing artifacts already answer.** The interview transcript, guiding principles, constraints, and architecture document contain decisions that were already made. Do not revisit them unless the user signals they want to change something.
 2. **Confirm whether guiding principles still hold.** Early in the interview, present the current guiding principles and ask: "Do these still apply, or do any need to change given what you're planning?" Accept a blanket "yes they still hold" — do not force principle-by-principle review unless the user wants it.
-3. **Walk through review findings if they exist.** For post-review corrections, present the critical and significant findings from `.ideate/cycles/{NNN}/summary.yaml` (or synthesize from individual review files). For each finding or group of related findings, ask: address now, defer, or dismiss? Record the decision.
+3. **Walk through review findings if they exist.** For post-review corrections, present the critical and significant findings from the latest cycle summary (retrieved via `ideate_artifact_query`) or synthesize from individual review findings. For each finding or group of related findings, ask: address now, defer, or dismiss? Record the decision.
 4. **Use the codebase analysis.** Do not ask about technology choices the code already makes. Do not ask about architectural patterns the code already uses. Ask about what is changing and what is new.
 5. **Flag conflicts.** If a proposed change contradicts an existing guiding principle, constraint, or architectural decision, state the conflict immediately. Do not silently accept contradictions. Ask the user to resolve them: change the principle, change the proposal, or accept the tension.
 
@@ -163,15 +167,16 @@ Prompt for each researcher:
 
 > Investigate: {topic}
 > Questions: {specific questions from the interview}
-> Save findings to: {project_root}/.ideate/research/{topic-slug}.yaml
 >
 > Context: This is a refinement cycle. The project already uses {relevant existing technologies from codebase analysis}. Focus your research on how {new topic} integrates with or affects the existing system.
+
+After the researcher returns, write the findings using `ideate_write_artifact` with type `research` and id `research-{topic-slug}`.
 
 After each researcher agent returns, record a metrics entry (see Metrics Instrumentation).
 
 Integrate research findings into the refinement plan. If a finding contradicts an assumption from the interview, note the contradiction and resolve it (ask the user if the resolution is unclear).
 
-Research files follow the naming convention in the artifact conventions. If research on this topic already exists, create a new file with a distinguishing suffix (e.g., `oauth2-providers-v2.yaml`), not overwrite the original.
+Research artifacts follow the naming convention in the artifact conventions. If research on this topic already exists, create a new artifact with a distinguishing suffix (e.g., `research-oauth2-providers-v2`), not overwrite the original.
 
 ---
 
@@ -181,27 +186,27 @@ After the interview is complete and any research has been integrated, produce ar
 
 ## 7a. Interview YAML — APPEND
 
-Write the refinement interview to `.ideate/interviews/interview-refine-{cycle_number}.yaml`. Use the structured YAML format with entries per question/answer pair, matching the format from `/ideate:plan` Phase 3.1.
+Write the refinement interview using `ideate_write_artifact` with type `interview` and id `interview-refine-{cycle_number}`. Use the structured YAML format with entries per question/answer pair, matching the format from `/ideate:plan` Phase 3.1.
 
 Tag each entry with the relevant domain name in its `domain` field. Cross-cutting questions use `null`.
 
 ## 7b. Guiding Principles — UPDATE
 
-If any principles changed, update the relevant `.ideate/principles/GP-{NN}.yaml` file with an amendment entry in its `amendment_history` array and update the `cycle_modified` field. If any principles are no longer applicable, set their `status` to `deprecated`. Never delete a principle file.
+If any principles changed, update the relevant principle (by its GP-{NN} designation) using `ideate_write_artifact` with an amendment entry in its `amendment_history` array and an updated `cycle_modified` field. If any principles are no longer applicable, set their `status` to `deprecated`. Never delete a principle.
 
-New principles are written as new `.ideate/principles/GP-{NN}.yaml` files, numbered sequentially from the highest existing number.
+New principles are written using `ideate_write_artifact` with type `guiding_principle`. Use `ideate_get_next_id({type: "guiding_principle"})` to obtain the next available designation.
 
-If the user confirmed all principles still hold, do not modify these files.
+If the user confirmed all principles still hold, do not modify them.
 
 ## 7c. Constraints — UPDATE
 
-Same approach as guiding principles. Update changed `.ideate/constraints/C-{NN}.yaml` files, add new ones, mark deprecated ones. Do not silently delete.
+Same approach as guiding principles. Update changed constraints (by their C-{NN} designation) using `ideate_write_artifact`, add new ones (use `ideate_get_next_id({type: "constraint"})` for the next designation), mark deprecated ones. Do not silently delete.
 
-If nothing changed, do not modify these files.
+If nothing changed, do not modify them.
 
 ## 7d. Overview — OVERWRITE with Change Plan
 
-Use `ideate_write_artifact` to overwrite `.ideate/plan/overview.yaml` with a **change plan** focused on the delta. This is NOT a full project description. It describes:
+Use `ideate_write_artifact` with type `overview` to overwrite the project overview with a **change plan** focused on the delta. This is NOT a full project description. It describes:
 
 - What is changing and why
 - Summary of the triggering context (review findings addressed, new requirements, etc.)
@@ -209,25 +214,25 @@ Use `ideate_write_artifact` to overwrite `.ideate/plan/overview.yaml` with a **c
 - Expected impact on the existing system
 - References to new work items
 
-The previous overview content is already captured in the git history and in the original interview. The change plan replaces it because the execute skill reads overview.yaml to understand what it is building — and for this cycle, it is building the changes.
+The previous overview content is already captured in the git history and in the original interview. The change plan replaces it because the execute skill reads the overview to understand what it is building — and for this cycle, it is building the changes.
 
 ## 7e. Architecture — UPDATE only if changed
 
-If the refinement changes the architecture (new modules, changed interfaces, new components, modified data flow), update the relevant sections of `.ideate/plan/architecture.yaml`. Preserve unchanged sections exactly.
+If the refinement changes the architecture (new modules, changed interfaces, new components, modified data flow), update the relevant sections of the architecture artifact using `ideate_write_artifact` with type `architecture`. Preserve unchanged sections exactly.
 
-If architecture is unchanged, do not modify this file. State in the refinement summary that architecture remains unchanged.
+If architecture is unchanged, do not modify it. State in the refinement summary that architecture remains unchanged.
 
 If changes are significant enough to warrant a full redesign of a section, spawn the `architect` agent in **design** mode with `model: opus` and the updated context to produce the revised sections. This overrides the agent's default model for this task.
 
 ## 7f. Module Specs — UPDATE only if changed
 
-If the refinement changes a module's scope, interfaces, or boundary rules, update the relevant `.ideate/modules/{name}.yaml` spec(s). If a new module is introduced, create a new module spec file.
+If the refinement changes a module's scope, interfaces, or boundary rules, update the relevant module spec(s) using `ideate_write_artifact` with type `module`. If a new module is introduced, create a new module spec.
 
-If modules are unchanged, do not modify these files.
+If modules are unchanged, do not modify them.
 
 ## 7g. Execution Strategy — OVERWRITE with New Strategy
 
-Use `ideate_write_artifact` to write a new execution strategy to `.ideate/plan/execution-strategy.yaml`. The strategy covers only the new work items produced by this refinement. It follows the same format as the original execution strategy:
+Use `ideate_write_artifact` with type `execution_strategy` to write a new execution strategy. The strategy covers only the new work items produced by this refinement. It follows the same format as the original execution strategy:
 
 - Mode (sequential, batched parallel, full parallel)
 - Parallelism settings
@@ -239,13 +244,11 @@ Use `ideate_write_artifact` to write a new execution strategy to `.ideate/plan/e
 
 ## 7h. Work Items — NEW Items
 
-**Determine the next ID**: glob `.ideate/work-items/WI-*.yaml` and find the highest NNN number; increment by 1. Use 3-digit zero-padded numbering.
+**Determine the next ID**: Call `ideate_get_next_id({type: "work_item"})` to obtain the next available WI number. Use 3-digit zero-padded numbering.
 
-**MCP required**: Look in your tool list for a tool whose name ends in `ideate_write_work_items` (it will be prefixed, e.g. `mcp__ideate_artifact_server__ideate_write_work_items` or `mcp__plugin_ideate_ideate_artifact_server__ideate_write_work_items`). If not found, stop with:
+Call `ideate_write_work_items({items_array})` — atomically creates individual work item artifacts for each new work item.
 
-> The ideate MCP artifact server is required but not available. Verify .mcp.json configuration.
-
-Call `ideate_write_work_items({items_array})` — atomically creates individual `.ideate/work-items/WI-{NNN}.yaml` files for each new work item.
+If the ideate MCP artifact server is not available, stop and report: "The ideate MCP artifact server is required but not available. Verify .mcp.json configuration."
 
 For refinement work items, follow the same format as defined in the artifact conventions. Key differences from initial planning work items:
 
@@ -258,9 +261,9 @@ For large refinements (5+ work items), spawn `decomposer` agent(s) with `model: 
 > Decompose the following changes into atomic work items. Start numbering from {next available number}.
 >
 > Context:
-> - Architecture: {path to architecture.yaml}
-> - Guiding principles: {path to principles/GP-*.yaml}
-> - Constraints: {path to constraints/C-*.yaml}
+> - Architecture: {architecture artifact content}
+> - Guiding principles: {guiding principle artifacts content}
+> - Constraints: {constraint artifacts content}
 > - Codebase analysis: {architect's analysis}
 > - Changes to decompose: {description of changes from interview}
 >
@@ -277,11 +280,9 @@ Validate all new work items:
 
 ## 7i. Journal — APPEND Refinement Entry
 
-**MCP required**: Look in your tool list for a tool whose name ends in `ideate_append_journal` (it will be prefixed, e.g. `mcp__ideate_artifact_server__ideate_append_journal` or `mcp__plugin_ideate_ideate_artifact_server__ideate_append_journal`). If not found, stop with:
+Call `ideate_append_journal("refine", {date}, {entry_type}, {body})` — appends a structured journal entry atomically.
 
-> The ideate MCP artifact server is required but not available. Verify .mcp.json configuration.
-
-Call `ideate_append_journal("refine", {date}, {entry_type}, {body})` — appends a structured journal entry atomically. The journal entry format to pass as `body`:
+If the ideate MCP artifact server is not available, stop and report: "The ideate MCP artifact server is required but not available. Verify .mcp.json configuration." The journal entry format to pass as `body`:
 
 ```markdown
 ## [refine] {date} — Refinement planning completed
@@ -327,7 +328,7 @@ The test: after this refinement cycle, executing the new work items and leaving 
 
 # Metrics Instrumentation
 
-After each agent spawn (via the Agent tool), append one JSON entry to `.ideate/metrics.jsonl`. Best-effort only: if writing fails, continue without interruption.
+After each agent spawn (via the Agent tool), emit one metric entry via `ideate_emit_metric({payload: {...}})`. Best-effort only: if the call fails, continue without interruption.
 
 **Entry schema (one JSON object per line):**
 
@@ -354,7 +355,7 @@ Extract from agent response metadata if available. Set to null if token counts a
 
 Record timestamp immediately before the Agent tool call; compute `wall_clock_ms` after it returns.
 
-**Turns tracking and budget warning**: After each Agent tool call returns, extract `tool_uses` from the response `<usage>` block as `turns_used`. Use the following maxTurns budget per agent type: `architect`: 80, `researcher`: 40, `decomposer`: 50. After recording the metrics entry, if `turns_used` is non-null and the agent's maxTurns is known, compute the utilization: `turns_used / maxTurns`. If utilization > 0.80, append a warning to the journal entry for this refinement cycle (via `ideate_append_journal`):
+**Turns tracking and budget warning**: After each Agent tool call returns, extract `tool_uses` from the response `<usage>` block as `turns_used`. Use the maxTurns value from `{config}.agent_budgets` for each agent type (`architect`, `researcher`, `decomposer`). If config was not loaded or the agent type is not present in `agent_budgets`, use the agent's frontmatter default. After recording the metrics entry, if `turns_used` is non-null and the agent's maxTurns is known, compute the utilization: `turns_used / maxTurns`. If utilization > 0.80, append a warning to the journal entry for this refinement cycle (via `ideate_append_journal`):
 
 > Agent {agent_type} used {turns_used}/{maxTurns} turns ({pct}%) — near budget limit
 
@@ -368,7 +369,7 @@ where `{pct}` is `round(turns_used / maxTurns * 100)`. This warning is best-effo
 > Models used: {list of distinct models}
 > Slowest agent: {agent_type} — {ms}ms
 
-If `metrics.jsonl` could not be written, note "metrics unavailable" and omit the breakdown.
+If metrics could not be emitted, note "metrics unavailable" and omit the breakdown.
 
 ---
 
@@ -378,3 +379,19 @@ If `metrics.jsonl` could not be written, note "metrics unavailable" and omit the
 - If the architect agent fails to analyze the codebase, inform the user and ask whether to proceed without codebase analysis (the interview will be less informed).
 - If a researcher agent fails, note the failure and proceed with available knowledge. Add a disclaimer to any decisions that depended on the missing research.
 - If proposed changes are internally contradictory (e.g., "add OAuth but remove all authentication"), state the contradiction and ask the user to resolve it. Do not attempt to reconcile contradictions silently.
+
+---
+
+# Self-Check
+
+Before completing, verify:
+
+- [ ] No `.ideate/` path references appear anywhere in this skill's output or internal logic
+- [ ] No `.yaml` filename references appear — artifacts are referenced by type and designation only
+- [ ] All artifact reads go through `ideate_artifact_query`, `ideate_get_context_package`, `ideate_get_domain_state`, or `ideate_get_project_status`
+- [ ] All artifact writes go through `ideate_write_artifact` or `ideate_write_work_items`
+- [ ] Next ID for work items, principles, and constraints obtained via `ideate_get_next_id` — no glob patterns
+- [ ] Metrics emitted via `ideate_emit_metric` — no direct file appends
+- [ ] Journal entries appended via `ideate_append_journal` — no direct file writes
+- [ ] MCP query descriptions do not leak internal storage paths
+- [ ] Decomposer agent prompts pass artifact content, not file paths

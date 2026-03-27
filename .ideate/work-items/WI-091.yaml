@@ -1,7 +1,7 @@
 id: WI-091
 type: work_item
 title: Delete stale migration scripts, fix artifact-conventions.md stale paths
-status: pending
+status: obsolete
 complexity: low
 scope:
   - {path: scripts/migrate-to-cycles.sh, op: delete}
@@ -10,13 +10,13 @@ scope:
 depends: []
 blocks: []
 criteria:
-  - `scripts/migrate-to-cycles.sh` does not exist
-  - `scripts/migrate-to-domains.sh` does not exist
-  - All section headings and path references in `specs/artifact-conventions.md` that read `reviews/incremental/` are updated to `archive/incremental/`
-  - All section headings and path references in `specs/artifact-conventions.md` that read `reviews/final/` are updated to `archive/cycles/{NNN}/`
+  - "`scripts/migrate-to-cycles.sh` does not exist"
+  - "`scripts/migrate-to-domains.sh` does not exist"
+  - "All section headings and path references in `specs/artifact-conventions.md` that read `reviews/incremental/` are updated to `archive/incremental/`"
+  - "All section headings and path references in `specs/artifact-conventions.md` that read `reviews/final/` are updated to `archive/cycles/{NNN}/`"
   - "The heading `### reviews/incremental/NNN-{name}.md` becomes `### archive/incremental/NNN-{name}.md`"
   - "The heading `### reviews/final/code-quality.md` becomes `### archive/cycles/{NNN}/code-quality.md`; same pattern for spec-adherence.md, gap-analysis.md, decision-log.md, summary.md"
-  - No occurrence of the string `reviews/` remains in `specs/artifact-conventions.md`
+  - "No occurrence of the string `reviews/` remains in `specs/artifact-conventions.md`"
 module: null
 domain: null
 notes: |
@@ -52,6 +52,7 @@ notes: |
   ### Verification
   
   After changes: `grep -r "reviews/" specs/artifact-conventions.md` should return zero matches.
+resolution: "specs/artifact-conventions.md no longer exists. migrate-to-cycles.sh and migrate-to-domains.sh already deleted."
 cycle_created: 1
 cycle_modified: null
 content_hash: e161aea3debc98758f945ed9ac8966f01ea9075dbcef77c55a321a94530e30d6

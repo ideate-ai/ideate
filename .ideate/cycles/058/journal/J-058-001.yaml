@@ -1,13 +1,19 @@
 id: J-058-001
 type: journal_entry
-phase: refine
-date: "2026-03-25"
+phase: review
+date: 2026-03-27
 cycle_created: 58
-title: Refinement planning completed
-content: |
-  Trigger: pre-release v3.0 feature expansion — 6 feature areas
-  Principles changed: none
-  New work items: 208–223 (16 items)
-  Six features: (1) build on first startup + gitignore dist/, (2) init skill for existing codebases, (3) telemetry + PPR metrics with research-driven schema, (4) reporting scripts (cycle, cost, executive), (5) SDLC hooks system (command + prompt types, 7 events), (6) v2 cleanup (architecture refresh, open questions). Also fixed Phase 1 validation in 4 skill files (specs/ → .ideate/ discovery). Final migration from specs/ to .ideate/ is a manual pause point after execution.
-content_hash: "23eba613330f7eaca013149337d04c91b07ebbbedc2a6eeae8f7625e3c8a1f5a"
-token_count: 187
+title: review-complete
+content: >-
+  ## [review] 2026-03-27 — Cycle 061 review completed with in-session rework
+
+  Critical findings: 0
+
+  Significant findings: 2 (both fixed in-session)
+
+  Minor findings: 3 (2 fixed in-session, 1 deferred — routing test coverage)
+
+  Rework: GP-14 file_path corrected, refine/SKILL.md type fixed, module_spec
+  case added to resolveArtifactPath, domains/ added to IDEATE_SUBDIRS.
+
+  Curator: skipped — correction cycle.

@@ -1,31 +1,25 @@
 id: execution-strategy
 type: execution_strategy
-content: |-
-  # Execution Strategy — Cycle 031
+text: |-
+  # Execution Strategy — Cycle 061
 
   ## Mode
-  Full parallel — no dependencies between work items.
-
-  ## Parallelism
-  Max concurrent workers: 3
-  Worktrees: disabled (documentation/skill file modifications only)
-  Review cadence: incremental per item
+  Sequential.
 
   ## Work Item Groups
+  ### Group 1
+  - WI-320: Fix resolveArtifactPath + domain_index + bootstrap (low)
 
-  ### Group 1: All fixes (parallel — no dependencies)
-  - WI-263: Fix domain-curator path error
-  - WI-264: Complete domain-curator .md header cleanup
-  - WI-265: Complete review skill .md cleanup
-  - WI-266: Complete context package spec .md cleanup
-  - WI-267: Standardize README placeholder to project_root
+  ### Group 2 (after WI-320)
+  - WI-322: Fix type strings + path leaks (low)
 
   ## Dependency Graph
   ```
-  263    264    265    266    267
+  WI-320 → WI-322
   ```
-  No dependencies — all independent.
 
-  ## Agent Configuration
-  - Workers: sonnet
-  - Incremental reviewers: sonnet
+  ## Review cadence
+  Capstone only.
+content_hash: a433dc277c1effa66db2082cf1858bdbc1a468252ce0bc3b6af58b7375be7d04
+token_count: 98
+file_path: .ideate/plan/execution-strategy.yaml

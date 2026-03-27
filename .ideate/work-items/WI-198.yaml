@@ -1,13 +1,17 @@
 id: WI-198
 type: work_item
 title: Amend guiding principles and policies for v3.0
-status: pending
+status: obsolete
 complexity: small
 scope:
-  - {path: specs/steering/guiding-principles.md, op: modify}
-  - {path: specs/domains/artifact-structure/policies.md, op: modify}
-  - {path: specs/domains/project-boundaries/policies.md, op: modify}
-  - {path: specs/domains/index.md, op: modify}
+  - path: specs/steering/guiding-principles.md
+    op: modify
+  - path: specs/domains/artifact-structure/policies.md
+    op: modify
+  - path: specs/domains/project-boundaries/policies.md
+    op: modify
+  - path: specs/domains/index.md
+    op: modify
 depends: []
 blocks:
   - "201"
@@ -26,19 +30,20 @@ module: null
 domain: null
 notes: |
   # WI-198: Amend guiding principles and policies for v3.0
-  
+
   ## Status: Already done during refine
-  
+
   The steering document changes were applied during the refinement interview:
   - `specs/steering/guiding-principles.md` — GP-1 amended, GP-8 amended, GP-13 added
   - `specs/domains/artifact-structure/policies.md` — P-6, P-8, P-26 amended, P-32 added
   - `specs/domains/project-boundaries/policies.md` — P-14 rewritten, P-15 amended
-  
+
   Remaining work for execution:
   - Update `specs/domains/index.md` project-boundaries description to remove outpost-specific language
   - Verify all amendments have proper cycle 026 attribution
 cycle_created: 1
 cycle_modified: null
-content_hash: ec85ffa4f566d89509a5e376742f03e4bb971971854ef05f190aa033a7447157
-token_count: 525
+content_hash: f3114aa5be84d3425fa667899500f2d0c8281ad34c8cf688da4786ced95f3f8f
+token_count: 550
 file_path: .ideate/work-items/WI-198.yaml
+resolution: "Principles and policies already amended during v3 development (noted in WI itself: 'Already done during refine')"

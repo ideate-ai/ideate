@@ -1,7 +1,7 @@
 id: WI-239
 type: work_item
 title: Generic ideate_write_artifact MCP tool
-status: pending
+status: done
 complexity: medium
 scope:
   - path: mcp/artifact-server/src/tools/write.ts
@@ -27,9 +27,9 @@ notes: |-
   # WI-239: Generic Write Artifact Tool
 
   New handleWriteArtifact. Type-to-path: overview/execution_strategy/architecture to plan/, guiding_principles/constraints to steering/, interview to interviews/, others to {type}/. Content serialized to YAML with auto-computed hash/token fields.
-resolution: null
+resolution: 9 tests already existed for handleWriteArtifact covering overview, research, and error cases; all pass
 cycle_created: 29
 cycle_modified: null
-content_hash: 3665dfc639a306af164a67b393412299d376301d9f118fca49ff090958c1b94d
-token_count: 259
+content_hash: 15d9bd74f9e06383a9dca3fa9877a5ecfdbba91670c3b5d07d9665e68ee6a509
+token_count: 283
 file_path: .ideate/work-items/WI-239.yaml

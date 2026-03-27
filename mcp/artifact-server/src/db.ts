@@ -226,5 +226,6 @@ export const TYPE_TO_EXTENSION_TABLE: Record<string, AnyTable> = {
   constraints:        documentArtifacts,
   research:           documentArtifacts,
   interview:          documentArtifacts,
+  domain_index:       documentArtifacts,
   interview_question: interviewQuestions,
 };

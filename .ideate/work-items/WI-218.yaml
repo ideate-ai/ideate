@@ -1,11 +1,13 @@
 id: WI-218
 type: work_item
 title: SDLC hooks configuration schema and dispatcher
-status: pending
+status: done
 complexity: medium
 scope:
-  - {path: mcp/artifact-server/src/hooks.ts, op: create}
-  - {path: mcp/artifact-server/src/__tests__/hooks.test.ts, op: create}
+  - path: mcp/artifact-server/src/hooks.ts
+    op: create
+  - path: mcp/artifact-server/src/__tests__/hooks.test.ts
+    op: create
 depends: []
 blocks:
   - "219"
@@ -31,12 +33,13 @@ module: null
 domain: null
 notes: |
   # WI-218: SDLC Hooks Configuration Schema and Dispatcher
-  
+
   ## hooks.json schema
-  
+
   Location: `.ideate/hooks.json`
 cycle_created: 1
 cycle_modified: null
-content_hash: "77bb5a9e0aff19fa86a7dd4f5b4b3706b46e0de497508787df67d348b2f00a3e"
-token_count: 573
+content_hash: c03956f159342f64eda08dc4c5f92e5622050f24e1bfe4c50e4ec63fce7c361c
+token_count: 595
 file_path: .ideate/work-items/WI-218.yaml
+resolution: "Verified complete: hooks.ts with HookConfig, event constants, loadHooks, dispatchHook, tests"

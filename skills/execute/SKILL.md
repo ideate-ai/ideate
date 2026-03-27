@@ -10,18 +10,19 @@ Your tone is neutral and factual. Report status plainly. No encouragement, no en
 
 ---
 
+# Phase 0: Read Project Configuration
+
+Call `ideate_get_config()` to read project configuration. Hold the response as `{config}`. Use `{config}.agent_budgets.{agent_name}` as the maxTurns value when spawning agents. If `ideate_get_config` is unavailable or returns no agent_budgets, use the agent's frontmatter maxTurns as fallback.
+
+---
+
 # Phase 1: Locate Artifact Directory
 
-Determine the **project root** — the directory containing `.ideate/config.json`. Use this precedence:
+Call `ideate_get_project_status()` to identify the **project root**. The MCP server locates the project root automatically. If the user provided a path argument, pass it as a hint.
 
-1. If the user provided a path argument, resolve it. If it points to a directory containing `.ideate/config.json`, use it as the project root. If it points to a subdirectory, walk up to find `.ideate/config.json` in an ancestor.
-2. Check the current working directory and walk up to find `.ideate/config.json`.
-3. Check for `.ideate.json` in the current working directory — if found, use its `artifactDir` value (resolved relative to that file's location) to locate the project root.
-4. Otherwise ask: "Where is the project root? (The directory containing `.ideate/`)"
+If the MCP server cannot find a project, stop and report the error. Do not proceed without a valid project.
 
-Validate by calling `ideate_get_project_status` with the resolved path. If the MCP server cannot find artifacts, stop and report the error. Do not proceed without a valid `.ideate/` directory.
-
-Store the project root path. All MCP tool calls use this implicitly — the server resolves paths from `.ideate/config.json`.
+Store the project root path returned by the server. All subsequent MCP tool calls use this implicitly.
 
 ## Derive Project Source Root
 
@@ -43,7 +44,7 @@ Load all plan artifacts via MCP tools:
 6. Call `ideate_artifact_query({type: "research"})` — returns all research findings (if they exist).
 7. Call `ideate_artifact_query({type: "journal_entry"})` — returns project history (if it exists). If absent, note and continue.
 
-**Work Item Format**: Each work item is a YAML artifact containing structured fields (id, title, complexity, scope, depends, blocks, criteria) plus inline implementation notes in the `notes` field.
+**Work Item Format**: Each work item contains structured fields (id, title, complexity, scope, depends, blocks, criteria) plus inline implementation notes in the `notes` field. Access work items exclusively through MCP tools.
 
 All artifacts except overview and journal entries are required.
 
@@ -108,7 +109,7 @@ Worktrees: {enabled | disabled}
 Review cadence: {from execution strategy}
 
 ### Work Item Groups
-{Groups from execution-strategy.yaml with ordering}
+{Groups from the execution strategy with ordering}
 
 ### Prerequisites
 {Any environment requirements — worktree support, agent teams flag, MCP server, etc.}
@@ -124,7 +125,13 @@ If the execution strategy specifies worktree isolation, verify git worktree is a
 
 # Phase 4.5: Prepare Context Digest
 
-Before spawning workers, create a **context digest** — a filtered subset of architecture, principles, and constraints relevant to the current batch. This replaces loading the full documents for every worker.
+Before spawning workers, assemble a **context digest** for the current work item using PPR-based context assembly. This provides graph-aware, relevance-ranked context within a token budget.
+
+**PPR-based context assembly**: Call `ideate_assemble_context({seed_ids: [{current_work_item_id}], token_budget: {config}.ppr.default_token_budget, include_types: ["architecture", "guiding_principle", "constraint"]})`. The tool runs Personalized PageRank over the artifact graph, ranks all artifacts by relevance to the seed work item, and assembles context within the token budget. Always-include types (architecture, principles, constraints) are included regardless of PPR score.
+
+Hold the returned context as `{ppr_context}`. Pass it to workers as their context digest.
+
+**Fallback**: If `ideate_assemble_context` is unavailable or returns an error, fall back to the existing manual context digest construction:
 
 1. Use the `{context_package}` loaded in Phase 2 (from `ideate_get_context_package()`), which contains the full architecture document, guiding principles, and constraints.
 2. For each module in the current batch (as determined by the execution strategy groups):
@@ -132,14 +139,14 @@ Before spawning workers, create a **context digest** — a filtered subset of ar
    - Extract guiding principles that apply to this module's domain
    - Extract constraints that affect this module's technology or boundaries
 3. Compose the context digest with the following priority and caps:
-   - The full `## Interface Contracts` section from architecture.yaml — always include in full, uncapped (contracts span modules and must not be truncated regardless of length)
-   - Sections from architecture.yaml mentioning any file path in the work item's `file_scope`
+   - The full `## Interface Contracts` section from the architecture document — always include in full, uncapped (contracts span modules and must not be truncated regardless of length)
+   - Sections from the architecture document mentioning any file path in the work item's `file_scope`
    - The component map entry for the relevant component
    - Cap all non-interface-contracts content at 150 lines total; if over this limit, include the component map entry first, then file-scope sections. If the interface contracts section alone exceeds 150 lines, include only the interface contracts section.
 
 The digest is ephemeral — it is not written to a file. It is passed directly to workers in the current batch. Different batches may have different digests if they cover different modules.
 
-Workers receive the digest plus paths to the full documents: "Full architecture at {path}, full principles at {path}, full constraints at {path} — read these if you need detail beyond what the digest provides."
+Workers receive the digest plus instructions to retrieve full documents via MCP tools: "Full architecture, principles, and constraints are accessible via `ideate_get_context_package()` — call it if you need detail beyond what the digest provides."
 
 ---
 
@@ -180,7 +187,7 @@ If the ideate MCP artifact server is not available, stop and report: "The ideate
 Regardless of execution mode, every worker (subagent, teammate, or the main session in sequential mode) receives:
 
 1. **The work item context** — from `ideate_get_work_item_context({work_item_id})`, which returns the work item spec (including inline implementation notes), module spec, domain policies, and relevant research as a single pre-assembled package.
-2. **Context digest** — the filtered architecture, principles, and constraints prepared in Phase 4.5 for the current batch, derived from the `{context_package}` loaded in Phase 2. Includes paths to the full documents if the worker needs more detail.
+2. **Context digest** — the PPR-assembled context from Phase 4.5 (`{ppr_context}`), or the manual context digest if fallback was used. Includes paths to the full documents if the worker needs more detail.
 3. **The relevant module spec** — included in the `ideate_get_work_item_context` response if applicable. If the work item spans modules or no modules exist, the full architecture doc from the context package is used instead.
 4. _(Included in context digest)_
 5. _(Included in context digest)_
@@ -195,8 +202,8 @@ The worker prompt must instruct the agent to:
 - Write source files under the project source root
 - Follow the context digest (and full architecture document if needed) for system context
 - Follow the module spec for interface contracts and boundary rules
-- Use the guiding principles from the digest to resolve ambiguous situations (read full principles at {path} if needed)
-- Respect all constraints from the digest (read full constraints at {path} if needed)
+- Use the guiding principles from the digest to resolve ambiguous situations (retrieve full principles via `ideate_get_context_package()` if needed)
+- Respect all constraints from the digest (retrieve full constraints via `ideate_get_context_package()` if needed)
 - Not make design decisions beyond what the spec prescribes
 - Report completion with a list of files created or modified
 
@@ -311,13 +318,13 @@ Instruct the code-reviewer:
 > 2. Attempt to verify at least 2 of them by reading the relevant source files. If a criterion marked `unverifiable` can actually be verified by file inspection, reclassify it and report it as either `satisfied` or `unsatisfied`.
 > 3. Only accept `unverifiable` for criteria that genuinely require runtime testing, external system dependencies, or human judgment that cannot be derived from file contents.
 >
-> **Dynamic testing (incremental scope)**: After your static review, perform the dynamic checks defined in your agent instructions under "Dynamic Testing > Incremental review scope". Discover the project's test model, run the smoke test, and run tests scoped to the changed files. If the smoke test fails, report a Critical finding titled "Startup failure after [work item name]".
+> **Dynamic testing (incremental scope)**: After your static review, perform the dynamic checks defined in your agent instructions under "Step 2 — Incremental review scope (single work item)". Discover the project's test model, run the smoke test, and run tests scoped to the changed files. If the smoke test fails, report a Critical finding titled "Startup failure after [work item name]".
 
 The code-reviewer performs an incremental review scoped to the files touched by that work item.
 
 **Non-blocking**: The review runs while other work items continue. In batched parallel mode, reviews for items in the current group run concurrently with each other. In team mode, a review does not block other teammates from picking up new work items. In sequential mode, the review runs before the next work item begins (it is inherently blocking since only one item runs at a time).
 
-Write the review result to `.ideate/cycles/{NNN}/findings/F-{WI}-{SEQ}.yaml`, where `{NNN}` is the current cycle number, `{WI}` is the work item number, and `{SEQ}` is a zero-padded sequence number starting at 001. After the code-reviewer returns, record a metrics entry (see Metrics Instrumentation).
+Write the review result via `ideate_write_artifact({type: "finding", work_item: "{WI}", content: ...})`. The server assigns the designation (e.g., F-{WI}-001) and files it in the current cycle automatically. After the code-reviewer returns, record a metrics entry (see Metrics Instrumentation).
 
 The review follows the format defined in the artifact conventions:
 
@@ -593,18 +600,16 @@ The user can re-run `/ideate:execute` to resume. The skill should detect already
 
 # Metrics Instrumentation
 
-After each agent spawn (via the Agent tool), append one JSON entry to `.ideate/metrics.jsonl`. Best-effort only: if writing fails, continue without interruption.
+After each agent spawn (via the Agent tool), emit a metric via `ideate_emit_metric`. Best-effort only: if the call fails, continue without interruption.
 
-**Entry schema (one JSON object per line):**
-
-    {"timestamp":"<ISO8601>","skill":"execute","phase":"<id>","cycle":null,"agent_type":"<type>","model":"<model>","work_item":"<slug or null>","wall_clock_ms":<ms>,"turns_used":<N or null>,"context_files_read":["<path>",...],"input_tokens":<N or null>,"output_tokens":<N or null>,"cache_read_tokens":<N or null>,"cache_write_tokens":<N or null>,"mcp_tools_called":["<tool_name>",...],"outcome":"<pass|fail|rework or null>","finding_count":<N or null>,"finding_severities":{"critical":<N>,"significant":<N>,"minor":<N>} or null,"first_pass_accepted":<true|false or null>,"rework_count":<N or null>}
+**Metric fields** (passed to `ideate_emit_metric`):
 
 - `timestamp` — ISO 8601 when the agent was spawned.
 - `skill` — `"execute"` (constant for this skill).
 - `phase` — phase identifier where the spawn occurred (e.g., `"6a"`, `"7"`).
 - `agent_type` — the agent definition name: `"worker"` for work item workers, `"code-reviewer"` for incremental reviews.
 - `model` — model string passed to Agent tool (e.g., `"sonnet"`).
-- `work_item` — work item slug (e.g., `"005-auth-middleware"`) for workers and their paired code-reviewer; `null` for other agents.
+- `work_item` — work item designation (e.g., `"WI-005"`) for workers and their paired code-reviewer; `null` for other agents.
 - `wall_clock_ms` — elapsed ms between Agent tool invocation and return.
 - `turns_used` — integer extracted from `tool_uses` in the Agent response `<usage>` block. This is the proxy for turns used. Extract it after each Agent tool call returns. If not available, set to `null`. Do NOT leave as `null` if the usage block is present — extract the integer value.
 - `context_files_read` — absolute file paths explicitly provided in the agent's prompt.
@@ -625,7 +630,7 @@ Extract from agent response metadata if available. Set to null if token counts a
 
 Record timestamp immediately before the Agent tool call; compute `wall_clock_ms` after it returns.
 
-**Turns tracking and budget warning**: After each Agent tool call returns, extract `tool_uses` from the response `<usage>` block as `turns_used`. Use the following maxTurns budget per agent type: `code-reviewer`: 40, `worker`: (use the maxTurns value passed to that agent spawn, or null if unspecified). After recording the metrics entry, if `turns_used` is non-null and the agent's maxTurns is known, compute the utilization: `turns_used / maxTurns`. If utilization > 0.80, append a warning to the journal entry for this work item (via `ideate_append_journal`):
+**Turns tracking and budget warning**: After each Agent tool call returns, extract `tool_uses` from the response `<usage>` block as `turns_used`. Use the maxTurns value from `{config}.agent_budgets` for each agent type (`code-reviewer`, `worker`). If config was not loaded or the agent type is not present in `agent_budgets`, use the agent's frontmatter default. After recording the metrics entry, if `turns_used` is non-null and the agent's maxTurns is known, compute the utilization: `turns_used / maxTurns`. If utilization > 0.80, append a warning to the journal entry for this work item (via `ideate_append_journal`):
 
 > Agent {agent_type} used {turns_used}/{maxTurns} turns ({pct}%) — near budget limit
 
@@ -639,7 +644,7 @@ where `{pct}` is `round(turns_used / maxTurns * 100)`. This warning is best-effo
 > Models used: {list of distinct models}
 > Slowest agent: {agent_type} — {work_item} — {ms}ms
 
-If `metrics.jsonl` could not be written, note "metrics unavailable" and omit the breakdown.
+If `ideate_emit_metric` calls failed, note "metrics unavailable" and omit the breakdown.
 
 ---
 
@@ -649,7 +654,21 @@ If `metrics.jsonl` could not be written, note "metrics unavailable" and omit the
 - You do not skip incremental reviews. Every completed work item gets reviewed.
 - You do not present minor review findings to the user. Fix them silently.
 - You do not interrupt the user for routine decisions. The Andon cord is for issues that guiding principles cannot resolve.
-- You do not modify steering artifacts. You have read-only access to `.ideate/principles/` and `.ideate/constraints/`. You append journal entries and write findings to `.ideate/cycles/{NNN}/findings/`.
+- You do not modify steering artifacts. Principles and constraints are read-only, accessible via MCP tools. You append journal entries via `ideate_append_journal` and write findings via `ideate_write_artifact`.
 - You do not re-plan. If the plan has problems (cycles, missing items, contradictions), you stop and tell the user to fix the plan or run `/ideate:refine`.
 - You do not praise work. Absence of findings means the work is acceptable.
 - You do not use filler phrases, encouragement, or enthusiasm. State facts.
+
+---
+
+# Self-Check
+
+This skill document satisfies the MCP abstraction boundary (GP-14):
+
+- [ ] No `.ideate/` path references remain in this document
+- [ ] No `.yaml` filename references remain (e.g., `architecture.yaml`, `execution-strategy.yaml`)
+- [ ] Findings are written via `ideate_write_artifact`, not to file paths
+- [ ] Metrics are emitted via `ideate_emit_metric`, not written to `metrics.jsonl`
+- [ ] Principles and constraints are accessed via MCP tools, not path references
+- [ ] Work item format description references MCP tools, not YAML syntax
+- [ ] Phase 1 uses `ideate_get_project_status()` instead of filesystem traversal for `.ideate/config.json`

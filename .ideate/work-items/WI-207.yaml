@@ -1,12 +1,15 @@
 id: WI-207
 type: work_item
 title: Agent definitions update — validation strategy + paths + outpost refs
-status: pending
+status: done
 complexity: small
 scope:
-  - {path: agents/decomposer.md, op: modify}
-  - {path: agents/code-reviewer.md, op: modify}
-  - {path: agents/domain-curator.md, op: modify}
+  - path: agents/decomposer.md
+    op: modify
+  - path: agents/code-reviewer.md
+    op: modify
+  - path: agents/domain-curator.md
+    op: modify
 depends:
   - "201"
 blocks: []
@@ -19,9 +22,9 @@ module: null
 domain: null
 notes: |
   # WI-207: Agent Definitions Update
-  
+
   ## Changes
-  
+
   ### agents/decomposer.md
   Lines ~97-108: Rewrite acceptance criteria guidance.
   Current: "Avoid criteria that require human judgment... this should be rare."
@@ -30,18 +33,19 @@ notes: |
   - Subjective criteria → human-in-the-loop (user approval, visual review, A/B comparison)
   - Each criterion must state its validation method
   - Neither method is exceptional — use whichever is appropriate
-  
+
   ### agents/code-reviewer.md
   Ensure the reviewer handles subjective criteria appropriately:
   - When reviewing work items with human-validated criteria, the reviewer should note these as "requires human review" rather than marking them as gaps
   - Machine-verifiable criteria: verify directly
   - Human-verified criteria: confirm they are documented with an approval authority
-  
+
   ### agents/domain-curator.md
   - Update any stale artifact path references to use .ideate/ canonical paths (P-19)
   - Remove any outpost-specific references
 cycle_created: 1
 cycle_modified: null
-content_hash: "5d703a0f401d9a2555c8f4ecbb6e873e09c11d99258297b6a53407074675cb9f"
-token_count: 465
+content_hash: b3a43b85d87010d240b332006b49472aba6087e94c7c8c7df46afb302bf91434
+token_count: 477
 file_path: .ideate/work-items/WI-207.yaml
+resolution: "Verified complete: agents have GP-13 validation, .ideate/ paths, zero outpost references"

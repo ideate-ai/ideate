@@ -1,11 +1,13 @@
 id: WI-219
 type: work_item
 title: ideate_emit_event MCP tool for hooks
-status: pending
+status: done
 complexity: small
 scope:
-  - {path: mcp/artifact-server/src/tools/events.ts, op: create}
-  - {path: mcp/artifact-server/src/tools/index.ts, op: modify}
+  - path: mcp/artifact-server/src/tools/events.ts
+    op: create
+  - path: mcp/artifact-server/src/tools/index.ts
+    op: modify
 depends:
   - "218"
 blocks:
@@ -22,19 +24,20 @@ module: null
 domain: null
 notes: |
   # WI-219: ideate_emit_event MCP Tool
-  
+
   ## Tool design
-  
+
   New file: `mcp/artifact-server/src/tools/events.ts`
-  
+
   ### Parameters:
   - `artifact_dir` (required): Absolute path to artifact directory
   - `event` (required): Event name (string, one of the 7 defined events)
   - `variables` (optional): Object of string key-value pairs for variable substitution
-  
+
   ### Handler:
 cycle_created: 1
 cycle_modified: null
-content_hash: "4253c2aa84c750bee3bd6eb2e9446b594bd8558edd02b0bc6ea6a92bd4d34bb8"
-token_count: 363
+content_hash: 6b542155357488146c7a63d9b24f3b058ae68cb58de32a02e3437cca95c5f029
+token_count: 376
 file_path: .ideate/work-items/WI-219.yaml
+resolution: "Verified complete: tools/events.ts exports handleEmitEvent, registered in tools/index.ts"
