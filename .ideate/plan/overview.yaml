@@ -1,19 +1,17 @@
 id: overview
 type: overview
-text: |-
-  # Change Plan — Cycle 061
-
-  ## Trigger
-  Cycle 060 review: 5 significant findings in MCP server path routing and type registration.
-
-  ## What is changing
-  - WI-320: Fix resolveArtifactPath type routing (guiding_principle, constraint, domain types), add domain_index to TYPE_TO_EXTENSION_TABLE, export IDEATE_SUBDIRS, fix bootstrap return value
-  - WI-322: Fix plan/SKILL.md wrong type strings, remove internal path leaks from init/domain-curator domain_index content, remove stale .ideate.json ref from brrr
-
-  ## What is NOT changing
-  - GP-14 abstraction boundary (verified clean)
-  - All 22 MCP tools (existing functionality preserved)
-  - Architecture, principles, constraints
-content_hash: 9a6bc4bed3b526a70d384c72773687cf8850e99dc6ba56105529438fb231ed52
-token_count: 180
+title: Cycle 065 — Consolidate plan and init into unified /ideate:init
+summary: Merge /ideate:plan and /ideate:init into a single /ideate:init command that auto-detects whether the project has existing source code and adjusts behavior accordingly. Delete /ideate:plan. Update all cross-references and docs.
+trigger: "User requirement: two entry points are wasteful and semantically unclear. One unified command with auto-detection."
+scope_boundary: Skill layer refactoring only. No MCP server changes, no agent definition changes (except cross-reference updates), no architecture changes.
+changes:
+  - area: Unified entry point
+    description: "/ideate:init becomes the single entry point. If .ideate/ exists: error. If source code exists: init flow (survey, lightweight interview, bootstrap). If no source code: plan flow (full interview, research, architecture, work items)."
+  - area: Skill deletion
+    description: /ideate:plan skill deleted. All references updated to /ideate:init.
+  - area: Documentation
+    description: CLAUDE.md, README.md, ARCHITECTURE.md updated.
+work_items: WI-336 through WI-339
+content_hash: 17938c3ce49ad7e45d87a46e7f6073c17e76677eb488c524e29a12af38cca0c2
+token_count: 284
 file_path: .ideate/plan/overview.yaml

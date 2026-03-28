@@ -18,7 +18,7 @@ content: |
   
   ## Minor Findings
   
-  - [code-reviewer] Pre-existing label name divergence: `skills/execute/SKILL.md:410` labels its finding-handling bullet "General critical findings..." while `skills/brrr/phases/execute.md:160` labels the equivalent bullet "Critical findings fixable within scope...". Not introduced by WI-129. Qualifier text is now identical across both files. — relates to: cross-cutting
+  - [code-reviewer] Pre-existing label name divergence: `skills/execute/SKILL.md:410` labels its finding-handling bullet "General critical findings..." while `skills/autopilot/phases/execute.md:160` labels the equivalent bullet "Critical findings fixable within scope...". Not introduced by WI-129. Qualifier text is now identical across both files. — relates to: cross-cutting
   
   - [gap-analyst] Q-33 and Q-34 in `specs/domains/workflow/questions.md` still show `Status: open`. Expected pre-curator state — curator will mark them resolved. — relates to: WI-129
   

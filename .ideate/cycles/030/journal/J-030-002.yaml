@@ -3,7 +3,7 @@ type: journal_entry
 phase: execute
 date: "2026-03-22"
 cycle_created: 30
-title: "Work item 129: Fix inline prompt smoke test condition and brrr label consistency"
+title: "Work item 129: Fix inline prompt smoke test condition and autopilot label consistency"
 content: |
   Status: complete
   Three line edits applied as specified. Incremental review initial Fail (S1/S2) was false positive — code-reviewer attributed pre-existing uncommitted Cycle 011 changes to WI-129. All four ACs confirmed satisfied.

@@ -73,7 +73,7 @@ content: |
   
   ### Idempotency
   
-  For write tools called by LLMs in agentic loops (brrr), idempotency matters — the LLM may retry. The pattern: accept an optional `idempotency_key` parameter; if the same key appears within a session, return the cached result rather than re-executing. This is especially relevant for `create_work_item` during plan execution, where retrying after a partial failure should not create duplicate items.
+  For write tools called by LLMs in agentic loops (autopilot), idempotency matters — the LLM may retry. The pattern: accept an optional `idempotency_key` parameter; if the same key appears within a session, return the cached result rather than re-executing. This is especially relevant for `create_work_item` during plan execution, where retrying after a partial failure should not create duplicate items.
   
   ### Recommendation-relevant fact
   

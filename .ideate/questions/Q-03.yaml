@@ -2,7 +2,7 @@ id: Q-03
 type: domain_question
 domain: workflow
 status: resolved
-impact: Skills attempt spawn_session first on every invocation, receive a tool-not-found error, then fall back; this produces visible noise inconsistent with brrr (which was correctly updated in WI-057).
+impact: Skills attempt spawn_session first on every invocation, receive a tool-not-found error, then fall back; this produces visible noise inconsistent with autopilot (which was correctly updated in WI-057).
 source: archive/cycles/001/gap-analysis.md I1, archive/cycles/001/decision-log.md OQ5
 resolution: "WI-125 updated `skills/review/SKILL.md` Phase 4a to list Agent tool as primary with spawn_session as optional outpost alternative. (`skills/plan/SKILL.md:148` and `skills/execute/SKILL.md:299-301` were already correct before cycle 011.)"
 resolved_in: 11

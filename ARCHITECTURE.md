@@ -37,12 +37,12 @@ mcp/
 ### SDLC lifecycle
 
 ```
-/ideate:plan ──► /ideate:execute ──► /ideate:review ──► /ideate:refine
+/ideate:init ──► /ideate:execute ──► /ideate:review ──► /ideate:refine
                                             │                  │
                                             └──────────────────┘
                                             (repeating cycles)
 
-/ideate:brrr = autonomous execute → review → refine loop
+/ideate:autopilot = autonomous execute → review → refine loop
 ```
 
 ### Data flow
@@ -50,7 +50,7 @@ mcp/
 ```
 ┌──────────────────────────────────────────────────────────────────┐
 │                          Skill (Claude)                          │
-│  /ideate:plan  /ideate:execute  /ideate:review  /ideate:refine  │
+│  /ideate:init  /ideate:execute  /ideate:review  /ideate:refine  │
 └────────────────────────────┬─────────────────────────────────────┘
                              │ MCP tool calls (mandatory — GP-8)
                              ▼

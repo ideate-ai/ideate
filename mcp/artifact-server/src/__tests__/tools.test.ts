@@ -26,7 +26,7 @@ import { handleAppendJournal, handleArchiveCycle, handleWriteWorkItems, handleUp
 import { handleTool, signalIndexReady } from "../tools/index.js";
 import { handleEmitMetric } from "../tools/metrics.js";
 import { handleBootstrapProject } from "../tools/bootstrap.js";
-import { handleGetBrrrState, handleUpdateBrrrState } from "../tools/brrr-state.js";
+import { handleGetAutopilotState, handleUpdateAutopilotState } from "../tools/autopilot-state.js";
 
 // ---------------------------------------------------------------------------
 // Setup / teardown
@@ -1717,12 +1717,12 @@ describe("handleGetNextId", () => {
 });
 
 // ---------------------------------------------------------------------------
-// handleGetBrrrState
+// handleGetAutopilotState
 // ---------------------------------------------------------------------------
 
-describe("handleGetBrrrState", () => {
+describe("handleGetAutopilotState", () => {
   it("returns default state when no file exists", async () => {
-    const result = await handleGetBrrrState(ctx, {});
+    const result = await handleGetAutopilotState(ctx, {});
     const state = JSON.parse(result);
 
     expect(state.cycles_completed).toBe(0);
@@ -1733,11 +1733,11 @@ describe("handleGetBrrrState", () => {
   });
 
   it("returns persisted state when file exists", async () => {
-    // Write a brrr-state.yaml directly
-    const statePath = path.join(artifactDir, "brrr-state.yaml");
+    // Write a autopilot-state.yaml directly
+    const statePath = path.join(artifactDir, "autopilot-state.yaml");
     fs.writeFileSync(statePath, "cycles_completed: 3\nconvergence_achieved: true\nstarted_at: '2026-03-25T10:00:00Z'\n", "utf8");
 
-    const result = await handleGetBrrrState(ctx, {});
+    const result = await handleGetAutopilotState(ctx, {});
     const state = JSON.parse(result);
 
     expect(state.cycles_completed).toBe(3);
@@ -1747,12 +1747,12 @@ describe("handleGetBrrrState", () => {
 });
 
 // ---------------------------------------------------------------------------
-// handleUpdateBrrrState
+// handleUpdateAutopilotState
 // ---------------------------------------------------------------------------
 
-describe("handleUpdateBrrrState", () => {
+describe("handleUpdateAutopilotState", () => {
   it("creates state file and merges update when no file exists", async () => {
-    const result = await handleUpdateBrrrState(ctx, {
+    const result = await handleUpdateAutopilotState(ctx, {
       state: { cycles_completed: 1, started_at: "2026-03-26T09:00:00Z" },
     });
     const state = JSON.parse(result);
@@ -1762,18 +1762,18 @@ describe("handleUpdateBrrrState", () => {
     expect(state.convergence_achieved).toBe(false); // default preserved
 
     // Verify file was written
-    const statePath = path.join(artifactDir, "brrr-state.yaml");
+    const statePath = path.join(artifactDir, "autopilot-state.yaml");
     expect(fs.existsSync(statePath)).toBe(true);
   });
 
   it("merges partial update onto existing state", async () => {
     // Create initial state
-    await handleUpdateBrrrState(ctx, {
+    await handleUpdateAutopilotState(ctx, {
       state: { cycles_completed: 2, started_at: "2026-03-26T09:00:00Z" },
     });
 
     // Update only convergence
-    const result = await handleUpdateBrrrState(ctx, {
+    const result = await handleUpdateAutopilotState(ctx, {
       state: { convergence_achieved: true, last_phase: "review" },
     });
     const state = JSON.parse(result);
@@ -1785,7 +1785,7 @@ describe("handleUpdateBrrrState", () => {
   });
 
   it("throws when state parameter is missing", async () => {
-    await expect(handleUpdateBrrrState(ctx, {})).rejects.toThrow("Missing required parameter: state");
+    await expect(handleUpdateAutopilotState(ctx, {})).rejects.toThrow("Missing required parameter: state");
   });
 });
 

@@ -4,7 +4,7 @@ user-invocable: true
 argument-hint: "[artifact directory path] [--max-cycles N]"
 ---
 
-You are the brrr skill for the ideate plugin. You run an autonomous loop: execute pending work items, review the result, refine if findings exist, and repeat until convergence. You do not stop to ask the user unless an Andon event cannot be handled by the proxy-human agent, or until convergence is reached, or until the cycle limit is hit.
+You are the autopilot skill for the ideate plugin. You run an autonomous loop: execute pending work items, review the result, refine if findings exist, and repeat until convergence. You do not stop to ask the user unless an Andon event cannot be handled by the proxy-human agent, or until convergence is reached, or until the cycle limit is hit.
 
 You are self-contained. You do not delegate to `/ideate:execute`, `/ideate:review`, or `/ideate:refine`. The logic of all three is loaded from phase documents at the start of each phase transition.
 
@@ -57,7 +57,7 @@ Verify: every work item has an objective, acceptance criteria, file scope, and d
 
 If validation fails, report the specific issues and stop.
 
-If no work items are found, stop and direct the user to run `/ideate:plan` first.
+If no work items are found, stop and direct the user to run `/ideate:init` first.
 
 ## Build Completed Items Set
 
@@ -72,26 +72,26 @@ Build the dependency graph. Perform depth-first traversal for cycle detection. I
 
 ---
 
-# Phase 4: Check for Existing brrr Session
+# Phase 4: Check for Existing Autopilot Session
 
-Call `ideate_get_brrr_state()` to check for an existing session. If the returned state has `cycles_completed > 0`, a prior session exists. Extract `cycles_completed`, `convergence_achieved`, and `started_at`.
+Call `ideate_get_autopilot_state()` to check for an existing session. If the returned state has `cycles_completed > 0`, a prior session exists. Extract `cycles_completed`, `convergence_achieved`, and `started_at`.
 
 Present:
-> A previous brrr session exists ({cycles_completed} cycles completed, convergence: {convergence_achieved}, started: {started_at}). Resume or start fresh?
+> A previous autopilot session exists ({cycles_completed} cycles completed, convergence: {convergence_achieved}, started: {started_at}). Resume or start fresh?
 
 - **Resume**: Use the returned state. Set `cycles_completed` from it. Skip Phase 5.
 - **Start fresh**: Reset the state (see below) and proceed.
 
-## Initialize brrr State
+## Initialize Autopilot State
 
-Call `ideate_update_brrr_state({state: {started_at: "{ISO 8601 timestamp}", cycles_completed: 0, total_items_executed: 0, convergence_achieved: false, last_cycle_findings: {critical: 0, significant: 0, minor: 0}, last_full_review_cycle: 0, full_review_interval: 3}})` to create or reset the session state.
+Call `ideate_update_autopilot_state({state: {started_at: "{ISO 8601 timestamp}", cycles_completed: 0, total_items_executed: 0, convergence_achieved: false, last_cycle_findings: {critical: 0, significant: 0, minor: 0}, last_full_review_cycle: 0, full_review_interval: 3}})` to create or reset the session state.
 
 ---
 
 # Phase 5: Present Execution Plan and Confirm
 
 ```
-## brrr Autonomous Loop
+## Autopilot Autonomous Loop
 
 Project root: {project_root}
 Project source root: {project_source_root}
@@ -117,10 +117,10 @@ Wait for explicit confirmation. Do not begin until the user confirms.
 
 ## Locate Phase Documents
 
-Before the first cycle, locate the brrr phase documents directory:
+Before the first cycle, locate the autopilot phase documents directory:
 
-1. Check `skills/brrr/phases/execute.md` relative to the current working directory.
-2. If not found, Glob `**/skills/brrr/phases/execute.md` — use its parent directory.
+1. Check `skills/autopilot/phases/execute.md` relative to the current working directory.
+2. If not found, Glob `**/skills/autopilot/phases/execute.md` — use its parent directory.
 3. If not found, ask the user for the ideate plugin path.
 
 Store the parent of `execute.md` as `{phases_dir}`.
@@ -131,7 +131,7 @@ Repeat the following until convergence or `max_cycles` is reached.
 
 At the start of each cycle, print:
 ```
-[brrr] Cycle {cycle_number} — {pending_count} work items pending
+[autopilot] Cycle {cycle_number} — {pending_count} work items pending
 ```
 
 Set `{formatted_cycle_number}` = cycle number zero-padded to 3 digits (e.g., cycle 1 → `001`).
@@ -139,13 +139,13 @@ Record `{pending_count_start_of_cycle}` = current number of pending items.
 
 ### 6a: Execute Phase
 
-**Record cycle start commit**: Run `git rev-parse HEAD` in `{project_source_root}`. If successful, store as `{cycle_start_commit}` and call `ideate_update_brrr_state({state: {"cycle_{cycle_number}_start_commit": "{hash}"}})`. If the command fails (not a git repo), set `{cycle_start_commit}` = null.
+**Record cycle start commit**: Run `git rev-parse HEAD` in `{project_source_root}`. If successful, store as `{cycle_start_commit}` and call `ideate_update_autopilot_state({state: {"cycle_{cycle_number}_start_commit": "{hash}"}})`. If the command fails (not a git repo), set `{cycle_start_commit}` = null.
 
 Read `{phases_dir}/execute.md`. Follow all instructions in that document.
 
 Continue here after all pending work items have been attempted.
 
-**Record cycle end commit**: Run `git rev-parse HEAD` in `{project_source_root}`. Store as `{cycle_end_commit}`. Call `ideate_update_brrr_state({state: {"cycle_{cycle_number}_end_commit": "{hash}"}})` to record it.
+**Record cycle end commit**: Run `git rev-parse HEAD` in `{project_source_root}`. Store as `{cycle_end_commit}`. Call `ideate_update_autopilot_state({state: {"cycle_{cycle_number}_end_commit": "{hash}"}})` to record it.
 
 ### 6b: Comprehensive Review Phase
 
@@ -165,7 +165,7 @@ Use the returned `converged` flag to drive the convergence decision. If `converg
 
 This call is best-effort — if it fails, continue without interruption. Then exit the loop. If `converged` is false, proceed to Phase 6d.
 
-Update session state via `ideate_update_brrr_state({state: {convergence_achieved: {true | false}, last_cycle_findings: {critical: N, significant: N, minor: N}}})`.
+Update session state via `ideate_update_autopilot_state({state: {convergence_achieved: {true | false}, last_cycle_findings: {critical: N, significant: N, minor: N}}})`.
 
 
 ### 6d: Refinement Phase (only if not converged)
@@ -176,7 +176,7 @@ Continue here after new work items are created and the journal is updated.
 
 ### 6e: Cycle Limit Check
 
-Call `ideate_get_brrr_state()` to read the current `cycles_completed`, increment it, then call `ideate_update_brrr_state({state: {cycles_completed: {N+1}}})` to persist the update.
+Call `ideate_get_autopilot_state()` to read the current `cycles_completed`, increment it, then call `ideate_update_autopilot_state({state: {cycles_completed: {N+1}}})` to persist the update.
 
 If `cycles_completed >= max_cycles` without convergence, exit the loop and proceed to Phases 7–9 (Phase 8 path).
 
@@ -251,8 +251,8 @@ Phase documents contain per-cycle and overall journal summary instructions. If `
 
 **Convergence summary fields**: When the loop exits (converged or max-cycles reached), the activity report and final journal entry must include the following summary fields derived from `ideate_get_metrics`:
 
-- `convergence_cycles` — integer. The number of cycles completed before convergence (or before the cycle limit was reached). Equal to `cycles_completed` from `ideate_get_brrr_state()`.
-- `cycle_total_tokens` — integer or null. Call `ideate_get_metrics({scope: "cycle"})` and sum all token fields across cycles for this brrr session. Null if metrics are unavailable or token fields are all null.
+- `convergence_cycles` — integer. The number of cycles completed before convergence (or before the cycle limit was reached). Equal to `cycles_completed` from `ideate_get_autopilot_state()`.
+- `cycle_total_tokens` — integer or null. Call `ideate_get_metrics({scope: "cycle"})` and sum all token fields across cycles for this autopilot session. Null if metrics are unavailable or token fields are all null.
 - `cycle_total_cost_estimate` — string or null. A human-readable cost estimate string (e.g., `"~$4.20"`) derived from `cycle_total_tokens` using current published model pricing for the models used. Null if token data is unavailable or pricing cannot be determined.
 
 These three fields are optional (null if not available). Include them in the Phase 9 activity report Run Summary and in the journal entry written at the end of Phase 9.
@@ -265,7 +265,7 @@ These three fields are optional (null if not available). Include them in the Pha
 - You do not skip incremental reviews. Every completed work item gets reviewed before the cycle's comprehensive review runs.
 - You do not present minor review findings to the user. Handle them silently.
 - You do not make design decisions. If the proxy-human defers, note the deferral and continue where possible.
-- You do not modify steering artifacts. You have read-only access to guiding principles and constraints (via `ideate_get_context_package`). You write cycle findings (via `ideate_write_artifact`), brrr session state (via `ideate_update_brrr_state`), and proxy-human decisions (via `ideate_append_journal`) — all through MCP tools.
+- You do not modify steering artifacts. You have read-only access to guiding principles and constraints (via `ideate_get_context_package`). You write cycle findings (via `ideate_write_artifact`), autopilot session state (via `ideate_update_autopilot_state`), and proxy-human decisions (via `ideate_append_journal`) — all through MCP tools.
 - You do not declare convergence unless both Condition A and Condition B pass simultaneously in the same cycle.
 - You do not re-plan from scratch. New work items in the refinement phase address specific findings. They do not replace the original plan.
 - You do not use filler phrases, encouragement, or enthusiasm. State facts.
@@ -278,7 +278,7 @@ Before executing, verify this skill document satisfies the MCP abstraction bound
 
 - [ ] No `.ideate/` path references in any instruction
 - [ ] No `.yaml` filename references (artifacts referenced by type and designation only)
-- [ ] brrr-state access uses `ideate_get_brrr_state` / `ideate_update_brrr_state` exclusively
+- [ ] autopilot-state access uses `ideate_get_autopilot_state` / `ideate_update_autopilot_state` exclusively
 - [ ] Proxy-human decisions recorded via `ideate_append_journal`, not direct file writes
 - [ ] All metrics emitted via `ideate_emit_metric`, not appended to any file
 - [ ] Finding writes use `ideate_write_artifact`

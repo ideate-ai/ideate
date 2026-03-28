@@ -5,7 +5,7 @@ reviewer: code-reviewer
 severity: significant
 title: proxy-human-log.md never written in normal spawn_session path
 description: |
-  - **File**: `skills/brrr/SKILL.md:289`
+  - **File**: `skills/autopilot/SKILL.md:289`
   - **Issue**: The proxy-human spawn parameters contained no instruction to write to `proxy-human-log.md`. Only the fallback path (spawn_session unavailable) populated this file. Phase 9 activity report would always find the log empty.
   - **Impact**: AC13 unmet in the primary code path. Activity report proxy-human summary always empty in normal operation.
   - **Suggested fix**: Add explicit log-write instruction to the proxy-human spawn prompt. Fixed in rework.

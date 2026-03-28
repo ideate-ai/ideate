@@ -4,7 +4,7 @@ domain: workflow
 status: settled
 cycle: 1
 supersedes: null
-description: "The label `**General critical findings (non-startup-failure)**:` was added immediately before the general Critical findings paragraph in `skills/execute/SKILL.md` Phase 8. The corresponding brrr file did not need the label because its bullet structure already provides a clear visual boundary."
+description: "The label `**General critical findings (non-startup-failure)**:` was added immediately before the general Critical findings paragraph in `skills/execute/SKILL.md` Phase 8. The corresponding autopilot file did not need the label because its bullet structure already provides a clear visual boundary."
 rationale: "WI-124 incremental review flagged S1: the two adjacent blocks (numbered startup-failure steps and the general Critical paragraph) had no typographic separator. An executor reading sequentially could apply startup-failure routing to all Critical findings. Adding an explicit label closes the ambiguity without restructuring Phase 8."
 cycle_created: 1
 cycle_modified: null

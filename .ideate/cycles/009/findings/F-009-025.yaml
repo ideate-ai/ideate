@@ -6,7 +6,7 @@ severity: minor
 title: P-22 does not document the smoke-test re-run requirement or its failure path
 description: |
   - **File**: `/Users/dan/code/ideate/specs/domains/workflow/policies.md:52`
-  - **Issue**: P-22 states that Andon fires "only if the root cause cannot be fixed ... or the cause is indeterminate." It does not mention the mandatory smoke-test re-run step that was added as M1 during execution, nor the explicit rule that a second smoke-test failure reclassifies the root cause as indeterminate. The two skill files both encode this path (`skills/execute/SKILL.md:402` and `skills/brrr/phases/execute.md:158`), but P-22 omits it. A future reader of P-22 alone will not know the smoke-test re-run is required.
+  - **Issue**: P-22 states that Andon fires "only if the root cause cannot be fixed ... or the cause is indeterminate." It does not mention the mandatory smoke-test re-run step that was added as M1 during execution, nor the explicit rule that a second smoke-test failure reclassifies the root cause as indeterminate. The two skill files both encode this path (`skills/execute/SKILL.md:402` and `skills/autopilot/phases/execute.md:158`), but P-22 omits it. A future reader of P-22 alone will not know the smoke-test re-run is required.
   - **Suggested fix**: Append a sentence to the P-22 body: "When a surgical fix is applied, the smoke test must be re-run to confirm startup; if it still fails, the failure is classified as indeterminate and routes to Andon."
 file_path: cycles/009/findings/F-009-025.yaml
 line: null

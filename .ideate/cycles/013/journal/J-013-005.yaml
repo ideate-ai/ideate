@@ -1,6 +1,6 @@
 id: J-013-005
 type: journal_entry
-phase: brrr
+phase: autopilot
 date: "2026-03-20"
 cycle_created: 13
 title: "Cycle 1 — Work item 091: Delete stale migration scripts, fix artifact-conventions.md stale paths"

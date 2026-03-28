@@ -19,7 +19,7 @@ notes: |
 
   ## Context
 
-  `agents/journal-keeper.md` contains a step (approximately line 65) that says "Read all incremental reviews." The prompt-level instructions in both `skills/review/SKILL.md` and `skills/brrr/phases/review.md` already instruct the journal-keeper to use the review manifest as an index and read individual incremental reviews only when cross-referencing specific findings. The agent definition contradicts this, creating confusion for any agent that reads it.
+  `agents/journal-keeper.md` contains a step (approximately line 65) that says "Read all incremental reviews." The prompt-level instructions in both `skills/review/SKILL.md` and `skills/autopilot/phases/review.md` already instruct the journal-keeper to use the review manifest as an index and read individual incremental reviews only when cross-referencing specific findings. The agent definition contradicts this, creating confusion for any agent that reads it.
 
   This is the finding from technical analysis #4 (journal-keeper unique value), and was also identified as a quality finding in cycle 001 review.
 

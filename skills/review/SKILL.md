@@ -166,7 +166,7 @@ All three agents run in parallel. Do not wait for one to finish before starting 
 
 ## 4.1 code-reviewer
 
-**Agent**: code-reviewer
+**Agent**: ideate:code-reviewer
 **Model**: sonnet
 **MaxTurns**: `{config}.agent_budgets.code-reviewer` (fallback to agent frontmatter default)
 **Tools**: Read, Grep, Glob, Bash
@@ -197,7 +197,7 @@ After this agent returns:
 
 ## 4.2 spec-reviewer
 
-**Agent**: spec-reviewer
+**Agent**: ideate:spec-reviewer
 **Model**: sonnet
 **MaxTurns**: `{config}.agent_budgets.spec-reviewer` (fallback to agent frontmatter default)
 **Tools**: Read, Grep, Glob
@@ -228,7 +228,7 @@ After this agent returns:
 
 ## 4.3 gap-analyst
 
-**Agent**: gap-analyst
+**Agent**: ideate:gap-analyst
 **Model**: sonnet
 **MaxTurns**: `{config}.agent_budgets.gap-analyst` (fallback to agent frontmatter default)
 **Tools**: Read, Grep, Glob
@@ -269,7 +269,7 @@ Spawn the journal-keeper only AFTER all three reviewers from Phase 4a have compl
 
 ## 4b.1 journal-keeper
 
-**Agent**: journal-keeper
+**Agent**: ideate:journal-keeper
 **Model**: sonnet
 **MaxTurns**: `{config}.agent_budgets.journal-keeper` (fallback to agent frontmatter default)
 **Tools**: Read, Grep, Glob
@@ -431,7 +431,7 @@ Read the summary artifact to make this determination. If no such findings exist,
 
 3. Log the model selection decision in the journal entry for this review: which model was chosen and why (conflict detected / no conflict / first cycle).
 
-**Spawn the curator** with the model determined above (this overrides the agent's default model):
+**Spawn the `ideate:domain-curator`** with the model determined above (this overrides the agent's default model):
 
 Provide:
 
@@ -694,7 +694,7 @@ If the domain-curator agent fails to produce output:
 1. Note the failure in the journal
 2. Do not block the review presentation — continue to Phase 9
 3. Note in the summary that domain artifacts were not updated this cycle
-4. The user can re-run the curator manually by spawning the domain-curator agent directly
+4. The user can re-run the curator manually by spawning the `ideate:domain-curator` agent directly
 
 ## No source code found
 

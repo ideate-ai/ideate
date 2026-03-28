@@ -1,4 +1,4 @@
-# brrr Phases 7–9: Convergence Declaration and Activity Report
+# Autopilot Phases 7–9: Convergence Declaration and Activity Report
 
 ## Entry Conditions
 
@@ -13,7 +13,7 @@ Available from controller context:
 - `{max_cycles}` — the configured maximum
 - `{convergence_achieved}` — true or false
 - `{last_cycle_findings}` — final cycle's finding counts (critical, significant, minor)
-- `{started_at}` — ISO 8601 timestamp from `ideate_get_brrr_state()`
+- `{started_at}` — ISO 8601 timestamp from `ideate_get_autopilot_state()`
 
 ## Instructions
 
@@ -22,17 +22,17 @@ Available from controller context:
 Print:
 
 ```
-[brrr] CONVERGED — Cycle {N}
+[autopilot] CONVERGED — Cycle {N}
 
 Zero critical findings. Zero significant findings. All guiding principles satisfied.
 ```
 
-Call `ideate_update_brrr_state({state: {convergence_achieved: true, cycles_completed: {N}}})` to persist the final state.
+Call `ideate_update_autopilot_state({state: {convergence_achieved: true, cycles_completed: {N}}})` to persist the final state.
 
 Append via `ideate_append_journal`:
 
 ```markdown
-## [brrr] {date} — Convergence achieved
+## [autopilot] {date} — Convergence achieved
 Cycles: {N}
 Total items executed: {N}
 ```
@@ -44,7 +44,7 @@ Proceed to Phase 9 (Activity Report).
 Print:
 
 ```
-[brrr] STOPPED — Maximum cycles ({N}) reached without convergence.
+[autopilot] STOPPED — Maximum cycles ({N}) reached without convergence.
 
 Cycle {N} state:
 Critical findings: {N}
@@ -69,19 +69,19 @@ Proceed to Phase 9 regardless of the user's choice.
 Before presenting the report, append via `ideate_append_journal`:
 
 ```markdown
-## [brrr] {date} — Overall metrics summary
+## [autopilot] {date} — Overall metrics summary
 Total agents spawned across all cycles: {N}
 Total wall-clock across all cycles: {total_ms}ms
 ```
 
 If `ideate_emit_metric` calls failed, note "metrics unavailable".
 
-**Reconstructing per-cycle data**: The brrr session state (via `ideate_get_brrr_state()`) stores only aggregates. Retrieve journal entries via `ideate_artifact_query({type: "journal_entry"})` — collect all `[brrr]` entries. For each cycle N, collect: work item completions, review summaries, and proxy-human decisions. Also retrieve proxy-human decisions from the journal entries. For each proxy-human decision where the decision is `DEFER`, record it as a deferred item for that cycle.
+**Reconstructing per-cycle data**: The autopilot session state (via `ideate_get_autopilot_state()`) stores only aggregates. Retrieve journal entries via `ideate_artifact_query({type: "journal_entry"})` — collect all `[autopilot]` entries. For each cycle N, collect: work item completions, review summaries, and proxy-human decisions. Also retrieve proxy-human decisions from the journal entries. For each proxy-human decision where the decision is `DEFER`, record it as a deferred item for that cycle.
 
 Present the full activity report:
 
 ```
-## brrr Activity Report
+## Autopilot Activity Report
 
 ### Run Summary
 Started: {started_at}
@@ -130,5 +130,5 @@ Activity report presented to user. Session ends.
 
 ## Artifacts Written (all via MCP)
 
-- Brrr session state — `convergence_achieved`, `cycles_completed` updated via `ideate_update_brrr_state` (Phase 7 only)
+- Autopilot session state — `convergence_achieved`, `cycles_completed` updated via `ideate_update_autopilot_state` (Phase 7 only)
 - Journal entries — convergence/stop entry and overall metrics summary appended via `ideate_append_journal`

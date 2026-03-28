@@ -63,7 +63,7 @@ content: |
   
   **Areas to address**:
   
-  1. **Watcher debounce** (code S1) — Add a 500ms trailing debounce to the watcher callback in `src/index.ts` and `src/watcher.ts`. The rebuild is already idempotent; this change is safe and directly impacts every brrr/execute cycle that writes multiple artifacts in bursts.
+  1. **Watcher debounce** (code S1) — Add a 500ms trailing debounce to the watcher callback in `src/index.ts` and `src/watcher.ts`. The rebuild is already idempotent; this change is safe and directly impacts every autopilot/execute cycle that writes multiple artifacts in bursts.
   
   2. **rebuildIndex performance** (code S2) — Add `CREATE INDEX IF NOT EXISTS idx_{table}_file_path ON {table}(file_path)` for each typed table. Pre-create the 13 prepared statements outside the file loop. Both changes affect `src/indexer.ts` and `src/schema.ts`.
   

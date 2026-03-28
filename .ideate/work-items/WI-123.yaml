@@ -29,13 +29,13 @@ notes: |
   **Location**: P-22 body (line 52). Current text:
 
   ```
-  When the code-reviewer emits a Critical finding titled "Startup failure after ...", `skills/execute/SKILL.md` Phase 8 and `skills/brrr/phases/execute.md` finding-handling must immediately diagnose the root cause and apply a surgical fix if the cause is within the current work item's scope. The Andon cord is triggered only if the root cause cannot be fixed (requires changes outside the current work item, architectural changes, or the cause is indeterminate). Silent correction without diagnosis and user escalation without attempted repair are both incorrect.
+  When the code-reviewer emits a Critical finding titled "Startup failure after ...", `skills/execute/SKILL.md` Phase 8 and `skills/autopilot/phases/execute.md` finding-handling must immediately diagnose the root cause and apply a surgical fix if the cause is within the current work item's scope. The Andon cord is triggered only if the root cause cannot be fixed (requires changes outside the current work item, architectural changes, or the cause is indeterminate). Silent correction without diagnosis and user escalation without attempted repair are both incorrect.
   ```
 
   Replace with:
 
   ```
-  When the code-reviewer emits a Critical finding titled "Startup failure after ...", `skills/execute/SKILL.md` Phase 8 and `skills/brrr/phases/execute.md` finding-handling must immediately diagnose the root cause and apply a surgical fix if the cause is within the current work item's scope. After applying the fix, the smoke test must be re-run to confirm the app starts; if it still fails, the root cause is classified as indeterminate. The Andon cord is triggered only if the root cause cannot be fixed (requires changes outside the current work item, architectural changes, or the cause is indeterminate). Silent correction without diagnosis and user escalation without attempted repair are both incorrect.
+  When the code-reviewer emits a Critical finding titled "Startup failure after ...", `skills/execute/SKILL.md` Phase 8 and `skills/autopilot/phases/execute.md` finding-handling must immediately diagnose the root cause and apply a surgical fix if the cause is within the current work item's scope. After applying the fix, the smoke test must be re-run to confirm the app starts; if it still fails, the root cause is classified as indeterminate. The Andon cord is triggered only if the root cause cannot be fixed (requires changes outside the current work item, architectural changes, or the cause is indeterminate). Silent correction without diagnosis and user escalation without attempted repair are both incorrect.
   ```
 
   The heading, Derived from, Established, Amended, and Status fields are unchanged.

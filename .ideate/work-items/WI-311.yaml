@@ -1,6 +1,6 @@
 id: WI-311
 type: work_item
-title: "New MCP tools: emit_metric, bootstrap_project, get_next_id, brrr state"
+title: "New MCP tools: emit_metric, bootstrap_project, get_next_id, autopilot state"
 status: done
 complexity: medium
 scope:
@@ -8,7 +8,7 @@ scope:
     op: modify
   - path: mcp/artifact-server/src/tools/bootstrap.ts
     op: create
-  - path: mcp/artifact-server/src/tools/brrr-state.ts
+  - path: mcp/artifact-server/src/tools/autopilot-state.ts
     op: create
   - path: mcp/artifact-server/src/__tests__/tools.test.ts
     op: modify
@@ -25,8 +25,8 @@ criteria:
   - ideate_emit_metric tool exists — accepts metric payload object, appends JSON line to metrics.jsonl, returns success
   - ideate_bootstrap_project tool exists — creates .ideate/ directory with config.json and all subdirectories, returns list of created paths
   - ideate_get_next_id tool exists — accepts artifact type (work_item, finding, etc), returns the next available ID string (e.g. WI-311)
-  - ideate_get_brrr_state tool exists — reads brrr-state.yaml and returns structured state object
-  - ideate_update_brrr_state tool exists — accepts partial state update, merges into brrr-state.yaml, returns updated state
+  - ideate_get_autopilot_state tool exists — reads autopilot-state.yaml and returns structured state object
+  - ideate_update_autopilot_state tool exists — accepts partial state update, merges into autopilot-state.yaml, returns updated state
   - All 5 new tools registered in TOOLS array in tools/index.ts
   - At least one test per new tool in tools.test.ts
   - npm test passes
@@ -61,11 +61,11 @@ notes: |-
   - Output: next ID string (e.g. "WI-311", "GP-14", "C-17")
   - Location: add to tools/query.ts or tools/write.ts
 
-  ### ideate_get_brrr_state / ideate_update_brrr_state
-  Replaces direct brrr-state.yaml reads/writes.
-  - get: reads .ideate/brrr-state.yaml, returns parsed object
+  ### ideate_get_autopilot_state / ideate_update_autopilot_state
+  Replaces direct autopilot-state.yaml reads/writes.
+  - get: reads .ideate/autopilot-state.yaml, returns parsed object
   - update: accepts partial state, deep merges, writes back
-  - Location: new file tools/brrr-state.ts
+  - Location: new file tools/autopilot-state.ts
 resolution: null
 cycle_created: 60
 cycle_modified: null

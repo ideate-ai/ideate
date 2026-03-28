@@ -10,7 +10,7 @@ content: |
   
   ## Significant Findings
   
-  - [gap-analyst] `agents/code-reviewer.md` (~line 91) still instructs the code-reviewer that startup failure is "scope-changing — this is an Andon-level issue," contradicting the diagnose-and-fix protocol now encoded in `skills/execute/SKILL.md` Phase 8 and `skills/brrr/phases/execute.md` — relates to: WI-121, cross-cutting
+  - [gap-analyst] `agents/code-reviewer.md` (~line 91) still instructs the code-reviewer that startup failure is "scope-changing — this is an Andon-level issue," contradicting the diagnose-and-fix protocol now encoded in `skills/execute/SKILL.md` Phase 8 and `skills/autopilot/phases/execute.md` — relates to: WI-121, cross-cutting
   
   ## Minor Findings
   

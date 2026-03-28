@@ -5,8 +5,8 @@ content: |
   # Decision Log — Cycle 002
   
   ## D1: Interface contracts cap exemption applied to standalone execute
-  **Decision**: WI-109 applied the interface contracts cap exemption from brrr/phases/execute.md to standalone execute/SKILL.md Phase 4.5.
-  **Rationale**: The cycle 001 review (S1) identified that WI-105 fixed brrr but left standalone execute with a truncation risk. Feature parity between brrr-driven and standalone execution is expected.
+  **Decision**: WI-109 applied the interface contracts cap exemption from autopilot/phases/execute.md to standalone execute/SKILL.md Phase 4.5.
+  **Rationale**: The cycle 001 review (S1) identified that WI-105 fixed autopilot but left standalone execute with a truncation risk. Feature parity between autopilot-driven and standalone execution is expected.
   **Alternatives rejected**: Treating the asymmetry as intentional (rejected — both paths serve the same purpose and should behave consistently).
   **Source**: WI-109, cycle 001 code-quality.md S1.
   
@@ -17,9 +17,9 @@ content: |
   **Source**: WI-110, cycle 001 spec-adherence.md D1.
   
   ## D3: Q-14 and Q-15 re-raised as significant — address in cycle 003
-  **Decision**: The gap-analyst re-raised Q-14 (brrr/phases/review.md missing quality_summary) and Q-15 (stale reviews/incremental/ path in three agent definitions) as significant findings after they persisted open since cycle 006 with no assigned work items.
+  **Decision**: The gap-analyst re-raised Q-14 (autopilot/phases/review.md missing quality_summary) and Q-15 (stale reviews/incremental/ path in three agent definitions) as significant findings after they persisted open since cycle 006 with no assigned work items.
   **Rationale**: Both gaps silently degrade output quality on every review cycle. The compounding effect justifies escalation from "open question" to "significant finding requiring work item."
-  **Alternatives rejected**: Deferring again (rejected — both have been open since cycle 006 across multiple brrr runs).
+  **Alternatives rejected**: Deferring again (rejected — both have been open since cycle 006 across multiple autopilot runs).
   **Source**: Cycle 002 gap-analysis.md II1, MI1.
 content_hash: f9216502198e6742e24232ed633443f52b1d58dca4e4b0f8fa95721e5f4b2d5c
 token_count: 497

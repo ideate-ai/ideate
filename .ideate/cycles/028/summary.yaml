@@ -6,7 +6,7 @@ content: |
   Three bug fix work items executed: type name consistency (partial), plan skill directory prompt (complete), and Node.js setup script (complete with minor gap). The cycle revealed cross-skill consistency issues and a state file format regression.
 
   ## Critical Findings
-  - [gap-analyst] brrr review phase still references brrr-state.md (should be .yaml) — regression from WI-252
+  - [gap-analyst] autopilot review phase still references autopilot-state.md (should be .yaml) — regression from WI-252
 
   ## Significant Findings
   - [spec-reviewer] Line 61 of refine skill uses `"work-items"` instead of `"work_item"` — WI-256 incomplete
@@ -27,7 +27,7 @@ content: |
   ## Proposed Refinement Plan
   A refinement cycle is recommended to address:
 
-  1. **Fix brrr-state.yaml reference** (Critical) — update skills/brrr/phases/review.md lines 43, 50
+  1. **Fix autopilot-state.yaml reference** (Critical) — update skills/autopilot/phases/review.md lines 43, 50
   2. **Complete WI-256 type name fix** — change `"work-items"` to `"work_item"` on line 61
   3. **Standardize path placeholders** — replace {artifact-dir} with {project_root} in review and refine skills
   4. **Add plan directory to setup script** — update scripts/setup-ideate-dir.js

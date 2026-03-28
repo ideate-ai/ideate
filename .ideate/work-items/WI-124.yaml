@@ -6,13 +6,13 @@ complexity: low
 scope:
   - path: skills/execute/SKILL.md
     op: modify
-  - path: skills/brrr/phases/execute.md
+  - path: skills/autopilot/phases/execute.md
     op: modify
 depends: []
 blocks: []
 criteria:
   - skills/execute/SKILL.md Phase 8 unfixable startup-failure path includes an instruction to append diagnostic findings to the journal before routing to Andon
-  - skills/brrr/phases/execute.md unfixable startup-failure path includes an equivalent journal instruction
+  - skills/autopilot/phases/execute.md unfixable startup-failure path includes an equivalent journal instruction
   - The journal instruction format mirrors the fixable path (which says "note in the journal as significant rework")
   - No other sections in either file are modified
 module: null
@@ -40,7 +40,7 @@ notes: |
   3. If the root cause cannot be fixed (requires changes outside this work item's scope, architectural changes, or is indeterminate): append to the journal — `Diagnosis: {root cause finding}. Routing to Andon — cause not fixable within work item scope.` Then route to the Andon cord (Phase 9).
   ```
 
-  ### File 2: `skills/brrr/phases/execute.md`
+  ### File 2: `skills/autopilot/phases/execute.md`
 
   **Location**: Finding-handling block, first Critical bullet (line 158). The unfixable path currently reads: "If not fixable (scope change required, cause indeterminate): route to Andon cord → proxy-human."
 
@@ -53,7 +53,7 @@ notes: |
   ## Acceptance Criteria
 
   1. `skills/execute/SKILL.md` Phase 8 unfixable startup-failure path includes an instruction to append diagnostic findings to the journal before routing to Andon
-  2. `skills/brrr/phases/execute.md` unfixable startup-failure path includes an equivalent journal instruction
+  2. `skills/autopilot/phases/execute.md` unfixable startup-failure path includes an equivalent journal instruction
   3. The journal instruction format mirrors the fixable path's style
   4. No other sections in either file are modified
 cycle_created: 1

@@ -6,7 +6,7 @@ content: |
   
   ## Overview
   
-  Cycle 004 (brrr cycle 1) delivered seven work items: three documentation propagation fixes for manifest.json (WI-088, WI-089, WI-090), deletion of stale migration scripts and cleanup of stale path references in artifact-conventions.md (WI-091), extension of the metrics.jsonl schema with token and MCP tracking fields across all five skills (WI-092), quality_summary event emission from the review skill (WI-093), and a new metrics reporting script (WI-094).
+  Cycle 004 (autopilot cycle 1) delivered seven work items: three documentation propagation fixes for manifest.json (WI-088, WI-089, WI-090), deletion of stale migration scripts and cleanup of stale path references in artifact-conventions.md (WI-091), extension of the metrics.jsonl schema with token and MCP tracking fields across all five skills (WI-092), quality_summary event emission from the review skill (WI-093), and a new metrics reporting script (WI-094).
   
   Six of the seven work items are correct and all their acceptance criteria are met. The manifest.json documentation is now consistent across README.md, CLAUDE.md, architecture.md, and artifact-conventions.md. The metrics schema extension is correctly applied across all six target files. The quality_summary event structure in skills/review/SKILL.md is well-formed.
   
@@ -46,7 +46,7 @@ content: |
   | 089 | CLAUDE.md — add manifest.json to artifact structure diagram | Pass | No findings |
   | 090 | architecture.md — add manifest.json to permissions table and Section 8 | Pass | 4 significant rework: 14 stale `reviews/` paths in Sections 1/2/3/7 corrected |
   | 091 | Delete stale migration scripts, fix artifact-conventions.md stale paths | Pass | No findings |
-  | 092 | Extend metrics.jsonl schema with token and MCP fields in all skills | Pass | 1 minor rework: added schema completeness note to brrr/phases/execute.md |
+  | 092 | Extend metrics.jsonl schema with token and MCP fields in all skills | Pass | 1 minor rework: added schema completeness note to autopilot/phases/execute.md |
   | 093 | Quality summary event emission from review skill | Pass | 3 minor rework: keyword list, suggestion field symmetry, work_items_reviewed fallback path |
   
   WI-094 (report.sh) received a passing incremental review verdict but has three critical/significant integration bugs identified at the capstone.
@@ -55,9 +55,9 @@ content: |
   
   - **M1** (code-quality, spec-adherence): `skills/refine/SKILL.md` retains 6 stale `reviews/final/` path references at lines 87–92, 108, 124. Outside WI-091 scope.
   - **M3** (code-quality): `fmt_ms(0)` returns "0s" rather than "-" for entries with missing timing data (`report.sh:57-68`).
-  - **G-M2** (gap-analysis): `brrr/phases/review.md` metrics instruction does not enumerate new token fields; deferred given consistent indirection pattern.
+  - **G-M2** (gap-analysis): `autopilot/phases/review.md` metrics instruction does not enumerate new token fields; deferred given consistent indirection pattern.
   
-  ## Proposed Next Cycle (brrr cycle 2)
+  ## Proposed Next Cycle (autopilot cycle 2)
   
   Three work items, all independent and parallelizable:
   

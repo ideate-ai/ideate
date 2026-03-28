@@ -5,7 +5,7 @@ date: "2026-03-12"
 cycle_created: 9
 title: Refinement planning completed (Cycle 002)
 content: |
-  Trigger: Review findings from Cycle 001 — brrr correctness defects on standard installations
+  Trigger: Review findings from Cycle 001 — autopilot correctness defects on standard installations
   Principles changed: none (all 12 principles unchanged)
   New work items: 072–073 (2 items, parallel)
   Scope: Fix S1 (Phase 6c spawn_session → Agent tool) and S2 (DEFERRED → DEFER label mismatch) from archive/cycles/001/summary.md

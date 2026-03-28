@@ -3,11 +3,11 @@ type: finding
 cycle: 14
 reviewer: code-reviewer
 severity: minor
-title: config.yaml comment does not list `brrr` as a valid category default despite listing it in the enum
+title: config.yaml comment does not list `autopilot` as a valid category default despite listing it in the enum
 description: |
   - **File**: `benchmarks/templates/case-template/config.yaml:13`
-  - **Issue**: The comment says `skill` defaults to `"plan" for greenfield` and is `"typically 'refine' for others"`, but `brrr` is listed as a valid value. There is no guidance on when `brrr` is the appropriate choice, leaving it as a dangling option.
-  - **Suggested fix**: Add a one-line note in the comment explaining the use case for `brrr`, e.g. `# brrr: fully autonomous loop; use when the harness should drive execute → review → refine until convergence.`
+  - **Issue**: The comment says `skill` defaults to `"plan" for greenfield` and is `"typically 'refine' for others"`, but `autopilot` is listed as a valid value. There is no guidance on when `autopilot` is the appropriate choice, leaving it as a dangling option.
+  - **Suggested fix**: Add a one-line note in the comment explaining the use case for `autopilot`, e.g. `# autopilot: fully autonomous loop; use when the harness should drive execute → review → refine until convergence.`
 file_path: cycles/014/findings/FI-014-007.yaml
 line: null
 suggestion: null

@@ -10,7 +10,7 @@ import { handleAppendJournal, handleArchiveCycle, handleWriteWorkItems, handleUp
 import { handleEmitEvent } from "./events.js";
 import { handleEmitMetric, handleGetMetrics } from "./metrics.js";
 import { handleBootstrapProject } from "./bootstrap.js";
-import { handleGetBrrrState, handleUpdateBrrrState } from "./brrr-state.js";
+import { handleGetAutopilotState, handleUpdateAutopilotState } from "./autopilot-state.js";
 import { getConfigWithDefaults } from "../config.js";
 
 // ---------------------------------------------------------------------------
@@ -202,7 +202,7 @@ export const TOOLS: Tool[] = [
       properties: {
         skill: {
           type: "string",
-          enum: ["plan", "execute", "review", "refine", "brrr"],
+          enum: ["plan", "execute", "review", "refine", "autopilot"],
           description: "The skill phase that produced this journal entry.",
         },
         date: {
@@ -516,9 +516,9 @@ export const TOOLS: Tool[] = [
     },
   },
   {
-    name: "ideate_get_brrr_state",
+    name: "ideate_get_autopilot_state",
     description:
-      "Reads the current brrr session state from brrr-state.yaml. Returns a default state object if the file does not exist.",
+      "Reads the current autopilot session state from autopilot-state.yaml. Returns a default state object if the file does not exist.",
     inputSchema: {
       type: "object",
       properties: {},
@@ -526,16 +526,16 @@ export const TOOLS: Tool[] = [
     },
   },
   {
-    name: "ideate_update_brrr_state",
+    name: "ideate_update_autopilot_state",
     description:
-      "Updates the brrr session state by merging the provided partial state into the existing brrr-state.yaml. Creates the file with defaults if it does not exist.",
+      "Updates the autopilot session state by merging the provided partial state into the existing autopilot-state.yaml. Creates the file with defaults if it does not exist.",
     inputSchema: {
       type: "object",
       properties: {
         state: {
           type: "object",
           description:
-            "Partial state update object. Any subset of brrr-state fields (cycles_completed, convergence_achieved, started_at, last_phase, last_cycle, deferred, deferred_reason).",
+            "Partial state update object. Any subset of autopilot-state fields (cycles_completed, convergence_achieved, started_at, last_phase, last_cycle, deferred, deferred_reason).",
         },
       },
       required: ["state"],
@@ -627,11 +627,11 @@ export async function handleTool(
     case "ideate_get_next_id":
       return handleGetNextId(ctx, _args);
 
-    case "ideate_get_brrr_state":
-      return handleGetBrrrState(ctx, _args);
+    case "ideate_get_autopilot_state":
+      return handleGetAutopilotState(ctx, _args);
 
-    case "ideate_update_brrr_state":
-      return handleUpdateBrrrState(ctx, _args);
+    case "ideate_update_autopilot_state":
+      return handleUpdateAutopilotState(ctx, _args);
 
     default:
       throw new Error(`Unknown tool: ${name}`);

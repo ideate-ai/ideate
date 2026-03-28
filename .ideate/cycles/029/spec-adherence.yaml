@@ -19,9 +19,9 @@ content: |-
 
   ## Work Item Verification Summary
 
-  ### WI-231: Fix brrr-state.yaml reference
-  - Line 43: Correctly references {project_root}/.ideate/brrr-state.yaml
-  - Line 50: Correctly updates {project_root}/.ideate/brrr-state.yaml
+  ### WI-231: Fix autopilot-state.yaml reference
+  - Line 43: Correctly references {project_root}/.ideate/autopilot-state.yaml
+  - Line 50: Correctly updates {project_root}/.ideate/autopilot-state.yaml
 
   ### WI-232: Fix type name inconsistency
   - Line 61: Uses type: "work_item" (snake_case)

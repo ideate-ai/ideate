@@ -38,7 +38,7 @@ content: |
   - Roles as named, server-side configuration bundles (not per-call ad-hoc params)
   - A persistent remote daemon with a REST API for job management
   - The "manager" concept: a coordination agent distinct from execution workers
-  - The autonomous cycle concept (brrr mode)
+  - The autonomous cycle concept (autopilot mode)
   
   **What ideate is NOT replicating:**
   - Pull model (workers claiming tasks) — push is simpler and fits ideate's existing model

@@ -1,4 +1,4 @@
-# brrr Phase 6b: Comprehensive Review Phase
+# Autopilot Phase 6b: Comprehensive Review Phase
 
 ## Entry Conditions
 
@@ -34,14 +34,14 @@ Pass `{context_package}` inline to all reviewer and journal-keeper prompts. Do n
 
 Determine whether to use **full review** or **differential review**.
 
-Call `ideate_get_brrr_state()` and extract `last_full_review_cycle` and `full_review_interval`. Defaults: `last_full_review_cycle` = 0, `full_review_interval` = 3.
+Call `ideate_get_autopilot_state()` and extract `last_full_review_cycle` and `full_review_interval`. Defaults: `last_full_review_cycle` = 0, `full_review_interval` = 3.
 
 **Full review conditions** (any one → use full review):
 - `{cycle_number}` is 1
 - `({cycle_number} - last_full_review_cycle) >= full_review_interval`
 - `{cycle_start_commit}` is null (git unavailable)
 
-**If full review**: Set `{diff_mode}` = `"full"`. Set `{changed_files}` = all source files. Call `ideate_update_brrr_state({state: {last_full_review_cycle: {cycle_number}}})`. Continue with Generate Review Manifest.
+**If full review**: Set `{diff_mode}` = `"full"`. Set `{changed_files}` = all source files. Call `ideate_update_autopilot_state({state: {last_full_review_cycle: {cycle_number}}})`. Continue with Generate Review Manifest.
 
 **If differential** (cycles 2+ within the interval):
 
@@ -79,7 +79,7 @@ Spawn all three simultaneously. Do not wait for one before starting another.
 >
 > Do not re-examine files outside the changed and boundary file lists unless a change in a listed file directly affects an unlisted file's behavior. If you encounter such a case, note it and include the affected file.
 
-**code-reviewer**
+**ideate:code-reviewer**
 - Model: sonnet
 - MaxTurns: `{config}.agent_budgets.code-reviewer` (fallback to agent frontmatter default)
 - Tools: Read, Grep, Glob, Bash
@@ -101,7 +101,7 @@ Spawn all three simultaneously. Do not wait for one before starting another.
   >
   > Return your complete findings as the final section of your response. Use the standard review output format. Do NOT use the Write tool — return the content in your response.
 
-**spec-reviewer**
+**ideate:spec-reviewer**
 - Model: sonnet
 - MaxTurns: `{config}.agent_budgets.spec-reviewer` (fallback to agent frontmatter default)
 - Tools: Read, Grep, Glob
@@ -123,7 +123,7 @@ Spawn all three simultaneously. Do not wait for one before starting another.
   >
   > Return your complete findings as the final section of your response. Use the standard review output format. Do NOT use the Write tool — return the content in your response.
 
-**gap-analyst**
+**ideate:gap-analyst**
 - Model: sonnet
 - MaxTurns: `{config}.agent_budgets.gap-analyst` (fallback to agent frontmatter default)
 - Tools: Read, Grep, Glob
@@ -155,7 +155,7 @@ After writing all three artifacts, verify the writes succeeded before proceeding
 
 ### Spawn Journal-Keeper (After Reviewers Complete)
 
-**journal-keeper**
+**ideate:journal-keeper**
 - Model: sonnet
 - MaxTurns: `{config}.agent_budgets.journal-keeper` (fallback to agent frontmatter default)
 - Tools: Read, Grep, Glob
@@ -204,7 +204,7 @@ Where `{total_finding_count}` = `critical_count + significant_count + minor_coun
 
 Best-effort: if any step below fails, skip it and continue without blocking.
 
-> **Note**: The brrr review phase does not produce a separate summary artifact (unlike standalone `/ideate:review`). Per-reviewer counts are derived directly from the in-memory reviewer output content. The emitted metric schema is structurally identical to `skills/review/SKILL.md` — the `by_reviewer` derivation method differs only because the summary artifact is not available at this point in the brrr execution flow.
+> **Note**: The autopilot review phase does not produce a separate summary artifact (unlike standalone `/ideate:review`). Per-reviewer counts are derived directly from the in-memory reviewer output content. The emitted metric schema is structurally identical to `skills/review/SKILL.md` — the `by_reviewer` derivation method differs only because the summary artifact is not available at this point in the autopilot execution flow.
 
 **Derive counts**:
 
@@ -232,13 +232,13 @@ Best-effort: if any step below fails, skip it and continue without blocking.
 
 5. **andon_events**: Call `ideate_artifact_query({type: "journal_entry"})` to retrieve the most recent journal entries (last 20 entries). Count entries for cycle `{cycle_number}` that mention "Andon" (case-insensitive). Default to 0 if journal entries cannot be retrieved.
 
-**Emit the event**: Call `ideate_emit_metric({payload: {timestamp: "<ISO8601>", event_type: "quality_summary", skill: "brrr", cycle: N, findings: {total: N, by_severity: {critical: N, significant: N, minor: N, suggestion: N}, by_reviewer: {"code-reviewer": {critical: N, significant: N, minor: N}, "spec-reviewer": {critical: N, significant: N, minor: N}, "gap-analyst": {critical: N, significant: N, minor: N}}, by_category: {requirements_missed: N, bugs_introduced: N, principles_violated: N, implementation_gaps: N, other: N}}, work_items_reviewed: N, andon_events: N}})`.
+**Emit the event**: Call `ideate_emit_metric({payload: {timestamp: "<ISO8601>", event_type: "quality_summary", skill: "autopilot", cycle: N, findings: {total: N, by_severity: {critical: N, significant: N, minor: N, suggestion: N}, by_reviewer: {"code-reviewer": {critical: N, significant: N, minor: N}, "spec-reviewer": {critical: N, significant: N, minor: N}, "gap-analyst": {critical: N, significant: N, minor: N}}, by_category: {requirements_missed: N, bugs_introduced: N, principles_violated: N, implementation_gaps: N, other: N}}, work_items_reviewed: N, andon_events: N}})`.
 
 If the call fails, log `quality_summary event skipped: {reason}` and continue. Do not retry.
 
 ### Spawn Domain Curator (After Quality Summary Emitted)
 
-**domain-curator**
+**ideate:domain-curator**
 - Model: opus
 - MaxTurns: `{config}.agent_budgets.domain-curator` (fallback to agent frontmatter default)
 - Tools: Read, Glob
@@ -265,12 +265,12 @@ If the ideate MCP artifact server is not available, stop and report: "The ideate
 
 Append a review summary via `ideate_append_journal`.
 
-Call `ideate_append_journal("brrr", {date}, "review_complete", {body})` — appends a structured journal entry atomically.
+Call `ideate_append_journal("autopilot", {date}, "review_complete", {body})` — appends a structured journal entry atomically.
 
 If the ideate MCP artifact server is not available, stop and report: "The ideate MCP artifact server is required but not available. Verify .mcp.json configuration."
 
 ```markdown
-## [brrr] {date} — Cycle {N} review complete
+## [autopilot] {date} — Cycle {N} review complete
 Critical findings: {N}
 Significant findings: {N}
 Minor findings: {N}
@@ -279,7 +279,7 @@ Minor findings: {N}
 Also append a per-cycle metrics summary:
 
 ```markdown
-## [brrr] {date} — Cycle {N} metrics summary
+## [autopilot] {date} — Cycle {N} metrics summary
 Agents spawned: {N total} ({N} workers, {N} code-reviewers, {N} reviewers)
 Total wall-clock: {total_ms}ms
 Models used: {list of distinct models}

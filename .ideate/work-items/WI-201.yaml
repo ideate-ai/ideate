@@ -11,7 +11,7 @@ depends:
 blocks: []
 criteria:
   - Audit report written to specs/archive/cycles/026/audit-findings.md
-  - Every skill file (plan, execute, review, refine, brrr + phase files) reviewed for GP-8/P-6/P-26/P-32 compliance (MCP mandatory, no direct YAML access, availability checks for external only)
+  - Every skill file (plan, execute, review, refine, autopilot + phase files) reviewed for GP-8/P-6/P-26/P-32 compliance (MCP mandatory, no direct YAML access, availability checks for external only)
   - Every skill file reviewed for GP-13/P-8 compliance (validation strategy — subjective vs objective criteria)
   - Every agent definition reviewed for P-19 compliance (canonical .ideate/ paths)
   - Every agent definition reviewed for P-10 compliance (non-overlapping responsibilities)
@@ -35,10 +35,10 @@ notes: |
   - `skills/execute/SKILL.md`
   - `skills/review/SKILL.md`
   - `skills/refine/SKILL.md`
-  - `skills/brrr/SKILL.md`
-  - `skills/brrr/phases/execute.md`
-  - `skills/brrr/phases/review.md`
-  - `skills/brrr/phases/refine.md`
+  - `skills/autopilot/SKILL.md`
+  - `skills/autopilot/phases/execute.md`
+  - `skills/autopilot/phases/review.md`
+  - `skills/autopilot/phases/refine.md`
 
   ### Agents (9 files)
   - `agents/researcher.md`

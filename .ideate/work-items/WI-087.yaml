@@ -11,7 +11,7 @@ scope:
   - {path: skills/execute/SKILL.md, op: modify}
   - {path: skills/review/SKILL.md, op: modify}
   - {path: skills/refine/SKILL.md, op: modify}
-  - {path: skills/brrr/SKILL.md, op: modify}
+  - {path: skills/autopilot/SKILL.md, op: modify}
   - {path: scripts/migrate-to-optimized.sh, op: modify}
 depends:
   - "076"
@@ -33,8 +33,8 @@ criteria:
   - "`skills/review/SKILL.md` Phase 3.5 (manifest generation) reads from the new format — or is replaced entirely, since the consolidated file IS effectively a manifest"
   - "`skills/refine/SKILL.md` Phase 3 (line 60) reads work items from the new format (not just Phase 7h write path — the read path in Phase 3 must also be updated)"
   - "`skills/refine/SKILL.md` Phase 7h appends new items to the consolidated file and determines next available ID from `work-items.yaml` (not from globbing `plan/work-items/*.md`)"
-  - "`skills/brrr/SKILL.md` Phase 3 reads from the new format"
-  - "076's review manifest generation in brrr is updated to read from `work-items.yaml` instead of globbing `plan/work-items/*.md` (076's manifest code must work with the new format, not be preserved as-is against a deleted format)"
+  - "`skills/autopilot/SKILL.md` Phase 3 reads from the new format"
+  - "076's review manifest generation in autopilot is updated to read from `work-items.yaml` instead of globbing `plan/work-items/*.md` (076's manifest code must work with the new format, not be preserved as-is against a deleted format)"
   - "All prior changes to skill files are preserved: metrics logging (084), worker self-check (086), convergence check parsing (077), conditional curator model (078)"
   - "Non-LLM tooling can parse `work-items.yaml` to: build the dependency DAG, detect cycles, compute topological sort, find file scope overlaps, validate 100% coverage, and generate execution strategy groups"
   - The migration tool (085) is extended to convert existing per-file markdown work items to the new format
@@ -48,13 +48,13 @@ notes: |
   ```yaml
   items:
     076:
-      title: brrr review manifest integration
+      title: autopilot review manifest integration
       complexity: low
-      scope: [{path: skills/brrr/SKILL.md, op: modify}]
+      scope: [{path: skills/autopilot/SKILL.md, op: modify}]
       depends: []
       blocks: [080]
       criteria:
-        - brrr Phase 6b generates review-manifest.md before spawning reviewers
+        - autopilot Phase 6b generates review-manifest.md before spawning reviewers
         - all 3 reviewer prompts reference manifest not plan/work-items/*.md
         - journal-keeper prompt references manifest as index
       notes: plan/notes/076.md

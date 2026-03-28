@@ -12,14 +12,14 @@ content: |
   
   ### D1: Fix report.sh severity key path to read nested `findings.by_severity`
   
-  - **When**: Refinement — brrr cycle 1, WI-095 planning (2026-03-20)
+  - **When**: Refinement — autopilot cycle 1, WI-095 planning (2026-03-20)
   - **Decision**: Update `scripts/report.sh` lines 207-209 and 376-378 to read `(qe.get('findings') or {}).get('by_severity') or {}` instead of accessing severity keys at the top level of the quality event object.
   - **Rationale**: Cycle 004 findings C1 and C2 identified that the Per-Cycle Breakdown and Quality Trends sections silently produced zero counts for all severity levels because `report.sh` was reading flat top-level keys while WI-093 had defined a nested schema with severity counts under `findings.by_severity`.
   - **Implications**: Restores accurate per-cycle severity breakdowns and trend data. Eliminates silent-zero behavior that produced misleading reports without any error.
   
   ### D2: Fix report.sh auto-discovery to accept `artifactDir` key name
   
-  - **When**: Refinement — brrr cycle 1, WI-095 planning (2026-03-20)
+  - **When**: Refinement — autopilot cycle 1, WI-095 planning (2026-03-20)
   - **Decision**: Update `scripts/report.sh:83` to use `config.get('artifactDir') or config.get('artifact_dir')`, accepting both camelCase and snake_case spellings.
   - **Rationale**: Cycle 004 finding S1 identified that auto-discovery was broken because `report.sh` read `artifact_dir` while the manifest schema defined `artifactDir`. The dual-read approach handles both conventions without breaking any current caller.
   - **Implications**: Auto-discovery now functions for all real projects. HELP string updated to document `artifactDir` as the canonical key name (resolving G-M1).
@@ -33,14 +33,14 @@ content: |
   
   ### D4: Document `metrics.jsonl` in `specs/artifact-conventions.md`
   
-  - **When**: Refinement — brrr cycle 1, WI-096 planning (2026-03-20)
+  - **When**: Refinement — autopilot cycle 1, WI-096 planning (2026-03-20)
   - **Decision**: Add `metrics.jsonl` to the directory tree in `specs/artifact-conventions.md` and add a full schema section covering both agent-spawn and quality_summary event types.
   - **Rationale**: Cycle 004 gap G-S1 identified that the `metrics.jsonl` schema was defined only in `skills/review/SKILL.md`, not in the conventions reference document.
   - **Implications**: `specs/artifact-conventions.md` is now the durable reference for `metrics.jsonl` schema. Satisfies Principle 1 for telemetry format questions.
   
   ### D5: Fix stale `reviews/final/` paths in `skills/refine/SKILL.md`
   
-  - **When**: Refinement — brrr cycle 1, WI-097 planning (2026-03-20)
+  - **When**: Refinement — autopilot cycle 1, WI-097 planning (2026-03-20)
   - **Decision**: Update all references to `reviews/final/` in `skills/refine/SKILL.md` (Phase 3.2, Phase 4, Phase 5) to `archive/cycles/{NNN}/`.
   - **Rationale**: Cycle 004 minor finding M1 identified that refine's SKILL.md still referenced the pre-migration path.
   - **Implications**: `skills/refine/SKILL.md` now references correct paths. Three agent definition files with the same stale `reviews/incremental/` pattern were not in scope and remain unaddressed (see OQ2).

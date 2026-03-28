@@ -4,7 +4,7 @@ domain: workflow
 status: settled
 cycle: 1
 supersedes: null
-description: WI-120 added the unconditional startup-failure exception rule to both `skills/execute/SKILL.md` Phase 8 and `skills/brrr/phases/execute.md` finding-handling block. The exception evaluates before the general fixable-within-scope routing logic. All three capstone reviewers returned Pass with zero Critical or Significant findings.
+description: WI-120 added the unconditional startup-failure exception rule to both `skills/execute/SKILL.md` Phase 8 and `skills/autopilot/phases/execute.md` finding-handling block. The exception evaluates before the general fixable-within-scope routing logic. All three capstone reviewers returned Pass with zero Critical or Significant findings.
 rationale: D-33 established the rule; WI-120 is its procedural enforcement. The exception is expressed as a named block that keys on the "Startup failure after ..." title prefix. The code-reviewer agent generates that exact title, completing the generation-to-handling round-trip.
 cycle_created: 1
 cycle_modified: null

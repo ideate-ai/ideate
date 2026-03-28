@@ -12,7 +12,7 @@ criteria:
   - specs/artifact-conventions.md directory tree includes metrics.jsonl as a root-level entry
   - specs/artifact-conventions.md has a metrics.jsonl section with Purpose, Format, Phases, and Semantics
   - The section includes the agent-spawn event schema
-  - The section includes the quality_summary event schema with the <review|brrr> skill field enum
+  - The section includes the quality_summary event schema with the <review|autopilot> skill field enum
   - No other sections in artifact-conventions.md are modified
 module: null
 domain: null
@@ -22,7 +22,7 @@ notes: |
   ## Context
 
   `specs/artifact-conventions.md` is the authoritative schema reference for the artifact directory. It documents every file in the directory with Purpose, Format, Phases, and Semantics. `metrics.jsonl` is absent from both the directory tree diagram and the file specification sections, despite being:
-  - Written by all five skills (brrr, execute, review, refine via metrics instrumentation)
+  - Written by all five skills (autopilot, execute, review, refine via metrics instrumentation)
   - The sole data source for `scripts/report.sh`
   - Added to README.md, architecture.md, and individual SKILL.md files by WI-088–093
 
@@ -45,13 +45,13 @@ notes: |
   - **Purpose**: Machine-readable telemetry log for all agent spawns and review quality events
   - **Format**: One JSON object per line (JSONL). Two event types: agent-spawn events (one per Agent tool call) and quality_summary events (one per review cycle).
   - **Semantics**: Written by all five skills on a best-effort basis — if writing fails, execution continues without interruption. Never read by skills during execution; consumed by `scripts/report.sh` for reporting. Append-only; never overwritten.
-  - **Phases**: plan (write), execute (write), review (write), refine (write), brrr (write)
+  - **Phases**: plan (write), execute (write), review (write), refine (write), autopilot (write)
 
   **Agent-spawn event schema**:
   ```json
   {
     "timestamp": "<ISO8601>",
-    "skill": "<plan|execute|review|refine|brrr>",
+    "skill": "<plan|execute|review|refine|autopilot>",
     "phase": "<id>",
     "cycle": <N or null>,
     "agent_type": "<type>",
@@ -68,12 +68,12 @@ notes: |
   }
   ```
 
-  **Quality summary event schema** (emitted by `review` and `brrr` skills at end of each review cycle; `skill` field is `"review"` or `"brrr"` depending on emitter):
+  **Quality summary event schema** (emitted by `review` and `autopilot` skills at end of each review cycle; `skill` field is `"review"` or `"autopilot"` depending on emitter):
   ```json
   {
     "timestamp": "<ISO8601>",
     "event_type": "quality_summary",
-    "skill": "<review|brrr>",
+    "skill": "<review|autopilot>",
     "cycle": <N>,
     "findings": {
       "total": <N>,
@@ -102,7 +102,7 @@ notes: |
   1. `specs/artifact-conventions.md` directory tree includes `metrics.jsonl` as a root-level entry
   2. `specs/artifact-conventions.md` has a `metrics.jsonl` section with Purpose, Format, Phases, and Semantics
   3. The section includes the agent-spawn event schema
-  4. The section includes the quality_summary event schema with the `<review|brrr>` skill field enum
+  4. The section includes the quality_summary event schema with the `<review|autopilot>` skill field enum
   5. No other sections in artifact-conventions.md are modified
 cycle_created: 1
 cycle_modified: null

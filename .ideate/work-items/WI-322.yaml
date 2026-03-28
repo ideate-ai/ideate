@@ -1,6 +1,6 @@
 id: WI-322
 type: work_item
-title: Fix plan/SKILL.md type strings and remove path leaks from init/domain-curator/brrr
+title: Fix plan/SKILL.md type strings and remove path leaks from init/domain-curator/autopilot
 status: done
 complexity: low
 scope:
@@ -10,7 +10,7 @@ scope:
     op: modify
   - path: agents/domain-curator.md
     op: modify
-  - path: skills/brrr/SKILL.md
+  - path: skills/autopilot/SKILL.md
     op: modify
 depends:
   - WI-320
@@ -21,7 +21,7 @@ criteria:
   - "plan/SKILL.md uses type: 'execution_strategy' not type: 'module' for execution strategy artifacts"
   - init/SKILL.md domain_index content does not contain internal directory paths
   - domain-curator.md domain_index content does not contain internal directory paths
-  - brrr/SKILL.md does not reference .ideate.json
+  - autopilot/SKILL.md does not reference .ideate.json
   - No new .ideate/ path references introduced
 domain: workflow
 notes: |-
@@ -39,7 +39,7 @@ notes: |-
   ## domain-curator.md
   Same — remove files sub-object with internal paths.
 
-  ## brrr/SKILL.md
+  ## autopilot/SKILL.md
   Remove .ideate.json reference in Phase 1.
 resolution: null
 cycle_created: 61

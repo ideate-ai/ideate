@@ -1,18 +1,18 @@
 id: WI-080
 type: work_item
-title: Differential Review in brrr Cycles 2+
+title: Differential Review in autopilot Cycles 2+
 status: obsolete
 complexity: high
 scope:
-  - {path: skills/brrr/SKILL.md, op: modify}
-  - {path: skills/brrr/phases/review.md, op: modify}
+  - {path: skills/autopilot/SKILL.md, op: modify}
+  - {path: skills/autopilot/phases/review.md, op: modify}
 depends:
   - "076"
   - "081"
   - "087"
 blocks: []
 criteria:
-  - "`skills/brrr/SKILL.md` Phase 6b tracks which cycle is running (already available from `cycles_completed`)"
+  - "`skills/autopilot/SKILL.md` Phase 6b tracks which cycle is running (already available from `cycles_completed`)"
   - "For cycle 1: comprehensive review runs as currently specified (full project scope) — no change"
   - "For cycles 2+: before spawning reviewers, a diff step identifies files changed since the start of the current cycle"
   - "The diff step uses `git diff --name-only` against the commit hash recorded at the start of the cycle (see implementation notes)"
@@ -27,7 +27,7 @@ domain: null
 notes: |
   # Implementation Notes: 080
   
-  ### Commit tracking in brrr-state.md
+  ### Commit tracking in autopilot-state.md
   
   Record `cycle_{N}_start_commit` (at execute start) and `cycle_{N}_end_commit` (at execute end) via `git rev-parse HEAD`. Diff with `git diff --name-only {start}..HEAD`.
   
@@ -39,10 +39,10 @@ notes: |
   
   Pass: changed file list, boundary file list, paths to prior cycle's review files as baseline. Instruct: "Do not re-examine files outside these lists unless a change in a listed file affects an unlisted file."
   
-  ### brrr-state.md additions
+  ### autopilot-state.md additions
   
   `last_full_review_cycle: {N}` — tracks when the last full review ran.
-resolution: "Differential review in brrr superseded by later architecture changes."
+resolution: "Differential review in autopilot superseded by later architecture changes."
 cycle_created: 1
 cycle_modified: null
 content_hash: "6837d2e4f837ca5161f2193e52435b6bfda1bd06d2411d7a78566909117632d0"

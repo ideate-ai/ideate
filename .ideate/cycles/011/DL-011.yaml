@@ -31,21 +31,21 @@ content: |
   - **Context**: Q-27/OQ-4 — P-22 and the startup-failure exception assumed every project has a startup command. Library projects, CLI tools, and documentation-only work items have no meaningful startup step. The absence of a startup command left the entire P-22 quality floor inert for a significant class of projects.
   - **Decision**: WI-126 replaced the startup-specific smoke test in `agents/code-reviewer.md` with a context-appropriate heuristic: "what would a reasonable person be expected to do to demo the work they just did?" Five example smoke test types are listed (startup command, CLI --help/--version, library build/test suite, e2e test, config/doc validation). P-22 updated to reference "context-appropriate smoke test" rather than only startup command.
   - **Rationale**: User's instruction: "We should have a simple heuristic which asks what a reasonable person would be expected to do to demo the work that they just did." The demo heuristic correctly generalizes across project types without requiring type enumeration.
-  - **Impact**: `agents/code-reviewer.md:84-92`, `skills/execute/SKILL.md` Phase 8, `skills/brrr/phases/execute.md` finding-handling, `specs/domains/workflow/policies.md` P-22; closes Q-27/OQ-4.
+  - **Impact**: `agents/code-reviewer.md:84-92`, `skills/execute/SKILL.md` Phase 8, `skills/autopilot/phases/execute.md` finding-handling, `specs/domains/workflow/policies.md` P-22; closes Q-27/OQ-4.
   
   ### D-45: Close Q-26/OQ-3 by adding smoke test infrastructure failure handling
   
   - **Context**: Q-26/OQ-3 — The startup-failure exception covers application failures (the code cannot build or start). There was no handling for infrastructure failures where the smoke test cannot execute at all (runner not found, environment setup error, pre-execution crash). These are distinct failure modes requiring different responses.
-  - **Decision**: WI-128 added a distinct "Smoke test infrastructure failure" exception to both `skills/execute/SKILL.md` and `skills/brrr/phases/execute.md`, and added P-23 to workflow policies. The protocol requires regression determination before Andon: if the work item changed infrastructure-adjacent files, diagnose and attempt a surgical fix; if not a regression, route to Andon immediately. P-23 captures this rule in the domain layer.
+  - **Decision**: WI-128 added a distinct "Smoke test infrastructure failure" exception to both `skills/execute/SKILL.md` and `skills/autopilot/phases/execute.md`, and added P-23 to workflow policies. The protocol requires regression determination before Andon: if the work item changed infrastructure-adjacent files, diagnose and attempt a surgical fix; if not a regression, route to Andon immediately. P-23 captures this rule in the domain layer.
   - **Rationale**: User's instruction: "It should attempt to identify the root cause of the failure. If it's a regression, it should attempt to fix it carefully without affecting scope of other work or making significant architectural decisions. If it's not a regression, it should pull the Andon cord." Regression determination prevents excessive Andon escalations for environment-specific issues while ensuring regressions introduced by the work item are diagnosed within scope.
-  - **Impact**: `skills/execute/SKILL.md:405-409`, `skills/brrr/phases/execute.md:159`, `specs/domains/workflow/policies.md` P-23 added; closes Q-26/OQ-3.
+  - **Impact**: `skills/execute/SKILL.md:405-409`, `skills/autopilot/phases/execute.md:159`, `specs/domains/workflow/policies.md` P-23 added; closes Q-26/OQ-3.
   
   ### D-46: Close Q-31/OQ-6 by adding exact quoted template to fixable-path journal note
   
   - **Context**: Q-31/OQ-6 — The unfixable startup-failure path (WI-124, Cycle 010) received an exact quoted journal template. The fixable path still said "Note in the journal as significant rework" — prose with no template string. The asymmetry was a consistency gap and a latent parsing risk.
   - **Decision**: WI-127 replaced the prose note in both skill files with an exact quoted template: `` `Rework: Startup failure root cause diagnosed and fixed. {brief description of fix}.` ``
   - **Rationale**: OQ-6 (Cycle 010 decision log) identified this as the next concrete work item. The template format mirrors the unfixable-path template and the WI-124 journal template convention.
-  - **Impact**: `skills/execute/SKILL.md:402`, `skills/brrr/phases/execute.md:158`; closes Q-31/OQ-6.
+  - **Impact**: `skills/execute/SKILL.md:402`, `skills/autopilot/phases/execute.md:158`; closes Q-31/OQ-6.
   
   ---
   
@@ -53,19 +53,19 @@ content: |
   
   ### OQ-8: Inline code-reviewer prompts not updated to match generalized smoke test
   
-  - **Context**: WI-126 generalized the smoke test in `agents/code-reviewer.md` but its AC-7 prohibited modifying other sections, leaving two inline prompt fragments unchanged. `skills/execute/SKILL.md:325` and `skills/brrr/phases/execute.md:113` still instruct the spawned code-reviewer: "If the project cannot build or start, report a Critical finding titled 'Startup failure after [work item name]'." The agent-level instruction says "If the smoke test fails..." — a broader and inconsistent condition.
+  - **Context**: WI-126 generalized the smoke test in `agents/code-reviewer.md` but its AC-7 prohibited modifying other sections, leaving two inline prompt fragments unchanged. `skills/execute/SKILL.md:325` and `skills/autopilot/phases/execute.md:113` still instruct the spawned code-reviewer: "If the project cannot build or start, report a Critical finding titled 'Startup failure after [work item name]'." The agent-level instruction says "If the smoke test fails..." — a broader and inconsistent condition.
   - **Status**: open
   - **Source**: Code-quality S1; spec-adherence U1; gap-analysis IG1. All three reviewers identified this independently.
-  - **Impact if unresolved**: Code-reviewers spawned via execute or brrr receive contradictory guidance about when to emit a Critical finding for smoke test failures. For library, e2e, and CLI projects, the inline override may prevent correct findings from being emitted.
+  - **Impact if unresolved**: Code-reviewers spawned via execute or autopilot receive contradictory guidance about when to emit a Critical finding for smoke test failures. For library, e2e, and CLI projects, the inline override may prevent correct findings from being emitted.
   - **Suggested resolution**: In both skill files at lines 325 and 113, replace "If the project cannot build or start, report a Critical finding" with "If the smoke test fails, report a Critical finding."
   
-  ### OQ-9: brrr finding-handling "Critical findings fixable within scope" lacks exclusion qualifier
+  ### OQ-9: autopilot finding-handling "Critical findings fixable within scope" lacks exclusion qualifier
   
-  - **Context**: `skills/execute/SKILL.md:410` has the explicit label "**General critical findings (non-startup-failure, non-infrastructure-failure)**" — added by WI-128 M1 rework. The equivalent bullet in `skills/brrr/phases/execute.md:160` reads "**Critical findings fixable within scope**" with no exclusion qualifier.
+  - **Context**: `skills/execute/SKILL.md:410` has the explicit label "**General critical findings (non-startup-failure, non-infrastructure-failure)**" — added by WI-128 M1 rework. The equivalent bullet in `skills/autopilot/phases/execute.md:160` reads "**Critical findings fixable within scope**" with no exclusion qualifier.
   - **Status**: open
   - **Source**: Code-quality M2.
-  - **Impact if unresolved**: An executor reading the brrr file could route a startup-failure or infra-failure critical finding through the general "fixable within scope" path if the finding title does not exactly match the named exception patterns. The ambiguity is title-matching-sensitive.
-  - **Suggested resolution**: Change brrr line 160 to "**Critical findings fixable within scope (non-startup-failure, non-infrastructure-failure)**" to match execute/SKILL.md.
+  - **Impact if unresolved**: An executor reading the autopilot file could route a startup-failure or infra-failure critical finding through the general "fixable within scope" path if the finding title does not exactly match the named exception patterns. The ambiguity is title-matching-sensitive.
+  - **Suggested resolution**: Change autopilot line 160 to "**Critical findings fixable within scope (non-startup-failure, non-infrastructure-failure)**" to match execute/SKILL.md.
   
   ---
   
@@ -73,7 +73,7 @@ content: |
   
   ### CR1: Inline prompt inconsistency — all three reviewers
   
-  - **Code quality**: S1 — `skills/execute/SKILL.md:325` and `skills/brrr/phases/execute.md:113` use "cannot build or start" while agent definition uses "smoke test fails."
+  - **Code quality**: S1 — `skills/execute/SKILL.md:325` and `skills/autopilot/phases/execute.md:113` use "cannot build or start" while agent definition uses "smoke test fails."
   - **Spec adherence**: U1 — same locations; classified as undocumented addition (out of WI-126 scope by AC-7).
   - **Gap analysis**: IG1 — confirms same gap; notes the scope constraint that prevented WI-126 from addressing it.
   - **Connection**: Three independent reviewers converged on the same finding from different angles (quality, adherence, completeness). OQ-8 captures the concrete fix. Suggested resolution is a two-line change in two files.

@@ -5,7 +5,7 @@ reviewer: code-reviewer
 severity: minor
 title: Phase 6c spec-reviewer had no output destination
 description: |
-  - **File**: `skills/brrr/SKILL.md:480`
+  - **File**: `skills/autopilot/SKILL.md:480`
   - **Suggested fix**: Renamed to "principles-checker"; specified inline response output. Fixed in rework.
 file_path: cycles/001/findings/FI-001-014.yaml
 line: null

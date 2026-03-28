@@ -8,7 +8,7 @@ scope:
     op: modify
   - path: skills/refine/SKILL.md
     op: modify
-  - path: skills/brrr/phases/review.md
+  - path: skills/autopilot/phases/review.md
     op: modify
 depends:
   - WI-288
@@ -17,11 +17,11 @@ blocks:
 criteria:
   - Review skill Phase 3.6 documents ideate_assemble_context as alternative for reviewer context
   - Refine skill Phase 2 documents ideate_assemble_context for codebase-aware context
-  - brrr/phases/review.md updated with PPR context option
+  - autopilot/phases/review.md updated with PPR context option
   - Existing get_context_package preserved as primary path
 domain: workflow
 notes: PPR is opt-in for reviews. Document availability in Phase 3.6 (review) and Phase 2 (refine).
-resolution: PPR documented as opt-in in review, refine, and brrr/review skills.
+resolution: PPR documented as opt-in in review, refine, and autopilot/review skills.
 cycle_created: 38
 cycle_modified: null
 content_hash: 2427235e3b71b30fd9f64583b37db669dce6e4900ac8349e25ade2eea2e926e6

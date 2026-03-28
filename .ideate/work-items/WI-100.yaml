@@ -44,7 +44,7 @@ notes: |
   ### `metrics.jsonl`
   ```
 
-  **Rationale**: All peer artifact entries (`journal.md`, `brrr-state.md`, etc.) use `###`. The `####` level causes `metrics.jsonl` to render as a visual sub-section of `journal.md` instead of as a peer entry.
+  **Rationale**: All peer artifact entries (`journal.md`, `autopilot-state.md`, etc.) use `###`. The `####` level causes `metrics.jsonl` to render as a visual sub-section of `journal.md` instead of as a peer entry.
 
   ---
 

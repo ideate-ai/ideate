@@ -4,7 +4,7 @@ title: Brrr review phase — replace direct writes with ideate_write_artifact
 status: done
 complexity: medium
 scope:
-  - path: skills/brrr/phases/review.md
+  - path: skills/autopilot/phases/review.md
     op: modify
 depends: []
 blocks: []
@@ -19,7 +19,7 @@ domain: workflow
 notes: |-
   # WI-250: Brrr Review Phase MCP Writes
 
-  Same pattern as WI-249 but for skills/brrr/phases/review.md. The brrr review phase has identical reviewer spawn prompts that instruct Write to .ideate/cycles/.
+  Same pattern as WI-249 but for skills/autopilot/phases/review.md. The autopilot review phase has identical reviewer spawn prompts that instruct Write to .ideate/cycles/.
 resolution: null
 cycle_created: 32
 cycle_modified: null

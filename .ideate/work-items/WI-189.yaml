@@ -42,7 +42,7 @@ notes: |
 
   ### Parameters
   - `artifact_dir: string` — path to artifact directory
-  - `skill: "plan"|"execute"|"review"|"refine"|"brrr"` — phase tag
+  - `skill: "plan"|"execute"|"review"|"refine"|"autopilot"` — phase tag
   - `date: string` — ISO date (YYYY-MM-DD)
   - `entry_type: string` — free string (e.g., "Work item 181: Schema v7 DDL")
   - `body: string` — entry body text

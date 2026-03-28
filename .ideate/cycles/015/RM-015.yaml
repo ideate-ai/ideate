@@ -8,21 +8,21 @@ content: |
   
   | # | Title | File Scope | Incremental Verdict | Findings (C/S/M) |
   |---|---|---|---|---|
-  | 098 | brrr quality summary | skills/brrr/ | Pass | 0/0/0 |
+  | 098 | autopilot quality summary | skills/autopilot/ | Pass | 0/0/0 |
   | 099 | agent paths | agents/ | Pass | 0/0/0 |
   | 100 | docs cluster | README.md, docs/ | Pass | 0/0/0 |
   | 101 | fix residual documentation inconsistencies | skills/, agents/ | Pass | 0/0/0 |
-  | 102 | spec-reviewer verdict contract | agents/spec-reviewer.md, skills/brrr/ | Pass | 0/0/1 |
+  | 102 | spec-reviewer verdict contract | agents/spec-reviewer.md, skills/autopilot/ | Pass | 0/0/1 |
   | 103 | gap-analyst deferred gaps | agents/gap-analyst.md | Pass | 0/0/0 |
-  | 104 | brrr review curator path | skills/brrr/phases/review.md | Pass | 0/0/0 |
-  | 105 | brrr execute digest scrutiny andon | skills/brrr/phases/execute.md | Pass | 0/0/0 |
+  | 104 | autopilot review curator path | skills/autopilot/phases/review.md | Pass | 0/0/0 |
+  | 105 | autopilot execute digest scrutiny andon | skills/autopilot/phases/execute.md | Pass | 0/0/0 |
   | 106 | execute unverifiable scrutiny | skills/execute/SKILL.md | Pass | 0/0/0 |
   | 107 | journal-keeper manifest first | agents/journal-keeper.md | Pass | 0/0/0 |
   | 108 | architecture domain curator | specs/plan/architecture.md | Pass | 0/0/0 |
   | 109 | execute interface contracts cap | skills/execute/SKILL.md | Pass | 0/0/0 |
   | 110 | architecture domain curator maxturns | agents/domain-curator.md | Pass | 0/0/0 |
   | 111 | fix stale reviews path | skills/ | Pass | 0/0/0 |
-  | 112 | brrr review quality summary | skills/brrr/phases/ | Pass | 0/0/0 |
+  | 112 | autopilot review quality summary | skills/autopilot/phases/ | Pass | 0/0/0 |
   | 113 | fix quality summary skill field | skills/review/SKILL.md | Pass | 0/0/0 |
   | 114-116 | report.sh conventions refine fixes | scripts/report.sh, skills/refine/ | Pass | 0/0/0 |
   

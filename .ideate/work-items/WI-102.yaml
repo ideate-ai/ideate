@@ -1,29 +1,29 @@
 id: WI-102
 type: work_item
-title: Spec-reviewer verdict contract + brrr convergence robustness
+title: Spec-reviewer verdict contract + autopilot convergence robustness
 status: done
 complexity: medium
 scope:
   - path: agents/spec-reviewer.md
     op: modify
-  - path: skills/brrr/SKILL.md
+  - path: skills/autopilot/SKILL.md
     op: modify
 depends: []
 blocks: []
 criteria:
   - "agents/spec-reviewer.md output format section instructs spec-reviewer to write `**Principle Violation Verdict**: Pass` or `**Principle Violation Verdict**: Fail — {N} violation(s)` as the first line of the Principle Violations section"
   - agents/spec-reviewer.md instructs spec-reviewer to write exactly `None.` when no violations
-  - "skills/brrr/SKILL.md convergence Condition B checks for `**Principle Violation Verdict**: Pass` first before falling back to `None.` detection"
-  - skills/brrr/SKILL.md convergence Condition B logs an error message for unrecognized formats (treating as non-converged)
-  - "skills/brrr/SKILL.md convergence Condition B correctly fails when `**Principle Violation Verdict**: Fail` is present"
+  - "skills/autopilot/SKILL.md convergence Condition B checks for `**Principle Violation Verdict**: Pass` first before falling back to `None.` detection"
+  - skills/autopilot/SKILL.md convergence Condition B logs an error message for unrecognized formats (treating as non-converged)
+  - "skills/autopilot/SKILL.md convergence Condition B correctly fails when `**Principle Violation Verdict**: Fail` is present"
 module: null
 domain: null
 notes: |
-  # WI-102: Spec-reviewer verdict contract + brrr convergence robustness
+  # WI-102: Spec-reviewer verdict contract + autopilot convergence robustness
 
   ## Context
 
-  The brrr convergence check (Condition B, `skills/brrr/SKILL.md` lines 192-203) reads `spec-adherence.md` and checks whether the `## Principle Violations` section contains only "None." to determine pass/fail. The spec-reviewer has no instruction to write that exact string — it may write "No violations found." or similar, blocking convergence indefinitely. Additionally, the check logic is fragile: it relies on `### ` or `- ` line prefixes to detect violations, which could misfire.
+  The autopilot convergence check (Condition B, `skills/autopilot/SKILL.md` lines 192-203) reads `spec-adherence.md` and checks whether the `## Principle Violations` section contains only "None." to determine pass/fail. The spec-reviewer has no instruction to write that exact string — it may write "No violations found." or similar, blocking convergence indefinitely. Additionally, the check logic is fragile: it relies on `### ` or `- ` line prefixes to detect violations, which could misfire.
 
   ---
 
@@ -50,7 +50,7 @@ notes: |
 
   ---
 
-  ## Fix 2: `skills/brrr/SKILL.md` — update convergence Condition B check
+  ## Fix 2: `skills/autopilot/SKILL.md` — update convergence Condition B check
 
   Locate the Condition B convergence check (lines ~192-203). Current logic:
   ```
@@ -76,8 +76,8 @@ notes: |
 
   1. `agents/spec-reviewer.md` output format section instructs spec-reviewer to write `**Principle Violation Verdict**: Pass` or `**Principle Violation Verdict**: Fail — {N} violation(s)` as the first line of the `## Principle Violations` section
   2. `agents/spec-reviewer.md` instructs spec-reviewer to write exactly `None.` when no violations (not "No violations found." or other variants)
-  3. `skills/brrr/SKILL.md` convergence Condition B checks for `**Principle Violation Verdict**: Pass` first, falls back to "None." detection, and logs an error for unrecognized formats
-  4. `skills/brrr/SKILL.md` Condition B still correctly fails when `**Principle Violation Verdict**: Fail` is present
+  3. `skills/autopilot/SKILL.md` convergence Condition B checks for `**Principle Violation Verdict**: Pass` first, falls back to "None." detection, and logs an error for unrecognized formats
+  4. `skills/autopilot/SKILL.md` Condition B still correctly fails when `**Principle Violation Verdict**: Fail` is present
 cycle_created: 1
 cycle_modified: null
 content_hash: 0ec429e98c3b239135bb9fdd53da6ae23b125588ac40b69b7dc620ac5d3ada34

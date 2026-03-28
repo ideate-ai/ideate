@@ -12,7 +12,7 @@ criteria:
   - "skills/execute/SKILL.md Phase 4.5 context digest explicitly exempts the ## Interface Contracts section from the line cap"
   - Interface contracts are described as always included in full, uncapped, regardless of length
   - The cap applies only to non-interface-contracts content (file-scope sections and component map entry)
-  - The restructuring matches the fix applied to skills/brrr/phases/execute.md in WI-105
+  - The restructuring matches the fix applied to skills/autopilot/phases/execute.md in WI-105
 module: null
 domain: null
 notes: |
@@ -20,9 +20,9 @@ notes: |
 
   ## Context
 
-  WI-105 fixed `skills/brrr/phases/execute.md` to exempt `## Interface Contracts` from the 150-line cap (interface contracts always included uncapped). The same cap exemption is missing from the standalone execute skill's Phase 4.5 context digest preparation.
+  WI-105 fixed `skills/autopilot/phases/execute.md` to exempt `## Interface Contracts` from the 150-line cap (interface contracts always included uncapped). The same cap exemption is missing from the standalone execute skill's Phase 4.5 context digest preparation.
 
-  Cycle 001 review found this as S1 (code-quality.md): the two skills now diverge — brrr workers have protected interface contracts but standalone execute workers do not.
+  Cycle 001 review found this as S1 (code-quality.md): the two skills now diverge — autopilot workers have protected interface contracts but standalone execute workers do not.
 
   ---
 
@@ -51,7 +51,7 @@ notes: |
   1. `skills/execute/SKILL.md` Phase 4.5 context digest explicitly exempts the `## Interface Contracts` section from the line cap
   2. Interface contracts are described as always included in full, uncapped, regardless of length
   3. The cap applies only to non-interface-contracts content (file-scope sections and component map entry)
-  4. The restructuring matches the fix applied to `skills/brrr/phases/execute.md` in WI-105
+  4. The restructuring matches the fix applied to `skills/autopilot/phases/execute.md` in WI-105
 cycle_created: 1
 cycle_modified: null
 content_hash: 991d9309ce0a5b3dc706fc0cb960c3fecb570f1188b08e980a4de8ee1eb37aa0

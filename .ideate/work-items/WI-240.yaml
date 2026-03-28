@@ -10,7 +10,7 @@ scope:
     op: modify
   - path: skills/execute/SKILL.md
     op: modify
-  - path: skills/brrr/phases/refine.md
+  - path: skills/autopilot/phases/refine.md
     op: modify
 depends: []
 blocks: []

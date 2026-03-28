@@ -6,7 +6,7 @@ A Claude Code plugin providing a structured SDLC workflow. Ideate takes a rough 
 
 ```
 agents/          # Specialized agents (code-reviewer, architect, domain-curator, etc.)
-skills/          # User-invocable skills (plan, execute, review, refine, brrr)
+skills/          # User-invocable skills (plan, execute, review, refine, autopilot)
 scripts/         # Utility scripts (validate-specs.sh, migrate-to-optimized.sh)
 .ideate/          # Ideate's own artifact directory — uses the same structure it creates
 ```
@@ -15,12 +15,11 @@ scripts/         # Utility scripts (validate-specs.sh, migrate-to-optimized.sh)
 
 | Skill | What it does |
 |---|---|
-| `/ideate:init` | Initialize .ideate/ for an existing codebase — scaffold, survey, interview, bootstrap domains |
-| `/ideate:plan` | Interview → research → architecture → work items → domain bootstrap |
+| `/ideate:init` | Initialize a project — auto-detects existing codebase (survey + lightweight interview) vs new project (full interview, research, architecture, work items) |
 | `/ideate:execute` | Build work items with per-item incremental review |
 | `/ideate:review` | Capstone review: cycle (default), `--domain`, `--full`, or natural language scope |
 | `/ideate:refine` | Plan the next cycle of changes |
-| `/ideate:brrr` | Autonomous execute → review → refine loop until convergence |
+| `/ideate:autopilot` | Autonomous execute → review → refine loop until convergence |
 
 ## Artifact structure
 
@@ -61,4 +60,4 @@ To run a review cycle on ideate itself: `/ideate:review`
 
 - The domain curator uses opus; all other agents default to sonnet unless overridden
 - `spawn_session` (outpost) is an optional enhancement; Agent tool is the primary spawning mechanism
-- `DEFER` (not `DEFERRED`) is the proxy-human deferral signal that brrr checks for
+- `DEFER` (not `DEFERRED`) is the proxy-human deferral signal that autopilot checks for

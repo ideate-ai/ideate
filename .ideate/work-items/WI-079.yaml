@@ -5,7 +5,7 @@ status: obsolete
 complexity: medium
 scope:
   - {path: skills/review/SKILL.md, op: modify}
-  - {path: skills/brrr/SKILL.md, op: modify}
+  - {path: skills/autopilot/SKILL.md, op: modify}
   - {path: docs/context-package-spec.md, op: create}
 depends:
   - "076"
@@ -21,7 +21,7 @@ criteria:
   - "The source code index in the package includes: file path, language, approximate size, key exports (function/class/type names) for each source file"
   - The package is passed inline in the agent prompt (not as a file path to read)
   - "A durable specification of the context package format is written to `docs/context-package-spec.md` (in the ideate plugin directory, not in a user's artifact directory) documenting: sections included, size targets, source code index format, and assembly steps — so downstream consumers (082 MCP server) can replicate the package without reading skill internals"
-  - "`skills/brrr/SKILL.md` Phase 6b is updated to use the same shared context package pattern (depends on 076 being complete first)"
+  - "`skills/autopilot/SKILL.md` Phase 6b is updated to use the same shared context package pattern (depends on 076 being complete first)"
 module: null
 domain: null
 notes: |

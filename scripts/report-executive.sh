@@ -157,7 +157,7 @@ def section_quality_metrics(entries, quality_events):
     lines = ["## Quality Metrics", ""]
 
     if not quality_events:
-        lines.append("No quality data recorded. Run /ideate:review or /ideate:brrr to generate quality metrics.")
+        lines.append("No quality data recorded. Run /ideate:review or /ideate:autopilot to generate quality metrics.")
         return lines
 
     # Sort quality events by cycle
@@ -302,25 +302,25 @@ def section_roi_indicators(entries, quality_events):
         rework_trend = "-"
 
     # --- Convergence speed trend ---
-    # brrr_cycles_used per cycle — decreasing means faster convergence
-    brrr_by_cycle = collections.defaultdict(list)
+    # autopilot_cycles_used per cycle — decreasing means faster convergence
+    autopilot_by_cycle = collections.defaultdict(list)
     for e in entries:
         c = e.get('cycle')
-        bcu = e.get('brrr_cycles_used')
+        bcu = e.get('autopilot_cycles_used')
         if c is not None and bcu is not None:
-            brrr_by_cycle[c].append(bcu)
+            autopilot_by_cycle[c].append(bcu)
 
-    brrr_avgs = []
+    autopilot_avgs = []
     for c in sorted_cycles:
-        bcu_list = brrr_by_cycle.get(c, [])
+        bcu_list = autopilot_by_cycle.get(c, [])
         if bcu_list:
-            brrr_avgs.append(sum(bcu_list) / len(bcu_list))
+            autopilot_avgs.append(sum(bcu_list) / len(bcu_list))
 
-    if len(brrr_avgs) >= 2:
-        if brrr_avgs[-1] < brrr_avgs[0]:
-            conv_trend = "improving (fewer brrr cycles needed)"
-        elif brrr_avgs[-1] > brrr_avgs[0]:
-            conv_trend = "degrading (more brrr cycles needed)"
+    if len(autopilot_avgs) >= 2:
+        if autopilot_avgs[-1] < autopilot_avgs[0]:
+            conv_trend = "improving (fewer autopilot cycles needed)"
+        elif autopilot_avgs[-1] > autopilot_avgs[0]:
+            conv_trend = "degrading (more autopilot cycles needed)"
         else:
             conv_trend = "stable"
     else:
@@ -386,14 +386,14 @@ def main():
 
     if not os.path.exists(metrics_path):
         print(f"No metrics file found at: {metrics_path}", file=sys.stderr)
-        print("Run /ideate:execute or /ideate:brrr to generate metrics data.", file=sys.stderr)
+        print("Run /ideate:execute or /ideate:autopilot to generate metrics data.", file=sys.stderr)
         sys.exit(0)
 
     entries, quality_events = load_entries(metrics_path)
 
     if not entries and not quality_events:
         print(f"Metrics file exists but contains no data: {metrics_path}")
-        print("Run /ideate:execute or /ideate:brrr to generate metrics data.")
+        print("Run /ideate:execute or /ideate:autopilot to generate metrics data.")
         sys.exit(0)
 
     sections = []

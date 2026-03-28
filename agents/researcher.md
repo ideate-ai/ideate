@@ -1,7 +1,7 @@
 ---
 name: researcher
 description: >
-  Background research agent. Spawned during ideate:plan or ideate:refine
+  Background research agent. Spawned during ideate:init or ideate:refine
   to investigate a technology, pattern, domain, API, or design question.
   Returns structured findings. Runs concurrently so the interview can continue.
 tools:

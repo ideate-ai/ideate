@@ -14,7 +14,7 @@ content: |
   
   ## Significant Findings
   
-  - [gap-analyst] Startup failure → Andon routing is not unconditionally enforced in `skills/execute/SKILL.md` Phase 8 or `skills/brrr/phases/execute.md` finding-handling. Phase 8 requires the execute skill to judge whether a Critical finding is "scope-changing." A startup failure that appears trivially fixable may be silently resolved, bypassing the Andon escalation the quality floor depends on. — relates to: GP-6 (Andon Cord Interaction Model), WI-117/118
+  - [gap-analyst] Startup failure → Andon routing is not unconditionally enforced in `skills/execute/SKILL.md` Phase 8 or `skills/autopilot/phases/execute.md` finding-handling. Phase 8 requires the execute skill to judge whether a Critical finding is "scope-changing." A startup failure that appears trivially fixable may be silently resolved, bypassing the Andon escalation the quality floor depends on. — relates to: GP-6 (Andon Cord Interaction Model), WI-117/118
   
   ## Minor Findings
   
@@ -39,7 +39,7 @@ content: |
   **WI-120** (proposed): Add explicit Andon exception rule to execute finding-handling.
   
   - `skills/execute/SKILL.md` Phase 8 — add rule: any Critical finding titled "Startup failure after ..." is always treated as scope-changing and routed to Andon, regardless of apparent fixability.
-  - `skills/brrr/phases/execute.md` finding-handling block — same addition.
+  - `skills/autopilot/phases/execute.md` finding-handling block — same addition.
   
   This is a small, targeted change (2 files, 2 insertions). Complexity: low. Estimated 1 work item.
   

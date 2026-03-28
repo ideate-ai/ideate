@@ -5,8 +5,8 @@ reviewer: code-reviewer
 severity: minor
 title: Cycle banner had ambiguous `{N}` placeholder
 description: |
-  - **File**: `skills/brrr/SKILL.md:174`
-  - **Suggested fix**: `[brrr] Cycle {cycle_number} — {pending_count} work items pending`. Fixed in rework.
+  - **File**: `skills/autopilot/SKILL.md:174`
+  - **Suggested fix**: `[autopilot] Cycle {cycle_number} — {pending_count} work items pending`. Fixed in rework.
 file_path: cycles/001/findings/FI-001-013.yaml
 line: null
 suggestion: null

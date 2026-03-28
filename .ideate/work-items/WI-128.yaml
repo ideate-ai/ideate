@@ -6,7 +6,7 @@ complexity: medium
 scope:
   - path: skills/execute/SKILL.md
     op: modify
-  - path: skills/brrr/phases/execute.md
+  - path: skills/autopilot/phases/execute.md
     op: modify
   - path: specs/domains/workflow/policies.md
     op: modify
@@ -18,7 +18,7 @@ criteria:
   - The infra-failure exception instructs the executor to determine if the failure is a regression caused by this work item
   - "If regression: diagnose, attempt careful surgical fix (no scope expansion, no architectural decisions), re-run smoke test, Andon if still fails"
   - "If not a regression: route to Andon cord immediately with journal note"
-  - skills/brrr/phases/execute.md finding-handling contains an equivalent infra-failure bullet
+  - skills/autopilot/phases/execute.md finding-handling contains an equivalent infra-failure bullet
   - specs/domains/workflow/policies.md P-22 or a new P-23 captures the infra-failure regression-check rule
   - No other sections in any of the three files are modified
 module: null
@@ -64,7 +64,7 @@ notes: |
   3. If it is not a regression (pre-existing or environmental): append to the journal — `Smoke test infrastructure failure detected. Not a regression — routing to Andon.` Route to the Andon cord (Phase 9).
   ```
 
-  ### File 2: `skills/brrr/phases/execute.md`
+  ### File 2: `skills/autopilot/phases/execute.md`
 
   **Location**: finding-handling block, after the startup-failure Critical bullet (line 158, after WI-126's changes).
 
@@ -92,7 +92,7 @@ notes: |
   2. The exception distinguishes regression (work item caused it) from non-regression (pre-existing/environmental)
   3. Regression path: diagnose → surgical fix → re-run → Andon if still fails
   4. Non-regression path: Andon immediately with journal note
-  5. `skills/brrr/phases/execute.md` finding-handling contains an equivalent bullet
+  5. `skills/autopilot/phases/execute.md` finding-handling contains an equivalent bullet
   6. `specs/domains/workflow/policies.md` contains P-23 capturing the regression-check rule
   7. No other sections in any of the three files are modified
 cycle_created: 1

@@ -1,25 +1,21 @@
 id: execution-strategy
 type: execution_strategy
-text: |-
-  # Execution Strategy — Cycle 061
-
-  ## Mode
-  Sequential.
-
-  ## Work Item Groups
-  ### Group 1
-  - WI-320: Fix resolveArtifactPath + domain_index + bootstrap (low)
-
-  ### Group 2 (after WI-320)
-  - WI-322: Fix type strings + path leaks (low)
-
-  ## Dependency Graph
-  ```
-  WI-320 → WI-322
-  ```
-
-  ## Review cadence
-  Capstone only.
-content_hash: a433dc277c1effa66db2082cf1858bdbc1a468252ce0bc3b6af58b7375be7d04
-token_count: 98
+title: Execution Strategy — Cycle 065
+mode: sequential
+parallelism: 1
+worktrees: false
+review_cadence: per-item
+groups:
+  - name: "Group 1: Core rewrite"
+    items:
+      - WI-336
+    notes: The unified SKILL.md must be written first.
+  - name: "Group 2: Cleanup"
+    items:
+      - WI-337
+      - WI-338
+      - WI-339
+    notes: Delete old plan skill, update cross-references, update docs. All depend on WI-336/337.
+content_hash: c289e87e619dbdbc4e0e29501f1253e8d2212126f321ba355c9ff8534801f13d
+token_count: 116
 file_path: .ideate/plan/execution-strategy.yaml

@@ -34,7 +34,7 @@ export const DEFAULT_PPR_CONFIG = {
 /**
  * Subdirectories created inside .ideate/ by createIdeateDir().
  */
-const IDEATE_SUBDIRS = [
+export const IDEATE_SUBDIRS = [
     "plan",
     "steering",
     "work-items",
@@ -47,6 +47,7 @@ const IDEATE_SUBDIRS = [
     "research",
     "interviews",
     "cycles",
+    "domains",
 ];
 /**
  * Read and parse .ideate/config.json from a given directory.

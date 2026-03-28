@@ -18,7 +18,7 @@ content: |-
   - [code-reviewer] handleEmitMetric writes JSONL only; handleGetMetrics reads SQLite only — two disconnected paths for metrics. Undocumented design split. — relates to: WI-311
   - [gap-analyst] No ARCHITECTURE.md or README.md for MCP server package — tool count accurate in code but no package-level docs — relates to: cross-cutting
   - [gap-analyst] CLAUDE.md artifact structure tree doesn’t match actual write.ts directory routing — relates to: cross-cutting
-  - [gap-analyst] brrr/SKILL.md Phase 1 references .ideate.json by name — stale pre-v3 reference — relates to: WI-318
+  - [gap-analyst] autopilot/SKILL.md Phase 1 references .ideate.json by name — stale pre-v3 reference — relates to: WI-318
 
   ## Findings Requiring User Input
   None — all findings can be resolved from existing context.

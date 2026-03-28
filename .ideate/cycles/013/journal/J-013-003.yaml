@@ -1,6 +1,6 @@
 id: J-013-003
 type: journal_entry
-phase: brrr
+phase: autopilot
 date: "2026-03-20"
 cycle_created: 13
 title: "Cycle 1 — Work item 089: CLAUDE.md — add manifest.json to artifact structure diagram"

@@ -5,7 +5,7 @@ reviewer: code-reviewer
 severity: minor
 title: "`last_cycle_findings` initialized as `[]` but updated as `{critical: N, ...}`"
 description: |
-  - **File**: `skills/brrr/SKILL.md:134`
+  - **File**: `skills/autopilot/SKILL.md:134`
   - **Suggested fix**: Initialize as `{critical: 0, significant: 0, minor: 0}`. Fixed in rework.
 file_path: cycles/001/findings/FI-001-015.yaml
 line: null

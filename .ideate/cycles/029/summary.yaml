@@ -5,7 +5,7 @@ content: |-
 
   ## Overview
 
-  Cycle 029 completed four refinement work items addressing Cycle 028 findings: brrr-state.yaml reference fix, type name standardization, path placeholder standardization, and setup script completeness. All four work items passed incremental review and spec verification. However, cross-skill consistency review revealed gaps in agent files not covered by the work item scope.
+  Cycle 029 completed four refinement work items addressing Cycle 028 findings: autopilot-state.yaml reference fix, type name standardization, path placeholder standardization, and setup script completeness. All four work items passed incremental review and spec verification. However, cross-skill consistency review revealed gaps in agent files not covered by the work item scope.
 
   ## Critical Findings
 

@@ -19,7 +19,7 @@ notes: |
 
   ## Context
 
-  The standalone execute skill (`skills/execute/SKILL.md`) has the same worker self-check incentive problem as the brrr execute phase: workers can categorize hard-to-verify acceptance criteria as `unverifiable` rather than `unsatisfied` to avoid extra work. WI-105 adds scrutiny instructions to the incremental reviewer in `brrr/phases/execute.md`. This work item adds the same instructions to the standalone execute skill.
+  The standalone execute skill (`skills/execute/SKILL.md`) has the same worker self-check incentive problem as the autopilot execute phase: workers can categorize hard-to-verify acceptance criteria as `unverifiable` rather than `unsatisfied` to avoid extra work. WI-105 adds scrutiny instructions to the incremental reviewer in `autopilot/phases/execute.md`. This work item adds the same instructions to the standalone execute skill.
 
   Note: the standalone execute skill already has the Andon cord interrupt mechanism for critical findings. No change to Andon behavior is needed here.
 

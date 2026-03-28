@@ -6,7 +6,7 @@ impact: Until implemented, a worker executing Phase 8 may silently fix a startup
 source: archive/cycles/007/gap-analysis.md II1; archive/cycles/007/summary.md Proposed Refinement Plan
 resolution: WI-120 added the exception rule to both files. All three capstone reviewers confirmed Pass.
 resolved_in: 8
-description: Policy P-22 requires an explicit named exception in Phase 8 of `skills/execute/SKILL.md` and in the finding-handling block of `skills/brrr/phases/execute.md` for "Startup failure after ..." Critical findings. Neither file currently contains this rule (cycle 007 II1). Should WI-120 be created to add the exception to both files?
+description: Policy P-22 requires an explicit named exception in Phase 8 of `skills/execute/SKILL.md` and in the finding-handling block of `skills/autopilot/phases/execute.md` for "Startup failure after ..." Critical findings. Neither file currently contains this rule (cycle 007 II1). Should WI-120 be created to add the exception to both files?
 cycle_created: 1
 cycle_modified: null
 content_hash: bbb3682f125dde0f1d9cc3b4ed42b0f9d0f885c8c81db135c91c6d6d0c55e34f

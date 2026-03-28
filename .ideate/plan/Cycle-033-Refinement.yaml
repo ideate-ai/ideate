@@ -1,10 +1,10 @@
 id: Cycle-033-Refinement
 type: overview
 architecture_changed: false
-change_summary: "Fix four review findings from Cycle 028: brrr-state.yaml regression, type name inconsistency, placeholder standardization, and setup script completeness."
+change_summary: "Fix four review findings from Cycle 028: autopilot-state.yaml regression, type name inconsistency, placeholder standardization, and setup script completeness."
 constraints_changed: none
 findings_addressed:
-  - finding: "C1: brrr-state.md reference regression"
+  - finding: "C1: autopilot-state.md reference regression"
     work_item: WI-231
   - finding: "S1: work-items type name inconsistency"
     work_item: WI-232
@@ -23,7 +23,7 @@ scope_excludes:
   - No architectural changes
   - No new skills or agents
 scope_includes:
-  - Fix brrr-state.md reference in skills/brrr/phases/review.md
+  - Fix autopilot-state.md reference in skills/autopilot/phases/review.md
   - Fix work-items type name on line 61 of refine skill
   - Standardize {artifact-dir} to {project_root} in review/refine skills
   - Add plan directory to setup script

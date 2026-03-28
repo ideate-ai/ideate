@@ -29,10 +29,10 @@ content: |
   - **Question**: Should the table clarify which agents are `opus` by default (domain-curator) vs `opus` at spawn time only (architect, decomposer, proxy-human)?
   - **Impact**: Documentation accuracy. Users reading the table may incorrectly assume all four agents always use opus.
   
-  ### OQ-11: brrr/phases/review.md unconditionally uses opus for domain-curator
-  - **Source**: code-quality M2, cross-references Q-20 (brrr vs standalone review divergence)
-  - **Question**: Should brrr/phases/review.md adopt the conditional model selection logic from review/SKILL.md, or is unconditional opus intentional for autonomous operation?
-  - **Impact**: Behavioral divergence between brrr and standalone review for domain-curator model selection.
+  ### OQ-11: autopilot/phases/review.md unconditionally uses opus for domain-curator
+  - **Source**: code-quality M2, cross-references Q-20 (autopilot vs standalone review divergence)
+  - **Question**: Should autopilot/phases/review.md adopt the conditional model selection logic from review/SKILL.md, or is unconditional opus intentional for autonomous operation?
+  - **Impact**: Behavioral divergence between autopilot and standalone review for domain-curator model selection.
   
   ### OQ-12: README omits `CLAUDE_CODE_SUBAGENT_MODEL` env var
   - **Source**: gap-analysis MG1

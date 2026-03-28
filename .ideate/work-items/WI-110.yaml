@@ -10,7 +10,7 @@ depends: []
 blocks: []
 criteria:
   - "specs/plan/architecture.md domain-curator definition block specifies MaxTurns: 25"
-  - "This matches agents/domain-curator.md maxTurns: 25 and skills/brrr/phases/review.md MaxTurns: 25"
+  - "This matches agents/domain-curator.md maxTurns: 25 and skills/autopilot/phases/review.md MaxTurns: 25"
 module: null
 domain: null
 notes: |
@@ -20,7 +20,7 @@ notes: |
 
   WI-108 added a `### domain-curator` definition block to `specs/plan/architecture.md`. The block specifies `MaxTurns: 30`. However:
   - `agents/domain-curator.md` frontmatter: `maxTurns: 25`
-  - `skills/brrr/phases/review.md` spawn: `MaxTurns: 25`
+  - `skills/autopilot/phases/review.md` spawn: `MaxTurns: 25`
 
   The architecture.md value was estimated rather than confirmed from the agent file. This creates a documentation inconsistency.
 
@@ -47,7 +47,7 @@ notes: |
   ## Acceptance Criteria
 
   1. `specs/plan/architecture.md` domain-curator definition block specifies `MaxTurns: 25`
-  2. This matches `agents/domain-curator.md` `maxTurns: 25` and `skills/brrr/phases/review.md` spawn `MaxTurns: 25`
+  2. This matches `agents/domain-curator.md` `maxTurns: 25` and `skills/autopilot/phases/review.md` spawn `MaxTurns: 25`
 cycle_created: 1
 cycle_modified: null
 content_hash: 9331941b2f30dc8a91eef2b6e465ebe3243fc5d05174bffccee14c3b259ed0c9

@@ -6,7 +6,7 @@ complexity: low
 scope:
   - path: skills/execute/SKILL.md
     op: modify
-  - path: skills/brrr/phases/execute.md
+  - path: skills/autopilot/phases/execute.md
     op: modify
 depends:
   - "126"
@@ -14,7 +14,7 @@ blocks: []
 criteria:
   - skills/execute/SKILL.md Phase 8 startup-failure step 2 (fixable path) contains a quoted journal template matching the style of step 3's template
   - "The template format is: `Rework: Startup failure root cause diagnosed and fixed. {brief description of fix}.`"
-  - skills/brrr/phases/execute.md finding-handling fixable-path branch contains an equivalent quoted template
+  - skills/autopilot/phases/execute.md finding-handling fixable-path branch contains an equivalent quoted template
   - No other sections in either file are modified
 module: null
 domain: null
@@ -41,7 +41,7 @@ notes: |
   Note in the journal: `Rework: Startup failure root cause diagnosed and fixed. {brief description of fix}.`
   ```
 
-  ### File 2: `skills/brrr/phases/execute.md`
+  ### File 2: `skills/autopilot/phases/execute.md`
 
   **Location**: finding-handling Critical bullet, fixable-path branch (line 158, after WI-126's changes).
 
@@ -54,7 +54,7 @@ notes: |
   ## Acceptance Criteria
 
   1. `skills/execute/SKILL.md` Phase 8 startup-failure step 2 contains the quoted template `` `Rework: Startup failure root cause diagnosed and fixed. {brief description of fix}.` ``
-  2. `skills/brrr/phases/execute.md` finding-handling fixable-path branch contains an equivalent quoted template
+  2. `skills/autopilot/phases/execute.md` finding-handling fixable-path branch contains an equivalent quoted template
   3. Both templates use the same format (matching style of step 3's unfixable-path template)
   4. No other sections in either file are modified
 cycle_created: 1

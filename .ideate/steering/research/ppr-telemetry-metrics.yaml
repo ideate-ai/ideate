@@ -63,7 +63,7 @@ content: |
   - `invocation_id`: UUIDv4, unique per call
   - `trace_id`: shared across all invocations in one skill execution (for correlating execute → review chains)
   - `agent_role`: `code-reviewer | spec-reviewer | gap-analyst | domain-curator | researcher | architect | decomposer | journal-keeper | proxy-human`
-  - `phase`: `plan | execute | review | refine | brrr`
+  - `phase`: `plan | execute | review | refine | autopilot`
   - `work_item_id`: null if not work-item-scoped (e.g., capstone review)
   - `cycle`: integer cycle number
   
@@ -132,10 +132,10 @@ content: |
   2. Artifacts/edge-types with high citation rate at low retrieval rank = high signal.
   3. Artifacts/edge-types retrieved frequently but never cited = candidates for weight reduction.
   4. This requires no ML — it is SQL GROUP BY and mean computation.
-  5. Minimum data volume for reliable signal: ~50 invocations per agent role per phase. Achievable after ~10 brrr cycles.
+  5. Minimum data volume for reliable signal: ~50 invocations per agent role per phase. Achievable after ~10 autopilot cycles.
   
   **A/B testing retrieval configurations**:
-  - Run alternating PPR weight configurations across brrr cycles (odd cycles = config A, even cycles = config B).
+  - Run alternating PPR weight configurations across autopilot cycles (odd cycles = config A, even cycles = config B).
   - Compare aggregate finding counts and rework rates between configurations.
   - Simple, requires no infrastructure beyond the metrics log.
   - Risk: confounding from project-specific differences between cycles.
@@ -182,7 +182,7 @@ content: |
   ```
   This is "quality per token" — the primary signal for PPR optimization. If increasing context tokens does not increase criteria_passed, the additional tokens are waste.
   
-  **Cost-quality curve**: Plot average `quality_unit_cost` vs. context token budget (PPR cutoff threshold) across brrr cycles. The curve is expected to be U-shaped: too little context → high rework cost; too much context → diminishing returns with linear cost increase. The optimal operating point is the minimum of the curve.
+  **Cost-quality curve**: Plot average `quality_unit_cost` vs. context token budget (PPR cutoff threshold) across autopilot cycles. The curve is expected to be U-shaped: too little context → high rework cost; too much context → diminishing returns with linear cost increase. The optimal operating point is the minimum of the curve.
   
   ---
   
@@ -203,7 +203,7 @@ content: |
   - Add a `metrics_invocations` table with explicit columns for all Q3 fields. Store `context_artifact_ids` and `cited_artifact_ids` as JSON arrays in TEXT columns. Add `metrics_artifact_refs` join table for artifact-level analysis.
   - Pros: Column-level indexes. SQLite can optimize GROUP BY on typed columns. Enforces field presence. Joins with `nodes` are clean.
   - Cons: Schema migration required. New table outside the current class-table-inheritance pattern. More upfront work.
-  - When to use: When the field set is stable (after 2-3 brrr cycles of using Option 1/2) and analysis queries are known.
+  - When to use: When the field set is stable (after 2-3 autopilot cycles of using Option 1/2) and analysis queries are known.
   
   **Option 4: Output citation parsing as a post-invocation step**
   - After each agent invocation, parse the output text for artifact ID patterns (`WI-NNN`, `P-N`, `GP-N`, `F-NNN-N`, policy IDs, file paths). Store as `cited_artifact_ids`.
@@ -219,7 +219,7 @@ content: |
   
   **Verdict subjectivity**: The `verdict` field (pass/fail/rework) is produced by the code-reviewer LLM, which has its own consistency variance. The same code may receive different verdicts on different runs. This introduces noise into quality metrics. Mitigate by using finding count and severity distributions (more robust than binary verdict) as the primary quality signals.
   
-  **Small sample sizes per configuration**: Ideate's brrr cycles produce tens to low-hundreds of work item invocations per cycle. Statistical significance for A/B comparisons requires roughly 50+ invocations per arm per agent type. A single project may not generate enough data for robust weight tuning. Cross-project aggregation improves this but raises privacy/context questions.
+  **Small sample sizes per configuration**: Ideate's autopilot cycles produce tens to low-hundreds of work item invocations per cycle. Statistical significance for A/B comparisons requires roughly 50+ invocations per arm per agent type. A single project may not generate enough data for robust weight tuning. Cross-project aggregation improves this but raises privacy/context questions.
   
   **Cache invalidation unpredictability**: Prompt cache hits depend on prefix stability. Any change to the system prompt, context assembly order, or artifact content invalidates the cache. Cache hit rate metrics will spike around refine phases (when artifacts change) and should be analyzed per-phase, not as a global average.
   
@@ -227,7 +227,7 @@ content: |
   
   **SWE-bench data quality risk** (if used for external benchmarking): 60.83% solution leakage rate and 47.93% incorrect resolve marks mean SWE-bench results are unreliable for fine-grained comparisons. Ideate's internal metrics (finding count, criteria satisfaction, rework rate) are more reliable for the specific codebase being built.
   
-  **Metric gaming in brrr mode**: If PPR weights are tuned to minimize finding count, the system may learn to reduce the reviewer's context (fewer policies reviewed = fewer policy violations found). Weight tuning must optimize for criteria satisfaction rate (positive signal) not just finding count reduction (negative signal).
+  **Metric gaming in autopilot mode**: If PPR weights are tuned to minimize finding count, the system may learn to reduce the reviewer's context (fewer policies reviewed = fewer policy violations found). Weight tuning must optimize for criteria satisfaction rate (positive signal) not just finding count reduction (negative signal).
   
   ---
   
@@ -267,7 +267,7 @@ content: |
   
   **6. Cost-quality curve**:
   ```sql
-  -- Per brrr run, plot: avg(context_token_count) vs avg(criteria_passed/criteria_total)
+  -- Per autopilot run, plot: avg(context_token_count) vs avg(criteria_passed/criteria_total)
   -- Identify the knee of the curve
   ```
   

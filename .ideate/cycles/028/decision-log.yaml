@@ -13,9 +13,9 @@ content: |
   - Decision: Extend WI-256 scope to fix line 61
   - Rationale: Partial fixes create technical debt
 
-  ### D-028-3: brrr state file regression requires immediate fix
-  - Context: WI-252 migrated to YAML but brrr review phase still references `.md` file
-  - Decision: Create high-priority work item to fix brrr review phase state file reference
+  ### D-028-3: autopilot state file regression requires immediate fix
+  - Context: WI-252 migrated to YAML but autopilot review phase still references `.md` file
+  - Decision: Create high-priority work item to fix autopilot review phase state file reference
   - Rationale: Functional regression that will cause skill failures
 
   ## Open Questions
@@ -27,4 +27,4 @@ content: |
   ## Cross-References
   - WI-256: code-reviewer passed but spec-reviewer found additional issue at line 61
   - WI-257: Cross-skill impact — {artifact-dir} persists in review/refine skills
-  - WI-252: brrr-state.md regression indicates scope verification gap
+  - WI-252: autopilot-state.md regression indicates scope verification gap

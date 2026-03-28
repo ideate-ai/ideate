@@ -31,7 +31,7 @@ content: |-
 
   | Work Item | Target File | Change | Status |
   |-----------|-------------|--------|--------|
-  | WI-231 | skills/brrr/phases/review.md | brrr-state.md → brrr-state.yaml | VERIFIED |
+  | WI-231 | skills/autopilot/phases/review.md | autopilot-state.md → autopilot-state.yaml | VERIFIED |
   | WI-232 | skills/refine/SKILL.md | work-items → work_item | VERIFIED |
   | WI-233 | skills/review/SKILL.md | {artifact-dir} → {project_root} | VERIFIED |
   | WI-233 | skills/refine/SKILL.md | {artifact-dir} → {project_root} | VERIFIED |

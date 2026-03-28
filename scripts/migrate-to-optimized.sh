@@ -8,10 +8,10 @@
 #   --verbose    Explain each action taken
 #
 # Migrations applied:
-#   1. brrr review path normalization (reviews/ → archive/)
-#   2. brrr-state.md schema update (add differential review fields)
+#   1. autopilot review path normalization (reviews/ → archive/)
+#   2. autopilot-state.md schema update (add differential review fields)
 #   3. metrics.jsonl initialization
-#   4. Phase document directory check (informational)
+#   4. Autopilot phase document directory check (informational)
 #   5. MCP server configuration hint (informational)
 #
 # Exit codes: 0 = success, 1 = error, 2 = dry-run would change
@@ -105,11 +105,11 @@ if [[ "$DRY_RUN" == false ]]; then
   echo "## Migration run — $TIMESTAMP" >> "$LOG_FILE"
 fi
 
-# ── Migration 1: brrr review path normalization ───────────────────────────────
+# ── Migration 1: autopilot review path normalization ───────────────────────────
 
-migration_1_brrr_paths() {
+migration_1_autopilot_paths() {
   echo ""
-  echo "==> Migration 1: brrr review path normalization"
+  echo "==> Migration 1: autopilot review path normalization"
   verbose "checking for reviews/incremental/ alongside archive/incremental/"
 
   local has_old=false
@@ -148,20 +148,20 @@ migration_1_brrr_paths() {
   log "Migration 1: SKIPPED — both reviews/incremental/ and archive/incremental/ exist; manual resolution required"
 }
 
-# ── Migration 2: brrr-state.md schema update ─────────────────────────────────
+# ── Migration 2: autopilot-state.md schema update ─────────────────────────────
 
-migration_2_brrr_state() {
+migration_2_autopilot_state() {
   echo ""
-  echo "==> Migration 2: brrr-state.md schema update"
+  echo "==> Migration 2: autopilot-state.md schema update"
 
-  local state_file="$ARTIFACT_DIR/brrr-state.md"
+  local state_file="$ARTIFACT_DIR/autopilot-state.md"
 
   if [[ ! -f "$state_file" ]]; then
-    echo "  brrr-state.md does not exist — will be created fresh on next brrr run"
+    echo "  autopilot-state.md does not exist — will be created fresh on next autopilot run"
     return
   fi
 
-  verbose "checking brrr-state.md for missing fields"
+  verbose "checking autopilot-state.md for missing fields"
 
   local needs_update=false
 
@@ -171,17 +171,17 @@ migration_2_brrr_state() {
   fi
 
   if [[ "$needs_update" == false ]]; then
-    echo "  brrr-state.md already has required fields"
+    echo "  autopilot-state.md already has required fields"
     return
   fi
 
   if [[ "$DRY_RUN" == false ]]; then
     backup_file "$state_file"
     echo "last_full_review_cycle: 0" >> "$state_file"
-    log "Migration 2: added last_full_review_cycle field to brrr-state.md"
+    log "Migration 2: added last_full_review_cycle field to autopilot-state.md"
     echo "  added missing field: last_full_review_cycle"
   else
-    dry_run_note "append 'last_full_review_cycle: 0' to brrr-state.md"
+    dry_run_note "append 'last_full_review_cycle: 0' to autopilot-state.md"
   fi
 }
 
@@ -238,7 +238,7 @@ migration_3_metrics() {
 
 migration_4_phase_docs() {
   echo ""
-  echo "==> Migration 4: brrr phase document directory (informational)"
+  echo "==> Migration 4: autopilot phase document directory (informational)"
 
   # Look for the ideate plugin directory
   local script_dir
@@ -246,11 +246,11 @@ migration_4_phase_docs() {
   local plugin_dir
   plugin_dir="$(dirname "$script_dir")"
 
-  if [[ -d "$plugin_dir/skills/brrr/phases" ]]; then
-    echo "  skills/brrr/phases/ exists — brrr phase factoring (081) has been applied"
+  if [[ -d "$plugin_dir/skills/autopilot/phases" ]]; then
+    echo "  skills/autopilot/phases/ exists — autopilot phase factoring (081) has been applied"
   else
-    echo "  INFO: skills/brrr/phases/ does not exist — brrr phase factoring (081) has not been applied yet"
-    echo "  This is informational only; brrr still works without phase documents"
+    echo "  INFO: skills/autopilot/phases/ does not exist — autopilot phase factoring (081) has not been applied yet"
+    echo "  This is informational only; autopilot still works without phase documents"
   fi
 }
 
@@ -485,8 +485,8 @@ PYEOF
 
 # ── Main ──────────────────────────────────────────────────────────────────────
 
-migration_1_brrr_paths
-migration_2_brrr_state
+migration_1_autopilot_paths
+migration_2_autopilot_state
 migration_3_metrics
 migration_4_phase_docs
 migration_5_mcp

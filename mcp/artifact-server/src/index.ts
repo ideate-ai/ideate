@@ -4,58 +4,41 @@ import {
   CallToolRequestSchema,
   ListToolsRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
-import Database from "better-sqlite3";
-import { drizzle } from "drizzle-orm/better-sqlite3";
-import * as path from "path";
-import { TOOLS, handleTool, ToolContext, signalIndexReady, signalIndexFailed } from "./tools/index.js";
-import { artifactWatcher, BatchChangeEvent } from "./watcher.js";
+import { createRequire } from "module";
+import { TOOLS, handleTool } from "./tools/index.js";
+import { artifactWatcher } from "./watcher.js";
 import { resolveArtifactDir } from "./config.js";
-import { createSchema, checkSchemaVersion } from "./schema.js";
-import { rebuildIndex, indexFiles, removeFiles, RebuildStats } from "./indexer.js";
-import * as dbSchema from "./db.js";
+import { createDormantState, initServer, routeToolCall, ServerState } from "./server.js";
+
+const require = createRequire(import.meta.url);
+const pkg = require("../package.json") as { version: string };
 
 // ---------------------------------------------------------------------------
-// Startup: resolve ideate dir, open DB, create schema, rebuild index
+// Server state — mutable; populated at startup or lazily after bootstrap
 // ---------------------------------------------------------------------------
 
-let ideateDir: string;
+const state: ServerState = createDormantState();
+
+// ---------------------------------------------------------------------------
+// Startup: try to resolve ideate dir — dormant mode if not found
+// ---------------------------------------------------------------------------
+
 try {
-  ideateDir = resolveArtifactDir({});
-} catch (err) {
-  console.error(`[ideate-artifact-server] ${(err as Error).message}`);
-  process.exit(1);
+  const dir = resolveArtifactDir({});
+  initServer(dir, state);
+} catch {
+  // No .ideate/ found — start in dormant mode.
+  // The server stays alive and exposes bootstrap + get_project_status.
+  // Full initialization happens after ideate_bootstrap_project is called.
+  console.error("[ideate-artifact-server] No .ideate/ found — starting in dormant mode");
 }
-
-const dbPath = path.join(ideateDir, "index.db");
-let db: InstanceType<typeof Database>;
-try {
-  db = new Database(dbPath);
-  db.pragma("journal_mode = WAL");
-  db.pragma("busy_timeout = 5000");
-  db.pragma("foreign_keys = ON");
-  if (!checkSchemaVersion(db, dbPath)) {
-    // DB was stale — reopen fresh
-    db = new Database(dbPath);
-    db.pragma("journal_mode = WAL");
-    db.pragma("busy_timeout = 5000");
-    db.pragma("foreign_keys = ON");
-  }
-  createSchema(db);
-} catch (err) {
-  console.error(`[ideate-artifact-server] Database initialization failed: ${(err as Error).message}`);
-  process.exit(1);
-}
-
-const drizzleDb = drizzle(db, { schema: dbSchema });
-
-const ctx: ToolContext = { db, drizzleDb, ideateDir };
 
 // ---------------------------------------------------------------------------
 // MCP server — connect transport BEFORE indexing so MCP is available immediately
 // ---------------------------------------------------------------------------
 
 const server = new Server(
-  { name: "ideate-artifact-server", version: "0.1.0" },
+  { name: "ideate-artifact-server", version: pkg.version },
   { capabilities: { tools: {} } }
 );
 
@@ -65,12 +48,10 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
 
 server.setRequestHandler(CallToolRequestSchema, async (request) => {
   const { name, arguments: args } = request.params;
+  const _args = (args ?? {}) as Record<string, unknown>;
 
   try {
-    const result = await handleTool(ctx, name, (args ?? {}) as Record<string, unknown>);
-    return {
-      content: [{ type: "text", text: result }],
-    };
+    return await routeToolCall(state, name, _args, handleTool);
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     return {
@@ -83,13 +64,13 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 // Graceful shutdown
 process.on("SIGINT", () => {
   artifactWatcher.close();
-  db.close();
+  state.db?.close();
   process.exit(0);
 });
 
 process.on("SIGTERM", () => {
   artifactWatcher.close();
-  db.close();
+  state.db?.close();
   process.exit(0);
 });
 
@@ -97,29 +78,6 @@ const transport = new StdioServerTransport();
 await server.connect(transport);
 
 // ---------------------------------------------------------------------------
-// Deferred indexing: rebuild index after transport is connected, then start watcher
+// Deferred indexing: if we initialized eagerly, the index is already built.
+// If dormant, nothing to do here — initServer() handles it after bootstrap.
 // ---------------------------------------------------------------------------
-
-setImmediate(() => {
-  try {
-    const stats: RebuildStats = rebuildIndex(db, drizzleDb, ideateDir);
-    signalIndexReady();
-    console.error(`[ideate-artifact-server] started, ${stats.files_scanned} files indexed`);
-
-    // File watcher: incrementally index changed files
-    artifactWatcher.watch(ideateDir);
-    artifactWatcher.on("change", (event: BatchChangeEvent) => {
-      try {
-        const yamlChanged = event.changed.filter(f => f.endsWith('.yaml') || f.endsWith('.yml'));
-        const yamlDeleted = event.deleted.filter(f => f.endsWith('.yaml') || f.endsWith('.yml'));
-        if (yamlChanged.length > 0) indexFiles(db, drizzleDb, yamlChanged);
-        if (yamlDeleted.length > 0) removeFiles(db, drizzleDb, yamlDeleted);
-      } catch (err) {
-        console.error("[watcher] incremental index failed:", err);
-      }
-    });
-  } catch (err) {
-    console.error(`[ideate-artifact-server] rebuildIndex failed: ${(err as Error).message}`);
-    signalIndexFailed(err as Error);
-  }
-});

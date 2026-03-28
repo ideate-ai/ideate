@@ -18,7 +18,7 @@ content: |
   | 188 | Analysis tools | src/tools/analysis.ts | None | — | work-items.yaml#188 | — |
   | 189 | Write tools | src/tools/write.ts | None | — | work-items.yaml#189 | — |
   | 190 | Test suite rewrite | src/__tests__/schema.test.ts, src/__tests__/indexer.test.ts, src/__tests__/tools.test.ts | None | — | work-items.yaml#190 | — |
-  | 191 | Skill file updates | skills/execute/SKILL.md, skills/review/SKILL.md, skills/refine/SKILL.md, skills/brrr/SKILL.md, skills/brrr/phases/*.md | None | — | work-items.yaml#191 | — |
+  | 191 | Skill file updates | skills/execute/SKILL.md, skills/review/SKILL.md, skills/refine/SKILL.md, skills/autopilot/SKILL.md, skills/autopilot/phases/*.md | None | — | work-items.yaml#191 | — |
   
   **Note**: WI-181 incremental review Fail was due to cross-file findings (db.ts, indexer.ts, tests) addressed by downstream work items WI-182, WI-183, WI-190. The schema.ts DDL itself was confirmed correct by the reviewer.
 content_hash: "851ed030d205c2a8f92993a77a8a15b5545bffb3aef514b69738bd4655a664c5"

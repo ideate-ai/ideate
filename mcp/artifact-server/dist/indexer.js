@@ -398,6 +398,149 @@ export function detectCycles(drizzleDb) {
     }
     return components;
 }
+function indexSingleFile(db, drizzleDb, filePath, hashCheckStmt) {
+    let content;
+    try {
+        content = fs.readFileSync(filePath, "utf8");
+    }
+    catch {
+        return { nodeId: null, updated: false, failed: false, error: null, edgesCreated: 0 };
+    }
+    const hash = sha256(content);
+    const existingRow = hashCheckStmt.get(filePath);
+    const storedHash = existingRow?.content_hash ?? null;
+    const storedId = existingRow?.id ?? null;
+    // Skip if unchanged
+    if (storedHash === hash) {
+        return { nodeId: storedId, updated: false, failed: false, error: null, edgesCreated: 0 };
+    }
+    const parsed = safeParseYaml(content);
+    if (!parsed || typeof parsed !== "object") {
+        return { nodeId: null, updated: false, failed: true, error: `${filePath}: YAML parse error`, edgesCreated: 0 };
+    }
+    const doc = parsed;
+    const typeField = toStrOrNull(doc.type);
+    if (!typeField) {
+        return { nodeId: null, updated: false, failed: true, error: `${filePath}: missing type field`, edgesCreated: 0 };
+    }
+    const extensionTable = TYPE_TO_EXTENSION_TABLE[typeField];
+    if (!extensionTable) {
+        return { nodeId: null, updated: false, failed: true, error: `${filePath}: unknown type '${typeField}'`, edgesCreated: 0 };
+    }
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const tableName = extensionTable[Symbol.for("drizzle:Name")] ?? extensionTable._.name;
+    const nodeRow = buildNodeRow(doc, content, filePath, hash);
+    const nodeId = nodeRow.id;
+    const extRow = buildExtensionRow(tableName, doc);
+    upsertNode(drizzleDb, nodeRow);
+    upsertExtension(drizzleDb, extensionTable, nodeId, extRow);
+    // Delete old edges and file refs before re-inserting
+    drizzleDb.delete(dbSchema.edges).where(eq(dbSchema.edges.source_id, nodeId)).run();
+    drizzleDb.delete(dbSchema.nodeFileRefs).where(eq(dbSchema.nodeFileRefs.node_id, nodeId)).run();
+    let edgesCreated = extractEdges(drizzleDb, doc, nodeId, typeField);
+    extractFileRefs(drizzleDb, doc, nodeId, typeField);
+    // Special handling for interview files with an entries array
+    if (typeField === "interview" && Array.isArray(doc.entries)) {
+        const interviewQuestionsTable = TYPE_TO_EXTENSION_TABLE["interview_question"];
+        for (const entry of doc.entries) {
+            if (!entry || typeof entry !== "object")
+                continue;
+            const entryDoc = entry;
+            const entryId = toStrOrNull(entryDoc.id);
+            if (!entryId)
+                continue;
+            const entryNodeRow = {
+                id: entryId,
+                type: "interview_question",
+                cycle_created: toNumOrNull(doc.cycle_created),
+                cycle_modified: null,
+                content_hash: hash,
+                token_count: null,
+                file_path: filePath,
+                status: null,
+            };
+            const entryExtRow = {
+                interview_id: nodeId,
+                question: toStrOrNull(entryDoc.question) ?? "",
+                answer: toStrOrNull(entryDoc.answer) ?? "",
+                domain: toStrOrNull(entryDoc.domain),
+                seq: toNumOrNull(entryDoc.seq) ?? 0,
+            };
+            upsertNode(drizzleDb, entryNodeRow);
+            upsertExtension(drizzleDb, interviewQuestionsTable, entryId, entryExtRow);
+            upsertEdge(drizzleDb, entryId, nodeId, "references");
+            edgesCreated++;
+        }
+    }
+    return { nodeId, updated: true, failed: false, error: null, edgesCreated };
+}
+/**
+ * Incrementally index specific files. Used by the watcher for add/change events.
+ * Only processes the given file paths, not the entire directory.
+ */
+export function indexFiles(db, drizzleDb, filePaths) {
+    const result = { updated: 0, failed: 0, errors: [] };
+    const yamlPaths = filePaths.filter(f => f.endsWith('.yaml') || f.endsWith('.yml'));
+    if (yamlPaths.length === 0)
+        return result;
+    const hashCheckStmt = db.prepare(`SELECT id, content_hash FROM nodes WHERE file_path = ?`);
+    const fkWasOn = db.pragma('foreign_keys', { simple: true });
+    if (fkWasOn)
+        db.pragma('foreign_keys = OFF');
+    try {
+        const upsertPhase = db.transaction(() => {
+            for (const filePath of yamlPaths) {
+                const r = indexSingleFile(db, drizzleDb, filePath, hashCheckStmt);
+                if (r.failed) {
+                    result.failed++;
+                    if (r.error)
+                        result.errors.push(r.error);
+                }
+                else if (r.updated) {
+                    result.updated++;
+                }
+            }
+        });
+        upsertPhase();
+    }
+    finally {
+        if (fkWasOn)
+            db.pragma('foreign_keys = ON');
+    }
+    return result;
+}
+/**
+ * Remove files from the index. Used by the watcher for unlink events.
+ * Deletes nodes by file_path; CASCADE handles extension tables, edges, and file refs.
+ */
+export function removeFiles(db, drizzleDb, filePaths) {
+    if (filePaths.length === 0)
+        return { removed: 0 };
+    let removed = 0;
+    // FK must be ON for CASCADE to work
+    const fkWasOn = db.pragma('foreign_keys', { simple: true });
+    if (!fkWasOn)
+        db.pragma('foreign_keys = ON');
+    try {
+        const deletePhase = db.transaction(() => {
+            for (const filePath of filePaths) {
+                // Find node ID(s) for this file path
+                const rows = db.prepare(`SELECT id FROM nodes WHERE file_path = ?`).all(filePath);
+                for (const row of rows) {
+                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                    drizzleDb.delete(nodes).where(eq(nodes.id, row.id)).run();
+                    removed++;
+                }
+            }
+        });
+        deletePhase();
+    }
+    finally {
+        if (!fkWasOn)
+            db.pragma('foreign_keys = OFF');
+    }
+    return { removed };
+}
 // ---------------------------------------------------------------------------
 // Main rebuild function
 // ---------------------------------------------------------------------------
@@ -427,102 +570,27 @@ export function rebuildIndex(db, drizzleDb, ideateDir) {
     if (fkWasOn)
         db.pragma('foreign_keys = OFF');
     const upsertPhase = db.transaction(() => {
-        // FK is OFF for this phase (set above), so inserts proceed without
-        // constraint checks. Nodes and extension rows can be inserted in any order.
         for (const filePath of yamlFiles) {
-            let content;
-            try {
-                content = fs.readFileSync(filePath, "utf8");
-            }
-            catch {
-                continue;
-            }
-            const hash = sha256(content);
-            // Single hash check on nodes table
-            const existingRow = hashCheckStmt.get(filePath);
-            const storedHash = existingRow?.content_hash ?? null;
-            const storedId = existingRow?.id ?? null;
-            // Skip if unchanged — but still track the ID so it isn't deleted
-            if (storedHash === hash) {
-                if (storedId !== null)
-                    keepIds.push(storedId);
-                continue;
-            }
-            // Parse YAML
-            const parsed = safeParseYaml(content);
-            if (!parsed || typeof parsed !== "object") {
-                stats.files_failed++;
-                stats.parse_errors.push(`${filePath}: YAML parse error`);
-                continue;
-            }
-            const doc = parsed;
-            const typeField = toStrOrNull(doc.type);
-            if (!typeField) {
-                stats.files_failed++;
-                stats.parse_errors.push(`${filePath}: missing type field`);
-                continue;
-            }
-            const extensionTable = TYPE_TO_EXTENSION_TABLE[typeField];
-            if (!extensionTable) {
-                stats.files_failed++;
-                stats.parse_errors.push(`${filePath}: unknown type '${typeField}'`);
-                continue;
-            }
-            // Resolve the table name string for buildExtensionRow dispatch
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            const tableName = extensionTable[Symbol.for("drizzle:Name")] ?? extensionTable._.name;
-            // Build rows
-            const nodeRow = buildNodeRow(doc, content, filePath, hash);
-            const nodeId = nodeRow.id;
-            const extRow = buildExtensionRow(tableName, doc);
-            keepIds.push(nodeId);
-            // Two-pass insert: nodes first, then extension table
-            upsertNode(drizzleDb, nodeRow);
-            upsertExtension(drizzleDb, extensionTable, nodeId, extRow);
-            // Delete old edges for this node before re-inserting
-            drizzleDb.delete(dbSchema.edges).where(eq(dbSchema.edges.source_id, nodeId)).run();
-            drizzleDb.delete(dbSchema.nodeFileRefs).where(eq(dbSchema.nodeFileRefs.node_id, nodeId)).run();
-            const edgesAdded = extractEdges(drizzleDb, doc, nodeId, typeField);
-            stats.edges_created += edgesAdded;
-            extractFileRefs(drizzleDb, doc, nodeId, typeField);
-            // Special handling for interview files with an entries array:
-            // Create one interview_question node per entry, plus a references edge
-            // from each question node back to the parent interview node.
-            if (typeField === "interview" && Array.isArray(doc.entries)) {
-                const interviewQuestionsTable = TYPE_TO_EXTENSION_TABLE["interview_question"];
-                for (const entry of doc.entries) {
-                    if (!entry || typeof entry !== "object")
-                        continue;
-                    const entryDoc = entry;
-                    const entryId = toStrOrNull(entryDoc.id);
-                    if (!entryId)
-                        continue;
-                    const entryNodeRow = {
-                        id: entryId,
-                        type: "interview_question",
-                        cycle_created: toNumOrNull(doc.cycle_created),
-                        cycle_modified: null,
-                        content_hash: hash,
-                        token_count: null,
-                        file_path: filePath,
-                        status: null,
-                    };
-                    const entryExtRow = {
-                        interview_id: nodeId,
-                        question: toStrOrNull(entryDoc.question) ?? "",
-                        answer: toStrOrNull(entryDoc.answer) ?? "",
-                        domain: toStrOrNull(entryDoc.domain),
-                        seq: toNumOrNull(entryDoc.seq) ?? 0,
-                    };
-                    keepIds.push(entryId);
-                    upsertNode(drizzleDb, entryNodeRow);
-                    upsertExtension(drizzleDb, interviewQuestionsTable, entryId, entryExtRow);
-                    // Create a references edge from question → interview (parent)
-                    upsertEdge(drizzleDb, entryId, nodeId, "references");
-                    stats.edges_created++;
+            const r = indexSingleFile(db, drizzleDb, filePath, hashCheckStmt);
+            if (r.nodeId !== null) {
+                keepIds.push(r.nodeId);
+                // For interview entries, also collect their IDs
+                // (indexSingleFile handles entry upsert but we need their IDs for keepIds)
+                // Re-query for any interview_question nodes with this file_path
+                const entryRows = db.prepare(`SELECT id FROM nodes WHERE file_path = ? AND type = 'interview_question'`).all(filePath);
+                for (const er of entryRows) {
+                    keepIds.push(er.id);
                 }
             }
-            stats.files_updated++;
+            if (r.failed) {
+                stats.files_failed++;
+                if (r.error)
+                    stats.parse_errors.push(r.error);
+            }
+            else if (r.updated) {
+                stats.files_updated++;
+                stats.edges_created += r.edgesCreated;
+            }
         }
     });
     try {

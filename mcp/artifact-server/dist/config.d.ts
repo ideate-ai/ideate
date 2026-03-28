@@ -41,6 +41,10 @@ export interface IdeateConfig {
     artifactDir: string;
 }
 /**
+ * Subdirectories created inside .ideate/ by createIdeateDir().
+ */
+export declare const IDEATE_SUBDIRS: readonly ["plan", "steering", "work-items", "principles", "constraints", "policies", "decisions", "questions", "modules", "research", "interviews", "cycles", "domains"];
+/**
  * Read and parse .ideate/config.json from a given directory.
  * Returns null if the directory doesn't contain a valid .ideate/config.json.
  */

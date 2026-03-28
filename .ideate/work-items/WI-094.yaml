@@ -105,9 +105,9 @@ notes: |
   
   Each section is a function returning a list of markdown lines.
   
-  **Executive Summary**: aggregate all entries; count distinct non-null work_items; count quality events as cycle markers plus distinct `cycle` field values from brrr entries.
+  **Executive Summary**: aggregate all entries; count distinct non-null work_items; count quality events as cycle markers plus distinct `cycle` field values from autopilot entries.
   
-  **Per-Cycle Breakdown**: group entries by `cycle` field (from brrr entries); join with quality_summary events on cycle number. Columns: Cycle | Tokens | Wall Clock | Work Items | Critical | Significant | Minor.
+  **Per-Cycle Breakdown**: group entries by `cycle` field (from autopilot entries); join with quality_summary events on cycle number. Columns: Cycle | Tokens | Wall Clock | Work Items | Critical | Significant | Minor.
   
   **Per-Task Breakdown**: group entries by `work_item` (exclude nulls). Columns: Work Item | Tokens | Wall Clock | Spawns.
   

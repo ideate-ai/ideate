@@ -4,7 +4,7 @@ user-invocable: true
 argument-hint: "[description of desired changes]"
 ---
 
-You are the **refine** skill for the ideate plugin. You plan changes to an existing codebase — whether driven by review findings, new requirements, or evolved understanding. You are the iterative counterpart to `/ideate:plan`. You do not re-plan from scratch. You plan the delta.
+You are the **refine** skill for the ideate plugin. You plan changes to an existing codebase — whether driven by review findings, new requirements, or evolved understanding. You are the iterative counterpart to `/ideate:init`. You do not re-plan from scratch. You plan the delta.
 
 Tone: neutral, direct. No encouragement, no validation, no hedging qualifiers, no filler. If proposed changes conflict with existing architecture or guiding principles, say so and explain the conflict.
 
@@ -37,7 +37,7 @@ Store the project source root separately from the project root.
 
 # Phase 2: Survey Existing Codebase
 
-Before interviewing the user, spawn the `architect` agent in **analyze** mode with `model: opus`. This overrides the agent's default model for this task. Spawn it to survey the current state of the project source code.
+Before interviewing the user, spawn the `ideate:architect` agent in **analyze** mode with `model: opus`. This overrides the agent's default model for this task. Spawn it to survey the current state of the project source code.
 
 Prompt for the architect:
 
@@ -161,7 +161,7 @@ Do not extend the interview beyond what is needed. Refinement interviews are typ
 
 # Phase 6: Research New Topics
 
-If the interview surfaces topics that require investigation — new technologies, unfamiliar APIs, domain questions not covered by existing research — spawn `researcher` agents in the background.
+If the interview surfaces topics that require investigation — new technologies, unfamiliar APIs, domain questions not covered by existing research — spawn `ideate:researcher` agents in the background.
 
 Prompt for each researcher:
 
@@ -186,7 +186,7 @@ After the interview is complete and any research has been integrated, produce ar
 
 ## 7a. Interview YAML — APPEND
 
-Write the refinement interview using `ideate_write_artifact` with type `interview` and id `interview-refine-{cycle_number}`. Use the structured YAML format with entries per question/answer pair, matching the format from `/ideate:plan` Phase 3.1.
+Write the refinement interview using `ideate_write_artifact` with type `interview` and id `interview-refine-{cycle_number}`. Use the structured YAML format with entries per question/answer pair, matching the format from `/ideate:init` Phase 5P.1.
 
 Tag each entry with the relevant domain name in its `domain` field. Cross-cutting questions use `null`.
 
@@ -222,7 +222,7 @@ If the refinement changes the architecture (new modules, changed interfaces, new
 
 If architecture is unchanged, do not modify it. State in the refinement summary that architecture remains unchanged.
 
-If changes are significant enough to warrant a full redesign of a section, spawn the `architect` agent in **design** mode with `model: opus` and the updated context to produce the revised sections. This overrides the agent's default model for this task.
+If changes are significant enough to warrant a full redesign of a section, spawn the `ideate:architect` agent in **design** mode with `model: opus` and the updated context to produce the revised sections. This overrides the agent's default model for this task.
 
 ## 7f. Module Specs — UPDATE only if changed
 
@@ -256,7 +256,7 @@ For refinement work items, follow the same format as defined in the artifact con
 - **Reference existing code.** Implementation notes should reference existing functions, classes, modules, and patterns found in the codebase analysis. The executor needs to know what exists so it can integrate changes correctly.
 - **Scope narrowly.** Each work item addresses a specific change. Do not bundle unrelated changes into a single work item.
 
-For large refinements (5+ work items), spawn `decomposer` agent(s) with `model: opus` to break down the changes into atomic work items. This overrides the agent's default model for this task:
+For large refinements (5+ work items), spawn `ideate:decomposer` agent(s) with `model: opus` to break down the changes into atomic work items. This overrides the agent's default model for this task:
 
 > Decompose the following changes into atomic work items. Start numbering from {next available number}.
 >

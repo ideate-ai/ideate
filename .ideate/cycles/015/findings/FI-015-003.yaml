@@ -3,10 +3,10 @@ type: finding
 cycle: 15
 reviewer: code-reviewer
 severity: minor
-title: Missing "prioritize unverifiable" guidance present in brrr counterpart
+title: Missing "prioritize unverifiable" guidance present in autopilot counterpart
 description: |
   - **File**: `/Users/dan/code/ideate/skills/execute/SKILL.md:314`
-  - **Issue**: The reviewer instruction at line 314 reads "Spot-check at least 2 `satisfied` claims from the worker's self-check." The parallel implementation in `skills/brrr/phases/execute.md:104` reads "Spot-check at least 2 `satisfied` claims. Prioritize investigation of `unverifiable` criteria." The phrase "Prioritize investigation of `unverifiable` criteria" is absent from `execute/SKILL.md`. Without it, the ordering signal to the reviewer is weaker — the reviewer could satisfy the spot-check obligation entirely on `satisfied` claims and treat the unverifiable block as lower priority.
+  - **Issue**: The reviewer instruction at line 314 reads "Spot-check at least 2 `satisfied` claims from the worker's self-check." The parallel implementation in `skills/autopilot/phases/execute.md:104` reads "Spot-check at least 2 `satisfied` claims. Prioritize investigation of `unverifiable` criteria." The phrase "Prioritize investigation of `unverifiable` criteria" is absent from `execute/SKILL.md`. Without it, the ordering signal to the reviewer is weaker — the reviewer could satisfy the spot-check obligation entirely on `satisfied` claims and treat the unverifiable block as lower priority.
   - **Suggested fix**: Change line 314 to: `> Spot-check at least 2 `satisfied` claims from the worker's self-check. Prioritize investigation of `unverifiable` criteria.`
 file_path: cycles/015/findings/FI-015-003.yaml
 line: null

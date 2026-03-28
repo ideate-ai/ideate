@@ -6,7 +6,7 @@ severity: minor
 title: Step 3 in code-reviewer.md carries a forward-reference to executor behavior that is not the reviewer's responsibility to describe
 description: |
   - **File**: `/Users/dan/code/ideate/agents/code-reviewer.md:94`
-  - **Issue**: The sentence "The executor will diagnose the root cause and attempt a surgical fix before routing to Andon if the cause is unfixable." is behavioural guidance aimed at the executor, not the reviewer. The reviewer's job ends at reporting the finding; executor behaviour is documented in `skills/execute/SKILL.md` and `skills/brrr/phases/execute.md`. Having it here creates a maintenance coupling point: if the executor protocol changes again, this sentence must also be updated.
+  - **Issue**: The sentence "The executor will diagnose the root cause and attempt a surgical fix before routing to Andon if the cause is unfixable." is behavioural guidance aimed at the executor, not the reviewer. The reviewer's job ends at reporting the finding; executor behaviour is documented in `skills/execute/SKILL.md` and `skills/autopilot/phases/execute.md`. Having it here creates a maintenance coupling point: if the executor protocol changes again, this sentence must also be updated.
   - **Suggested fix**: Remove the trailing sentence. Step 3 can read: `**If the smoke test fails, report this as a Critical finding** with title "Startup failure after [work item name]".` The executor files already describe what happens next.
 file_path: cycles/011/findings/FI-011-001.yaml
 line: null

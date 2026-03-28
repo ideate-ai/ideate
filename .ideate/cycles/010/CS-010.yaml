@@ -19,7 +19,7 @@ content: |
   ## Minor Findings
   
   - [code-reviewer] Fixable-path journal note (`skills/execute/SKILL.md:402`) is prose instruction with no quoted template, while the unfixable path (added in WI-124) has an exact template. Asymmetry reduces consistency for journal parsing. — relates to: WI-124, cross-cutting
-  - [gap-analyst] Same asymmetry in `skills/brrr/phases/execute.md:158`. — relates to: WI-124, cross-cutting
+  - [gap-analyst] Same asymmetry in `skills/autopilot/phases/execute.md:158`. — relates to: WI-124, cross-cutting
   - [gap-analyst] P-22 `Amended` field (`specs/domains/workflow/policies.md:55`) still reads `cycle 009`; WI-123 is cycle 010 work. — relates to: WI-123
   
   ## Suggestions
@@ -34,7 +34,7 @@ content: |
   
   No critical or significant findings require a refinement cycle. The three minor findings (OQ-6 and OQ-7) are good candidates for the next cycle:
   
-  - **OQ-6** (two files): Add quoted template to fixable-path journal note in `skills/execute/SKILL.md:402` and `skills/brrr/phases/execute.md:158` — one work item covering both files.
+  - **OQ-6** (two files): Add quoted template to fixable-path journal note in `skills/execute/SKILL.md:402` and `skills/autopilot/phases/execute.md:158` — one work item covering both files.
   - **OQ-7** (one line): Update P-22 `Amended` field to record `cycle 009, cycle 010` — one trivial work item.
   
   These can be batched in a single two-item cycle. Both are low complexity and require no design decisions.

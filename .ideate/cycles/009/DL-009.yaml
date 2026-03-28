@@ -22,7 +22,7 @@ content: |
   ### DL-2: Scope WI-121 to three files, exclude code-reviewer agent
   
   - **When**: Refine-011 planning session, 2026-03-22
-  - **Decision**: WI-121 targets exactly `skills/execute/SKILL.md`, `skills/brrr/phases/execute.md`, and `specs/domains/workflow/policies.md` — and explicitly excludes `agents/code-reviewer.md`.
+  - **Decision**: WI-121 targets exactly `skills/execute/SKILL.md`, `skills/autopilot/phases/execute.md`, and `specs/domains/workflow/policies.md` — and explicitly excludes `agents/code-reviewer.md`.
   - **Rationale**: The code-reviewer's description of downstream handling behavior was treated as a secondary concern deferred to a future cycle.
   - **Implications**: `agents/code-reviewer.md` ~line 91 still instructs the code-reviewer that startup failure is "an Andon-level issue" — inconsistent with the new protocol. This becomes SG1.
   

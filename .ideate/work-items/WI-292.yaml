@@ -6,7 +6,7 @@ complexity: low
 scope:
   - path: skills/review/SKILL.md
     op: modify
-  - path: skills/brrr/phases/review.md
+  - path: skills/autopilot/phases/review.md
     op: modify
 depends:
   - WI-289

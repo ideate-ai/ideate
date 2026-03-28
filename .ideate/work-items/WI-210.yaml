@@ -13,7 +13,7 @@ blocks: []
 criteria:
   - plugin.json description field mentions the init skill or "initialization" capability
   - CLAUDE.md Skills table includes a row for /ideate:init with description "Initialize .ideate/ for an existing codebase — scaffold, survey, interview, bootstrap domains"
-  - CLAUDE.md Skills table row for init is placed before the plan row (alphabetical order) or after brrr (logical order — init → plan → execute → review → refine → brrr)
+  - CLAUDE.md Skills table row for init is placed before the plan row (alphabetical order) or after autopilot (logical order — init → plan → execute → review → refine → autopilot)
   - CLAUDE.md Artifact structure section is unchanged
   - No other rows in the Skills table are modified
 module: null

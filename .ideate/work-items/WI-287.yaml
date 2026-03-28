@@ -10,11 +10,11 @@ scope:
     op: modify
   - path: skills/refine/SKILL.md
     op: modify
-  - path: skills/brrr/SKILL.md
+  - path: skills/autopilot/SKILL.md
     op: modify
-  - path: skills/brrr/phases/execute.md
+  - path: skills/autopilot/phases/execute.md
     op: modify
-  - path: skills/brrr/phases/review.md
+  - path: skills/autopilot/phases/review.md
     op: modify
   - path: skills/plan/SKILL.md
     op: modify
@@ -31,7 +31,7 @@ criteria:
   - "Each skill that spawns agents includes a Phase 0 or startup step: call ideate_get_config to read agent_budgets"
   - Skills pass maxTurns from config when spawning agents (falling back to agent frontmatter defaults if config unavailable)
   - Metrics budget references in all skills updated to use config-derived values instead of hardcoded numbers
-  - execute and brrr/execute skills document ideate_assemble_context as available for PPR-based context assembly
+  - execute and autopilot/execute skills document ideate_assemble_context as available for PPR-based context assembly
   - CLAUDE.md updated to mention config.json agent_budgets and ppr sections
   - README.md updated with PPR context assembly section and config options
   - No grep match for hardcoded maxTurns numbers (40, 50, 80, 30) in skill metric budget sections
@@ -53,7 +53,7 @@ notes: |-
   Replace with: `Use the maxTurns value from {config}.agent_budgets for each agent type.`
 
   ## PPR documentation
-  In execute and brrr/execute skills, add a note that ideate_assemble_context is available for PPR-based context assembly as an alternative to get_work_item_context for complex dependency graphs.
+  In execute and autopilot/execute skills, add a note that ideate_assemble_context is available for PPR-based context assembly as an alternative to get_work_item_context for complex dependency graphs.
 
   ## CLAUDE.md
   Add to artifact structure: config.json now includes agent_budgets and ppr sections.

@@ -14,7 +14,7 @@ criteria:
   - Script accepts optional METRICS_FILE argument (same auto-discovery pattern as scripts/report.sh)
   - "Script produces markdown output with sections: Cycle-over-Cycle Quality Trends, Convergence Speed, First-Pass Acceptance Rate"
   - Quality Trends section shows per-cycle finding counts by severity with trend indicator (improving/stable/degrading) — same logic as report.sh section_quality_trends but promoted to primary output
-  - Convergence Speed section shows brrr cycle count per cycle (from convergence_cycles field if available, or count of quality_summary events per cycle as fallback)
+  - Convergence Speed section shows autopilot cycle count per cycle (from convergence_cycles field if available, or count of quality_summary events per cycle as fallback)
   - First-Pass Acceptance Rate section shows percentage of work items accepted on first review pass per cycle
   - Script handles empty or missing metrics file with informative message
   - Script supports --help flag

@@ -5,7 +5,7 @@ import fs from "fs";
 import os from "os";
 import path from "path";
 import { createSchema } from "../schema.js";
-import { rebuildIndex, detectCycles, MAX_DEPENDENCY_NODES, MAX_DEPENDENCY_EDGES } from "../indexer.js";
+import { rebuildIndex, detectCycles, indexFiles, removeFiles, MAX_DEPENDENCY_NODES, MAX_DEPENDENCY_EDGES } from "../indexer.js";
 // ---------------------------------------------------------------------------
 // Setup helpers
 // ---------------------------------------------------------------------------
@@ -657,6 +657,104 @@ describe("detectCycles — traversal limits", () => {
         }
         db.pragma("foreign_keys = ON");
         expect(() => detectCycles(drizzle(db))).toThrow(/node count .* exceeds limit/);
+    });
+});
+// ---------------------------------------------------------------------------
+// indexFiles tests
+// ---------------------------------------------------------------------------
+describe("indexFiles — single file add", () => {
+    it("indexes a valid work_item YAML into the DB", () => {
+        const db = freshDb();
+        const ideateDir = makeIdeateDir(tmpDir);
+        const filePath = writeYaml(path.join(ideateDir, "work-items"), "WI-100.yaml", minimalWorkItem({ id: "WI-100", title: "Indexed via indexFiles" }));
+        const result = indexFiles(db, drizzle(db), [filePath]);
+        expect(result.updated).toBe(1);
+        expect(result.failed).toBe(0);
+        expect(result.errors).toHaveLength(0);
+        const row = db
+            .prepare("SELECT * FROM work_items WHERE id = 'WI-100'")
+            .get();
+        expect(row).toBeDefined();
+        expect(row.title).toBe("Indexed via indexFiles");
+        const node = db
+            .prepare("SELECT * FROM nodes WHERE id = 'WI-100'")
+            .get();
+        expect(node).toBeDefined();
+        expect(node.type).toBe("work_item");
+    });
+});
+describe("indexFiles — unchanged file skipped", () => {
+    it("returns updated: 0 when the same file is indexed twice", () => {
+        const db = freshDb();
+        const ideateDir = makeIdeateDir(tmpDir);
+        const filePath = writeYaml(path.join(ideateDir, "work-items"), "WI-101.yaml", minimalWorkItem({ id: "WI-101", title: "Unchanged test" }));
+        // First index
+        const first = indexFiles(db, drizzle(db), [filePath]);
+        expect(first.updated).toBe(1);
+        // Second index with same content
+        const second = indexFiles(db, drizzle(db), [filePath]);
+        expect(second.updated).toBe(0);
+        expect(second.failed).toBe(0);
+        expect(second.errors).toHaveLength(0);
+    });
+});
+describe("indexFiles — parse error", () => {
+    it("reports failed: 1 and populates errors for invalid YAML", () => {
+        const db = freshDb();
+        const ideateDir = makeIdeateDir(tmpDir);
+        const filePath = writeYaml(path.join(ideateDir, "work-items"), "WI-BAD.yaml", "{ invalid yaml: [unclosed");
+        const result = indexFiles(db, drizzle(db), [filePath]);
+        expect(result.updated).toBe(0);
+        expect(result.failed).toBe(1);
+        expect(result.errors.length).toBeGreaterThanOrEqual(1);
+        expect(result.errors[0]).toContain("WI-BAD.yaml");
+    });
+});
+describe("indexFiles — non-YAML file path", () => {
+    it("returns updated: 0 and no errors for a non-existent .json path", () => {
+        const db = freshDb();
+        // Pass a path to a .json file that does not exist on disk.
+        // indexSingleFile catches the read error and returns a silent no-op.
+        const fakePath = path.join(tmpDir, ".ideate", "config.json");
+        const result = indexFiles(db, drizzle(db), [fakePath]);
+        expect(result.updated).toBe(0);
+        expect(result.failed).toBe(0);
+        expect(result.errors).toHaveLength(0);
+    });
+});
+// ---------------------------------------------------------------------------
+// removeFiles tests
+// ---------------------------------------------------------------------------
+describe("removeFiles — cascade removal", () => {
+    it("removes the node and its extension row when the file is deleted", () => {
+        const db = freshDb();
+        const ideateDir = makeIdeateDir(tmpDir);
+        const filePath = writeYaml(path.join(ideateDir, "work-items"), "WI-200.yaml", minimalWorkItem({ id: "WI-200", title: "To be removed" }));
+        // Index the file first
+        const indexResult = indexFiles(db, drizzle(db), [filePath]);
+        expect(indexResult.updated).toBe(1);
+        // Confirm both node and extension row exist
+        const nodeBefore = db
+            .prepare("SELECT * FROM nodes WHERE id = 'WI-200'")
+            .get();
+        expect(nodeBefore).toBeDefined();
+        const extBefore = db
+            .prepare("SELECT * FROM work_items WHERE id = 'WI-200'")
+            .get();
+        expect(extBefore).toBeDefined();
+        // Remove via removeFiles
+        const removeResult = removeFiles(db, drizzle(db), [filePath]);
+        expect(removeResult.removed).toBe(1);
+        // Verify the node is gone
+        const nodeAfter = db
+            .prepare("SELECT * FROM nodes WHERE id = 'WI-200'")
+            .get();
+        expect(nodeAfter).toBeUndefined();
+        // Verify the extension row is gone (CASCADE)
+        const extAfter = db
+            .prepare("SELECT * FROM work_items WHERE id = 'WI-200'")
+            .get();
+        expect(extAfter).toBeUndefined();
     });
 });
 //# sourceMappingURL=indexer.test.js.map

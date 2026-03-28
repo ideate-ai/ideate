@@ -6,7 +6,7 @@ complexity: low
 scope:
   - path: skills/execute/SKILL.md
     op: modify
-  - path: skills/brrr/phases/execute.md
+  - path: skills/autopilot/phases/execute.md
     op: modify
 depends: []
 blocks: []
@@ -14,7 +14,7 @@ criteria:
   - skills/execute/SKILL.md Phase 8 Critical Findings section contains an explicit exception for "Startup failure after ..." findings
   - The exception states the finding is always treated as scope-changing and always routes to Andon
   - The exception appears before the general fixable-within-scope rule
-  - skills/brrr/phases/execute.md finding-handling block contains an equivalent exception as the first Critical finding bullet
+  - skills/autopilot/phases/execute.md finding-handling block contains an equivalent exception as the first Critical finding bullet
   - No other sections in either file are modified
 module: null
 domain: null
@@ -48,7 +48,7 @@ notes: |
 
   ```
 
-  ### File 2: `skills/brrr/phases/execute.md`
+  ### File 2: `skills/autopilot/phases/execute.md`
 
   Location: Review finding handling block (around line 154–160). The current text reads:
 
@@ -70,7 +70,7 @@ notes: |
   1. `skills/execute/SKILL.md` Phase 8 Critical Findings section contains an explicit exception for "Startup failure after ..." findings
   2. The exception states the finding is always treated as scope-changing and always routes to Andon
   3. The exception appears before the general "fixable within scope" rule (so it is evaluated first)
-  4. `skills/brrr/phases/execute.md` finding-handling block contains an equivalent exception as the first Critical finding bullet
+  4. `skills/autopilot/phases/execute.md` finding-handling block contains an equivalent exception as the first Critical finding bullet
   5. No other sections in either file are modified
 cycle_created: 1
 cycle_modified: null

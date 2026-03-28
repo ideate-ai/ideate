@@ -21,7 +21,7 @@ criteria:
   - skills/execute/SKILL.md inline agent-spawn schema includes `"cycle":null` between the phase and agent_type fields
   - skills/review/SKILL.md inline agent-spawn schema includes `"cycle":null` between the phase and agent_type fields
   - '`grep -c "\"phase\":\"<id>\",\"agent_type\"" skills/plan/SKILL.md skills/execute/SKILL.md skills/review/SKILL.md` returns 0 (no occurrences of phase immediately followed by agent_type without cycle)'
-  - scripts/report.sh Quality Trends empty-state message references both /ideate:review and /ideate:brrr
+  - scripts/report.sh Quality Trends empty-state message references both /ideate:review and /ideate:autopilot
   - specs/artifact-conventions.md quality_summary section includes a note explaining that quality_summary is a review-phase-only event and that plan/execute/refine do not emit it
 module: null
 domain: null
@@ -101,7 +101,7 @@ notes: |
 
   Change to:
   ```python
-  lines.append("No quality data recorded. Run /ideate:review or /ideate:brrr to generate quality metrics.")
+  lines.append("No quality data recorded. Run /ideate:review or /ideate:autopilot to generate quality metrics.")
   ```
 
   ---
@@ -112,7 +112,7 @@ notes: |
 
   Current line 735:
   ```
-    **Quality summary event** (written by `review` skill at end of each review cycle via Phase 7.6, and by `brrr` skill at end of each brrr-driven review cycle; `skill` field is `"review"` or `"brrr"` depending on emitter):
+    **Quality summary event** (written by `review` skill at end of each review cycle via Phase 7.6, and by `autopilot` skill at end of each autopilot-driven review cycle; `skill` field is `"review"` or `"autopilot"` depending on emitter):
   ```
 
   The header already correctly names the emitters. Add a new sentence immediately after the header, before the opening code fence (line 736), explaining that plan, execute, and refine do not emit this event:
@@ -124,7 +124,7 @@ notes: |
   Insert this as a new paragraph between line 735 (the header) and line 736 (the opening ` ```json `):
 
   ```markdown
-    **Quality summary event** (written by `review` skill at end of each review cycle via Phase 7.6, and by `brrr` skill at end of each brrr-driven review cycle; `skill` field is `"review"` or `"brrr"` depending on emitter):
+    **Quality summary event** (written by `review` skill at end of each review cycle via Phase 7.6, and by `autopilot` skill at end of each autopilot-driven review cycle; `skill` field is `"review"` or `"autopilot"` depending on emitter):
 
     This is a **review-phase-only event**. `plan`, `execute`, and `refine` do not emit `quality_summary` events because those phases do not produce severity-classified findings. Any skill or phase implementing review orchestration (spawning code-reviewer, spec-reviewer, and gap-analyst) should emit a `quality_summary` event.
 

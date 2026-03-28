@@ -5,7 +5,7 @@ status: obsolete
 complexity: low
 scope:
   - {path: skills/execute/SKILL.md, op: modify}
-  - {path: skills/brrr/SKILL.md, op: modify}
+  - {path: skills/autopilot/SKILL.md, op: modify}
 depends: []
 blocks: []
 criteria:
@@ -15,7 +15,7 @@ criteria:
   - "Workers do not report completion until all criteria are `true` or `null` — any `false` triggers a fix attempt first"
   - "The worker's completion report includes the self-check results: a list of criteria with their satisfaction status"
   - "The incremental code-reviewer receives the self-check results as part of its input, so it can focus on criteria the worker couldn't verify (`null`) and cross-check the worker's `true` claims"
-  - "`skills/brrr/SKILL.md` Phase 6a worker prompt includes the same self-check instruction (or references the same pattern after 081 phase factoring)"
+  - "`skills/autopilot/SKILL.md` Phase 6a worker prompt includes the same self-check instruction (or references the same pattern after 081 phase factoring)"
   - The self-check instruction block is ≤200 words to stay within prompt size budgets
   - No change to the code-reviewer agent definition — it still performs its full review checklist; the self-check is additive context, not a replacement
 module: null

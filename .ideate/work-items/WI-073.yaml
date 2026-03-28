@@ -1,10 +1,10 @@
 id: WI-073
 type: work_item
-title: 073-brrr-defer-label-mismatch.md
+title: 073-autopilot-defer-label-mismatch.md
 status: done
 complexity: trivial
 scope:
-  - path: skills/brrr/SKILL.md
+  - path: skills/autopilot/SKILL.md
     op: modify
   - path: agents/proxy-human.md
     op: modify
@@ -12,9 +12,9 @@ depends: []
 blocks:
   - "072"
 criteria:
-  - 1. [ ] `skills/brrr/SKILL.md` line 317 checks for the string `DEFER` (not `DEFERRED`)
-  - 2. [ ] All other references to the deferral state in brrr SKILL.md use consistent `DEFER` spelling
-  - 3. [ ] `agents/proxy-human.md` and `skills/brrr/SKILL.md` use identical spelling for the deferral decision value
+  - 1. [ ] `skills/autopilot/SKILL.md` line 317 checks for the string `DEFER` (not `DEFERRED`)
+  - 2. [ ] All other references to the deferral state in autopilot SKILL.md use consistent `DEFER` spelling
+  - 3. [ ] `agents/proxy-human.md` and `skills/autopilot/SKILL.md` use identical spelling for the deferral decision value
   - 4. [ ] Phase 9 activity report correctly counts and displays deferred items from proxy-human decisions
   - 5. [ ] The fix is verified by code inspection (no runtime test needed — single string literal change)
 module: null
@@ -22,7 +22,7 @@ domain: null
 notes: |
   # Implementation Notes: 073
 
-  Current code at `skills/brrr/SKILL.md:317`:
+  Current code at `skills/autopilot/SKILL.md:317`:
   ```markdown
   if (decision === "DEFERRED") {
     deferredItems.push(...)
@@ -44,7 +44,7 @@ notes: |
   The values must match exactly. This is a one-line fix.
 
   **Additional cleanup (optional within scope):**
-  - While editing brrr SKILL.md, also fix the fallback entry heading format for proxy-human-log.md (minor finding M4 from cycle 001)
+  - While editing autopilot SKILL.md, also fix the fallback entry heading format for proxy-human-log.md (minor finding M4 from cycle 001)
   - Standardize confidence level case to uppercase in proxy-human.md if inconsistent (minor finding M3)
 
   These are optional one-line fixes that can be included if convenient, or deferred to a future cycle.

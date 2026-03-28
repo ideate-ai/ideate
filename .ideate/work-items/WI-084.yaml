@@ -8,7 +8,7 @@ scope:
     op: modify
   - path: skills/review/SKILL.md
     op: modify
-  - path: skills/brrr/SKILL.md
+  - path: skills/autopilot/SKILL.md
     op: modify
   - path: skills/refine/SKILL.md
     op: modify
@@ -17,12 +17,12 @@ scope:
 depends: []
 blocks: []
 criteria:
-  - "Every agent spawn (via Agent tool) in execute, review, refine, and brrr skills records: agent type, model, start time, end time, turn count (if available from agent response metadata)"
+  - "Every agent spawn (via Agent tool) in execute, review, refine, and autopilot skills records: agent type, model, start time, end time, turn count (if available from agent response metadata)"
   - "Metrics are appended to a structured log file: `{artifact_dir}/metrics.jsonl`"
   - "Each log entry contains: `timestamp`, `skill`, `phase`, `agent_type`, `model`, `work_item` (if applicable), `wall_clock_ms`, `turns_used` (if available), `context_files_read` (list of file paths the agent was instructed to read)"
   - The execute skill logs one entry per worker agent and one per incremental code-reviewer
   - The review skill logs one entry per reviewer agent (code-reviewer, spec-reviewer, gap-analyst, journal-keeper, domain-curator)
-  - The brrr skill logs entries following the same pattern as execute and review, with an additional `cycle` field
+  - The autopilot skill logs entries following the same pattern as execute and review, with an additional `cycle` field
   - "A summary is appended to the journal at the end of each skill invocation: total agents spawned, total wall-clock time, models used"
   - Metrics collection does not affect skill behavior — it is observational only
   - If metrics file writing fails (permissions, disk), the skill continues without metrics (best-effort logging)
@@ -37,7 +37,7 @@ notes: |
   {"timestamp":"...","skill":"execute","phase":"6a","agent_type":"worker","model":"sonnet","work_item":"005-auth-middleware","wall_clock_ms":45000,"context_files_read":["..."]}
   ```
 
-  brrr entries add a `cycle` field. `turns_used` included if available from Agent tool response, otherwise `null`.
+  autopilot entries add a `cycle` field. `turns_used` included if available from Agent tool response, otherwise `null`.
 
   ### Collection pattern
 

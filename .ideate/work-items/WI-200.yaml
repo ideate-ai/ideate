@@ -28,7 +28,7 @@ notes: |
   ### 1. System Overview
   - Plugin structure (skills, agents, MCP server)
   - Data flow between components
-  - The SDLC lifecycle (plan → execute → review → refine → brrr)
+  - The SDLC lifecycle (plan → execute → review → refine → autopilot)
 
   ### 2. MCP Artifact Server
   - Purpose: runtime index over YAML artifacts
@@ -80,7 +80,7 @@ notes: |
   - What ideate is (1 paragraph)
   - Installation instructions
   - Quick start (run /ideate:plan)
-  - Skill overview table (plan, execute, review, refine, brrr)
+  - Skill overview table (plan, execute, review, refine, autopilot)
   - Configuration (env vars, .ideate.json)
   - Link to ARCHITECTURE.md for technical details
   - Link to specs/ for ideate's own development artifacts

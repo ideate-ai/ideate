@@ -1,6 +1,6 @@
 id: J-013-002
 type: journal_entry
-phase: brrr
+phase: autopilot
 date: "2026-03-20"
 cycle_created: 13
 title: "Cycle 1 — Work item 088: README.md — add manifest.json, update migration section"

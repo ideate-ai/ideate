@@ -21,10 +21,10 @@ Or clone the repository and add it manually to your Claude Code plugin search pa
 ## Quick Start
 
 ```
-/ideate:plan
+/ideate:init
 ```
 
-Ideate interviews you about what you want to build, spawns background research agents, produces an architecture and work item plan, and bootstraps the domain knowledge layer. Everything lands in a `.ideate/` directory in your project root.
+Ideate auto-detects whether you have an existing codebase or are starting from scratch. For existing codebases, it surveys the code and runs a lightweight interview. For new projects, it conducts a full interview, spawns research agents, and produces an architecture and work item plan. Either way, everything lands in a `.ideate/` directory in your project root.
 
 After planning:
 
@@ -47,7 +47,7 @@ And plan the next round of changes:
 Or let it run autonomously until convergence:
 
 ```
-/ideate:brrr
+/ideate:autopilot
 ```
 
 ---
@@ -56,12 +56,11 @@ Or let it run autonomously until convergence:
 
 | Skill | What it does |
 |-------|-------------|
-| `/ideate:init` | Bootstrap `.ideate/` for an existing codebase — survey, interview, write steering artifacts |
-| `/ideate:plan` | Interview → research → architecture → work items → domain bootstrap |
+| `/ideate:init` | Initialize a project — auto-detects existing codebase (survey + interview) vs new project (full planning with research, architecture, work items) |
 | `/ideate:execute` | Build work items with per-item incremental review |
 | `/ideate:review` | Capstone review: cycle (default), `--domain`, `--full`, or natural language scope |
 | `/ideate:refine` | Plan the next cycle of changes from review findings or new requirements |
-| `/ideate:brrr` | Autonomous execute → review → refine loop until convergence |
+| `/ideate:autopilot` | Autonomous execute → review → refine loop until convergence |
 
 ---
 
@@ -71,7 +70,7 @@ A single cycle traces through four phases: plan, execute, review, refine. The ar
 
 ### Phase 1 — Plan
 
-`/ideate:plan` interviews you, spawns research agents, produces architecture and work items. Each work item is a YAML file written to `.ideate/work-items/`:
+`/ideate:init` interviews you, spawns research agents, produces architecture and work items. Each work item is a YAML file written to `.ideate/work-items/`:
 
 ```yaml
 id: WI-220
@@ -178,7 +177,7 @@ What each skill reads and writes through MCP tools:
 | `execute` | `ideate_get_work_item_context`, `ideate_get_execution_status`, `ideate_assemble_context` | `ideate_append_journal`, `ideate_emit_event`, `ideate_write_artifact` | findings, journal entries |
 | `review` | `ideate_get_review_manifest`, `ideate_get_context_package` | `ideate_archive_cycle`, `ideate_append_journal`, `ideate_write_artifact` | cycle summary, findings |
 | `refine` | `ideate_get_context_package`, `ideate_get_domain_state` | `ideate_write_work_items`, `ideate_append_journal` | new work items |
-| `brrr` | all of the above | all of the above | autonomous loop |
+| `autopilot` | all of the above | all of the above | autonomous loop |
 
 Skills access artifacts exclusively through MCP tools. Direct file reads by skills are not permitted.
 
@@ -334,7 +333,7 @@ ideate_assemble_context({
 })
 ```
 
-Use this tool in execute and brrr phases when work item dependency graphs are dense or cross many module boundaries. It replaces manual digest construction with a ranked, budget-bounded alternative that ensures no relevant artifact is omitted.
+Use this tool in execute and autopilot phases when work item dependency graphs are dense or cross many module boundaries. It replaces manual digest construction with a ranked, budget-bounded alternative that ensures no relevant artifact is omitted.
 
 ### Model tiers
 

@@ -5,7 +5,7 @@ reviewer: code-reviewer
 severity: minor
 title: Activity Report per-cycle data had no persisted source
 description: |
-  - **File**: `skills/brrr/SKILL.md:606`
+  - **File**: `skills/autopilot/SKILL.md:606`
   - **Suggested fix**: Instruct Phase 9 to reconstruct per-cycle data from journal entries. Fixed in rework.
 file_path: cycles/001/findings/FI-001-018.yaml
 line: null

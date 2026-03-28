@@ -12,13 +12,13 @@ scope:
     op: modify
   - path: skills/init/SKILL.md
     op: modify
-  - path: skills/brrr/SKILL.md
+  - path: skills/autopilot/SKILL.md
     op: modify
-  - path: skills/brrr/phases/execute.md
+  - path: skills/autopilot/phases/execute.md
     op: modify
-  - path: skills/brrr/phases/review.md
+  - path: skills/autopilot/phases/review.md
     op: modify
-  - path: skills/brrr/phases/refine.md
+  - path: skills/autopilot/phases/refine.md
     op: modify
 depends: []
 blocks:

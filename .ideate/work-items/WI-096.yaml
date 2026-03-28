@@ -99,7 +99,7 @@ notes: |
   
   - **Semantics**: Best-effort write — skills append entries but continue without interruption if writing fails. Token fields (`input_tokens`, `output_tokens`, etc.) are null when not available from agent metadata. `mcp_tools_called` is an empty array when no MCP tools were used.
   - **Consumer**: `scripts/report.sh` reads this file to generate markdown metrics reports.
-  - **Phases**: plan (write), execute (write), review (write), refine (write), brrr (write)
+  - **Phases**: plan (write), execute (write), review (write), refine (write), autopilot (write)
   ```
   
   ## Placement

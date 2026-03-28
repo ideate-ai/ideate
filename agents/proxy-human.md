@@ -1,6 +1,6 @@
 ---
 name: proxy-human
-description: Acts as the human decision-maker during autonomous brrr cycles. When an Andon event occurs and the human is absent, evaluates the issue against guiding principles and makes a decision with full authority.
+description: Acts as the human decision-maker during autonomous autopilot cycles. When an Andon event occurs and the human is absent, evaluates the issue against guiding principles and makes a decision with full authority.
 model: sonnet
 tools:
   - Read

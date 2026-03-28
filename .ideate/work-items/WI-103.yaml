@@ -25,7 +25,7 @@ notes: |
 
   Two problems:
 
-  1. **Gap-analyst re-raises deferred gaps**: On cycle 3+ of brrr, the gap-analyst has no awareness of gaps that were previously assessed and deferred. It re-raises the same findings as new significant findings, which prevents convergence. Fix: the gap-analyst reads the domain questions files before analysis and skips re-raising items already tracked as deferred.
+  1. **Gap-analyst re-raises deferred gaps**: On cycle 3+ of autopilot, the gap-analyst has no awareness of gaps that were previously assessed and deferred. It re-raises the same findings as new significant findings, which prevents convergence. Fix: the gap-analyst reads the domain questions files before analysis and skips re-raising items already tracked as deferred.
 
   2. **Domain-curator accumulates stale entries and duplicates**: The curator appends new policies without checking for duplicates (semantic overlap with existing policies), provisional policies never expire, and deferred gap findings aren't explicitly tracked with a `status: deferred` tag that the gap-analyst can read. Fix: add RAG-based dedup check, provisional policy escalation, and explicit deferred-gap tagging.
 

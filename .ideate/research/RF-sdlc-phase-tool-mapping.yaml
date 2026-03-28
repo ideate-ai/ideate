@@ -7,17 +7,17 @@ content: |
   # SDLC Phase Tool Mapping — MCP Tool Design for All Ideate Phases
   
   **Date**: 2026-03-23
-  **Scope**: Complete MCP tool inventory for all 5 SDLC phases (plan, execute, review, refine, brrr). Analysis of data operations per phase, tool design decisions, response formats, token budgets, and tool count strategy.
+  **Scope**: Complete MCP tool inventory for all 5 SDLC phases (plan, execute, review, refine, autopilot). Analysis of data operations per phase, tool design decisions, response formats, token budgets, and tool count strategy.
   
   **Source files read**:
   - `/Users/dan/code/ideate/skills/plan/SKILL.md`
   - `/Users/dan/code/ideate/skills/execute/SKILL.md`
   - `/Users/dan/code/ideate/skills/review/SKILL.md`
   - `/Users/dan/code/ideate/skills/refine/SKILL.md`
-  - `/Users/dan/code/ideate/skills/brrr/SKILL.md`
-  - `/Users/dan/code/ideate/skills/brrr/phases/execute.md`
-  - `/Users/dan/code/ideate/skills/brrr/phases/review.md`
-  - `/Users/dan/code/ideate/skills/brrr/phases/refine.md`
+  - `/Users/dan/code/ideate/skills/autopilot/SKILL.md`
+  - `/Users/dan/code/ideate/skills/autopilot/phases/execute.md`
+  - `/Users/dan/code/ideate/skills/autopilot/phases/review.md`
+  - `/Users/dan/code/ideate/skills/autopilot/phases/refine.md`
   - `/Users/dan/code/ideate/mcp/artifact-server/src/tools.ts`
   - `/Users/dan/code/ideate/mcp/artifact-server/src/indexer.ts`
   - Prior research: `mcp-tool-design-patterns.md`, `context-optimization.md`
@@ -26,9 +26,9 @@ content: |
   
   ## Summary
   
-  The 5 SDLC phases perform 3 distinct categories of data operations: context assembly (reads pre-assembled context for agent spawns), write operations (create and update artifact files), and status/reporting queries (aggregate counts, dependency graphs, convergence checks). The 7 existing tools cover only context assembly reads. The phases collectively need approximately 13 additional tools — 6 write tools, 5 reporting/status tools, and 2 brrr-specific operational tools — for a total of 20 tools exactly at the degradation threshold.
+  The 5 SDLC phases perform 3 distinct categories of data operations: context assembly (reads pre-assembled context for agent spawns), write operations (create and update artifact files), and status/reporting queries (aggregate counts, dependency graphs, convergence checks). The 7 existing tools cover only context assembly reads. The phases collectively need approximately 13 additional tools — 6 write tools, 5 reporting/status tools, and 2 autopilot-specific operational tools — for a total of 20 tools exactly at the degradation threshold.
   
-  The critical design insight from reading the skill files: **brrr's refine phase does not run `/ideate:refine`**. It performs a much simpler operation: create one work item per finding group from the current cycle's review output. This is not a full interview-driven refinement — it is a targeted artifact-append operation. The tool design should reflect this distinction.
+  The critical design insight from reading the skill files: **autopilot's refine phase does not run `/ideate:refine`**. It performs a much simpler operation: create one work item per finding group from the current cycle's review output. This is not a full interview-driven refinement — it is a targeted artifact-append operation. The tool design should reflect this distinction.
   
   ---
   
@@ -88,7 +88,7 @@ content: |
   
   **Worker context reads** (what each worker subagent needs):
   
-  From `execute/SKILL.md` Phase 6 and `brrr/phases/execute.md`:
+  From `execute/SKILL.md` Phase 6 and `autopilot/phases/execute.md`:
   - Work item spec (from `plan/work-items.yaml` or `plan/work-items/NNN-{name}.md`)
   - Implementation notes (`plan/notes/{id}.md`)
   - Context digest (filtered architecture + principles + constraints)
@@ -112,8 +112,8 @@ content: |
   - Source code files — outside MCP scope entirely (written by workers via Write tool)
   - `archive/incremental/NNN-{name}.md` — incremental review findings
   - `journal.md` — per-item execution entries (append-only)
-  - `brrr-state.md` (brrr only) — cycle state tracking
-  - `proxy-human-log.md` (brrr only) — Andon event decisions
+  - `autopilot-state.md` (autopilot only) — cycle state tracking
+  - `proxy-human-log.md` (autopilot only) — Andon event decisions
   - `metrics.jsonl` — agent spawn metrics
   
   **Resume detection** (execute Phase 2, completed items scan):
@@ -243,26 +243,26 @@ content: |
   Brrr's execute and review phases are identical to standalone execute and review. The novel operations are:
   
   **Brrr-specific reads**:
-  - `brrr-state.md` — session state (cycles_completed, convergence_achieved, last findings, etc.)
+  - `autopilot-state.md` — session state (cycles_completed, convergence_achieved, last findings, etc.)
   - Convergence check: read `archive/cycles/{N}/spec-adherence.md` and parse for `Principle Violation Verdict` line or `## Principle Violation` section content
   - `archive/incremental/review-manifest.md` — count work items reviewed
   
   **Brrr-specific writes**:
-  - `brrr-state.md` — initialize and update per cycle
+  - `autopilot-state.md` — initialize and update per cycle
   - `proxy-human-log.md` — Andon event decisions
   
-  **Divergence detection** (brrr refine phase, Phase 6d):
+  **Divergence detection** (autopilot refine phase, Phase 6d):
   - Compare pending work item count at start of cycle vs. after refinement
   - If count did not decrease: stop the loop
   - This requires knowing: (a) how many work items were pending at cycle start, and (b) how many are pending now
   
-  **MCP tool classification for brrr-specific operations**:
+  **MCP tool classification for autopilot-specific operations**:
   
   | Operation | MCP tool? | Rationale |
   |---|---|---|
   | Convergence check | **Yes — `ideate_get_convergence_status`** | Server parses spec-adherence.md with exact rules from SKILL.md; eliminates brittle LLM parsing of verdict lines |
   | Get execution status (resume detection + pending count) | **Yes — `ideate_get_execution_status`** | Shared with execute phase; returns completed_items set + pending count |
-  | Write brrr-state.md | No — Write tool | Simple structured markdown; LLM manages state |
+  | Write autopilot-state.md | No — Write tool | Simple structured markdown; LLM manages state |
   | Write proxy-human-log | No — Write tool | Prose log |
   
   ---
@@ -289,15 +289,15 @@ content: |
   - **Modifies state**: Yes (writes `plan/work-items.yaml` + `plan/notes/{id}.md` files)
   - **Token budget**: ~100–200 tokens (list of IDs + results)
   - **Pre-computation**: Server assigns IDs if not provided (reads current max ID + 1), validates DAG (cycle detection), checks non-overlapping scope between concurrent items, writes implementation notes to separate files. All validation happens inside a SQLite transaction (or file transaction) so partial writes do not occur.
-  - **Phases that use it**: Plan (initial batch), refine (append new items), brrr refine (targeted new items)
+  - **Phases that use it**: Plan (initial batch), refine (append new items), autopilot refine (targeted new items)
   
   **Tool W2: `ideate_append_journal`**
-  - **Input parameters**: `artifact_dir: string`, `skill: "plan"|"execute"|"review"|"refine"|"brrr"`, `date: string`, `entry_type: string` (free string: "Work item NNN: {title}", "Planning session completed", etc.), `body: string` (the full entry body text)
+  - **Input parameters**: `artifact_dir: string`, `skill: "plan"|"execute"|"review"|"refine"|"autopilot"`, `date: string`, `entry_type: string` (free string: "Work item NNN: {title}", "Planning session completed", etc.), `body: string` (the full entry body text)
   - **Output format**: Inline text: `"Appended journal entry at line {N}."` or error.
   - **Modifies state**: Yes (appends to `journal.md`)
   - **Token budget**: ~50 tokens
   - **Pre-computation**: Server formats the `## [{skill}] {date} — {entry_type}` header, ensures the file exists, and appends. Does NOT read existing entries — pure append.
-  - **Phases that use it**: All phases (plan, execute, review, refine, brrr)
+  - **Phases that use it**: All phases (plan, execute, review, refine, autopilot)
   - **Note**: Journal is strictly append-only. The server enforces this — no update or delete operation is exposed.
   
   **Tool W3: `ideate_write_incremental_review`**
@@ -306,7 +306,7 @@ content: |
   - **Modifies state**: Yes (creates `archive/incremental/NNN-{name}.md`)
   - **Token budget**: ~50 tokens
   - **Pre-computation**: Server formats the standardized review markdown (verdict header, finding sections with C1/S1/M1 numbering, unmet criteria section). Server derives filename from `work_item_id`. Creates `archive/incremental/` if it does not exist.
-  - **Phases that use it**: Execute (incremental reviewer writes review), brrr execute
+  - **Phases that use it**: Execute (incremental reviewer writes review), autopilot execute
   - **Note**: This replaces the code-reviewer using the Write tool directly. Having a structured write tool means the server always writes valid review format, enabling reliable parsing by `ideate_get_review_manifest`.
   
   **Tool W4: `ideate_write_domain_update`**
@@ -354,7 +354,7 @@ content: |
   - **Modifies state**: No (read-only)
   - **Token budget**: ~150–300 tokens depending on item count
   - **Pre-computation**: Server scans `archive/incremental/*.md` for verdicts, cross-references with journal entries for `Status: complete` lines, builds `completed_items` set, computes dependency satisfaction per pending item (all deps in completed set?), groups into ready/blocked.
-  - **Phases that use it**: Execute (resume detection), brrr (pending count for divergence detection), reporting
+  - **Phases that use it**: Execute (resume detection), autopilot (pending count for divergence detection), reporting
   
   **Tool R2: `ideate_get_review_manifest`**
   - **Input parameters**: `artifact_dir: string`, `cycle_number?: number` (defaults to current cycle)
@@ -369,7 +369,7 @@ content: |
   - **Modifies state**: Yes — writes `archive/incremental/review-manifest.md` as a side effect (consistent with how review phase uses it)
   - **Token budget**: ~300–800 tokens (scales with item count: ~5 tokens/row)
   - **Pre-computation**: Server reads `plan/work-items.yaml` (or globs `plan/work-items/*.md`), reads all `archive/incremental/*.md` files, extracts verdicts and finding counts by counting `### C`, `### S`, `### M` headings, joins by work item ID, generates the table.
-  - **Phases that use it**: Review (Phase 3.5, provided to all 4 reviewers), brrr review
+  - **Phases that use it**: Review (Phase 3.5, provided to all 4 reviewers), autopilot review
   
   **Tool R3: `ideate_get_project_status`**
   - **Input parameters**: `artifact_dir: string`
@@ -386,7 +386,7 @@ content: |
   - **Modifies state**: No (read-only)
   - **Token budget**: ~200–400 tokens
   - **Pre-computation**: Server aggregates: work item counts from `plan/work-items.yaml`, cycle number from `domains/index.md`, completion counts from `archive/incremental/` + journal, finding counts from latest `archive/cycles/{N}/summary.md`, open questions from `domains/*/questions.md` (count status: open), dependency graph blocking analysis.
-  - **Phases that use it**: User-invoked status check, brrr (beginning of each cycle report), execute (Phase 11 status milestones)
+  - **Phases that use it**: User-invoked status check, autopilot (beginning of each cycle report), execute (Phase 11 status milestones)
   
   **Tool R4: `ideate_get_convergence_status`**
   - **Input parameters**: `artifact_dir: string`, `cycle_number: number`
@@ -405,9 +405,9 @@ content: |
     ```
   - **Modifies state**: No (read-only)
   - **Token budget**: ~100 tokens
-  - **Pre-computation**: Server reads `archive/cycles/{formatted_cycle}/spec-adherence.md`, applies the exact parsing rules from `brrr/SKILL.md` Phase 6c: checks for machine-parseable verdict line first (`**Principle Violation Verdict**: Pass/Fail`), then falls back to section-content heuristics (None. vs. `###` or `- ` lines). Reads finding counts from the review phase output files. Returns both conditions and the combined verdict.
+  - **Pre-computation**: Server reads `archive/cycles/{formatted_cycle}/spec-adherence.md`, applies the exact parsing rules from `autopilot/SKILL.md` Phase 6c: checks for machine-parseable verdict line first (`**Principle Violation Verdict**: Pass/Fail`), then falls back to section-content heuristics (None. vs. `###` or `- ` lines). Reads finding counts from the review phase output files. Returns both conditions and the combined verdict.
   - **Phases that use it**: Brrr (Phase 6c convergence check only)
-  - **Note**: The convergence check logic in `brrr/SKILL.md` Phase 6c is the most precisely specified server-side computation in the entire skill set. It involves multi-step conditional logic over file content. The LLM is explicitly directed to read the spec-adherence file and parse it. Moving this to a tool eliminates LLM parsing error risk on a binary decision that controls the entire loop.
+  - **Note**: The convergence check logic in `autopilot/SKILL.md` Phase 6c is the most precisely specified server-side computation in the entire skill set. It involves multi-step conditional logic over file content. The LLM is explicitly directed to read the spec-adherence file and parse it. Moving this to a tool eliminates LLM parsing error risk on a binary decision that controls the entire loop.
   
   **Tool R5: `ideate_get_domain_state`**
   - **Input parameters**: `artifact_dir: string`, `domains?: string[]` (optional filter to specific domain names)
@@ -470,7 +470,7 @@ content: |
   - `get_domain_decisions` — decisions are verbose prose; refine skill loads the full file when needed; not high-frequency enough to warrant a tool
   - `validate_dag` — this is a server-side side effect of `ideate_write_work_items`, not a standalone tool the LLM needs to call
   - `list_work_items` — covered by `ideate_artifact_index` (returns all files with type classification) + `ideate_get_review_manifest` (returns the table with status)
-  - `update_brrr_state` — brrr-state.md is simple structured markdown; LLM uses Write tool directly
+  - `update_autopilot_state` — autopilot-state.md is simple structured markdown; LLM uses Write tool directly
   - `record_metrics_entry` — simple JSONL append; Write tool is appropriate
   
   **Tools that were considered as composite but split**:
@@ -511,7 +511,7 @@ content: |
   
   5. **File watcher cache invalidation** — already implemented in the existing server. Write tools invalidate affected cache entries after writing (or rely on the existing watcher firing within ~100ms).
   
-  6. **Convergence verdict parsing** — runs inside `ideate_get_convergence_status`. Implements the exact multi-step parsing logic from brrr SKILL.md Phase 6c (machine-parseable line → section-content heuristics → unexpected format fallback).
+  6. **Convergence verdict parsing** — runs inside `ideate_get_convergence_status`. Implements the exact multi-step parsing logic from autopilot SKILL.md Phase 6c (machine-parseable line → section-content heuristics → unexpected format fallback).
   
   7. **Finding count aggregation** — runs inside `ideate_get_project_status` and `ideate_get_convergence_status`. Counts `### C`, `### S`, `### M` headings in reviewer output files.
   
@@ -532,7 +532,7 @@ content: |
   | `ideate_get_execution_status` | Markdown sections | Mixed prose + lists; LLM reads and acts on |
   | `ideate_get_review_manifest` | Markdown table | Already specified by review SKILL.md format |
   | `ideate_get_project_status` | Markdown sections | Human + LLM readable; status dashboard |
-  | `ideate_get_convergence_status` | Compact YAML | Machine-parseable; brrr loop uses field values directly |
+  | `ideate_get_convergence_status` | Compact YAML | Machine-parseable; autopilot loop uses field values directly |
   | `ideate_get_domain_state` | Markdown sections per domain | LLM reads and uses for refinement interview context |
   
   Token budget targets (consistent with `context-optimization.md` benchmarks of 200–800 lines for pre-assembled context):
@@ -554,7 +554,7 @@ content: |
   The existing LRU cache has file-watcher invalidation. Write tools that modify files also invalidate cache entries. If a tool writes a file and the skill immediately calls a read tool for the same file, the watcher may not have fired yet (watcher latency ~100ms). The write tools should synchronously invalidate affected cache keys immediately after writing, not relying on the async watcher.
   
   **Risk 4: Convergence check parser brittleness**
-  The `ideate_get_convergence_status` tool must implement the exact same parsing logic as `brrr/SKILL.md` Phase 6c. If the spec-adherence.md format changes (e.g., the verdict line format changes), the tool needs updating in sync. This coupling is intentional (the tool is correct by definition if it implements the spec), but it means the tool is a maintenance point.
+  The `ideate_get_convergence_status` tool must implement the exact same parsing logic as `autopilot/SKILL.md` Phase 6c. If the spec-adherence.md format changes (e.g., the verdict line format changes), the tool needs updating in sync. This coupling is intentional (the tool is correct by definition if it implements the spec), but it means the tool is a maintenance point.
   
   **Risk 5: Tool count at exactly 18**
   The 18-tool count is 2 below the documented degradation threshold of ~20. Adding any future tools pushes past this threshold. The toolset filtering strategy (phase-aware `ListToolsRequestSchema`) should be implemented now, not deferred, so it is available when the count grows.
@@ -570,10 +570,10 @@ content: |
   - `/Users/dan/code/ideate/skills/execute/SKILL.md` — full execute skill
   - `/Users/dan/code/ideate/skills/review/SKILL.md` — full review skill
   - `/Users/dan/code/ideate/skills/refine/SKILL.md` — full refine skill
-  - `/Users/dan/code/ideate/skills/brrr/SKILL.md` — brrr controller
-  - `/Users/dan/code/ideate/skills/brrr/phases/execute.md` — brrr execute phase
-  - `/Users/dan/code/ideate/skills/brrr/phases/review.md` — brrr review phase
-  - `/Users/dan/code/ideate/skills/brrr/phases/refine.md` — brrr refine phase
+  - `/Users/dan/code/ideate/skills/autopilot/SKILL.md` — autopilot controller
+  - `/Users/dan/code/ideate/skills/autopilot/phases/execute.md` — autopilot execute phase
+  - `/Users/dan/code/ideate/skills/autopilot/phases/review.md` — autopilot review phase
+  - `/Users/dan/code/ideate/skills/autopilot/phases/refine.md` — autopilot refine phase
   - `/Users/dan/code/ideate/mcp/artifact-server/src/tools.ts` — existing 7 tools
   - `/Users/dan/code/ideate/mcp/artifact-server/src/indexer.ts` — existing tool implementations
   - `/Users/dan/code/ideate/specs/steering/research/mcp-tool-design-patterns.md` — tool design patterns research

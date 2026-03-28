@@ -14,12 +14,12 @@ content: |
   
   ## Significant Findings
   
-  - [code-reviewer] Inline code-reviewer prompts in `skills/execute/SKILL.md:325` and `skills/brrr/phases/execute.md:113` use "cannot build or start" trigger condition while `agents/code-reviewer.md` was generalized to "smoke test fails" — relates to: WI-126
+  - [code-reviewer] Inline code-reviewer prompts in `skills/execute/SKILL.md:325` and `skills/autopilot/phases/execute.md:113` use "cannot build or start" trigger condition while `agents/code-reviewer.md` was generalized to "smoke test fails" — relates to: WI-126
   
   ## Minor Findings
   
   - [code-reviewer] P-23 regression determination keyed on file types changed rather than on whether the failure is determined to be a regression — relates to: WI-128
-  - [code-reviewer] `skills/brrr/phases/execute.md:160` "Critical findings fixable within scope" lacks "(non-startup-failure, non-infrastructure-failure)" qualifier present in `skills/execute/SKILL.md:410` — relates to: WI-128
+  - [code-reviewer] `skills/autopilot/phases/execute.md:160` "Critical findings fixable within scope" lacks "(non-startup-failure, non-infrastructure-failure)" qualifier present in `skills/execute/SKILL.md:410` — relates to: WI-128
   - [spec-reviewer] Inline prompt fragments (same locations as significant finding above) represent undocumented additions relative to WI-126's generalization — relates to: WI-126
   - [gap-analyst] `specs/domains/workflow/questions.md` still marks Q-3/Q-26/Q-27/Q-31 as open — expected pre-curator, noted for completeness
   
@@ -37,12 +37,12 @@ content: |
   
   **WI-129: Fix inline prompt smoke test condition** (low complexity)
   - `skills/execute/SKILL.md:325`: replace "If the project cannot build or start" with "If the smoke test fails"
-  - `skills/brrr/phases/execute.md:113`: same change
+  - `skills/autopilot/phases/execute.md:113`: same change
   - Acceptance criterion: both inline prompts match the condition in `agents/code-reviewer.md:94`
   
-  **WI-130: Minor brrr finding-handling label and P-23 wording consistency** (low complexity)
-  - `skills/brrr/phases/execute.md:160`: add "(non-startup-failure, non-infrastructure-failure)" qualifier
+  **WI-130: Minor autopilot finding-handling label and P-23 wording consistency** (low complexity)
+  - `skills/autopilot/phases/execute.md:160`: add "(non-startup-failure, non-infrastructure-failure)" qualifier
   - `specs/domains/workflow/policies.md` P-23: rewrite conditional to key off regression determination rather than file types changed
-  - Acceptance criteria: brrr label matches execute/SKILL.md label; P-23 conditional matches skill file logic
+  - Acceptance criteria: autopilot label matches execute/SKILL.md label; P-23 conditional matches skill file logic
 content_hash: "7c661f6653930db899fcd4ac22957bcc9fe37096154f5d5d1a62fa43e79b42a8"
 token_count: 702

@@ -5,11 +5,11 @@ content: |
 
   ## Critical Findings
 
-  **C1: Regression in brrr review phase - brrr-state.md reference**
-  - Location: `skills/brrr/phases/review.md` lines 43 and 50
-  - Issue: References `.ideate/brrr-state.md` but should be `.ideate/brrr-state.yaml`
+  **C1: Regression in autopilot review phase - autopilot-state.md reference**
+  - Location: `skills/autopilot/phases/review.md` lines 43 and 50
+  - Issue: References `.ideate/autopilot-state.md` but should be `.ideate/autopilot-state.yaml`
   - Regression from WI-252 which converted to YAML format
-  - Fix: Change `brrr-state.md` to `brrr-state.yaml`
+  - Fix: Change `autopilot-state.md` to `autopilot-state.yaml`
 
   ## Significant Findings
 
@@ -28,6 +28,6 @@ content: |
   None.
 
   ## Suggestions
-  1. Fix brrr-state.yaml reference
+  1. Fix autopilot-state.yaml reference
   2. Standardize on {project_root} across all skills
   3. Verify no other .md state file references remain

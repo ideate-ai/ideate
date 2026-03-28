@@ -30,7 +30,7 @@ notes: |
 
   ## ideate_get_convergence_status
 
-  ### Parsing Rules (from brrr/SKILL.md Phase 6c)
+  ### Parsing Rules (from autopilot/SKILL.md Phase 6c)
 
   **Step 1**: Read `{artifact_dir}/archive/cycles/{formatted_cycle}/spec-adherence.md`
 

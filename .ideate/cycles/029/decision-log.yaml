@@ -3,8 +3,8 @@ type: cycle_summary
 content: |-
   ## Decision Log — Cycle 029
 
-  ### D-029-1: Fix brrr-state.yaml reference in brrr review phase
-  - **Decision**: Changed `.ideate/brrr-state.md` to `.ideate/brrr-state.yaml` in `skills/brrr/phases/review.md` lines 43 and 50
+  ### D-029-1: Fix autopilot-state.yaml reference in autopilot review phase
+  - **Decision**: Changed `.ideate/autopilot-state.md` to `.ideate/autopilot-state.yaml` in `skills/autopilot/phases/review.md` lines 43 and 50
   - **Rationale**: Functional regression from WI-252; P-25 establishes YAML as sole source of truth
 
   ### D-029-2: Standardize type names to snake_case
@@ -29,7 +29,7 @@ content: |-
   ## Cross-References
 
   - CR1: Code and gap reviewers independently identified domain-curator placeholder issues
-  - CR2: Code/spec reviewers verified brrr-state fix; no gap finding indicates coverage
+  - CR2: Code/spec reviewers verified autopilot-state fix; no gap finding indicates coverage
   - CR3: Gap analyst found review skill pattern issue not covered by work items
   - CR4: WI-234 fixed setup script but init skill still has gap
 cycle: 29

@@ -4,10 +4,10 @@ import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
 import { ToolContext } from "./index.js";
 
 // ---------------------------------------------------------------------------
-// Default brrr state
+// Default autopilot state
 // ---------------------------------------------------------------------------
 
-interface BrrrState {
+interface AutopilotState {
   cycles_completed: number;
   convergence_achieved: boolean;
   started_at: string | null;
@@ -18,7 +18,7 @@ interface BrrrState {
   [key: string]: unknown;
 }
 
-function defaultBrrrState(): BrrrState {
+function defaultAutopilotState(): AutopilotState {
   return {
     cycles_completed: 0,
     convergence_achieved: false,
@@ -34,46 +34,46 @@ function defaultBrrrState(): BrrrState {
 // Helpers
 // ---------------------------------------------------------------------------
 
-function brrrStatePath(ideateDir: string): string {
-  return path.join(ideateDir, "brrr-state.yaml");
+function autopilotStatePath(ideateDir: string): string {
+  return path.join(ideateDir, "autopilot-state.yaml");
 }
 
-function readBrrrState(ideateDir: string): BrrrState {
-  const filePath = brrrStatePath(ideateDir);
+function readAutopilotState(ideateDir: string): AutopilotState {
+  const filePath = autopilotStatePath(ideateDir);
   if (!fs.existsSync(filePath)) {
-    return defaultBrrrState();
+    return defaultAutopilotState();
   }
   try {
     const raw = fs.readFileSync(filePath, "utf8");
     const parsed = parseYaml(raw) as Record<string, unknown>;
-    return { ...defaultBrrrState(), ...parsed };
+    return { ...defaultAutopilotState(), ...parsed };
   } catch {
-    return defaultBrrrState();
+    return defaultAutopilotState();
   }
 }
 
-function writeBrrrState(ideateDir: string, state: BrrrState): void {
-  const filePath = brrrStatePath(ideateDir);
+function writeAutopilotState(ideateDir: string, state: AutopilotState): void {
+  const filePath = autopilotStatePath(ideateDir);
   fs.writeFileSync(filePath, stringifyYaml(state), "utf8");
 }
 
 // ---------------------------------------------------------------------------
-// handleGetBrrrState — read brrr session state
+// handleGetAutopilotState — read autopilot session state
 // ---------------------------------------------------------------------------
 
-export async function handleGetBrrrState(
+export async function handleGetAutopilotState(
   ctx: ToolContext,
   _args: Record<string, unknown>
 ): Promise<string> {
-  const state = readBrrrState(ctx.ideateDir);
+  const state = readAutopilotState(ctx.ideateDir);
   return JSON.stringify(state, null, 2);
 }
 
 // ---------------------------------------------------------------------------
-// handleUpdateBrrrState — update brrr session state (deep merge)
+// handleUpdateAutopilotState — update autopilot session state (deep merge)
 // ---------------------------------------------------------------------------
 
-export async function handleUpdateBrrrState(
+export async function handleUpdateAutopilotState(
   ctx: ToolContext,
   args: Record<string, unknown>
 ): Promise<string> {
@@ -83,15 +83,15 @@ export async function handleUpdateBrrrState(
     throw new Error("Missing required parameter: state (must be an object)");
   }
 
-  const current = readBrrrState(ctx.ideateDir);
+  const current = readAutopilotState(ctx.ideateDir);
 
   // Shallow merge update onto current state
-  const merged: BrrrState = { ...current };
+  const merged: AutopilotState = { ...current };
   for (const [key, value] of Object.entries(update)) {
     merged[key] = value;
   }
 
-  writeBrrrState(ctx.ideateDir, merged);
+  writeAutopilotState(ctx.ideateDir, merged);
 
   return JSON.stringify(merged, null, 2);
 }

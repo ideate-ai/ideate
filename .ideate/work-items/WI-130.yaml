@@ -10,7 +10,7 @@ scope:
     op: modify
   - path: skills/review/SKILL.md
     op: modify
-  - path: skills/brrr/phases/execute.md
+  - path: skills/autopilot/phases/execute.md
     op: modify
   - path: specs/plan/architecture.md
     op: modify
@@ -20,7 +20,7 @@ criteria:
   - skills/plan/SKILL.md contains zero occurrences of the string "claude-opus-4-6"
   - skills/refine/SKILL.md contains zero occurrences of the string "claude-opus-4-6"
   - skills/review/SKILL.md contains zero occurrences of the string "claude-opus-4-6"
-  - skills/brrr/phases/execute.md contains zero occurrences of the string "claude-opus-4-6"
+  - skills/autopilot/phases/execute.md contains zero occurrences of the string "claude-opus-4-6"
   - specs/plan/architecture.md contains zero occurrences of the string "claude-opus-4-6"
   - Every location that previously referenced claude-opus-4-6 now references opus
   - No other lines in any of the five files are modified
@@ -50,7 +50,7 @@ notes: |
   - Line 441: `model: claude-opus-4-6` → `model: opus` (domain-curator conflict spawn)
   - Line 651: metrics schema example `"claude-opus-4-6"` → `"opus"`
 
-  ### skills/brrr/phases/execute.md
+  ### skills/autopilot/phases/execute.md
   - Line 174: `model: "claude-opus-4-6"` → `model: "opus"` (proxy-human spawn)
 
   ### specs/plan/architecture.md

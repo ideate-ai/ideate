@@ -8,7 +8,7 @@ scope:
     op: modify
   - path: skills/execute/SKILL.md
     op: modify
-  - path: skills/brrr/phases/execute.md
+  - path: skills/autopilot/phases/execute.md
     op: modify
   - path: specs/domains/workflow/policies.md
     op: modify
@@ -20,7 +20,7 @@ criteria:
   - agents/code-reviewer.md Dynamic Testing Step 2 smoke test description includes the context-appropriate heuristic ("what would a reasonable person do to demo this work?")
   - agents/code-reviewer.md lists startup command, e2e test, build success, and relevant test suite as example smoke test types
   - skills/execute/SKILL.md Phase 8 startup-failure exception uses "smoke test" language without restricting it to startup commands
-  - skills/brrr/phases/execute.md finding-handling Critical bullet uses the same generalized smoke test language
+  - skills/autopilot/phases/execute.md finding-handling Critical bullet uses the same generalized smoke test language
   - specs/domains/workflow/policies.md P-22 references "context-appropriate smoke test" rather than only startup command
   - No other sections in any of the four files are modified
 module: null
@@ -85,7 +85,7 @@ notes: |
   - "Re-run the smoke test to confirm the app starts" → "Re-run the smoke test to confirm it passes"
   - Any reference to "startup" in the smoke-test-execution context (NOT in the finding title — the title "Startup failure after [work item name]" is preserved for backward compatibility)
 
-  ### File 3: `skills/brrr/phases/execute.md`
+  ### File 3: `skills/autopilot/phases/execute.md`
 
   **Location**: finding-handling Critical bullet (line 158).
 
@@ -105,7 +105,7 @@ notes: |
   1. `agents/code-reviewer.md` Dynamic Testing step 1 describes the context-appropriate smoke test selection heuristic
   2. `agents/code-reviewer.md` lists startup command, CLI invocation, library build/test, e2e test as example types
   3. `skills/execute/SKILL.md` Phase 8 startup-failure exception uses "smoke test passes" rather than "app starts" in the re-run context
-  4. `skills/brrr/phases/execute.md` finding-handling uses the same generalized language
+  4. `skills/autopilot/phases/execute.md` finding-handling uses the same generalized language
   5. `specs/domains/workflow/policies.md` P-22 references "context-appropriate smoke test"
   6. The finding title convention "Startup failure after [work item name]" is preserved unchanged in all files (backward compatibility)
   7. No other sections in any of the four files are modified

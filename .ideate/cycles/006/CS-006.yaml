@@ -6,7 +6,7 @@ content: |
   
   ## Overview
   
-  Cycle 006 is the capstone review covering WI-088 through WI-097 (manifest.json documentation propagation, metrics schema extension, quality_summary event specification, report.sh creation and bug fixes, and stale path cleanup). All ten work items satisfy their acceptance criteria. The code-quality and spec-adherence reviewers both issued Pass verdicts. The gap-analyst issued a Fail verdict due to a significant architectural gap: the brrr review phase was excluded from WI-093's scope and never emits quality_summary events, making the Quality Trends feature non-functional for brrr-driven projects. The domain curator was skipped during both preceding brrr cycles and will run this cycle.
+  Cycle 006 is the capstone review covering WI-088 through WI-097 (manifest.json documentation propagation, metrics schema extension, quality_summary event specification, report.sh creation and bug fixes, and stale path cleanup). All ten work items satisfy their acceptance criteria. The code-quality and spec-adherence reviewers both issued Pass verdicts. The gap-analyst issued a Fail verdict due to a significant architectural gap: the autopilot review phase was excluded from WI-093's scope and never emits quality_summary events, making the Quality Trends feature non-functional for autopilot-driven projects. The domain curator was skipped during both preceding autopilot cycles and will run this cycle.
   
   ## Critical Findings
   
@@ -14,17 +14,17 @@ content: |
   
   ## Significant Findings
   
-  - [gap-analyst] `skills/brrr/phases/review.md` has no quality_summary emission block — any review cycle driven by `/ideate:brrr` produces no `quality_summary` event, so the Quality Trends section of `scripts/report.sh` is permanently empty for brrr-driven projects. The `last_cycle_findings` dict is already in scope at the insertion point; no design decision is needed. — relates to: WI-093, cross-cutting (brrr/review architecture boundary)
+  - [gap-analyst] `skills/autopilot/phases/review.md` has no quality_summary emission block — any review cycle driven by `/ideate:autopilot` produces no `quality_summary` event, so the Quality Trends section of `scripts/report.sh` is permanently empty for autopilot-driven projects. The `last_cycle_findings` dict is already in scope at the insertion point; no design decision is needed. — relates to: WI-093, cross-cutting (autopilot/review architecture boundary)
   
   - [gap-analyst] Three agent definitions (`agents/spec-reviewer.md:26`, `agents/gap-analyst.md:24`, `agents/journal-keeper.md:20`) still reference stale `reviews/incremental/` path. Agents following these definitions look in a non-existent directory, silently omit prior incremental review context, and degrade deduplication and synthesis on every review cycle. Three mechanical one-line fixes. — relates to: cross-cutting (agent system)
   
   ## Minor Findings
   
-  - [code-quality, spec-adherence, gap-analyst] `specs/artifact-conventions.md:710` uses `####` heading level for the `metrics.jsonl` section while all peer artifact entries use `###`. Carry-forward from brrr cycle 005 OQ1. — relates to: WI-096
+  - [code-quality, spec-adherence, gap-analyst] `specs/artifact-conventions.md:710` uses `####` heading level for the `metrics.jsonl` section while all peer artifact entries use `###`. Carry-forward from autopilot cycle 005 OQ1. — relates to: WI-096
   
   - [code-quality, spec-adherence, gap-analyst] Three agent definitions (`agents/spec-reviewer.md:26`, `agents/gap-analyst.md:24`, `agents/journal-keeper.md:20`) reference stale `reviews/incremental/` path. (Same as significant finding above — minor from code-quality and spec-adherence; elevated to significant by gap-analyst.) — relates to: cross-cutting
   
-  - [code-quality, spec-adherence, gap-analyst] `specs/artifact-conventions.md:720-732` uses literal `null` and `0` in the agent-spawn entry schema example instead of `<placeholder>` notation used elsewhere in the document. Carry-forward from brrr cycle 005 OQ3. — relates to: WI-096
+  - [code-quality, spec-adherence, gap-analyst] `specs/artifact-conventions.md:720-732` uses literal `null` and `0` in the agent-spawn entry schema example instead of `<placeholder>` notation used elsewhere in the document. Carry-forward from autopilot cycle 005 OQ3. — relates to: WI-096
   
   - [code-quality, spec-adherence] `findings.by_reviewer.{reviewer}.suggestion` is present in the quality_summary schema (SKILL.md and artifact-conventions.md) but `scripts/report.sh` does not parse `by_reviewer` at all. The field has no current consumer. — relates to: WI-093, WI-094
   
@@ -46,11 +46,11 @@ content: |
   
   **Scope for next refinement:**
   
-  1. **WI-NEW-1: Add quality_summary emission to skills/brrr/phases/review.md** (significant — SG1)
-     - Insert a Phase 7.6-equivalent block after the journal-keeper step in `skills/brrr/phases/review.md`
+  1. **WI-NEW-1: Add quality_summary emission to skills/autopilot/phases/review.md** (significant — SG1)
+     - Insert a Phase 7.6-equivalent block after the journal-keeper step in `skills/autopilot/phases/review.md`
      - Mirror the logic of `skills/review/SKILL.md` Phase 7.6
      - The `last_cycle_findings` dict is already in scope; count derivation does not require re-parsing `summary.md`
-     - File scope: `skills/brrr/phases/review.md` only
+     - File scope: `skills/autopilot/phases/review.md` only
   
   2. **WI-NEW-2: Fix stale reviews/incremental/ path in three agent definitions** (significant — SG2)
      - Update `agents/spec-reviewer.md:26`, `agents/gap-analyst.md:24`, `agents/journal-keeper.md:20`

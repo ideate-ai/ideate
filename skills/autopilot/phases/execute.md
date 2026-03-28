@@ -1,8 +1,8 @@
-# brrr Phase 6a: Execute Phase
+# Autopilot Phase 6a: Execute Phase
 
 ## Entry Conditions
 
-Called by the brrr loop controller at the start of each cycle. The following variables are available from the controller context:
+Called by the autopilot loop controller at the start of each cycle. The following variables are available from the controller context:
 
 - `{project_root}` — absolute path to the project root
 - `{project_source_root}` — absolute path to the project source code
@@ -117,7 +117,7 @@ Execute according to the mode in the execution strategy (loaded by the controlle
 
 ### Incremental Review (Per Work Item)
 
-When a work item completes, spawn the `code-reviewer` agent with:
+When a work item completes, spawn the `ideate:code-reviewer` agent with:
 - The work item spec
 - The list of files created or modified
 - The architecture document
@@ -190,10 +190,10 @@ When an Andon event occurs (scope-changing finding, merge conflict, spec ambigui
 
 1. Formulate an `andon_event` description containing: what the issue is, which work item triggered it, what options are on the table, what context from artifacts is relevant.
 
-2. Invoke the `proxy-human` agent via the Agent tool:
+2. Invoke the `ideate:proxy-human` agent via the Agent tool:
 
    ```
-   subagent_type: "proxy-human"
+   subagent_type: "ideate:proxy-human"
    model: "opus"
    prompt: "[Andon Event for proxy-human agent]
 
@@ -211,7 +211,7 @@ When an Andon event occurs (scope-changing finding, merge conflict, spec ambigui
 4. Record the proxy-human's decision via `ideate_append_journal`:
 
    ```markdown
-   ## [brrr] {date} — Proxy-human decision (Cycle {N})
+   ## [autopilot] {date} — Proxy-human decision (Cycle {N})
    Event: {one-sentence summary of the Andon event}
    Decision: {proxy-human's decision}
    Confidence: {high | medium | low}
@@ -219,11 +219,11 @@ When an Andon event occurs (scope-changing finding, merge conflict, spec ambigui
 
 5. Apply the decision. If the decision is `DEFER`, add it to the cycle's deferred items list and continue with other work items where possible. Immediately print to running output:
    ```
-   [brrr] ⚠ Deferred: {event description} — proxy-human deferred this decision. See activity report for details.
+   [autopilot] ⚠ Deferred: {event description} — proxy-human deferred this decision. See activity report for details.
    ```
    Do NOT interrupt the loop or ask the user. This is logging only.
 
-**If the Agent tool is not available**: Handle the event yourself — use the guiding principles and constraints from `{context_package}` (loaded via `ideate_get_context_package()` in the Prepare Context Digest step), apply them to the event, make the best decision, and record it via `ideate_append_journal("brrr-fallback", {ISO date}, "proxy_human_fallback", {body})` with heading: `## [brrr-fallback] {ISO date} — Cycle {cycle_number}` followed by the same Event/Decision/Confidence/Rationale fields.
+**If the Agent tool is not available**: Handle the event yourself — use the guiding principles and constraints from `{context_package}` (loaded via `ideate_get_context_package()` in the Prepare Context Digest step), apply them to the event, make the best decision, and record it via `ideate_append_journal("autopilot-fallback", {ISO date}, "proxy_human_fallback", {body})` with heading: `## [autopilot-fallback] {ISO date} — Cycle {cycle_number}` followed by the same Event/Decision/Confidence/Rationale fields.
 
 ### Worker Agent Failure
 
@@ -237,12 +237,12 @@ If a subagent fails (crashes, times out, produces no output):
 
 After each work item completes (and after any rework), append a journal entry via `ideate_append_journal`.
 
-Call `ideate_append_journal("brrr", {date}, {entry_type}, {body})` — appends a structured journal entry atomically.
+Call `ideate_append_journal("autopilot", {date}, {entry_type}, {body})` — appends a structured journal entry atomically.
 
 If the ideate MCP artifact server is not available, stop and report: "The ideate MCP artifact server is required but not available. Verify .mcp.json configuration."
 
 ```markdown
-## [brrr] {date} — Cycle {cycle_N} — Work item NNN: {title}
+## [autopilot] {date} — Cycle {cycle_N} — Work item NNN: {title}
 Status: {complete | complete with rework}
 {Deviations from plan. Decisions made. Notable observations.}
 ```
@@ -250,19 +250,19 @@ Status: {complete | complete with rework}
 If rework occurred:
 
 ```markdown
-## [brrr] {date} — Cycle {cycle_N} — Work item NNN: {title}
+## [autopilot] {date} — Cycle {cycle_N} — Work item NNN: {title}
 Status: complete with rework
 Rework: {N} minor, {N} significant findings fixed from incremental review.
 {Description of significant fixes if any.}
 ```
 
-After each item completes, call `ideate_get_brrr_state()` to read the current `total_items_executed`, increment it, then call `ideate_update_brrr_state({state: {total_items_executed: {N+1}}})` to persist the update.
+After each item completes, call `ideate_get_autopilot_state()` to read the current `total_items_executed`, increment it, then call `ideate_update_autopilot_state({state: {total_items_executed: {N+1}}})` to persist the update.
 
 ## Exit Conditions
 
 - All pending work items have been attempted (skipped, completed, or failed+deferred)
 - Each completed item has an incremental review finding written via `ideate_write_artifact`
-- `total_items_executed` is updated via `ideate_update_brrr_state`
+- `total_items_executed` is updated via `ideate_update_autopilot_state`
 - Journal has an entry for each completed item (via `ideate_append_journal`)
 
 Return to the controller. The controller will proceed to Phase 6b (review.md).
@@ -271,6 +271,6 @@ Return to the controller. The controller will proceed to Phase 6b (review.md).
 
 - Findings (F-{WI}-{SEQ}) — one per work item reviewed, via `ideate_write_artifact`
 - Journal entries — appended per work item and per Andon event, via `ideate_append_journal`
-- Brrr session state — `total_items_executed` updated via `ideate_update_brrr_state`
+- Autopilot session state — `total_items_executed` updated via `ideate_update_autopilot_state`
 - Proxy-human decisions — if Andon events occurred, via `ideate_append_journal`
 - Metrics — one entry per agent spawned, via `ideate_emit_metric`

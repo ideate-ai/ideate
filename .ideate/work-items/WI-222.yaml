@@ -9,7 +9,7 @@ scope:
 depends: []
 blocks: []
 criteria:
-  - 'Q-20 status changed from "open" to "resolved" with resolution note: "v3 architecture stores findings under .ideate/cycles/{NNN}/findings/. Both brrr and standalone review write to the same location. The manifest location divergence no longer applies."'
+  - 'Q-20 status changed from "open" to "resolved" with resolution note: "v3 architecture stores findings under .ideate/cycles/{NNN}/findings/. Both autopilot and standalone review write to the same location. The manifest location divergence no longer applies."'
   - 'Q-77 status changed from "open" to "resolved" with resolution note: "Resolved by WI-221 which updates Section 9 source code index to list all tools/ files."'
   - No other questions are modified
   - Resolution notes include cycle number reference (cycle 027 or current cycle)
@@ -23,7 +23,7 @@ notes: |
   Current status: open
   New status: resolved
 
-  Resolution: The v3 architecture stores findings under `.ideate/cycles/{NNN}/findings/`. Both brrr and standalone review write to the same location. The review manifest location divergence described in Q-20 no longer applies — both paths now produce findings in the cycle directory structure.
+  Resolution: The v3 architecture stores findings under `.ideate/cycles/{NNN}/findings/`. Both autopilot and standalone review write to the same location. The review manifest location divergence described in Q-20 no longer applies — both paths now produce findings in the cycle directory structure.
 
   ## Q-77 Resolution
 

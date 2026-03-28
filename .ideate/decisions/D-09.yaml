@@ -4,7 +4,7 @@ domain: agent-system
 status: settled
 cycle: 1
 supersedes: null
-description: During autonomous brrr cycles, proxy-human makes binding Andon decisions; it must not rubber-stamp, must evaluate against guiding principles, and may only defer when two principles conflict or when external credentials/information are genuinely required.
+description: During autonomous autopilot cycles, proxy-human makes binding Andon decisions; it must not rubber-stamp, must evaluate against guiding principles, and may only defer when two principles conflict or when external credentials/information are genuinely required.
 rationale: The user specified "full authority — it uses the guiding principles as source of truth" in the 2026-03-10 interview; the agent is explicitly not a rubber-stamp.
 cycle_created: 1
 cycle_modified: null

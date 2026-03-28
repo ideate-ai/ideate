@@ -14,7 +14,7 @@ content: |
   
   ### D2: Extend metrics.jsonl schema with token and MCP tracking fields across all skills
   - **When**: refine-004 planning, 2026-03-20
-  - **Decision**: Add `input_tokens`, `output_tokens`, `cache_read_tokens`, `cache_write_tokens` (nullable integers), and `mcp_tools_called` (array) to every agent-spawn event in metrics.jsonl. Propagate the schema addition to all five skill SKILL.md files and `skills/brrr/phases/execute.md`.
+  - **Decision**: Add `input_tokens`, `output_tokens`, `cache_read_tokens`, `cache_write_tokens` (nullable integers), and `mcp_tools_called` (array) to every agent-spawn event in metrics.jsonl. Propagate the schema addition to all five skill SKILL.md files and `skills/autopilot/phases/execute.md`.
   - **Rationale**: Token cost and MCP tool usage are the primary levers for evaluating spawn efficiency. These fields must be present in the log before a reporting script can surface them. Recorded in `plan/overview.md` Group 2.
   - **Implications**: Projects with earlier-cycle metrics entries will not have these fields; consumers must treat them as nullable. The WI-094 report script was designed with `or 0` fallbacks accordingly.
   
@@ -22,13 +22,13 @@ content: |
   - **When**: refine-004 planning, 2026-03-20
   - **Decision**: After the four review agents complete, the review skill emits a `quality_summary` event to metrics.jsonl storing severity counts under `findings.by_severity` and per-reviewer breakdowns under `findings.by_reviewer`.
   - **Rationale**: The reporting script (WI-094) needs machine-readable review-cycle outcome data to populate the Quality Trends section. Storing the data in metrics.jsonl keeps the established single-file telemetry pattern. Recorded in `plan/overview.md` Group 2.
-  - **Implications**: The `quality_summary` event was specified only for `skills/review/SKILL.md`. The brrr review phase (`skills/brrr/phases/review.md`) is a self-contained reimplementation that does not delegate to SKILL.md and does not inherit this emission. This architectural gap was not identified during planning (see OQ1).
+  - **Implications**: The `quality_summary` event was specified only for `skills/review/SKILL.md`. The autopilot review phase (`skills/autopilot/phases/review.md`) is a self-contained reimplementation that does not delegate to SKILL.md and does not inherit this emission. This architectural gap was not identified during planning (see OQ1).
   
   ### D4: Scope WI-093 implementation to skills/review/SKILL.md only
   - **When**: refine-004 planning, WI-093 work item scope definition
-  - **Decision**: WI-093's file scope lists `skills/review/SKILL.md` only. `skills/brrr/phases/review.md` is not in scope.
-  - **Rationale**: Not recorded. The brrr review phase was not identified as a parallel implementation of review orchestration that would also require the quality_summary block.
-  - **Implications**: brrr-driven projects never emit `quality_summary` events. The Quality Trends section of `report.sh` is permanently empty for all brrr-driven projects. This is the root cause of gap-analysis SG1.
+  - **Decision**: WI-093's file scope lists `skills/review/SKILL.md` only. `skills/autopilot/phases/review.md` is not in scope.
+  - **Rationale**: Not recorded. The autopilot review phase was not identified as a parallel implementation of review orchestration that would also require the quality_summary block.
+  - **Implications**: autopilot-driven projects never emit `quality_summary` events. The Quality Trends section of `report.sh` is permanently empty for all autopilot-driven projects. This is the root cause of gap-analysis SG1.
   
   ### D5: Implement report.sh as a standalone Python-inside-shell script using stdlib only
   - **When**: refine-004 planning, WI-094 implementation note
@@ -46,13 +46,13 @@ content: |
   - **When**: refine-004 planning, 2026-03-20
   - **Decision**: Delete `scripts/migrate-to-cycles.sh` and `scripts/migrate-to-domains.sh` (deferred from cycle 003 interview commitment) and fix remaining `reviews/` path references in `specs/artifact-conventions.md`. Scope narrowly to these two tasks.
   - **Rationale**: The cycle 003 interview committed to removing these scripts but no work item was created at that time.
-  - **Implications**: `skills/refine/SKILL.md` was not in WI-091's scope and retained stale `reviews/final/` references. These were addressed by WI-097 in brrr cycle 2.
+  - **Implications**: `skills/refine/SKILL.md` was not in WI-091's scope and retained stale `reviews/final/` references. These were addressed by WI-097 in autopilot cycle 2.
   
-  ### D8: Execute WI-088 through WI-097 via brrr autonomous loop; skip domain curator on both brrr capstone cycles
-  - **When**: brrr execution start, 2026-03-20
-  - **Decision**: The ten work items (WI-088 through WI-097) were executed under brrr. The domain curator was explicitly skipped after both brrr-driven capstone reviews (cycles 004 and 005).
+  ### D8: Execute WI-088 through WI-097 via autopilot autonomous loop; skip domain curator on both autopilot capstone cycles
+  - **When**: autopilot execution start, 2026-03-20
+  - **Decision**: The ten work items (WI-088 through WI-097) were executed under autopilot. The domain curator was explicitly skipped after both autopilot-driven capstone reviews (cycles 004 and 005).
   - **Rationale**: Cycle 004 findings were implementation bugs in a single script and one documentation gap — not policy-grade conventions warranting domain knowledge updates. Cycle 005 had only minor documentation inconsistencies.
-  - **Implications**: Domain layer was not updated during either brrr cycle. The domain curator will run as part of the cycle 006 capstone instead.
+  - **Implications**: Domain layer was not updated during either autopilot cycle. The domain curator will run as part of the cycle 006 capstone instead.
   
   ---
   
@@ -76,22 +76,22 @@ content: |
   - **Rationale**: Standard correctness requirement for numeric ordering.
   - **Implications**: The incremental review caught the sort issue but did not catch the schema mismatch bugs (C1/C2) or key-name bug (S1) that were present in the same file and more severe.
   
-  ### D12: brrr cycle 1 capstone (cycle 004) verdict Fail — three new work items created for cycle 2
-  - **When**: brrr cycle 1 capstone review, 2026-03-20
-  - **Decision**: Cycle 004 capstone issued a Fail verdict. brrr planned three new work items: WI-095 (fix report.sh integration bugs), WI-096 (document metrics.jsonl in artifact-conventions.md), WI-097 (fix stale reviews/final/ paths in skills/refine/SKILL.md).
-  - **Rationale**: Two critical bugs and one significant documentation gap required a second brrr cycle per the convergence protocol.
-  - **Implications**: brrr proceeded to cycle 2. Domain curator skipped for cycle 004.
+  ### D12: autopilot cycle 1 capstone (cycle 004) verdict Fail — three new work items created for cycle 2
+  - **When**: autopilot cycle 1 capstone review, 2026-03-20
+  - **Decision**: Cycle 004 capstone issued a Fail verdict. autopilot planned three new work items: WI-095 (fix report.sh integration bugs), WI-096 (document metrics.jsonl in artifact-conventions.md), WI-097 (fix stale reviews/final/ paths in skills/refine/SKILL.md).
+  - **Rationale**: Two critical bugs and one significant documentation gap required a second autopilot cycle per the convergence protocol.
+  - **Implications**: autopilot proceeded to cycle 2. Domain curator skipped for cycle 004.
   
-  ### D13: WI-095 through WI-097 executed in parallel in brrr cycle 2
-  - **When**: brrr cycle 2 execution, 2026-03-20
+  ### D13: WI-095 through WI-097 executed in parallel in autopilot cycle 2
+  - **When**: autopilot cycle 2 execution, 2026-03-20
   - **Decision**: WI-095, WI-096, and WI-097 have non-overlapping file scopes and no dependencies between them; all three ran in parallel.
   - **Rationale**: Principle 4 (Parallel-First Design) — no reason to sequence when scopes are non-overlapping.
-  - **Implications**: All three completed without rework. Cycle 005 capstone: 0 critical, 0 significant, 3 minor. brrr declared convergence.
+  - **Implications**: All three completed without rework. Cycle 005 capstone: 0 critical, 0 significant, 3 minor. autopilot declared convergence.
   
-  ### D14: brrr convergence declared after cycle 2 with three minor open items carried forward
-  - **When**: brrr convergence check, 2026-03-20
-  - **Decision**: brrr declared convergence after cycle 005. Three minor items (OQ1: heading level, OQ2: stale agent definition paths, OQ3: placeholder notation) were deferred without fix.
-  - **Rationale**: brrr convergence criterion is zero critical and zero significant findings. Minor items do not block convergence.
+  ### D14: autopilot convergence declared after cycle 2 with three minor open items carried forward
+  - **When**: autopilot convergence check, 2026-03-20
+  - **Decision**: autopilot declared convergence after cycle 005. Three minor items (OQ1: heading level, OQ2: stale agent definition paths, OQ3: placeholder notation) were deferred without fix.
+  - **Rationale**: autopilot convergence criterion is zero critical and zero significant findings. Minor items do not block convergence.
   - **Implications**: OQ1, OQ2, and OQ3 carry forward to the cycle 006 capstone. All three were confirmed present by all three cycle 006 reviewers.
   
   ---
@@ -101,12 +101,12 @@ content: |
   ### D15: Cycle 006 overall verdict is mixed — code and spec pass, gap analysis fails
   - **When**: Cycle 006 capstone review, 2026-03-21
   - **Decision**: Code-quality and spec-adherence issued Pass verdicts; gap-analysis issued Fail. The overall cycle 006 verdict is conditional pass: existing work is correct and complete against its acceptance criteria, but a significant feature gap exists.
-  - **Rationale**: The gap-analysis Fail is based on a missing feature (quality_summary emission in brrr/phases/review.md) rather than a defect in what was implemented. All ten work items satisfy their acceptance criteria.
-  - **Implications**: A new work item is needed in the next refinement cycle to add quality_summary emission to brrr/phases/review.md. The three carry-forward minor items (OQ1-OQ3 from brrr) and two new minor items (OQ4: refine cycle field; OQ7: report.sh undiscoverable) should also be addressed.
+  - **Rationale**: The gap-analysis Fail is based on a missing feature (quality_summary emission in autopilot/phases/review.md) rather than a defect in what was implemented. All ten work items satisfy their acceptance criteria.
+  - **Implications**: A new work item is needed in the next refinement cycle to add quality_summary emission to autopilot/phases/review.md. The three carry-forward minor items (OQ1-OQ3 from autopilot) and two new minor items (OQ4: refine cycle field; OQ7: report.sh undiscoverable) should also be addressed.
   
   ### D16: Gap-analyst re-elevated stale agent definition paths from minor to significant
   - **When**: Cycle 006 capstone review, gap-analysis SG2, 2026-03-21
-  - **Decision**: The gap-analyst assessed the stale `reviews/incremental/` path in three agent definitions as significant rather than minor (the assessment carried forward from brrr cycles 004 and 005).
+  - **Decision**: The gap-analyst assessed the stale `reviews/incremental/` path in three agent definitions as significant rather than minor (the assessment carried forward from autopilot cycles 004 and 005).
   - **Rationale**: Each review cycle compounds the impact — three agents operating without incremental review context means deduplication is silently broken on every cycle. The gap-analyst cited the compounding nature as justification for elevation.
   - **Implications**: Divergence between gap-analysis (significant) and code-quality/spec-adherence (minor) assessments of the same issue. The gap-analyst's severity assessment is better supported given the compounding impact.
   
@@ -114,16 +114,16 @@ content: |
   
   ## Open Questions
   
-  ### OQ1: brrr review phase never emits quality_summary events
-  - **Question**: Should `skills/brrr/phases/review.md` include a quality_summary emission block equivalent to `skills/review/SKILL.md` Phase 7.6? The `last_cycle_findings` dict is already in scope at the point of insertion.
+  ### OQ1: autopilot review phase never emits quality_summary events
+  - **Question**: Should `skills/autopilot/phases/review.md` include a quality_summary emission block equivalent to `skills/review/SKILL.md` Phase 7.6? The `last_cycle_findings` dict is already in scope at the point of insertion.
   - **Source**: gap-analysis SG1; decision D4 records how this gap originated
-  - **Impact**: The Quality Trends section of `scripts/report.sh` produces no rows for any brrr-driven project. Since brrr is the primary path for multi-cycle runs, the quality trend feature is non-functional for its primary use case.
-  - **Who answers**: Next refinement — no design decision required. Additive: insert a Phase 7.6-equivalent block after the journal-keeper step in `skills/brrr/phases/review.md`.
-  - **Consequence of inaction**: Quality trend analysis is unavailable for all projects using the brrr skill. The observability feature delivered by WI-093 does not function for the majority of ideate users.
+  - **Impact**: The Quality Trends section of `scripts/report.sh` produces no rows for any autopilot-driven project. Since autopilot is the primary path for multi-cycle runs, the quality trend feature is non-functional for its primary use case.
+  - **Who answers**: Next refinement — no design decision required. Additive: insert a Phase 7.6-equivalent block after the journal-keeper step in `skills/autopilot/phases/review.md`.
+  - **Consequence of inaction**: Quality trend analysis is unavailable for all projects using the autopilot skill. The observability feature delivered by WI-093 does not function for the majority of ideate users.
   
   ### OQ2: Three agent definitions reference stale reviews/incremental/ path
   - **Question**: Should `agents/spec-reviewer.md:26`, `agents/gap-analyst.md:24`, and `agents/journal-keeper.md:20` replace `reviews/incremental/` with `archive/incremental/`?
-  - **Source**: gap-analysis SG2; code-quality M2; spec-adherence MF1. Carry-forward from brrr cycle 005 OQ2.
+  - **Source**: gap-analysis SG2; code-quality M2; spec-adherence MF1. Carry-forward from autopilot cycle 005 OQ2.
   - **Impact**: Agents following these definitions look in a non-existent directory and silently omit prior incremental review context. spec-reviewer's deduplication instruction and journal-keeper's synthesis both depend on this context.
   - **Who answers**: Next refinement — three mechanical one-line fixes, no design decision required.
   - **Consequence of inaction**: Every review cycle run by these three agents silently operates without incremental review context. Findings already caught in incremental reviews may be duplicated in capstone reviews. The problem compounds across every review cycle until fixed.
@@ -137,21 +137,21 @@ content: |
   
   ### OQ4: refine skill inline metrics schema omits the cycle field
   - **Question**: Should `skills/refine/SKILL.md:373` include `"cycle":null` between `"phase"` and `"agent_type"` to match the canonical schema in `specs/artifact-conventions.md:719`?
-  - **Source**: code-quality M4 (new finding, not a carry-forward from brrr cycles)
+  - **Source**: code-quality M4 (new finding, not a carry-forward from autopilot cycles)
   - **Impact**: Refine skill entries written without a `cycle` field are bucketed as `(none)` by report.sh — a distinct bucket from entries that write `"cycle": null`. The per-cycle breakdown in report.sh may split what should be a single bucket.
   - **Who answers**: Next refinement — mechanical one-line fix to the inline schema example.
   - **Consequence of inaction**: report.sh may produce separate `(none)` and null rows for refine-skill entries, making the per-cycle breakdown silently inconsistent for any project that uses the refine skill.
   
   ### OQ5: metrics.jsonl section heading level is wrong in artifact-conventions.md
   - **Question**: Should `specs/artifact-conventions.md:710` be changed from `####` to `###` to match the heading level of all peer artifact entries?
-  - **Source**: code-quality M1; spec-adherence MF2; gap-analysis MG1. Carry-forward from brrr cycle 005 OQ1.
+  - **Source**: code-quality M1; spec-adherence MF2; gap-analysis MG1. Carry-forward from autopilot cycle 005 OQ1.
   - **Impact**: metrics.jsonl section renders as a visual sub-section of journal.md rather than a peer entry. No functional impact.
   - **Who answers**: Next refinement — one-character fix.
   - **Consequence of inaction**: Readers of artifact-conventions.md perceive metrics.jsonl as subordinate to journal.md. Cosmetic only.
   
   ### OQ6: Literal null/0 in metrics.jsonl schema example instead of placeholder notation
   - **Question**: Should the agent spawn entry example in `specs/artifact-conventions.md:720-732` replace literal `null` and `0` with `<null or integer>` and `<integer>` placeholder notation?
-  - **Source**: code-quality M3; spec-adherence MF3; gap-analysis MG2. Carry-forward from brrr cycle 005 OQ3.
+  - **Source**: code-quality M3; spec-adherence MF3; gap-analysis MG2. Carry-forward from autopilot cycle 005 OQ3.
   - **Impact**: A reader cannot distinguish "always null" from "null when not available." Ambiguity may cause future implementers to emit null for fields that should have values.
   - **Who answers**: Next refinement — documentation-only change.
   - **Consequence of inaction**: Schema example retains ambiguous placeholder convention. No functional failure in current code.
@@ -167,11 +167,11 @@ content: |
   
   ## Cross-References
   
-  ### CR1: quality_summary gap in brrr — specification scope vs. brrr architecture
-  - **Code review**: No finding (brrr/phases/review.md was not in WI-093 file scope; implemented correctly within scope)
+  ### CR1: quality_summary gap in autopilot — specification scope vs. autopilot architecture
+  - **Code review**: No finding (autopilot/phases/review.md was not in WI-093 file scope; implemented correctly within scope)
   - **Spec review**: No finding (all WI-093 acceptance criteria met in skills/review/SKILL.md)
-  - **Gap analysis**: SG1 — brrr/phases/review.md never emits quality_summary; Quality Trends always empty for brrr-driven projects
-  - **Connection**: All three reviewers are consistent. The gap is not a defect in what was implemented — WI-093 was correctly implemented within its specified scope. The gap is that the work item scope excluded brrr/phases/review.md despite it being a parallel implementation of the same review orchestration logic. The code and spec reviewers confirm implementation correctness; the gap-analyst identifies the planning-phase blind spot that the acceptance criteria did not cover. Together the picture is: the feature works for `/ideate:review` but not for `/ideate:brrr`.
+  - **Gap analysis**: SG1 — autopilot/phases/review.md never emits quality_summary; Quality Trends always empty for autopilot-driven projects
+  - **Connection**: All three reviewers are consistent. The gap is not a defect in what was implemented — WI-093 was correctly implemented within its specified scope. The gap is that the work item scope excluded autopilot/phases/review.md despite it being a parallel implementation of the same review orchestration logic. The code and spec reviewers confirm implementation correctness; the gap-analyst identifies the planning-phase blind spot that the acceptance criteria did not cover. Together the picture is: the feature works for `/ideate:review` but not for `/ideate:autopilot`.
   
   ### CR2: Stale reviews/incremental/ path in agent definitions — severity disagreement across reviewers
   - **Code review**: M2 (minor) — confirmed in spec-reviewer.md:26, gap-analyst.md:24, journal-keeper.md:20

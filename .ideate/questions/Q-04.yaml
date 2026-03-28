@@ -2,7 +2,7 @@ id: Q-04
 type: domain_question
 domain: artifact-structure
 status: obsolete
-impact: The execute and brrr skills glob `plan/work-items/*.md` and match journal entries and review files by number prefix; duplicate prefixes create ambiguous ordering for five numbers on any future execution run.
+impact: The execute and autopilot skills glob `plan/work-items/*.md` and match journal entries and review files by number prefix; duplicate prefixes create ambiguous ordering for five numbers on any future execution run.
 source: archive/cycles/001/gap-analysis.md IN1, archive/cycles/001/decision-log.md D7+OQ4
 resolution: "specs/plan/work-items/ no longer exists. Work items are individual YAML files in .ideate/work-items/ managed by MCP server."
 resolved_in: 37

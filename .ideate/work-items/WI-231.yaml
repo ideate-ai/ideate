@@ -1,21 +1,21 @@
 id: WI-231
 type: work_item
-title: Fix brrr-state.yaml reference in brrr review phase
+title: Fix autopilot-state.yaml reference in autopilot review phase
 status: done
 complexity: low
 scope:
   - action: modify
-    file_path: skills/brrr/phases/review.md
+    file_path: skills/autopilot/phases/review.md
     lines:
       - 43
       - 50
 depends: []
 blocks: []
 criteria:
-  - description: brrr-state.md references changed to brrr-state.yaml on lines 43 and 50
+  - description: autopilot-state.md references changed to autopilot-state.yaml on lines 43 and 50
     verification_method: file_read
 domain: workflow
-notes: "# WI-231: Fix brrr-state.yaml reference in brrr review phase"
+notes: "# WI-231: Fix autopilot-state.yaml reference in autopilot review phase"
 resolution: null
 cycle_created: null
 cycle_modified: null

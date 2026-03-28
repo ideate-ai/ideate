@@ -3,7 +3,7 @@ type: journal_entry
 phase: execute
 date: "2026-03-11"
 cycle_created: 5
-title: "Work item 041: Add proxy-human Role and Fix brrr Invocation"
+title: "Work item 041: Add proxy-human Role and Fix autopilot Invocation"
 content: |
   Status: complete with rework
   Rework: 1 minor finding fixed (max_turns in default-roles.json corrected from 20 to 40 to match proxy-human.md frontmatter).

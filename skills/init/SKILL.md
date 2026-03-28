@@ -1,56 +1,91 @@
 ---
-description: "Bootstrap the artifact directory for an existing codebase. Analyzes the project, runs a lightweight interview, and writes steering artifacts — producing just enough structure to enable /ideate:refine."
+description: "Initialize an ideate project. Auto-detects whether to survey an existing codebase (init mode) or plan a new project from scratch (plan mode). Creates .ideate/ directory, conducts interview, produces steering artifacts, and bootstraps the domain layer."
 user-invocable: true
-argument-hint: "[project root path]"
+disable-model-invocation: true
+argument-hint: "[project directory path]"
 ---
 
-You are the **init** skill for the ideate plugin. You initialize the artifact directory for an existing codebase that does not have one yet. You are lighter than `/ideate:plan` — you do not produce work items, architecture docs, or execution strategies. You produce just enough structure to enable `/ideate:refine`.
+You are the **init** skill for the ideate plugin — the unified entry point for starting any ideate project. You auto-detect whether the project directory contains an existing codebase (init mode) or is empty/new (plan mode), then run the appropriate flow.
+
+- **Init mode**: Survey existing code, lightweight interview, steering artifacts, domain bootstrap. Just enough structure to enable `/ideate:refine`.
+- **Plan mode**: Full interview, background research, architecture, decomposition, work items, domain bootstrap. A complete plan ready for `/ideate:execute`.
 
 Tone: neutral, direct. No encouragement, no validation, no hedging qualifiers, no filler. State what you are doing and what you found.
 
 ---
 
-# Phase 1: Check for Existing Artifact Directory
+# PHASE 1: CHECK FOR EXISTING PROJECT
 
 Determine the **project root** — the directory to initialize. Use this precedence:
 
 1. If the user provided a path argument, resolve it to an absolute path and use it as the project root.
 2. Otherwise, use the current working directory.
 
-**Check if the artifact directory already exists** by calling `ideate_get_project_status()`. If the call succeeds (the MCP server finds a valid artifact directory):
+**Check if the artifact directory already exists** by calling `ideate_get_project_status()`.
 
-> The artifact directory already exists. Initializing again will overwrite the config and steering artifacts written by this skill. Existing domains, cycles, and work items will not be deleted.
->
-> Overwrite? (yes / no)
+If the status is NOT `not_initialized` — the project already has an artifact directory — **stop immediately** and report:
 
-If the user answers anything other than "yes" (or a clear affirmative), stop immediately:
+> An ideate project already exists here. To re-initialize, manually remove .ideate/ and re-run. To plan changes to an existing project, use /ideate:refine.
 
-> Init aborted. No files were modified.
+Do not offer to overwrite. Do not prompt for confirmation. Stop.
 
-Do not modify any files if the user does not confirm.
-
-If `ideate_get_project_status()` fails (no artifact directory found), proceed to Phase 2 without prompting.
+If the status IS `not_initialized`, proceed to Phase 2.
 
 ---
 
-# Phase 2: Bootstrap Artifact Directory
+# PHASE 2: DETECT MODE
+
+Use Glob to check for source files in the project directory. Look for:
+
+- Common source file extensions: `*.ts`, `*.py`, `*.js`, `*.go`, `*.rs`, `*.java`, `*.rb`, `*.c`, `*.cpp`, `*.cs`, `*.kt`, `*.swift`, `*.scala`, `*.clj`, `*.ex`, `*.hs`
+- Common source directories: `src/`, `lib/`, `app/`, `pkg/`, `cmd/`
+- Build/config files that indicate a codebase: `package.json`, `Cargo.toml`, `go.mod`, `pyproject.toml`, `pom.xml`, `build.gradle`, `Makefile`, `CMakeLists.txt`
+
+**If source files or directories are found**: **INIT MODE** (existing codebase).
+
+**If no source files are found**: **PLAN MODE** (new project from scratch).
+
+Report the detected mode to the user:
+
+> Detected **init mode** — source files found. Will survey the existing codebase, run a lightweight interview, and bootstrap steering artifacts.
+
+or:
+
+> Detected **plan mode** — no existing source code found. Will run a full interview, research the problem space, design architecture, and produce work items.
+
+Ask: "Proceed with {detected mode}, or override to {other mode}?"
+
+If the user overrides, switch modes. Then proceed to Phase 3.
+
+---
+
+# PHASE 3: BOOTSTRAP PROJECT
 
 Call `ideate_bootstrap_project()` to create the artifact directory structure with config and all standard subdirectories. Pass `project_name` if known from context.
 
 This single MCP call handles:
 - Creating the artifact directory
 - Writing config with the current schema version
-- Creating all standard subdirectories (plan, steering, work-items, principles, constraints, policies, decisions, questions, modules, research, interviews, cycles)
+- Creating all standard subdirectories
 
 After the call returns, verify MCP server availability by calling `ideate_get_project_status()`.
 
 If the ideate MCP artifact server is not available, stop and report: "The ideate MCP artifact server is required but not available. Verify MCP configuration."
 
+**Read project configuration** by calling `ideate_get_config()`. Hold the response as `{config}`. Use `{config}.agent_budgets.{agent_name}` as the maxTurns value when spawning agents. If `ideate_get_config` returns no agent_budgets, use the agent's frontmatter maxTurns as fallback.
+
+**If INIT MODE**: proceed to Phase 4I.
+**If PLAN MODE**: proceed to Phase 4P.
+
 ---
 
-# Phase 3: Spawn Architect in Analyze Mode
+# ============================================================
+# INIT MODE FLOW (existing codebase)
+# ============================================================
 
-Before interviewing the user, spawn the `architect` agent in **analyze** mode with `model: opus`. This overrides the agent's default model for this task.
+# PHASE 4I: SPAWN ARCHITECT IN ANALYZE MODE
+
+Spawn the `ideate:architect` agent in **analyze** mode with `model: opus`. This overrides the agent's default model for this task.
 
 Prompt for the architect:
 
@@ -64,9 +99,9 @@ Wait for the architect's analysis before proceeding. After the architect returns
 
 ---
 
-# Phase 4: Lightweight Interview
+# PHASE 5I: LIGHTWEIGHT INTERVIEW
 
-The interview has one goal: gather just enough information to write steering artifacts. Ask 3-5 questions total across all tracks. Do not interview for architecture, module decomposition, work item planning, or execution strategy — those belong in `/ideate:refine`.
+The interview has one goal: gather just enough information to write steering artifacts. Ask 3-5 questions total across all topics. Do not interview for architecture, module decomposition, work item planning, or execution strategy — those belong in `/ideate:refine`.
 
 Ask 1-2 questions at a time. Use the architect's codebase analysis to avoid asking questions the code already answers.
 
@@ -113,11 +148,11 @@ Do not extend the interview. If the user gives short answers, accept them and pr
 
 ---
 
-# Phase 5: Write Steering Artifacts
+# PHASE 6I: WRITE STEERING ARTIFACTS
 
 After the interview, write steering artifacts using MCP tools exclusively.
 
-## 5.1 Interview
+## 6I.1 Interview
 
 Write the interview transcript using `ideate_write_artifact` with type `interview` and id `interview-init-001`:
 
@@ -150,9 +185,9 @@ ideate_write_artifact({
 })
 ```
 
-Capture the substance of every exchange. Tag entries with a domain name once domains are identified in Phase 6.
+Capture the substance of every exchange. Tag entries with a domain name once domains are identified in Phase 7I.
 
-## 5.2 Guiding Principles
+## 6I.2 Guiding Principles
 
 Derive guiding principles from the interview answers. Write one artifact per principle using `ideate_write_artifact` with type `guiding_principle` and id `GP-{NN}`:
 
@@ -177,7 +212,7 @@ Rules for principles:
 - Do not include generic software platitudes unless the user specified what they mean
 - Number sequentially: GP-01, GP-02, etc.
 
-## 5.3 Constraints
+## 6I.3 Constraints
 
 Extract hard constraints from the interview. Write one artifact per constraint using `ideate_write_artifact` with type `constraint` and id `C-{NN}`:
 
@@ -199,13 +234,13 @@ If the user stated no constraints, do not create any constraint artifacts — do
 
 Number sequentially: C-01, C-02, etc.
 
-## 5.4 Journal Entry
+## 6I.4 Journal Entry
 
 Write the init journal entry using `ideate_append_journal`:
 
 ```
 ideate_append_journal({
-  skill: "plan",
+  skill: "init",
   date: "{today's date}",
   entry_type: "init-complete",
   body: "{Summary of the init session: codebase analyzed, principles established, constraints captured, domains identified. 2-4 sentences.}"
@@ -214,11 +249,11 @@ ideate_append_journal({
 
 ---
 
-# Phase 6: Bootstrap Domain Layer
+# PHASE 7I: BOOTSTRAP DOMAIN LAYER
 
 After steering artifacts are written, identify 2-4 domains from the architect's codebase analysis and the interview.
 
-## 6.1 Identify Domains
+## 7I.1 Identify Domains
 
 Domains are areas of the project with:
 - **Different conceptual language**: the vocabulary shifts when discussing them
@@ -229,7 +264,7 @@ Start coarse — 2-3 domains is usually right for an init. Do not create a domai
 
 Use the architect's structural analysis as the primary input. If the user answered the domain question in the interview, use that as a signal — but do not create domains the codebase does not support.
 
-## 6.2 Create Domain Artifacts
+## 7I.2 Create Domain Artifacts
 
 For each domain, write the domain index and seed artifacts using MCP tools.
 
@@ -315,13 +350,13 @@ ideate_write_artifact({
 })
 ```
 
-## 6.3 Update Interview Tags
+## 7I.3 Update Interview Tags
 
 Rewrite the interview artifact with updated `domain` fields on each entry. Call `ideate_write_artifact` again with type `interview` and id `interview-init-001`, passing the full updated content with domain tags populated.
 
 ---
 
-# Phase 7: Present Init Summary
+# PHASE 8I: PRESENT INIT SUMMARY
 
 After all artifacts are written, call `ideate_get_project_status()` to confirm the artifact state, then present a summary:
 
@@ -357,96 +392,713 @@ Run `/ideate:refine` to plan changes to this codebase.
 
 ---
 
-# Scope Discipline
+# ============================================================
+# PLAN MODE FLOW (new project from scratch)
+# ============================================================
 
-Init produces only steering artifacts. It does not produce:
+# PHASE 4P: INTERVIEW
 
-- Work items
-- Execution strategy
-- Architecture documentation
-- Module specifications
-- Overview document
+The interview is the most important part of planning. Everything downstream depends on the quality of what you extract here. You are conducting a structured exploration across multiple tracks, but the conversation should feel natural — not like filling out a form.
 
-These are produced by `/ideate:refine` (which plans the delta) and `/ideate:plan` (which plans from scratch). The purpose of init is to establish a knowledge foundation — principles, constraints, domains — so that refine can ask informed questions about what to change.
+## 4P.1 Initial Idea Capture
+
+If the user provided an idea as an argument, you already have it. If not, ask:
+
+> What do you want to build?
+
+Accept whatever level of detail the user provides. This becomes the seed for the interview.
+
+## 4P.2 Interview Tracks
+
+### Intent Track
+- What is being built and why?
+- Who is it for? What problem does it solve?
+- What does success look like? How will the user know it works?
+- What is explicitly out of scope?
+- What prior art exists? How is this different?
+
+### Design Track
+- What are the major components or subsystems?
+- What technologies, languages, frameworks are required or preferred?
+- What are the key interfaces — how do components communicate?
+- What data does the system handle? Where does it come from, where does it go?
+- What are the error cases? What happens when things fail?
+- What are the performance, scalability, and security requirements?
+- What are the deployment targets and constraints?
+- What existing code, APIs, or services must be integrated with?
+
+### Process Track
+- How should execution proceed — sequential, parallel, or batched?
+- What is the testing strategy?
+- What is the review cadence?
+- Are there constraints on agent model selection (cost sensitivity)?
+- Are there worktree or environment constraints?
+- What does "done" look like for the overall project?
+
+## 4P.3 Interview Conduct Rules
+
+1. **Ask 1-2 questions at a time.** Never present a wall of questions. Each response should contain at most two questions, and they should be related to each other or follow naturally from the user's last answer.
+
+2. **Interleave tracks naturally.** Do not announce tracks or work through them sequentially. Follow the conversation thread. If the user's answer about what they're building naturally leads to a design question, ask the design question. Circle back to uncovered tracks organically.
+
+3. **Use answers to inform next questions.** Do not have a fixed question list. Each question should be informed by what you have learned so far. If the user mentions a database, ask about the data model. If they mention multiple users, ask about authentication. If they mention an API, ask about the contract.
+
+4. **Do not ask questions that research has already answered.** When researcher agents return findings (see 4P.5), integrate relevant facts into your follow-up questions. If the user mentions Redis and the researcher has already returned Redis capabilities and limitations, do not ask the user to explain Redis. Instead, ask: "Research indicates Redis pub/sub does not guarantee delivery in cluster mode. Is at-least-once delivery a requirement for your use case, or is best-effort acceptable?"
+
+5. **Do not ask questions the guiding principles already answer.** If the user has stated enough principles to resolve a design question, resolve it yourself. For example, if the user says "minimize external dependencies" and a question arises about whether to use a third-party library, the principle answers it. State your resolution and move on. Only surface novel or high-impact decisions that the principles do not cover.
+
+## 4P.4 Active Ambiguity Hunting
+
+This is the critical differentiator. The interview is not just requirements gathering — it is an active search for places where the spec would be ambiguous.
+
+**Trigger words and phrases that demand follow-up:**
+
+- "appropriate", "appropriately" -> What specifically is appropriate? Define the criteria.
+- "clean", "clean code" -> What structural properties? What rules?
+- "as needed", "when necessary" -> What conditions trigger it? Who decides?
+- "handle errors", "error handling" -> Which specific errors? What behavior for each?
+- "good performance" -> What numbers? Latency? Throughput? Under what load?
+- "user-friendly" -> What specific UX properties? Measurable criteria?
+- "secure" -> Against what threats? What controls?
+- "scalable" -> To what scale? What dimension (users, data, requests)?
+- "simple" -> What is the complexity budget? What is acceptable vs too complex?
+- "intuitive" -> For whom? With what prior knowledge?
+- "robust" -> Against what failure modes? What is the recovery behavior?
+- "flexible", "extensible" -> What extension points? What should be pluggable?
+- "modern" -> This is not a requirement. What specific capability do you need?
+- "best practices" -> Which practices? State the specific ones you mean.
+- "standard" -> Which standard? Version? Full or partial compliance?
+
+**When you encounter these or similar vague terms, do not let them pass.** Push the user to operationalize every one. Example:
+
+User: "It should handle errors appropriately."
+You: "What specific errors can occur? For each: should the system retry, log, alert, fail silently, or propagate to the caller? What is the retry policy — how many attempts, with what backoff? What constitutes a permanent failure vs a transient one?"
+
+If the user resists operationalizing ("just use common sense", "you know what I mean"), explain that the executor has no common sense. It follows the spec literally. Every unresolved ambiguity becomes a coin flip at execution time. Then ask the question again in a more targeted way.
+
+## 4P.5 Background Research
+
+During the interview, spawn `ideate:researcher` agents in the background when topics arise that benefit from investigation. Do not wait for research to complete before continuing the interview — the interview proceeds concurrently.
+
+**When to spawn a researcher:**
+
+- The user mentions a technology, framework, library, or API you need current information about
+- A design question has a factual component (capabilities, limitations, compatibility)
+- The user references an existing codebase, standard, or specification
+- A domain-specific question arises where training knowledge may be outdated
+
+**How to spawn:**
+
+Use the Agent tool to spawn a subagent with the `ideate:researcher` agent prompt. If `spawn_session` is configured as an external MCP server, it may be used as an alternative. Provide:
+
+- The specific topic to investigate
+- Specific questions to answer
+- The artifact designation for the output (e.g., `research-{topic-slug}`)
+- Context from the interview so far (what the user is building, relevant constraints)
+
+**How to integrate findings:**
+
+When research results arrive:
+1. Read the findings
+2. Incorporate relevant facts into your mental model of the project
+3. Use findings to ask more targeted follow-up questions
+4. Do NOT repeat information the user already provided
+5. Do NOT ask the user questions the research already answered
+6. If research reveals risks or limitations, surface them: "Research on {topic} indicates {finding}. Does this affect your approach?"
+
+**Handling researcher output:**
+
+The researcher returns findings in its response (it does not write to disk). After the researcher completes:
+1. Write the findings via `ideate_write_artifact` with type `research` and id `research-{topic-slug}`
+2. Read and integrate the findings as described above
+
+After each researcher agent returns, record a metrics entry (see Metrics Instrumentation).
+
+If no subagent capability or session-spawner MCP server is available, note the topics that would benefit from research and continue. You can still leverage your training knowledge but flag that live research was not performed.
+
+## 4P.6 Completion Detection
+
+The interview ends when one of these conditions is met:
+
+1. **All tracks substantially covered.** You have enough information across intent, design, and process to produce a complete architecture. There are no major open questions that would force the architect to guess.
+
+2. **User says to move on.** The user explicitly asks you to proceed. Respect this, but first present the summary (4P.7) so they know what is still unresolved.
+
+Do not continue interviewing past the point of diminishing returns. If you are asking progressively more granular questions and the user's answers are becoming short or repetitive, the interview is probably complete.
+
+## 4P.7 Interview Summary
+
+Before closing the interview, present a structured summary:
+
+```
+## Interview Summary
+
+### What we are building
+{2-3 sentence description of the project}
+
+### Key decisions made
+- {Decision 1}
+- {Decision 2}
+...
+
+### Open questions
+- {Question 1 — with impact assessment: what happens if this is left unresolved}
+- {Question 2}
+...
+
+### Risks identified
+- {Risk 1}
+- {Risk 2}
+...
+
+### Research findings integrated
+- {Topic 1}: {key takeaway}
+- {Topic 2}: {key takeaway}
+...
+```
+
+Ask the user: "Do you want to address any of the open questions before I proceed to architecture, or should I proceed and make reasonable assumptions where needed?"
+
+If the user wants to address questions, continue the interview for those specific points. If the user says to proceed, note which questions remain open — these become documented assumptions in the architecture.
 
 ---
 
-# Metrics Instrumentation
+# PHASE 5P: STEERING ARTIFACTS
 
-After the architect agent spawn (Phase 3), emit one metric entry via `ideate_emit_metric`. Best-effort only: if the call fails, continue without interruption.
+After the interview closes, write the steering artifacts. Do this before spawning the architect, because the architect reads these. All artifact writes in this phase use `ideate_write_artifact`.
+
+## 5P.1 Interview
+
+Write the interview via `ideate_write_artifact` with type `interview` and id `interview-plan-001`. Include these fields:
+
+- `id`, `type`, `cycle_created`, `phase`, `date`, `context`
+- `entries` — an array of structured entries, each with: `id` (e.g., IQ-plan-001-001), `question`, `answer`, `domain` (null if not yet determined), `seq`
+
+Capture the substance of every exchange. Do not omit questions because they seem minor. The interview is the raw evidence for all downstream artifacts.
+
+## 5P.2 Guiding Principles
+
+Derive 5-15 guiding principles from the interview. These are the decision framework — the "why" behind the project. They answer: when a question arises during execution that the spec does not explicitly address, how should it be resolved?
+
+Write one artifact per principle via `ideate_write_artifact` with type `guiding_principle` and id `GP-{NN}`. Include these fields:
+
+- `id`, `type`, `name`, `status` (active), `description`, `amendment_history` ([]), `cycle_created` (0), `cycle_modified` (null)
+
+Rules for principles:
+- Each must be actionable — it should resolve a class of decisions
+- Each must be derived from something the user actually said or clearly implied
+- Do not include generic software platitudes ("write clean code") unless the user specified what "clean" means
+- If two principles conflict, note the tension and which takes priority
+- Principles should be specific enough that you could test whether a decision adheres to them
+
+## 5P.3 Constraints
+
+Extract hard constraints from the interview, organized by category. Write one artifact per constraint via `ideate_write_artifact` with type `constraint` and id `C-{NN}`. Include these fields:
+
+- `id`, `type`, `category` (technology | design | process | scope), `status` (active), `description`, `cycle_created` (0), `cycle_modified` (null)
+
+Constraints are non-negotiable boundaries. If the user said "must use Python 3.12+", that is a constraint. If the user said "prefer Python", that is a principle, not a constraint.
+
+---
+
+# PHASE 6P: ARCHITECTURE
+
+## 6P.1 Spawn the Architect
+
+Spawn the `ideate:architect` agent in **design** mode with `model: opus`. This overrides the agent's default model for this task. Provide it with:
+
+- The full interview — call `ideate_artifact_query({type: "interview"})` to retrieve it
+- Guiding principles and constraints — call `ideate_get_context_package()` to retrieve them as an assembled package
+- All research findings — call `ideate_artifact_query({type: "research"})` to retrieve them
+- Clear instruction to operate in **design** mode
+- Instructions to write output via `ideate_write_artifact`:
+  - Architecture artifact (type `architecture`, id `architecture`)
+  - Module spec artifacts (type `module_spec`, one per module)
+
+**Note:** If the architect agent returns its output inline in its response rather than writing artifacts directly, you (the init skill) must write the response content via `ideate_write_artifact`.
+
+The architect will produce:
+- An architecture artifact — component map, data flow, module specifications, interface contracts, execution order, design tensions
+- Module spec artifacts — one per module with Scope, Provides, Requires, Boundary Rules, Internal Design Notes
+
+**Wait for the architect to complete.** The architect runs in the foreground because its output is required before decomposition can begin. After it returns, record a metrics entry (see Metrics Instrumentation).
+
+## 6P.2 Review Architect Output
+
+After the architect completes, read the architecture document and module specs. Verify:
+
+1. **Interface contract consistency**: Every `Provides` entry referenced as a `Requires` by another module has a matching contract on both sides. If there are mismatches, have the architect resolve them before proceeding.
+
+2. **Coverage**: The union of all module scopes equals the full project scope as defined in the interview. Nothing falls between modules. Nothing is claimed by multiple modules.
+
+3. **Design tensions**: If the architect flagged unresolved design tensions, determine whether the guiding principles resolve them. If so, resolve them. If not, and the tensions are significant, present them to the user for resolution before proceeding. Minor tensions can be documented and deferred.
+
+4. **Scale assessment**: Count the modules. This determines the decomposition strategy:
+   - **Fewer than 5 modules**: Decompose to work items in the main session (skip spawning decomposers). The module layer may be implicit rather than producing separate module spec files.
+   - **5 or more modules**: Spawn decomposer agents in parallel (Phase 7P).
+
+## 6P.3 Write Overview
+
+Write the project overview via `ideate_write_artifact` with type `overview` and id `overview`. Include these fields:
+
+- `id`, `type`, `title`, `summary`, `components`, `structure`, `workflow`, `cycle_created` (0), `cycle_modified` (null)
+
+---
+
+# PHASE 7P: DECOMPOSITION
+
+## 7P.1 Decomposition Strategy
+
+Based on the scale assessment from Phase 6P:
+
+### Small projects (fewer than 5 modules)
+
+Decompose to work items yourself, in the main session. For each module (or for the architecture as a whole if modules were not produced):
+
+1. Identify the natural decomposition axis (by file, by feature, by layer, by dependency order)
+2. Draft work items using the standard format (see 7P.3)
+3. Validate all constraints (see 7P.4)
+
+### Large projects (5 or more modules)
+
+Spawn one `ideate:decomposer` agent per module, in parallel, each with `model: opus`. This overrides the agent's default model for this task. Provide each with:
+
+- The module spec — call `ideate_artifact_query({type: "module_spec"})` to retrieve all module specs, then pass the relevant one
+- The architecture, guiding principles, and constraints — from `ideate_get_context_package()` (call once, reuse for all decomposers)
+- Relevant research findings — call `ideate_artifact_query({type: "research"})` to retrieve them
+- The starting work item number for that module's range — call `ideate_get_next_id({type: "work_item"})` to get the next available number, then allocate ranges to avoid collisions
+
+Each decomposer produces work items with placeholder numbers. After each decomposer returns, record a metrics entry (see Metrics Instrumentation). After all decomposers complete, you reconcile: assign final sequential numbers, resolve cross-module dependencies (replacing interface references with concrete work item designations), and run the full validation suite.
+
+## 7P.2 Work Item Numbering
+
+Work items are numbered sequentially with 3-digit zero-padding: `001`, `002`, `003`, etc.
+
+When spawning parallel decomposers, assign number ranges to avoid collisions:
+- Module A: 001-010
+- Module B: 011-020
+- etc.
+
+Over-allocate ranges. After reconciliation, renumber to eliminate gaps.
+
+## 7P.3 Work Item Format
+
+Every work item is written via `ideate_write_artifact` with type `work_item` and id `WI-{NNN}`. Include these fields:
+
+- `id`, `type`, `title`, `status` (pending), `complexity` (low | medium | high)
+- `scope` — array of `{path, op}` entries (op: create | modify | delete)
+- `depends` — array of work item numbers this depends on
+- `blocks` — array of work item numbers this blocks
+- `criteria` — array of acceptance criteria strings, each tagged `[machine]` or `[human]`
+- `module` — module name or null
+- `domain` — domain name or null
+- `notes` — structured text with Objective and Implementation Notes sections. Enough detail that two independent LLMs given the same specs would produce functionally equivalent output.
+- `cycle_created` (0), `cycle_modified` (null)
+
+### Acceptance Criteria Rules
+
+**Every criterion must include a validation method tag.**
+
+Machine-verifiable criteria (tag: `[machine]`):
+- File exists at a specific path
+- Function/class/export with a specific name and signature exists
+- Tests pass (specific test files or suites)
+- Type checking passes
+- Structural assertions (file contains a specific section, config has a specific key)
+- Behavioral contracts (given input A, produces output B)
+
+Human-in-the-loop criteria (tag: `[human]`):
+- Prose quality in documentation
+- Aesthetic or UX design choices
+- Subjective tone or style evaluation
+- Any criterion where the correct answer depends on human judgment
+
+Both machine and human criteria are first-class. Do not avoid human criteria — subjective decisions made during planning become objective specs once approved, and subsequent work is validated against the documented choice. If you find yourself writing a criterion with no clear validation method, it signals an unresolved design decision in the spec. Go back and resolve it.
+
+Write each criterion as a plain string with the validation tag in brackets at the end: `"The output renders correctly on mobile viewports (min 320px) [human]"` or `"Config contains key schema_version [machine]"`.
+
+### File Scope Rules
+
+- Every file in the project must appear in exactly one work item's file scope (100% coverage).
+- No two concurrent work items may list the same file. If two items touch the same file, they must be sequenced by a dependency edge.
+- File scope entries specify `create` for new files, `modify` for existing files, and `delete` for files being removed.
+
+### Dependency Rules
+
+- Dependencies must form a directed acyclic graph (DAG). No cycles.
+- A work item depends on another only if it requires that item's output (file, interface, contract) to begin. Do not add dependencies for conceptual ordering preferences.
+- Minimize dependency depth to maximize parallelism. Prefer wide, shallow graphs over deep chains.
+
+## 7P.4 Validation
+
+After all work items are drafted, run these checks. All must pass before the plan is finalized.
+
+### DAG Validation
+Walk the dependency graph. Verify there are no cycles. If a cycle exists, restructure the work items to break it.
+
+### 100% Coverage Check
+1. Every module's scope is fully covered by its work items. No gaps — nothing in the architecture is unaddressed.
+2. Every work item maps to exactly one module (or to the architecture directly for small projects). No orphan work items.
+3. The union of all work item scopes equals the full project scope. Every file that needs to exist is created by some work item.
+4. No work item's file scope overlaps with a concurrent work item's file scope. Overlaps between sequenced items (linked by dependency) are acceptable.
+
+### Non-Overlapping Scope Enforcement
+For every pair of work items that do not have a dependency path between them (i.e., they could run concurrently), verify their file scopes do not intersect. If they do, either:
+- Add a dependency edge to sequence them, or
+- Split the overlapping file into separate concerns with separate files, or
+- Merge the work items
+
+### Spec Sufficiency Heuristic
+For each work item, apply this test: if two independent LLMs were given this work item spec (plus the architecture doc and guiding principles), would they produce functionally equivalent output?
+
+Check for:
+- Ambiguous terms that could be interpreted differently
+- Missing file paths or function signatures
+- Unspecified error handling behavior
+- Acceptance criteria with no stated validation method
+- Implementation notes that say "as appropriate" or "as needed" without defining what that means
+
+If any work item fails this test, add more detail until it passes.
+
+---
+
+# PHASE 8P: EXECUTION STRATEGY
+
+## 8P.1 Write Execution Strategy
+
+Write the execution strategy via `ideate_write_artifact` with type `execution_strategy` and id `execution-strategy`. Base the content on the process track answers from the interview and the structure of the work item dependency graph. Include these fields:
+
+- `id`, `type`, `title`
+- `mode` (sequential | batched_parallel | full_parallel)
+- `max_concurrent_agents`, `worktrees_enabled`, `worktrees_reason`, `review_cadence`
+- `work_item_groups` — array of groups, each with `group` number, `mode`, optional `depends_on_group`, and `items` array
+- `agent_config` — `worker_model`, `reviewer_model`, `permission_mode`
+- `dependency_graph` — ASCII diagram or textual description
+- `cycle_created` (0), `cycle_modified` (null)
+
+The execution mode should be determined by:
+- **Project size**: Small projects (under 5 work items) -> sequential. Medium -> batched. Large -> parallel teams.
+- **Dependency structure**: Highly sequential dependency chains -> sequential or batched. Wide, shallow graphs -> parallel.
+- **User constraints**: Cost sensitivity, environment limitations, worktree availability.
+- **Risk tolerance**: New/experimental projects may benefit from sequential execution with review after each item.
+
+## 8P.2 Work Item Groups
+
+Analyze the dependency graph and group work items for execution:
+
+1. **Group 1**: Work items with no dependencies. These execute first.
+2. **Group 2**: Work items whose dependencies are all in Group 1.
+3. Continue until all items are grouped.
+
+Within each group, items are independent and can run in parallel. Groups execute sequentially (Group 2 starts after Group 1 completes).
+
+State whether each group should run in parallel or sequentially, and why.
+
+---
+
+# PHASE 9P: WRITE PLAN ARTIFACTS
+
+## 9P.1 Verify and Write Remaining Artifacts
+
+Verify and write every artifact that has not been written yet. All writes use `ideate_write_artifact`.
+
+**Work items**: All work items should already be written (from Phase 7P.3). Verify they are all present via `ideate_get_project_status()`.
+
+**Execution strategy**: Written in Phase 8P.1. Verify it exists.
+
+**Journal entry**: Write the planning session journal entry via `ideate_append_journal`:
 
 ```
-ideate_emit_metric({
-  payload: {
-    timestamp: "{ISO 8601}",
-    skill: "init",
-    phase: "3",
-    cycle: 0,
-    agent_type: "architect",
-    model: "opus",
-    work_item: null,
-    wall_clock_ms: {ms},
-    turns_used: {N or null},
-    context_files_read: ["{path}", ...],
-    input_tokens: {N or null},
-    output_tokens: {N or null},
-    cache_read_tokens: {N or null},
-    cache_write_tokens: {N or null},
-    mcp_tools_called: ["{tool_name}", ...]
+ideate_append_journal({
+  skill: "init",
+  date: "{today's date}",
+  entry_type: "plan-complete",
+  body: "{Summary of the planning session: scope, module count, work item count, execution mode. 2-4 sentences.}"
+})
+```
+
+Verify that the following artifacts exist and are complete by calling `ideate_get_project_status()`:
+- Project config
+- Interview (interview-plan-001)
+- Guiding principles (GP-{NN}, one per principle)
+- Constraints (C-{NN}, one per constraint)
+- Research artifacts (any produced by researchers)
+- Overview
+- Architecture
+- Module specs (if applicable — projects with 5+ modules)
+- Execution strategy
+- Work items (WI-{NNN}, one per work item)
+- Domain index (created in Phase 10P)
+- Domain policies (P-{N}, per domain)
+- Domain decisions (D-{N}, per domain)
+- Domain questions (Q-{N}, per domain)
+
+## 9P.2 Present Plan Summary
+
+Present the final plan to the user with this structure:
+
+```
+## Plan Complete
+
+### Scope
+{One-paragraph project description.}
+
+### Statistics
+- Modules: {N}
+- Work items: {N}
+- Estimated dependency groups: {N}
+- Max parallelism: {N items in the widest group}
+- Execution mode: {sequential | batched | parallel teams}
+
+### Dependency Graph
+{ASCII diagram or structured representation showing work item dependencies and grouping}
+
+### Critical Path
+{The longest sequential chain of work items — this determines minimum execution time}
+
+### Open Concerns
+{Any unresolved questions, documented assumptions, or risks that may surface during execution. If none, state "None — all questions resolved during interview."}
+
+### Next Step
+Run `/ideate:execute` to begin building, or `/ideate:refine` to adjust the plan.
+```
+
+After presenting the plan summary, call `ideate_emit_event` with:
+- event: "plan.complete"
+- variables: { "WORK_ITEM_COUNT": "{total_work_item_count}" }
+
+This call is best-effort — if it fails, continue without interruption.
+
+---
+
+# PHASE 10P: DOMAIN BOOTSTRAP
+
+## 10P.1 Identify Domains
+
+After writing all plan artifacts, identify 2-4 candidate domains from the interview transcript and architecture document. Domains are areas of the project that have:
+
+- **Different conceptual language**: the vocabulary shifts when discussing them (e.g., "schema migrations" vs. "API contracts" vs. "rendering pipeline")
+- **Different decision authorities**: different stakeholders care about different domains
+- **Different change cadences**: some parts stabilize fast, others stay in flux
+
+Start coarse. Two or three domains are usually right. Signals for splitting a domain later:
+- More than 10 decisions in one domain after the first review cycle
+- A distinct cluster of questions that don't relate to the other decisions in that domain
+- A new stakeholder group emerges who cares about a subset of the domain
+
+Do NOT create domains for every module. Domains are knowledge units, not code units.
+
+## 10P.2 Tag Interview Entries by Domain
+
+Retrieve the interview artifact (interview-plan-001) and update the `domain` field on each entry to reflect the most relevant domain. Cross-cutting questions may be tagged with a domain or left as `null`. Write the updated interview back via `ideate_write_artifact`.
+
+## 10P.3 Create Domain Artifacts
+
+For each domain identified in 10P.1, create the following artifacts using `ideate_write_artifact`.
+
+**Domain index** — write using `ideate_write_artifact`:
+
+```
+ideate_write_artifact({
+  type: "domain_index",
+  id: "domain-index",
+  content: {
+    current_cycle: 0,
+    domains: [
+      {
+        name: "{domain-name}",
+        description: "{One sentence: what concern area this domain covers.}"
+      }
+    ],
+    cross_cutting_concerns: "{any concerns spanning multiple domains, or omit if none}"
   }
 })
 ```
 
+The cycle counter starts at 0 (no review cycles have run yet). The first `/ideate:review` run will update this to 1.
+
+**Policies** — one artifact per policy, type `domain_policy`, id `P-{N}`. Include fields:
+
+- `id`, `type`, `domain`, `title`, `rule`, `derived_from` (e.g., "GP-{N} ({Principle Name})"), `established` (planning phase), `status` (active), `amended_by` (null), `cycle_created` (0), `cycle_modified` (null)
+
+Project the guiding principles into domain-specific actionable rules. A GP becomes a domain policy when its application in this domain is substantively more specific than the GP alone. If the GP applies identically everywhere, it stays a GP.
+
+**Decisions** — one artifact per decision, type `domain_decision`, id `D-{N}`. Include fields:
+
+- `id`, `type`, `domain`, `title`, `decision`, `rationale`, `assumes` (omit if none), `source` (reference the source artifact designation, e.g., "architecture" or "interview-plan-001#IQ-plan-001-{N}"), `status` (settled), `cycle_created` (0), `cycle_modified` (null)
+
+Record planning-phase decisions: technology selections, architectural choices, interface contracts, data model decisions. These are the first entries — workers in cycle 1 start with real policy context.
+
+**Questions** — one artifact per open question, type `domain_question`, id `Q-{N}`. Include fields:
+
+- `id`, `type`, `domain`, `title`, `question`, `source` (reference the source artifact designation), `impact`, `status` (open), `addressed_by` (null), `reexamination_trigger`, `cycle_created` (0), `cycle_modified` (null)
+
+Capture open questions from the interview that belong to this domain.
+
+## 10P.4 Write Domain Journal Entry
+
+Write a domain bootstrap journal entry via `ideate_append_journal`:
+
+```
+ideate_append_journal({
+  skill: "init",
+  date: "{today's date}",
+  entry_type: "domain-bootstrap",
+  body: "{Domains created, initial policy count, initial decision count, open question count. 1-2 sentences.}"
+})
+```
+
+---
+
+# PHASE 11P: VERIFICATION AND SUMMARY
+
+Call `ideate_get_project_status()` to confirm all artifacts are present. Then present the plan summary (from Phase 9P.2) if not already presented.
+
+Write a final metrics journal entry via `ideate_append_journal`:
+
+```
+ideate_append_journal({
+  skill: "init",
+  date: "{today's date}",
+  entry_type: "plan-metrics",
+  body: "Agents spawned: {total} ({breakdown by type})\nTotal wall-clock: {total_ms}ms\nModels used: {list}\nSlowest agent: {type} ({ms}ms)"
+})
+```
+
+If metrics could not be emitted, note "metrics unavailable" and omit the breakdown.
+
+---
+
+# ============================================================
+# SHARED SECTIONS (both modes)
+# ============================================================
+
+# ADAPTIVE GRANULARITY (plan mode only)
+
+Not every decision needs user input. Use this framework to determine what to ask vs what to decide:
+
+**Ask the user when:**
+- The decision involves business logic, user-facing behavior, or product direction
+- The guiding principles do not resolve the question
+- Multiple valid approaches exist with significantly different tradeoffs that the user cares about
+- The decision has high impact and is difficult to reverse
+
+**Decide without asking when:**
+- The guiding principles clearly resolve the question
+- The decision is a standard engineering choice with an obvious best option given the constraints
+- The decision is low-impact and easily reversible
+- Research findings point to a clear answer
+- The user has already expressed a preference that covers this case
+
+When you make a decision without asking, do not announce it during the interview. Record it in the architecture or work item specs. The user can review it in the artifacts.
+
+---
+
+# METRICS INSTRUMENTATION
+
+After each agent spawn (via the Agent tool), call `ideate_emit_metric` with the metric payload. Best-effort only: if the call fails, continue without interruption.
+
+**Metric payload fields:**
+
 - `timestamp` — ISO 8601 when the agent was spawned.
 - `skill` — `"init"` (constant for this skill).
-- `phase` — `"3"` (architect spawn is in Phase 3).
+- `phase` — phase identifier (e.g., `"4I"` for init architect, `"4P.5"` for plan researcher, `"6P.1"` for plan architect, `"7P.1"` for plan decomposer).
 - `cycle` — `0` (init always runs at cycle 0).
-- `agent_type` — `"architect"`.
-- `model` — `"opus"`.
-- `work_item` — `null`.
+- `agent_type` — the agent definition name (e.g., `"researcher"`, `"architect"`, `"decomposer"`).
+- `model` — model string passed to Agent tool (e.g., `"sonnet"`, `"opus"`).
+- `work_item` — `null` (init skill agents are not tied to individual work items).
 - `wall_clock_ms` — elapsed ms between Agent tool invocation and return.
 - `turns_used` — from Agent response metadata if available; `null` otherwise.
-- `context_files_read` — absolute paths of files explicitly provided in the agent's prompt.
+- `context_files_read` — absolute paths of files explicitly provided in the agent's prompt, or artifact designations.
 - `input_tokens` — integer or null.
 - `output_tokens` — integer or null.
 - `cache_read_tokens` — integer or null.
 - `cache_write_tokens` — integer or null.
-- `mcp_tools_called` — array of MCP tool names called before the spawn. `[]` if none.
+- `mcp_tools_called` — array of MCP tool names called to assemble context for this agent spawn. Empty array `[]` if no MCP tools were called.
+
+Before each Agent tool call, record which MCP tool calls (if any) were made to assemble context for that spawn. Include the tool names in the `mcp_tools_called` array.
 
 Record timestamp immediately before the Agent tool call; compute `wall_clock_ms` after it returns.
 
-**Journal summary**: After presenting the init summary, append a second journal entry via `ideate_append_journal`:
+**Turns tracking and budget warning**: After each Agent tool call returns, extract `tool_uses` from the response `<usage>` block as `turns_used`. Use the maxTurns value from `{config}.agent_budgets` for each agent type (`researcher`, `architect`, `decomposer`). If config was not loaded or the agent type is not present in `agent_budgets`, use the agent's frontmatter default. After emitting the metric, if `turns_used` is non-null and the agent's maxTurns is known, compute the utilization: `turns_used / maxTurns`. If utilization > 0.80, append a warning journal entry (via `ideate_append_journal`):
 
-```
-ideate_append_journal({
-  skill: "plan",
-  date: "{today's date}",
-  entry_type: "init-metrics",
-  body: "Agents spawned: 1 (architect x 1)\nTotal wall-clock: {total_ms}ms\nModels used: opus"
-})
-```
+> Agent {agent_type} used {turns_used}/{maxTurns} turns ({pct}%) — near budget limit
 
-If the metric could not be emitted, note "metrics unavailable" and omit the breakdown.
+where `{pct}` is `round(turns_used / maxTurns * 100)`. This warning is best-effort — if the journal call fails, continue without interruption.
 
 ---
 
-# Error Handling
+# ERROR HANDLING
 
-- If the architect agent fails to analyze the codebase, inform the user and ask whether to proceed without codebase analysis. If yes, conduct the interview without codebase context — the interview will need to cover more ground to compensate. If no, stop.
-- If the user provides fewer than 2 guiding principles, write what was provided. Do not invent principles. Note in the summary that the domain bootstrap may be sparse.
-- If the project root does not exist or is not a directory, stop and report the error. Do not create a project root that does not exist.
-- If `ideate_bootstrap_project` fails during Phase 2, stop immediately — the artifact directory structure is required for all subsequent writes.
-- If an MCP write call fails during Phase 5 or 6, note the failure and continue. Partial artifact sets are better than nothing. List failed writes in the summary.
+## MCP server unavailable
+If the ideate MCP artifact server tools are not available after bootstrap, stop and report:
+
+> The ideate MCP artifact server is required but not available. Verify it is configured in .mcp.json and that `mcp/artifact-server/` has been built.
+
+Do not attempt workarounds or proceed without MCP. The artifact server is a required component.
+
+## External MCP servers unavailable
+If `spawn_session` or other external MCP server tools are not available, continue without them. Log the gap (topics that would have benefited from live research, sessions that would have benefited from parallelization). Use the Agent tool as the primary spawning mechanism. External MCP servers enhance capabilities but are not required.
+
+## Architect fails or produces incomplete output (init mode)
+If the architect agent fails to analyze the codebase, inform the user and ask whether to proceed without codebase analysis. If yes, conduct the interview without codebase context — the interview will need to cover more ground to compensate. If no, stop.
+
+## Architect fails or produces incomplete output (plan mode)
+If the architect's output is missing module specs, has unresolved interface conflicts, or does not cover the full project scope, do not proceed to decomposition. Fix the issues — either by re-spawning the architect with more specific instructions, or by completing the architecture yourself.
+
+## Research unavailable (plan mode)
+If you cannot spawn researcher agents (no Agent tool support, no session-spawner MCP), proceed without background research. Use your training knowledge for factual questions. Flag in the interview summary that live research was not performed and list topics that would benefit from investigation.
+
+## Decomposer produces overlapping or incomplete work items (plan mode)
+If decomposer output fails validation (overlapping file scopes, missing coverage, cycles in dependencies), resolve the issues yourself during reconciliation. This is expected when multiple decomposers work in parallel — cross-module coordination is your responsibility, not theirs.
+
+## User abandons interview early
+If the user wants to stop the interview before all topics/tracks are covered, present what you have, clearly mark what is unknown, and proceed. Document assumptions explicitly. A partial result with documented gaps is better than nothing.
+
+## Insufficient guiding principles (init mode)
+If the user provides fewer than 2 guiding principles, write what was provided. Do not invent principles. Note in the summary that the domain bootstrap may be sparse.
+
+## Project root does not exist
+If the project root does not exist or is not a directory, stop and report the error. Do not create a project root that does not exist.
+
+## Bootstrap failure
+If `ideate_bootstrap_project` fails during Phase 3, stop immediately — the artifact directory structure is required for all subsequent writes.
+
+## Partial write failures
+If an MCP write call fails during artifact writing phases, note the failure and continue. Partial artifact sets are better than nothing. List failed writes in the summary.
 
 ---
 
-# Self-Check
+# WHAT YOU DO NOT DO
 
-Before presenting the init summary, verify:
+- You do not write code. You produce specs (plan mode) or steering artifacts (init mode).
+- You do not validate that ideas are "good." You identify problems and ambiguities.
+- You do not encourage or praise. You interrogate and resolve.
+- You do not present options without analysis. If options exist, you present tradeoffs.
+- You do not use filler phrases ("Great question!", "That's a good approach!", "Let's dive in!"). You ask the next question.
+- You do not skip validation. Every work item passes the spec sufficiency test (plan mode).
+- You do not produce acceptance criteria without a validation method tag. Every criterion is tagged `[machine]` or `[human]` (plan mode).
+- You do not create work items with overlapping file scopes unless they are sequenced by dependency (plan mode).
+- You do not leave interface contracts undefined between modules. Contracts are defined before work items (plan mode).
+- You do not access artifact files directly. All reads and writes go through MCP tools.
+- You do not reference internal storage paths, filenames, or directory structures. You use artifact designations (WI-001, GP-01) and MCP tool calls.
 
-1. **No direct file I/O**: Every artifact was written through an MCP tool (`ideate_write_artifact`, `ideate_append_journal`, `ideate_emit_metric`, `ideate_bootstrap_project`). No Write tool calls targeting the artifact directory.
-2. **No path references**: No instructions in this run referenced filesystem paths within the artifact directory. All artifacts are identified by type and designation (e.g., GP-01, C-02, interview-init-001).
-3. **Bootstrap via MCP**: The artifact directory was created by `ideate_bootstrap_project`, not by manual directory creation.
-4. **Designations, not filenames**: Artifacts are referenced by their designation (GP-01, C-01, D-1, P-1, Q-1, interview-init-001) throughout, never by filename.
-5. **Metrics via MCP**: The metrics entry was emitted through `ideate_emit_metric`, not appended to a file directly.
-6. **Journal via MCP**: Journal entries were written through `ideate_append_journal`, not as direct YAML file writes.
+---
+
+# SELF-CHECK
+
+Before considering the init skill complete, verify the following invariants:
+
+1. **Existing project detection**: Phase 1 calls `ideate_get_project_status()` and returns an error if the project already exists, instructing the user to remove the artifact directory manually or use `/ideate:refine`.
+2. **Source code detection**: Phase 2 uses Glob to check for source files and determines init mode vs plan mode.
+3. **Both flows call ideate_bootstrap_project**: Phase 3 calls `ideate_bootstrap_project()` regardless of mode.
+4. **Init mode produces steering artifacts only**: Guiding principles, constraints, interview transcript, domain layer. No work items, architecture, overview, execution strategy, or module specs.
+5. **Plan mode produces full plan artifacts**: Guiding principles, constraints, interview, research, architecture, overview, execution strategy, module specs (if applicable), work items, and domain layer.
+6. **No direct file I/O**: Every artifact was written through an MCP tool (`ideate_write_artifact`, `ideate_append_journal`, `ideate_emit_metric`, `ideate_bootstrap_project`). No Write tool calls targeting the artifact directory.
+7. **No path references**: No instructions reference filesystem paths within the artifact directory. All artifacts are identified by type and designation (e.g., GP-01, C-02, interview-init-001).
+8. **Bootstrap via MCP**: The artifact directory was created by `ideate_bootstrap_project`, not by manual directory creation.
+9. **Designations, not filenames**: Artifacts are referenced by their designation (GP-01, C-01, D-1, P-1, Q-1, WI-001, interview-init-001, interview-plan-001) throughout, never by filename.
+10. **Metrics via MCP**: Metric entries are emitted through `ideate_emit_metric`, not appended to a file directly.
+11. **Journal via MCP**: Journal entries are written through `ideate_append_journal`, not as direct YAML file writes.
+12. **All agent references use ideate: qualified names**: Agents are referenced as `ideate:architect`, `ideate:researcher`, `ideate:decomposer` — not bare names.
+13. **GP-14 self-check**: This skill does not reference `.ideate/` paths, directory structures, or `.yaml` filenames. Artifacts are referenced by designation only.

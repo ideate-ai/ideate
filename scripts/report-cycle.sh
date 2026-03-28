@@ -29,7 +29,7 @@ Options:
 Report Sections:
   Cycle-over-Cycle Quality Trends   Per-cycle finding counts by severity with
                                     trend indicator (improving/stable/degrading).
-  Convergence Speed                 Number of brrr/inner cycles per outer cycle.
+  Convergence Speed                 Number of autopilot/inner cycles per outer cycle.
   First-Pass Acceptance Rate        Percentage of work items accepted on first
                                     review pass per cycle.
 """
@@ -113,7 +113,7 @@ def section_quality_trends(quality_events):
     lines = ["## Cycle-over-Cycle Quality Trends", ""]
 
     if not quality_events:
-        lines.append("No quality data recorded. Run /ideate:review or /ideate:brrr to generate quality metrics.")
+        lines.append("No quality data recorded. Run /ideate:review or /ideate:autopilot to generate quality metrics.")
         return lines
 
     # Sort by cycle
@@ -162,7 +162,7 @@ def section_convergence_speed(entries, quality_events):
                 if cc is not None:
                     convergence_by_cycle[c] = cc
 
-    # Fallback: count distinct quality_summary events per cycle as a proxy for inner brrr cycles
+    # Fallback: count distinct quality_summary events per cycle as a proxy for inner autopilot cycles
     if not convergence_by_cycle:
         cycle_counts = collections.Counter()
         for e in quality_events:
@@ -170,13 +170,13 @@ def section_convergence_speed(entries, quality_events):
             if c is not None:
                 cycle_counts[c] += 1
         # Only use proxy data if there are multiple quality events for at least one cycle
-        # (single quality events per cycle mean brrr ran once — not enough to be meaningful as convergence data)
+        # (single quality events per cycle mean autopilot ran once — not enough to be meaningful as convergence data)
         proxy_available = any(v > 1 for v in cycle_counts.values())
         if proxy_available:
             convergence_by_cycle = {c: v for c, v in cycle_counts.items()}
 
     if not convergence_by_cycle:
-        lines.append("No convergence data recorded. Convergence speed is tracked when brrr runs multiple review cycles.")
+        lines.append("No convergence data recorded. Convergence speed is tracked when autopilot runs multiple review cycles.")
         return lines
 
     sorted_cycles = sorted(convergence_by_cycle.keys(), key=lambda x: (x is None, x if x is not None else 0))
@@ -245,7 +245,7 @@ def main():
 
     if not os.path.exists(metrics_path):
         print(f"No metrics file found at: {metrics_path}")
-        print("Run /ideate:execute, /ideate:review, or /ideate:brrr to generate metrics.")
+        print("Run /ideate:execute, /ideate:review, or /ideate:autopilot to generate metrics.")
         sys.exit(0)
 
     entries, quality_events = load_entries(metrics_path)

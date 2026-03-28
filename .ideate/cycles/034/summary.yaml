@@ -5,7 +5,7 @@ content: |-
   # Review Summary — Cycle 034
 
   ## Overview
-  Cycle 034 was a v3 backlog cleanup. 72 phantom-pending items were triaged (60 marked done, 6 obsolete). 6 items were executed: a CTE deduplication fix, MCP availability check removal from refine and brrr skills, ARCHITECTURE.md tool count update, write_artifact test verification, and a researcher direct-write bypass fix. All code changes are correct. Two significant housekeeping gaps and four minor documentation issues were identified.
+  Cycle 034 was a v3 backlog cleanup. 72 phantom-pending items were triaged (60 marked done, 6 obsolete). 6 items were executed: a CTE deduplication fix, MCP availability check removal from refine and autopilot skills, ARCHITECTURE.md tool count update, write_artifact test verification, and a researcher direct-write bypass fix. All code changes are correct. Two significant housekeeping gaps and four minor documentation issues were identified.
 
   ## Critical Findings
   None.

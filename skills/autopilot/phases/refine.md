@@ -1,4 +1,4 @@
-# brrr Phase 6d: Refinement Phase
+# Autopilot Phase 6d: Refinement Phase
 
 ## Entry Conditions
 
@@ -28,16 +28,16 @@ Retrieve the cycle's review artifacts via `ideate_artifact_query({type: "cycle_s
 
 **Work item cap**: Create one work item per distinct finding group (e.g., one for all role-system findings, one for all README schema findings), not one per individual finding instance.
 
-**Divergence check**: If the total pending work item count after this phase is greater than or equal to `{pending_count_start_of_cycle}`, stop the loop. Report: "brrr cycle is not converging — pending work items are not decreasing. Current: {N}. Previous: {M}. Stopping autonomous loop." Proceed to reporting.md.
+**Divergence check**: If the total pending work item count after this phase is greater than or equal to `{pending_count_start_of_cycle}`, stop the loop. Report: "Autopilot cycle is not converging — pending work items are not decreasing. Current: {N}. Previous: {M}. Stopping autonomous loop." Proceed to reporting.md.
 
-Call `ideate_append_journal("brrr", {date}, "refinement", {body})` — appends a structured journal entry atomically.
+Call `ideate_append_journal("autopilot", {date}, "refinement", {body})` — appends a structured journal entry atomically.
 
 If the ideate MCP artifact server is not available, stop and report: "The ideate MCP artifact server is required but not available. Verify .mcp.json configuration."
 
 Write a refinement summary:
 
 ```markdown
-## [brrr] {date} — Cycle {N} refinement
+## [autopilot] {date} — Cycle {N} refinement
 Findings addressed: {N} critical, {N} significant
 New work items created: {list of new item numbers and titles}
 Work items reset for rework: {list of item numbers, if any}

@@ -1,5 +1,5 @@
 ---
-description: "Execute the plan produced by ideate:plan. Follows the execution strategy to build work items using agents, tracks progress with continuous incremental review, and flags unresolvable issues via Andon cord."
+description: "Execute the plan produced by ideate:init. Follows the execution strategy to build work items using agents, tracks progress with continuous incremental review, and flags unresolvable issues via Andon cord."
 user-invocable: true
 argument-hint: "[artifact directory path]"
 ---
@@ -301,7 +301,7 @@ If the Agent tool is not available but the session-spawner MCP server (from exte
 
 # Phase 7: Incremental Review
 
-When a work item completes (in any execution mode), spawn the `code-reviewer` agent immediately.
+When a work item completes (in any execution mode), spawn the `ideate:code-reviewer` agent immediately.
 
 Provide the code-reviewer with:
 - The work item spec (from the `ideate_get_work_item_context` response used in Phase 6)

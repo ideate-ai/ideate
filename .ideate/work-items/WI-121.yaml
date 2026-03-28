@@ -6,7 +6,7 @@ complexity: low
 scope:
   - path: skills/execute/SKILL.md
     op: modify
-  - path: skills/brrr/phases/execute.md
+  - path: skills/autopilot/phases/execute.md
     op: modify
   - path: specs/domains/workflow/policies.md
     op: modify
@@ -16,7 +16,7 @@ criteria:
   - skills/execute/SKILL.md Phase 8 startup-failure exception instructs the executor to diagnose root cause and apply a surgical fix if within scope
   - skills/execute/SKILL.md Phase 8 startup-failure exception routes to Andon only when the root cause cannot be fixed
   - The new rule appears before the general fixable-within-scope rule (evaluation order preserved)
-  - skills/brrr/phases/execute.md finding-handling first Critical bullet matches the new diagnose-and-fix behavior
+  - skills/autopilot/phases/execute.md finding-handling first Critical bullet matches the new diagnose-and-fix behavior
   - specs/domains/workflow/policies.md P-22 is updated to reflect the new rule (diagnose + surgical fix; Andon only if unfixable)
   - No other sections in any of the three files are modified
 module: null
@@ -47,7 +47,7 @@ notes: |
   3. If the root cause cannot be fixed (requires changes outside this work item's scope, architectural changes, or is indeterminate): route to the Andon cord (Phase 9).
   ```
 
-  ### File 2: `skills/brrr/phases/execute.md`
+  ### File 2: `skills/autopilot/phases/execute.md`
 
   Location: Review finding handling block, first Critical finding bullet (line 158). The current text reads:
 
@@ -67,7 +67,7 @@ notes: |
 
   ```
   ## P-22: Startup failure Critical findings always route to Andon — execute skill must not apply scope judgment
-  When the code-reviewer emits a Critical finding titled "Startup failure after ...", `skills/execute/SKILL.md` Phase 8 and `skills/brrr/phases/execute.md` finding-handling must treat it as scope-changing unconditionally. The execute skill's general scope-judgment rule does not apply to this finding class; apparent fixability within the work item's scope is not a valid reason to suppress escalation.
+  When the code-reviewer emits a Critical finding titled "Startup failure after ...", `skills/execute/SKILL.md` Phase 8 and `skills/autopilot/phases/execute.md` finding-handling must treat it as scope-changing unconditionally. The execute skill's general scope-judgment rule does not apply to this finding class; apparent fixability within the work item's scope is not a valid reason to suppress escalation.
   - **Derived from**: D-33 (Startup failure must bypass scope judgment)
   - **Established**: cycle 007
   - **Status**: active
@@ -77,7 +77,7 @@ notes: |
 
   ```
   ## P-22: Startup failure Critical findings require immediate diagnosis and surgical fix; Andon only if unfixable
-  When the code-reviewer emits a Critical finding titled "Startup failure after ...", `skills/execute/SKILL.md` Phase 8 and `skills/brrr/phases/execute.md` finding-handling must immediately diagnose the root cause and apply a surgical fix if the cause is within the current work item's scope. The Andon cord is triggered only if the root cause cannot be fixed (requires changes outside the current work item, architectural changes, or the cause is indeterminate). Silent correction without diagnosis and user escalation without attempted repair are both incorrect.
+  When the code-reviewer emits a Critical finding titled "Startup failure after ...", `skills/execute/SKILL.md` Phase 8 and `skills/autopilot/phases/execute.md` finding-handling must immediately diagnose the root cause and apply a surgical fix if the cause is within the current work item's scope. The Andon cord is triggered only if the root cause cannot be fixed (requires changes outside the current work item, architectural changes, or the cause is indeterminate). Silent correction without diagnosis and user escalation without attempted repair are both incorrect.
   - **Derived from**: D-33 (amended), user correction after Cycle 008
   - **Established**: cycle 007
   - **Amended**: cycle 009
@@ -89,7 +89,7 @@ notes: |
   1. `skills/execute/SKILL.md` Phase 8 startup-failure exception instructs the executor to diagnose root cause and apply a surgical fix if within scope
   2. `skills/execute/SKILL.md` Phase 8 startup-failure exception routes to Andon only when the root cause cannot be fixed
   3. The new rule appears before the general fixable-within-scope rule (evaluation order preserved)
-  4. `skills/brrr/phases/execute.md` finding-handling first Critical bullet matches the new diagnose-and-fix behavior
+  4. `skills/autopilot/phases/execute.md` finding-handling first Critical bullet matches the new diagnose-and-fix behavior
   5. `specs/domains/workflow/policies.md` P-22 is updated to reflect the new rule
   6. No other sections in any of the three files are modified
 cycle_created: 1

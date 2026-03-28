@@ -362,7 +362,7 @@ def section_quality_trends(quality_events):
     lines = ["## Quality Trends", ""]
 
     if not quality_events:
-        lines.append("No quality data recorded. Run /ideate:review or /ideate:brrr to generate quality metrics.")
+        lines.append("No quality data recorded. Run /ideate:review or /ideate:autopilot to generate quality metrics.")
         return lines
 
     # Sort by cycle

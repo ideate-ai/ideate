@@ -3,7 +3,7 @@ type: journal_entry
 phase: execute
 date: "2026-03-11"
 cycle_created: 3
-title: "Work item 037: brrr Skill"
+title: "Work item 037: autopilot Skill"
 content: |
   Status: complete with rework
   Rework: 2 significant (added Human Re-Engagement Handling section for AC11, added proxy-human-log.md write instruction to spawn prompt for AC13), 6 minor (disambiguated {N} placeholder in cycle banner, named principles-checker separately with inline output, fixed last_cycle_findings initialization, documented Phase 5 skip on resume, moved cycles_completed increment to Phase 6e unconditionally, added Phase 9 journal reconstruction guidance for per-cycle data).

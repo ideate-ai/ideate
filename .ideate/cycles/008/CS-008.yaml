@@ -6,7 +6,7 @@ content: |
   
   ## Overview
   
-  Cycle 008 contained one work item (WI-120): adding an unconditional startup-failure exception rule to the execute and brrr finding-handling logic. All three capstone reviewers returned Pass. No Critical or Significant findings were identified. The change correctly enforces P-22.
+  Cycle 008 contained one work item (WI-120): adding an unconditional startup-failure exception rule to the execute and autopilot finding-handling logic. All three capstone reviewers returned Pass. No Critical or Significant findings were identified. The change correctly enforces P-22.
   
   ## Critical Findings
   
@@ -18,7 +18,7 @@ content: |
   
   ## Minor Findings
   
-  - [code-reviewer] Phrasing inconsistency between the two implementations: `skills/execute/SKILL.md` uses "regardless of whether the fix appears simple or contained" while `skills/brrr/phases/execute.md` uses "regardless of apparent fixability." Semantically equivalent but not identical. — relates to: WI-120, cross-cutting
+  - [code-reviewer] Phrasing inconsistency between the two implementations: `skills/execute/SKILL.md` uses "regardless of whether the fix appears simple or contained" while `skills/autopilot/phases/execute.md` uses "regardless of apparent fixability." Semantically equivalent but not identical. — relates to: WI-120, cross-cutting
   
   ## Suggestions
   

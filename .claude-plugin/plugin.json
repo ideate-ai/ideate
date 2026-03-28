@@ -1,7 +1,7 @@
 {
   "name": "ideate",
-  "version": "3.2.0",
-  "description": "Structured SDLC workflow with initialization, planning, building, and validating software projects through iterative interview, execution, and review with progressive decomposition, continuous review, and autonomous convergence loop (brrr).",
+  "version": "3.3.0",
+  "description": "Structured SDLC workflow with initialization, planning, building, and validating software projects through iterative interview, execution, and review with progressive decomposition, continuous review, and autonomous convergence loop (autopilot).",
   "author": {
     "name": "Dan Singer"
   },

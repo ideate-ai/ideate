@@ -8,7 +8,7 @@ scope:
     op: modify
   - path: skills/execute/SKILL.md
     op: modify
-  - path: skills/brrr/phases/execute.md
+  - path: skills/autopilot/phases/execute.md
     op: modify
   - path: README.md
     op: modify

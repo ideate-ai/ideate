@@ -5,7 +5,7 @@ reviewer: code-reviewer
 severity: minor
 title: `cycles_completed` only incremented in Phase 6d — converging cycle never counted
 description: |
-  - **File**: `skills/brrr/SKILL.md:522`
+  - **File**: `skills/autopilot/SKILL.md:522`
   - **Suggested fix**: Move increment to Phase 6e (unconditional). Fixed in rework.
 file_path: cycles/001/findings/FI-001-017.yaml
 line: null
