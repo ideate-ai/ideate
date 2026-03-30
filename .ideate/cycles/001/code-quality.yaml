@@ -1,0 +1,50 @@
+id: code-quality
+type: cycle_summary
+cycle: 1
+reviewer: code-reviewer
+title: Code Quality Review — Cycle 1
+content: |-
+  ## Verdict: Fail
+
+  0 critical, 2 significant, 4 minor findings. 492 tests pass.
+
+  ## Critical Findings
+
+  None.
+
+  ## Significant Findings
+
+  ### S1: handleEmitMetric stores relative file_path instead of absolute
+  - **File**: `mcp/artifact-server/src/tools/metrics.ts:65,78`
+  - **Issue**: `relativePath` is built as `path.join("metrics", id + ".yaml")` (relative) and stored in the node row. Every other write handler stores an absolute path. `readArtifactContent` calls `fs.readFileSync(filePath)` which resolves relative paths against CWD, not `ideateDir`. Any code path reading a `metrics_event` node's file through `file_path` (PPR context assembly, `resolveContent` fallback in `analysis.ts`) will silently read from the wrong path or return empty content.
+  - **Suggested fix**: Replace line 65 with an absolute path: `const yamlPath = path.join(metricsDir, id + ".yaml");` and store `yamlPath` as `file_path` in the node row.
+
+  ### S2: analysis.ts and 8 other tool files still import ToolContext from ./index.js
+  - **File**: `mcp/artifact-server/src/tools/analysis.ts:6` (and write.ts, execution.ts, query.ts, context.ts, bootstrap.ts, events.ts, config.ts, autopilot-state.ts)
+  - **Issue**: WI-415 created `src/types.ts` and migrated `metrics.ts` to import `ToolContext` from `../types.js` to break the circular dependency chain. However, `analysis.ts` and 8 other tool files still import from `./index.js`, which imports from `./analysis.js` — circular chain remains. Currently masked because `ToolContext` is type-only and erased at runtime, but any future runtime-value import through this chain can produce `undefined`.
+  - **Suggested fix**: Change all tool files that import `ToolContext` from `"./index.js"` to `import type { ToolContext } from "../types.js"`.
+
+  ## Minor Findings
+
+  ### M1: Unused import `type * as dbSchema` in analysis.ts
+  - **File**: `mcp/artifact-server/src/tools/analysis.ts:5`
+  - **Issue**: Never referenced in the file. Leftover.
+  - **Suggested fix**: Remove line 5.
+
+  ### M2: suggestionsCount hardcoded to zero
+  - **File**: `mcp/artifact-server/src/tools/analysis.ts:156`
+  - **Issue**: `const suggestionsCount = 0` is declared and emitted but never queried from SQLite. If `findings` schema gains a `suggestion` severity, this silently reports 0.
+  - **Suggested fix**: Query it or remove the `suggestions` line from output.
+
+  ### M3: handleGetConvergenceStatus test does not cover file-path fallback in resolveContent
+  - **File**: `mcp/artifact-server/src/__tests__/tools.test.ts:456-558`
+  - **Issue**: All tests insert `document_artifacts` with non-null `content`. The fallback branch (`readFileSafe(row.nodes.file_path)`) is never exercised.
+  - **Suggested fix**: Add a test with `content = NULL` and a real YAML file at the stored path.
+
+  ### M4: work_item filter uses substring LIKE match in metrics queries
+  - **File**: `mcp/artifact-server/src/tools/metrics.ts:241`
+  - **Issue**: `me.payload LIKE '%WI-1%'` will false-positive match WI-10, WI-11, etc.
+  - **Suggested fix**: Use `json_extract(me.payload, '$.work_item') = ?`.
+content_hash: 5f00a36a17060e07edda401228155ed9b7f795a0eb85684f1fee1b3d02213267
+token_count: 804
+file_path: .ideate/cycles/001/code-quality.yaml

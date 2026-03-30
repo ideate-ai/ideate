@@ -1,6 +1,6 @@
 import { existsSync, readFileSync } from "fs";
 import path from "path";
-import { execSync } from "child_process";
+import { spawnSync } from "child_process";
 
 // ---------------------------------------------------------------------------
 // Event name constants
@@ -82,6 +82,74 @@ function substituteVariables(
 }
 
 // ---------------------------------------------------------------------------
+// Command parsing helper
+// ---------------------------------------------------------------------------
+
+/**
+ * Parse a command string into command and arguments array.
+ * Handles quoted strings (both single and double quotes).
+ * This parsing avoids shell interpretation entirely.
+ */
+function parseCommand(commandStr: string): { command: string; args: string[] } | null {
+  const tokens: string[] = [];
+  let current = "";
+  let inSingleQuote = false;
+  let inDoubleQuote = false;
+  let i = 0;
+
+  while (i < commandStr.length) {
+    const char = commandStr[i];
+
+    if (inSingleQuote) {
+      if (char === "'") {
+        inSingleQuote = false;
+      } else {
+        current += char;
+      }
+    } else if (inDoubleQuote) {
+      if (char === '"') {
+        inDoubleQuote = false;
+      } else if (char === "\\" && i + 1 < commandStr.length) {
+        // Handle escape sequences in double quotes
+        i++;
+        current += commandStr[i];
+      } else {
+        current += char;
+      }
+    } else if (char === "'") {
+      inSingleQuote = true;
+    } else if (char === '"') {
+      inDoubleQuote = true;
+    } else if (char === "\\" && i + 1 < commandStr.length) {
+      // Handle escape outside quotes
+      i++;
+      current += commandStr[i];
+    } else if (/\s/.test(char)) {
+      if (current.length > 0) {
+        tokens.push(current);
+        current = "";
+      }
+    } else {
+      current += char;
+    }
+    i++;
+  }
+
+  if (current.length > 0) {
+    tokens.push(current);
+  }
+
+  if (tokens.length === 0) {
+    return null;
+  }
+
+  return {
+    command: tokens[0],
+    args: tokens.slice(1),
+  };
+}
+
+// ---------------------------------------------------------------------------
 // dispatchHook
 // ---------------------------------------------------------------------------
 
@@ -97,18 +165,39 @@ export function dispatchHook(
     return "";
   }
 
-  const substituted = substituteVariables(hook.value, variables);
-
-  if (hook.type === "command") {
-    const stdout = execSync(substituted, {
-      timeout: 30_000,
-      encoding: "utf8",
-    });
-    return stdout;
+  if (hook.type === "prompt") {
+    // For prompt type, variable substitution is safe (no shell execution)
+    return substituteVariables(hook.value, variables);
   }
 
-  // type === "prompt"
-  return substituted;
+  // type === "command"
+  // Parse the command into command + args BEFORE substitution to prevent injection
+  const parsed = parseCommand(hook.value);
+  if (!parsed) {
+    return "";
+  }
+
+  // Apply variable substitution to each argument separately
+  // This ensures variables cannot inject shell metacharacters
+  const substitutedArgs = parsed.args.map(arg => substituteVariables(arg, variables));
+
+  // Use spawnSync with explicit argument array - no shell interpretation
+  const result = spawnSync(parsed.command, substitutedArgs, {
+    timeout: 30_000,
+    encoding: "utf8",
+    shell: false,
+  });
+
+  if (result.error) {
+    throw result.error;
+  }
+
+  if (result.status !== 0) {
+    const errMsg = result.stderr?.trim() || `Command exited with status ${result.status}`;
+    throw new Error(errMsg);
+  }
+
+  return result.stdout ?? "";
 }
 
 // ---------------------------------------------------------------------------

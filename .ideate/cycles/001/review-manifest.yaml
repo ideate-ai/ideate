@@ -1,0 +1,24 @@
+id: review-manifest
+type: cycle_summary
+cycle: 1
+title: Review Manifest — Cycle 1
+content: |-
+  ## Review Manifest — Cycle 1
+
+  Full review (cycle 1 baseline).
+
+  | Work Item | Title | Incremental Review | Rework Cycles |
+  |-----------|-------|-------------------|---------------|
+  | WI-414 | Fix handleGetConvergenceStatus to query findings table | Pass (after 1 rework) | 1 |
+  | WI-415 | Unify metrics data path (emit → YAML + SQLite, deprecate JSONL) | Pass (after 1 rework) | 1 |
+  | WI-416 | Delete dead interviewFiles() helper from write-transaction.test.ts | Pass (first pass) | 0 |
+
+  ## Summary
+  - Items reviewed: 3
+  - First-pass accepted: 1 (WI-416)
+  - Required rework: 2 (WI-414, WI-415)
+  - Final verdict: All Pass
+  - Test suite: 492 passing, 0 failing
+content_hash: e5f5886a07a7b97d88d9126e900818200c6631b654962d530940139f93fc0043
+token_count: 193
+file_path: .ideate/cycles/001/review-manifest.yaml

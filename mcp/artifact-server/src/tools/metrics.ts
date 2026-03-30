@@ -1,26 +1,143 @@
 import * as fs from "fs";
 import * as path from "path";
-import { ToolContext } from "./index.js";
+import { createHash, randomUUID } from "crypto";
+import { stringify as stringifyYaml } from "yaml";
+import type { ToolContext } from "../types.js";
+import {
+  upsertNode,
+  upsertMetricsEvent,
+  type NodeRow,
+  type MetricsEventRow as DbMetricsEventRow,
+} from "../db-helpers.js";
 
 // ---------------------------------------------------------------------------
-// handleEmitMetric — append a metric line to metrics.jsonl
+// Helpers
+// ---------------------------------------------------------------------------
+
+function sha256(content: string): string {
+  return createHash("sha256").update(content, "utf8").digest("hex");
+}
+
+function tokenCount(content: string): number {
+  return Math.floor(content.length / 4);
+}
+
+// ---------------------------------------------------------------------------
+// handleEmitMetric — write YAML + upsert to SQLite (P-44 pattern)
 // ---------------------------------------------------------------------------
 
 export async function handleEmitMetric(
   ctx: ToolContext,
   args: Record<string, unknown>
 ): Promise<string> {
-  const payload = args.payload;
+  const payload = args.payload as Record<string, unknown> | undefined | null;
 
   if (payload === undefined || payload === null) {
     throw new Error("Missing required parameter: payload");
   }
 
-  const line = JSON.stringify(payload) + "\n";
-  const metricsPath = path.join(ctx.ideateDir, "metrics.jsonl");
-  fs.appendFileSync(metricsPath, line, "utf8");
+  // Generate unique ID
+  const id = "ME-" + randomUUID().replace(/-/g, "").slice(0, 8).toUpperCase();
 
-  return "Metric appended successfully";
+  // Resolve metrics directory
+  const metricsDir = path.join(ctx.ideateDir, "metrics");
+  fs.mkdirSync(metricsDir, { recursive: true });
+
+  // Build YAML content
+  const yamlDoc: Record<string, unknown> = {
+    id,
+    type: "metrics_event",
+    event_name: payload.event_name ?? "unknown",
+    timestamp: payload.timestamp ?? null,
+  };
+  // Include all other payload fields
+  for (const [k, v] of Object.entries(payload)) {
+    if (!(k in yamlDoc)) {
+      yamlDoc[k] = v;
+    }
+  }
+
+  const yamlContent = stringifyYaml(yamlDoc);
+  const content_hash = sha256(yamlContent);
+  const token_count = tokenCount(yamlContent);
+
+  const yamlPath = path.join(metricsDir, id + ".yaml");
+
+  // Phase 1: Write YAML file
+  fs.writeFileSync(yamlPath, yamlContent, "utf8");
+
+  // Phase 2: Upsert to SQLite inside an exclusive transaction
+  try {
+    ctx.db.transaction(() => {
+      const nodeRow: NodeRow = {
+        id,
+        type: "metrics_event",
+        content_hash,
+        token_count,
+        file_path: yamlPath,
+        status: null,
+        cycle_created: typeof payload.cycle === "number" ? payload.cycle : null,
+        cycle_modified: typeof payload.cycle === "number" ? payload.cycle : null,
+      };
+      upsertNode(ctx.drizzleDb, nodeRow);
+
+      // Handle finding_severities field
+      let finding_severities: string | null = null;
+      if (typeof payload.finding_severities === "string") {
+        finding_severities = payload.finding_severities;
+      } else if (payload.finding_severities != null) {
+        finding_severities = JSON.stringify(payload.finding_severities);
+      }
+
+      // Handle context_artifact_ids field
+      let context_artifact_ids: string | null = null;
+      if (Array.isArray(payload.context_artifact_ids)) {
+        context_artifact_ids = JSON.stringify(payload.context_artifact_ids);
+      } else if (typeof payload.context_artifact_ids === "string") {
+        context_artifact_ids = payload.context_artifact_ids;
+      }
+
+      // Handle first_pass_accepted (normalize boolean to integer)
+      let first_pass_accepted: number | null = null;
+      if (typeof payload.first_pass_accepted === "boolean") {
+        first_pass_accepted = payload.first_pass_accepted ? 1 : 0;
+      } else if (typeof payload.first_pass_accepted === "number") {
+        first_pass_accepted = payload.first_pass_accepted;
+      }
+
+      // Nested payload sub-object
+      const nestedPayload =
+        payload.payload != null ? JSON.stringify(payload.payload) : null;
+
+      const metricsRow: DbMetricsEventRow = {
+        id,
+        event_name: typeof payload.event_name === "string" ? payload.event_name : "unknown",
+        timestamp: typeof payload.timestamp === "string" ? payload.timestamp : null,
+        payload: nestedPayload,
+        input_tokens: typeof payload.input_tokens === "number" ? payload.input_tokens : null,
+        output_tokens: typeof payload.output_tokens === "number" ? payload.output_tokens : null,
+        cache_read_tokens: typeof payload.cache_read_tokens === "number" ? payload.cache_read_tokens : null,
+        cache_write_tokens: typeof payload.cache_write_tokens === "number" ? payload.cache_write_tokens : null,
+        outcome: typeof payload.outcome === "string" ? payload.outcome : null,
+        finding_count: typeof payload.finding_count === "number" ? payload.finding_count : null,
+        finding_severities,
+        first_pass_accepted,
+        rework_count: typeof payload.rework_count === "number" ? payload.rework_count : null,
+        work_item_total_tokens: typeof payload.work_item_total_tokens === "number" ? payload.work_item_total_tokens : null,
+        cycle_total_tokens: typeof payload.cycle_total_tokens === "number" ? payload.cycle_total_tokens : null,
+        cycle_total_cost_estimate: typeof payload.cycle_total_cost_estimate === "string" ? payload.cycle_total_cost_estimate : null,
+        convergence_cycles: typeof payload.convergence_cycles === "number" ? payload.convergence_cycles : null,
+        context_artifact_ids,
+      };
+      upsertMetricsEvent(ctx.drizzleDb, metricsRow);
+    }).exclusive();
+  } catch (err) {
+    // Best-effort cleanup of YAML file on transaction failure
+    try { fs.unlinkSync(yamlPath); } catch { /* ignore */ }
+    throw err;
+  }
+
+  return "Metric emitted successfully";
 }
 
 // ---------------------------------------------------------------------------
@@ -67,10 +184,10 @@ interface CycleAggregate {
 }
 
 // ---------------------------------------------------------------------------
-// Raw DB row type
+// Raw DB row type (includes cycle_created from JOIN with nodes)
 // ---------------------------------------------------------------------------
 
-interface MetricsEventRow {
+interface LocalMetricsEventRow {
   id: string;
   event_name: string;
   timestamp: string | null;
@@ -113,18 +230,16 @@ function buildWhereFragments(
     params.push(filter.cycle);
   }
   if (filter.agent_type !== undefined) {
-    clauses.push("me.event_name = ?");
+    clauses.push("json_extract(me.payload, '$.agent_type') = ?");
     params.push(filter.agent_type);
   }
   if (filter.work_item !== undefined) {
-    // work_item is stored in the payload JSON — we use a LIKE search on payload text
-    clauses.push("me.payload LIKE ?");
-    params.push(`%${filter.work_item}%`);
+    clauses.push("json_extract(me.payload, '$.work_item') = ?");
+    params.push(filter.work_item);
   }
   if (filter.phase !== undefined) {
-    // phase is stored in the payload JSON — we use a LIKE search on payload text
-    clauses.push("me.payload LIKE ?");
-    params.push(`%${filter.phase}%`);
+    clauses.push("json_extract(me.payload, '$.phase') = ?");
+    params.push(filter.phase);
   }
 
   return { clauses, params };
@@ -158,7 +273,7 @@ function parseFindingSeverities(raw: string | null): {
 // Aggregation: agent scope
 // ---------------------------------------------------------------------------
 
-function aggregateByAgent(rows: MetricsEventRow[]): AgentAggregate[] {
+function aggregateByAgent(rows: LocalMetricsEventRow[]): AgentAggregate[] {
   const map = new Map<string, {
     event_count: number;
     total_input: number;
@@ -238,7 +353,7 @@ function aggregateByAgent(rows: MetricsEventRow[]): AgentAggregate[] {
 // Aggregation: work_item scope
 // ---------------------------------------------------------------------------
 
-function aggregateByWorkItem(rows: MetricsEventRow[]): WorkItemAggregate[] {
+function aggregateByWorkItem(rows: LocalMetricsEventRow[]): WorkItemAggregate[] {
   // We aggregate per work_item value from the payload JSON field.
   // Each row may have a "work_item" key in its payload.
   const map = new Map<string, {
@@ -309,7 +424,7 @@ function aggregateByWorkItem(rows: MetricsEventRow[]): WorkItemAggregate[] {
 // Aggregation: cycle scope
 // ---------------------------------------------------------------------------
 
-function aggregateByCycle(rows: MetricsEventRow[]): CycleAggregate[] {
+function aggregateByCycle(rows: LocalMetricsEventRow[]): CycleAggregate[] {
   const map = new Map<number, {
     convergence_cycles: number | null;
     total_findings_critical: number;
@@ -503,7 +618,7 @@ export async function handleGetMetrics(
   `;
 
   const stmt = ctx.db.prepare(query);
-  const rows = stmt.all(...params) as MetricsEventRow[];
+  const rows = stmt.all(...params) as LocalMetricsEventRow[];
 
   const sections: string[] = [];
   sections.push("# Metrics Report");

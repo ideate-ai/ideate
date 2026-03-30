@@ -1,0 +1,11 @@
+id: P-49
+type: domain_policy
+domain: artifact-structure
+title: Forward-only fixes must include backfill assessment
+description: When a code change alters how artifacts are written or indexed, the implementation must include an explicit assessment of existing artifacts affected by the prior behavior. If existing artifacts will be inconsistent after the fix (e.g., missing fields on index rebuild), the work item must either (a) include a backfill step, or (b) document the inconsistency and create a follow-up work item for remediation. Silent forward-only fixes that leave existing data in a broken state are prohibited.
+derived_from: D-151
+established: cycle 4
+status: active
+content_hash: a33f7515456156cee48395b06f56470288f1b1aa0f218d4b8dcb8528638a2513
+token_count: 169
+file_path: .ideate/policies/P-49.yaml

@@ -1,0 +1,11 @@
+id: D-134
+type: domain_decision
+domain: artifact-structure
+title: Public drizzle-orm API for table name resolution
+decision: Replace Symbol.for('drizzle:Name') internal accessor with the exported getTableName function from drizzle-orm.
+rationale: Symbol-based access was an undocumented internal detail; the public API is stable across versions.
+source: cycle 1 decision-log D3; WI-397
+status: settled
+content_hash: fedc81b676aca6da51471526e6447dd4c0f94d62e7dde1967c3d37ede247607f
+token_count: 100
+file_path: .ideate/decisions/D-134.yaml

@@ -1,7 +1,6 @@
-import Database from "better-sqlite3";
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-import { BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
 import { Tool } from "@modelcontextprotocol/sdk/types.js";
+import type { ToolContext } from "../types.js";
+export type { ToolContext } from "../types.js";
 import { handleGetWorkItemContext, handleGetContextPackage, handleAssembleContext } from "./context.js";
 import { handleArtifactQuery, handleGetNextId } from "./query.js";
 import { handleGetExecutionStatus, handleGetReviewManifest } from "./execution.js";
@@ -10,19 +9,9 @@ import { handleAppendJournal, handleArchiveCycle, handleWriteWorkItems, handleUp
 import { handleEmitEvent } from "./events.js";
 import { handleEmitMetric, handleGetMetrics } from "./metrics.js";
 import { handleBootstrapProject } from "./bootstrap.js";
-import { handleGetAutopilotState, handleUpdateAutopilotState } from "./autopilot-state.js";
+import { handleManageAutopilotState } from "./autopilot-state.js";
+import { handleUpdateConfig } from "./config.js";
 import { getConfigWithDefaults } from "../config.js";
-
-// ---------------------------------------------------------------------------
-// ToolContext
-// ---------------------------------------------------------------------------
-
-export interface ToolContext {
-  db: Database.Database;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  drizzleDb: BetterSQLite3Database<any>;
-  ideateDir: string;
-}
 
 // ---------------------------------------------------------------------------
 // TOOLS — all 22 tool definitions with inputSchema
@@ -32,7 +21,7 @@ export const TOOLS: Tool[] = [
   {
     name: "ideate_get_work_item_context",
     description:
-      "Returns full context for a single work item: its definition, acceptance criteria, scope, dependencies, and any related findings or review history. Use this before starting or reviewing a work item.",
+      "Full context for one work item: definition, criteria, scope, dependencies, findings. Use before starting or reviewing work items. Returns JSON object.",
     inputSchema: {
       type: "object",
       properties: {
@@ -43,31 +32,46 @@ export const TOOLS: Tool[] = [
       },
       required: ["work_item_id"],
     },
+    annotations: {
+      readOnlyHint: true,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
   },
   {
     name: "ideate_get_context_package",
     description:
-      "Returns the full project context package: guiding principles, constraints, architecture overview, domain policies, and current execution strategy. Use at the start of a session to orient yourself.",
+      "Full project context: principles, constraints, architecture, policies, strategy. Use at session start. Returns JSON with context sections.",
     inputSchema: {
       type: "object",
       properties: {},
       required: [],
+    },
+    annotations: {
+      readOnlyHint: true,
+      idempotentHint: true,
+      openWorldHint: false,
     },
   },
   {
     name: "ideate_get_config",
     description:
-      "Returns the parsed contents of .ideate/config.json with defaults applied for any missing optional fields (agent_budgets, ppr). Use to read agent token budgets and PPR configuration.",
+      "Parsed project config with defaults (agent_budgets, model_overrides, ppr). Use for token budget, model selection, and PPR settings. Returns JSON config object.",
     inputSchema: {
       type: "object",
       properties: {},
       required: [],
     },
+    annotations: {
+      readOnlyHint: true,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
   },
   {
     name: "ideate_artifact_query",
     description:
-      "Query the artifact index. Filter by type, domain, status, cycle, severity, phase, or work item. Optionally follow graph edges to retrieve related artifacts. Returns a JSON array of matching artifact objects.",
+      "Query artifacts by type with filters. Use for: work items (type=work_item), findings, policies. Graph traversal: related_to + edge_types. Returns array (up to 200 items).",
     inputSchema: {
       type: "object",
       properties: {
@@ -125,21 +129,31 @@ export const TOOLS: Tool[] = [
       },
       required: [],
     },
+    annotations: {
+      readOnlyHint: true,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
   },
   {
     name: "ideate_get_execution_status",
     description:
-      "Returns execution status for the current cycle: total work items, counts by status (pending/in-progress/done/blocked), and which items are ready to start based on dependency resolution.",
+      "Execution status: work item counts by status, ready-to-start items. Use during execute phase. Returns ~500 chars.",
     inputSchema: {
       type: "object",
       properties: {},
       required: [],
     },
+    annotations: {
+      readOnlyHint: true,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
   },
   {
     name: "ideate_get_review_manifest",
     description:
-      "Returns the review manifest for a given cycle: the list of work items reviewed, reviewer assignments, and overall pass/fail verdict. Defaults to the most recent cycle.",
+      "Review manifest: work items reviewed, reviewers, verdict. Use during review phase. Defaults to latest cycle. Returns JSON manifest.",
     inputSchema: {
       type: "object",
       properties: {
@@ -150,11 +164,16 @@ export const TOOLS: Tool[] = [
       },
       required: [],
     },
+    annotations: {
+      readOnlyHint: true,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
   },
   {
     name: "ideate_get_convergence_status",
     description:
-      "Returns convergence status for a given review cycle: open findings by severity, addressed vs. unaddressed counts, and whether the cycle has converged (no critical or significant open findings).",
+      "Convergence status: open findings by severity, addressed counts. Use to check if cycle converged. Returns ~300 chars.",
     inputSchema: {
       type: "object",
       properties: {
@@ -165,11 +184,16 @@ export const TOOLS: Tool[] = [
       },
       required: ["cycle_number"],
     },
+    annotations: {
+      readOnlyHint: true,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
   },
   {
     name: "ideate_get_domain_state",
     description:
-      "Returns the current domain knowledge state: policies, decisions, and open questions for one or more domains. Omit domains to retrieve all domains.",
+      "Domain knowledge: policies, decisions, questions. Use for domain context. Omit domains for all. Returns ~1KB per domain.",
     inputSchema: {
       type: "object",
       properties: {
@@ -182,21 +206,31 @@ export const TOOLS: Tool[] = [
       },
       required: [],
     },
+    annotations: {
+      readOnlyHint: true,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
   },
   {
     name: "ideate_get_project_status",
     description:
-      "Returns a high-level project status summary: current cycle, total work items by status, recent journal entries, open domain questions, and pending findings.",
+      "Project status: current cycle, work item counts, journal entries, open questions. Use for overview. Returns ~800 chars.",
     inputSchema: {
       type: "object",
       properties: {},
       required: [],
     },
+    annotations: {
+      readOnlyHint: true,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
   },
   {
     name: "ideate_append_journal",
     description:
-      "Appends a new entry to the project journal (journal.md). Use after completing significant work to create a durable record.",
+      "Append entry to the project journal. Use after significant work. Returns confirmation string.",
     inputSchema: {
       type: "object",
       properties: {
@@ -221,11 +255,17 @@ export const TOOLS: Tool[] = [
       },
       required: ["skill", "date", "entry_type", "body"],
     },
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: false,
+      idempotentHint: false,
+      openWorldHint: false,
+    },
   },
   {
     name: "ideate_archive_cycle",
     description:
-      "Creates the archive directory for a cycle (archive/cycles/NNN/) and writes a cycle summary document. Call after a review cycle completes.",
+      "Archive a completed review cycle with its summary artifacts. Use after review completes. Returns confirmation string.",
     inputSchema: {
       type: "object",
       properties: {
@@ -236,11 +276,17 @@ export const TOOLS: Tool[] = [
       },
       required: ["cycle_number"],
     },
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
   },
   {
     name: "ideate_write_work_items",
     description:
-      "Writes or updates work item YAML files in the .ideate/work-items/ directory. Creates one {id}.yaml file per work item. Each file contains all fields inline including notes content.",
+      "Write or update work items atomically. Use during plan/refine to define work. Returns confirmation.",
     inputSchema: {
       type: "object",
       properties: {
@@ -290,7 +336,7 @@ export const TOOLS: Tool[] = [
               },
               notes_content: {
                 type: "string",
-                description: "Implementation notes content (stored inline in the YAML).",
+                description: "Implementation notes content.",
               },
               domain: {
                 type: "string",
@@ -314,11 +360,17 @@ export const TOOLS: Tool[] = [
       },
       required: ["items"],
     },
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
   },
   {
     name: "ideate_update_work_items",
     description:
-      "Updates specific fields on existing work items without overwriting the full definition. Pass an array of partial update objects, each with an id and the fields to change.",
+      "Update work item fields without full overwrite. Use for status changes, scope updates. Returns confirmation string.",
     inputSchema: {
       type: "object",
       properties: {
@@ -345,11 +397,17 @@ export const TOOLS: Tool[] = [
       },
       required: ["updates"],
     },
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
   },
   {
     name: "ideate_write_artifact",
     description:
-      "Write any artifact to the .ideate/ directory as a YAML file. Handles path resolution, content hashing, and SQLite indexing automatically.",
+      "Write an artifact to the project store. Use for findings, policies, decisions, and cycle summaries. Returns confirmation.",
     inputSchema: {
       type: "object",
       properties: {
@@ -364,7 +422,7 @@ export const TOOLS: Tool[] = [
         },
         content: {
           type: "object",
-          description: "YAML fields to write (type-specific content)",
+          description: "Fields to write (type-specific content)",
         },
         cycle: {
           type: "integer",
@@ -374,11 +432,17 @@ export const TOOLS: Tool[] = [
       },
       required: ["type", "id", "content"],
     },
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
   },
   {
     name: "ideate_get_metrics",
     description:
-      "Returns aggregated metrics from the metrics_events table. Supports three aggregation scopes: agent (per-agent-type token and finding aggregates), work_item (first-pass acceptance and rework counts), and cycle (convergence speed, finding totals, token totals, cost estimates). Omit scope to get all three levels.",
+      "Aggregated metrics. Scopes: agent (tokens/findings), work_item (acceptance), cycle (convergence). Omit scope for all. Returns JSON.",
     inputSchema: {
       type: "object",
       properties: {
@@ -402,7 +466,7 @@ export const TOOLS: Tool[] = [
             },
             agent_type: {
               type: "string",
-              description: "Include only events with this event_name (agent type).",
+              description: "Include only events whose payload.agent_type field equals this value.",
             },
             phase: {
               type: "string",
@@ -414,11 +478,16 @@ export const TOOLS: Tool[] = [
       },
       required: [],
     },
+    annotations: {
+      readOnlyHint: true,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
   },
   {
     name: "ideate_assemble_context",
     description:
-      "Assembles a token-budgeted context package using Personalized PageRank (PPR) scoring. Seeds the graph from the given artifact IDs, ranks all reachable artifacts by relevance, and greedily includes them until the token budget is exhausted. Always-include types (e.g. architecture, principles, constraints) are included regardless of PPR score. Returns assembled markdown context and metadata.",
+      "PPR-ranked context within token budget. Use before agent tasks. Seeds from artifact IDs. Returns markdown + metadata (sized to budget).",
     inputSchema: {
       type: "object",
       properties: {
@@ -443,11 +512,16 @@ export const TOOLS: Tool[] = [
       },
       required: ["seed_ids"],
     },
+    annotations: {
+      readOnlyHint: true,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
   },
   {
     name: "ideate_emit_event",
     description:
-      "Fires all hooks registered for the given event name. Returns a JSON summary with the event name, number of hooks matched, number successfully executed, and any per-hook errors.",
+      "Fire registered hooks for event. Use for lifecycle events (plan.complete, review.finding). Returns JSON summary.",
     inputSchema: {
       type: "object",
       properties: {
@@ -465,80 +539,130 @@ export const TOOLS: Tool[] = [
       },
       required: ["event"],
     },
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: false,
+      idempotentHint: false,
+      openWorldHint: false,
+    },
   },
   {
     name: "ideate_emit_metric",
     description:
-      "Appends a metric payload as a single JSON line to metrics.jsonl. Use this instead of direct file writes for all metric emissions.",
+      "Record a metric event for the current session. Use for all metric emissions. Returns confirmation string.",
     inputSchema: {
       type: "object",
       properties: {
         payload: {
           type: "object",
           description:
-            "Any JSON-serializable metric payload object. Will be stringified and appended as one line.",
+            "Metric payload to record. Any JSON-serializable object.",
         },
       },
       required: ["payload"],
+    },
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: false,
+      idempotentHint: false,
+      openWorldHint: false,
     },
   },
   {
     name: "ideate_bootstrap_project",
     description:
-      "Creates the .ideate/ directory structure with config.json and all standard subdirectories. Use during project initialization instead of direct directory creation.",
+      "Initialize project artifacts. Use for project initialization. Returns confirmation with status.",
     inputSchema: {
       type: "object",
       properties: {
         project_name: {
           type: "string",
           description:
-            "Optional project name to store in config.json.",
+            "Optional project name to store in project config.",
         },
       },
       required: [],
+    },
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: false,
     },
   },
   {
     name: "ideate_get_next_id",
     description:
-      "Returns the next available ID for a given artifact type by querying the SQLite index. Replaces the glob + max-ID extraction pattern.",
+      "Next available ID for artifact type. Use before writing new artifacts. For proxy_human_decision, provide cycle. Returns ID string (e.g. 'WI-42' or 'PH-065-01').",
     inputSchema: {
       type: "object",
       properties: {
         type: {
           type: "string",
-          enum: ["work_item", "guiding_principle", "constraint", "policy", "decision", "question"],
+          enum: ["work_item", "guiding_principle", "constraint", "policy", "decision", "question", "domain_policy", "domain_decision", "domain_question", "proxy_human_decision"],
           description:
             "Artifact type to generate the next ID for.",
+        },
+        cycle: {
+          type: "integer",
+          description:
+            "Cycle number (required for proxy_human_decision). Generates cycle-scoped ID: {prefix}{cycle}-{seq}.",
         },
       },
       required: ["type"],
     },
-  },
-  {
-    name: "ideate_get_autopilot_state",
-    description:
-      "Reads the current autopilot session state from autopilot-state.yaml. Returns a default state object if the file does not exist.",
-    inputSchema: {
-      type: "object",
-      properties: {},
-      required: [],
+    annotations: {
+      readOnlyHint: true,
+      idempotentHint: false,
+      openWorldHint: false,
     },
   },
   {
-    name: "ideate_update_autopilot_state",
+    name: "ideate_manage_autopilot_state",
     description:
-      "Updates the autopilot session state by merging the provided partial state into the existing autopilot-state.yaml. Creates the file with defaults if it does not exist.",
+      "Get or update autopilot state. Use action='get' for recovery, 'update' for persistence. Returns JSON state.",
     inputSchema: {
       type: "object",
       properties: {
+        action: {
+          type: "string",
+          enum: ["get", "update"],
+          description: "Action to perform: 'get' to read current state, 'update' to merge a partial update.",
+        },
         state: {
           type: "object",
           description:
-            "Partial state update object. Any subset of autopilot-state fields (cycles_completed, convergence_achieved, started_at, last_phase, last_cycle, deferred, deferred_reason).",
+            "Partial state update (required when action='update'). Any subset of autopilot-state fields: cycles_completed, convergence_achieved, started_at, last_phase, last_cycle, deferred, deferred_reason, last_full_review_cycle, full_review_interval.",
         },
       },
-      required: ["state"],
+      required: ["action"],
+    },
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: false,
+      idempotentHint: false,
+      openWorldHint: false,
+    },
+  },
+  {
+    name: "ideate_update_config",
+    description:
+      "Update project config settings. Accepts partial patch; deep-merges into current config. Validates before writing. Pass agent_budgets, model_overrides, or ppr keys. Returns updated keys.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        patch: {
+          type: "object",
+          description: "Partial IdeateConfigJson to merge into current config.",
+        },
+      },
+      required: ["patch"],
+    },
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: false,
     },
   },
 ];
@@ -627,11 +751,11 @@ export async function handleTool(
     case "ideate_get_next_id":
       return handleGetNextId(ctx, _args);
 
-    case "ideate_get_autopilot_state":
-      return handleGetAutopilotState(ctx, _args);
+    case "ideate_manage_autopilot_state":
+      return handleManageAutopilotState(ctx, _args);
 
-    case "ideate_update_autopilot_state":
-      return handleUpdateAutopilotState(ctx, _args);
+    case "ideate_update_config":
+      return handleUpdateConfig(ctx, _args);
 
     default:
       throw new Error(`Unknown tool: ${name}`);

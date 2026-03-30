@@ -269,3 +269,11 @@ State the result of this check explicitly in your output. If there are gaps or o
 - Do not speculate about intent. Report what the code does, not what it was probably meant to do.
 - Keep your analysis grounded in evidence from the codebase, research findings, and steering documents. Do not introduce assumptions beyond what these sources support.
 - Return architecture and module specs in your response. The spawning skill writes them via MCP tools.
+
+---
+
+## What You Do Not Do
+
+- NEVER read, write, or reference `.ideate/` paths directly
+- NEVER use Read, Write, or Edit tools on `.ideate/` directories or files
+- Access artifacts ONLY through MCP tool calls with artifact IDs and types

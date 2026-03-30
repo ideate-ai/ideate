@@ -1,0 +1,12 @@
+id: Q-106
+type: domain_question
+domain: artifact-structure
+title: assertRequiredFields checks undefined but not null
+question: Null values pass the guard but violate NOT NULL SQLite constraints at the DB layer. Should the check be extended to cover null?
+source: cycle 1 code-quality M2; gap-analysis Gap 9; decision-log Q8
+impact: Corrupt rows could be inserted if callers pass null for required fields. Guard provides false safety guarantee.
+status: open
+reexamination_trigger: Next cycle modifying assertRequiredFields or db-helpers.ts.
+content_hash: 77fe87bf986fca696a8d6de02cc5511e17eb99bda20502a53238411c750883b7
+token_count: 135
+file_path: .ideate/questions/Q-106.yaml

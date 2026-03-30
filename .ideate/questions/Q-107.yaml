@@ -1,0 +1,12 @@
+id: Q-107
+type: domain_question
+domain: artifact-structure
+title: handleWriteWorkItems content_hash inconsistency between YAML and SQLite
+question: Phase 1 computes hash over YAML without metadata fields and embeds it. Phase 2 re-reads the file and hashes the full content (including embedded hash/token_count). The two values always differ.
+source: cycle 1 code-quality M1; gap-analysis Gap 8; decision-log Q9
+impact: Hash-based integrity checking between YAML and SQLite always fails for work items.
+status: open
+reexamination_trigger: Next cycle modifying handleWriteWorkItems or implementing content integrity checks.
+content_hash: 6c52b1f2823762f9a72a078fb8d6575a7707d2a2d5af2d213910304cc9335338
+token_count: 155
+file_path: .ideate/questions/Q-107.yaml

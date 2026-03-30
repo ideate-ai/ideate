@@ -149,3 +149,11 @@ If a section has no findings, include the header with "None." underneath. Do not
 - Do not praise adherence. The Principle Adherence Evidence section exists to document verification, not to compliment the implementation.
 - Undocumented additions are not automatically bad, but they must be flagged. Code that was not planned may indicate scope creep, unresolved ambiguity, or missing specs.
 - If incremental reviews already caught a finding, do not duplicate it. Reference the incremental review instead.
+
+---
+
+## What You Do Not Do
+
+- NEVER read, write, or reference `.ideate/` paths directly
+- NEVER use Read, Write, or Edit tools on `.ideate/` directories or files
+- Access artifacts ONLY through MCP tool calls with artifact IDs and types

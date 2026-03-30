@@ -2,9 +2,44 @@ import * as fs from "fs";
 import * as path from "path";
 import * as crypto from "crypto";
 import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
-import { ToolContext } from "./index.js";
+import type { ToolContext } from "../types.js";
 import { detectCycles } from "../indexer.js";
-import { nodes, workItems, edges, journalEntries } from "../db.js";
+import { TYPE_TO_EXTENSION_TABLE } from "../db.js";
+import {
+  type DrizzleDb,
+  type NodeRow,
+  type WorkItemRow,
+  type JournalEntryRow,
+  type DomainPolicyRow,
+  type DomainDecisionRow,
+  type DomainQuestionRow,
+  type ProxyHumanDecisionRow,
+  type GuidingPrincipleRow,
+  type ConstraintRow,
+  type DocumentArtifactRow,
+  type ResearchFindingRow,
+  type ModuleSpecRow,
+  type FindingRow,
+  type MetricsEventRow,
+  type InterviewQuestionRow,
+  type EdgeRow,
+  upsertNode,
+  upsertWorkItem,
+  upsertJournalEntry,
+  upsertDomainPolicy,
+  upsertDomainDecision,
+  upsertDomainQuestion,
+  upsertProxyHumanDecision,
+  upsertGuidingPrinciple,
+  upsertConstraint,
+  upsertDocumentArtifact,
+  upsertResearchFinding,
+  upsertModuleSpec,
+  upsertFinding,
+  upsertMetricsEvent,
+  upsertInterviewQuestion,
+  insertEdge,
+} from "../db-helpers.js";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -54,73 +89,81 @@ export async function handleAppendJournal(
   }
   const cycleStr = String(cycleNumber).padStart(3, "0");
 
-  // 2. Determine sequence number from SQLite COUNT to prevent concurrent collision
+  // 2. Ensure journal directory exists before entering transaction
   const journalDir = path.join(ctx.ideateDir, "cycles", cycleStr, "journal");
   ensureDir(journalDir);
 
-  const seqRow = ctx.db.prepare(
-    `SELECT COUNT(*) as cnt FROM nodes WHERE type = 'journal_entry' AND cycle_created = ?`
-  ).get(cycleNumber) as { cnt: number };
-  const seq = seqRow?.cnt ?? 0;
-  const seqStr = String(seq).padStart(3, "0");
+  // 3. COUNT, YAML write, and SQLite upserts in a single exclusive transaction
+  //    to prevent concurrent callers from deriving the same sequence number (P-44).
+  let writtenYamlPath = "";
+  let entryId: string;
+  try {
+    entryId = ctx.db.transaction(() => {
+      // 3a. Count existing journal entries for this cycle to get next sequence number
+      const seqRow = ctx.db.prepare(
+        `SELECT COUNT(*) as cnt FROM nodes WHERE type = 'journal_entry' AND cycle_created = ?`
+      ).get(cycleNumber) as { cnt: number };
+      const seq = seqRow?.cnt ?? 0;
+      const seqStr = String(seq).padStart(3, "0");
+      const id = `J-${cycleStr}-${seqStr}`;
 
-  // 3. Generate ID
-  const entryId = `J-${cycleStr}-${seqStr}`;
+      // 3b. Build YAML object
+      const entryObj = {
+        id,
+        type: "journal_entry",
+        phase: skill,
+        date: date,
+        cycle_created: cycleNumber,
+        title: entryType,
+        content: body,
+      };
 
-  // 4. Build YAML object
-  const entryObj = {
-    id: entryId,
-    type: "journal_entry",
-    phase: skill,
-    date: date,
-    cycle_created: cycleNumber,
-    title: entryType,
-    content: body,
-  };
+      // 3c. Serialize and write YAML file (Phase 1 of P-44, inside the exclusive lock)
+      const yamlContent = stringifyYaml(entryObj);
+      const filePath = path.join(journalDir, `${id}.yaml`);
+      fs.mkdirSync(path.dirname(filePath), { recursive: true });
+      fs.writeFileSync(filePath, yamlContent, "utf8");
+      writtenYamlPath = filePath;
 
-  // 5. Serialize with yaml library
-  const yamlContent = stringifyYaml(entryObj);
+      // 3d. Upsert SQLite rows (Phase 2 of P-44, same exclusive lock)
+      const contentHash = sha256(yamlContent);
+      const nodeRow: NodeRow = {
+        id,
+        type: "journal_entry",
+        cycle_created: cycleNumber,
+        cycle_modified: null,
+        content_hash: contentHash,
+        token_count: tokenCount(yamlContent),
+        file_path: filePath,
+        status: null,
+      };
+      const journalRow: JournalEntryRow = {
+        id,
+        phase: skill,
+        date: date,
+        title: entryType,
+        work_item: null,
+        content: body,
+      };
+      upsertNode(ctx.drizzleDb, nodeRow);
+      upsertJournalEntry(ctx.drizzleDb, journalRow);
 
-  // 6. Write to .ideate/cycles/{NNN}/journal/{id}.yaml
-  const yamlFilePath = path.join(journalDir, `${entryId}.yaml`);
-  fs.writeFileSync(yamlFilePath, yamlContent, "utf8");
+      return id;
+    }).exclusive();
+  } catch (txErr) {
+    // Transaction failed — SQLite rolled back. If the YAML was written before the
+    // upserts threw, clean it up so the filesystem and DB stay in sync.
+    if (writtenYamlPath) {
+      try {
+        if (fs.existsSync(writtenYamlPath)) fs.unlinkSync(writtenYamlPath);
+      } catch (cleanupErr) {
+        console.error(`handleAppendJournal: failed to remove ${writtenYamlPath} during cleanup:`, (cleanupErr as Error).message);
+      }
+    }
+    throw txErr;
+  }
 
-  // 7. Synchronously upsert into SQLite with file_path pointing to YAML file
-  const contentHash = sha256(yamlContent);
-
-  const nodeRow = {
-    id: entryId,
-    type: "journal_entry",
-    cycle_created: cycleNumber,
-    cycle_modified: null,
-    content_hash: contentHash,
-    token_count: tokenCount(yamlContent),
-    file_path: yamlFilePath,
-    status: null,
-  };
-
-  const journalRow = {
-    phase: skill,
-    date: date,
-    title: entryType,
-    work_item: null,
-    content: body,
-  };
-
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  ctx.drizzleDb.insert(nodes as any).values(nodeRow as any).onConflictDoUpdate({
-    target: (nodes as any).id,
-    set: nodeRow as any,
-  }).run();
-
-  const journalRowWithId = { id: entryId, ...journalRow };
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  ctx.drizzleDb.insert(journalEntries as any).values(journalRowWithId as any).onConflictDoUpdate({
-    target: (journalEntries as any).id,
-    set: journalRow as any,
-  }).run();
-
-  return `Wrote journal entry ${entryId} to ${yamlFilePath}.`;
+  return `Wrote journal entry ${entryId}.`;
 }
 
 // ---------------------------------------------------------------------------
@@ -167,22 +210,22 @@ export async function handleArchiveCycle(
   const seenWorkItems = new Set<string>();
 
   for (const reviewFile of incrementalFiles) {
-    const reviewName = path.basename(reviewFile);
-    // Convention: review files are named like {NNN}-{name}.md
-    // Extract the numeric prefix to find matching work item
-    const match = reviewName.match(/^(\d+)/);
-    if (match) {
-      const wiId = match[1];
-      if (!seenWorkItems.has(wiId)) {
-        seenWorkItems.add(wiId);
-        // Look for the work item file in work-items/
-        if (fs.existsSync(workItemsDir)) {
-          const wiEntries = fs.readdirSync(workItemsDir);
-          const wiFile = wiEntries.find((e) => e.startsWith(wiId + "-") || e === wiId + ".md" || e === wiId + ".yaml");
-          if (wiFile) {
-            workItemFiles.push({ src: path.join(workItemsDir, wiFile), name: wiFile });
-          }
-        }
+    let wiId: string | null = null;
+    try {
+      const content = fs.readFileSync(reviewFile, "utf8");
+      // Parse YAML to extract work_item field
+      const parsed = parseYaml(content) as Record<string, unknown> | null;
+      if (parsed && typeof parsed.work_item === "string" && parsed.work_item.trim()) {
+        wiId = parsed.work_item.trim();
+      }
+    } catch {
+      // Skip if unreadable or not valid YAML
+    }
+    if (wiId && !seenWorkItems.has(wiId)) {
+      seenWorkItems.add(wiId);
+      const wiFilePath = path.join(workItemsDir, `${wiId}.yaml`);
+      if (fs.existsSync(wiFilePath)) {
+        workItemFiles.push({ src: wiFilePath, name: `${wiId}.yaml` });
       }
     }
   }
@@ -208,7 +251,8 @@ export async function handleArchiveCycle(
       const srcSize = fs.statSync(srcPath).size;
       copied.push({ src: srcPath, dst: dstPath, srcSize });
     } catch (err) {
-      copyErrors.push(`Failed to copy ${srcPath}: ${(err as Error).message}`);
+      const code = (err as NodeJS.ErrnoException).code ?? "ERR_UNKNOWN";
+      copyErrors.push(`Failed to copy ${path.basename(srcPath)}: ${code}`);
     }
   }
 
@@ -220,7 +264,8 @@ export async function handleArchiveCycle(
       const srcSize = fs.statSync(srcPath).size;
       copied.push({ src: srcPath, dst: dstPath, srcSize });
     } catch (err) {
-      copyErrors.push(`Failed to copy ${srcPath}: ${(err as Error).message}`);
+      const code = (err as NodeJS.ErrnoException).code ?? "ERR_UNKNOWN";
+      copyErrors.push(`Failed to copy ${path.basename(srcPath)}: ${code}`);
     }
   }
 
@@ -232,12 +277,12 @@ export async function handleArchiveCycle(
   const verifyErrors: string[] = [];
   for (const { dst, srcSize } of copied) {
     if (!fs.existsSync(dst)) {
-      verifyErrors.push(`Verification failed — destination missing: ${dst}`);
+      verifyErrors.push(`Verification failed — file missing after copy: ${path.basename(dst)}`);
       continue;
     }
     const dstSize = fs.statSync(dst).size;
     if (dstSize !== srcSize) {
-      verifyErrors.push(`Verification failed — size mismatch for ${dst} (expected ${srcSize}, got ${dstSize})`);
+      verifyErrors.push(`Verification failed — size mismatch for ${path.basename(dst)} (expected ${srcSize} bytes, got ${dstSize})`);
     }
   }
 
@@ -252,6 +297,17 @@ export async function handleArchiveCycle(
   for (const { src: srcPath } of workItemFiles) {
     fs.unlinkSync(srcPath);
   }
+
+  // Phase 3b: Cleanup SQLite nodes whose file_path now points to deleted source locations.
+  // Findings are deleted from the index (archived artifacts are accessed via archive/ paths).
+  // Work item nodes are NOT deleted — they remain queryable after archival.
+  // All deletes are wrapped in an exclusive transaction to ensure atomicity.
+  const deleteStmt = ctx.db.prepare(`DELETE FROM nodes WHERE file_path = ?`);
+  ctx.db.transaction(() => {
+    for (const srcPath of incrementalFiles) {
+      deleteStmt.run(srcPath);
+    }
+  }).exclusive();
 
   const workItemCount = workItemFiles.length;
   const incrementalCount = incrementalFiles.length;
@@ -439,12 +495,34 @@ export async function handleWriteWorkItems(
     return `Error: Scope collision detected — no items written.\n${collisionErrors.join("\n")}`;
   }
 
+  // ---------------------------------------------------------------------------
+  // Transaction pattern for handleWriteWorkItems:
+  //
+  //   Phase 1 — YAML files are the source of truth.  Write all files first so
+  //             that a crash during this phase leaves no SQLite state at all.
+  //             On re-run the caller will re-submit and files are overwritten.
+  //
+  //   Phase 2 — Wrap ALL SQLite upserts in a single better-sqlite3 transaction.
+  //             better-sqlite3 is synchronous, so db.transaction(() => {...})()
+  //             is used (not async/await).  If the transaction throws, SQLite is
+  //             automatically rolled back by Drizzle/better-sqlite3.
+  //
+  //   Cleanup  — If the SQLite transaction fails after YAML files were written,
+  //              attempt to remove the written files (best-effort: do not
+  //              re-throw cleanup errors).  This keeps filesystem and DB in sync.
+  //              YAML is the source of truth, so a re-run can always recreate
+  //              the DB state from files; removing the files avoids a "ghost"
+  //              artifact that the DB does not know about.
+  // ---------------------------------------------------------------------------
+
   // Write Phase: write individual YAML files to {ideateDir}/work-items/{id}.yaml
   const workItemsDir = path.join(ctx.ideateDir, "work-items");
   ensureDir(workItemsDir);
 
   // Build response entries
-  const results: Array<{ id: string; result: string; file_path: string }> = [];
+  const results: Array<{ id: string; result: string }> = [];
+  // Track written file paths for cleanup on SQLite failure
+  const writtenFilePaths: string[] = [];
 
   for (const item of resolvedItems) {
     const id = item.resolvedId;
@@ -479,20 +557,20 @@ export async function handleWriteWorkItems(
     const contentHash = sha256(yamlForHash);
     const tokens = tokenCount(yamlForHash);
 
-    // Now add the computed fields and file_path (use absolute path for consistency with SQLite)
+    // Now add the computed fields (no file_path in YAML — storage detail per P-33)
     yamlObj.content_hash = contentHash;
     yamlObj.token_count = tokens;
-    yamlObj.file_path = absoluteFilePath;
 
     const finalYaml = stringifyYaml(yamlObj, { lineWidth: 0 });
 
-    // Write the YAML file
+    // Write the YAML file (Phase 1 — source of truth)
     fs.writeFileSync(absoluteFilePath, finalYaml, "utf8");
+    writtenFilePaths.push(absoluteFilePath);
 
-    results.push({ id, result: "created", file_path: absoluteFilePath });
+    results.push({ id, result: "created" });
   }
 
-  // Synchronously upsert into SQLite (GP-8)
+  // Phase 2 — Synchronously upsert into SQLite inside a single transaction (GP-8)
   const fkWasOn = ctx.db.pragma("foreign_keys", { simple: true }) as number;
   if (fkWasOn) ctx.db.pragma("foreign_keys = OFF");
 
@@ -509,7 +587,7 @@ export async function handleWriteWorkItems(
         const writtenContent = fs.readFileSync(absoluteFilePath, "utf8");
         const contentHash = sha256(writtenContent);
 
-        const nodeRow = {
+        const nodeRow: NodeRow = {
           id,
           type: "work_item",
           cycle_created: itemCycleCreated,
@@ -520,7 +598,8 @@ export async function handleWriteWorkItems(
           status: itemStatus,
         };
 
-        const wiRow = {
+        const wiRow: WorkItemRow = {
+          id,
           title: item.title ?? "",
           complexity: item.complexity ?? null,
           scope: item.scope ? JSON.stringify(item.scope) : null,
@@ -533,49 +612,50 @@ export async function handleWriteWorkItems(
         };
 
         // Upsert node
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        ctx.drizzleDb.insert(nodes as any).values(nodeRow as any).onConflictDoUpdate({
-          target: (nodes as any).id,
-          set: nodeRow as any,
-        }).run();
+        upsertNode(ctx.drizzleDb, nodeRow);
 
         // Upsert work_items extension
-        const wiRowWithId = { id, ...wiRow };
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        ctx.drizzleDb.insert(workItems as any).values(wiRowWithId as any).onConflictDoUpdate({
-          target: (workItems as any).id,
-          set: wiRow as any,
-        }).run();
+        upsertWorkItem(ctx.drizzleDb, wiRow);
 
         // Insert dependency edges
         if (item.depends && item.depends.length > 0) {
           for (const dep of item.depends) {
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            ctx.drizzleDb.insert(edges as any).values({
+            insertEdge(ctx.drizzleDb, {
               source_id: id,
               target_id: dep,
               edge_type: "depends_on",
               props: null,
-            } as any).onConflictDoNothing().run();
+            });
           }
         }
 
         // Insert blocks edges
         if (item.blocks && item.blocks.length > 0) {
           for (const blocked of item.blocks) {
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            ctx.drizzleDb.insert(edges as any).values({
+            insertEdge(ctx.drizzleDb, {
               source_id: id,
               target_id: blocked,
               edge_type: "blocks",
               props: null,
-            } as any).onConflictDoNothing().run();
+            });
           }
         }
       }
     });
 
-    upsertPhase();
+    upsertPhase.exclusive();
+  } catch (dbErr) {
+    // SQLite transaction failed — attempt best-effort cleanup of written YAML files
+    // to avoid filesystem/DB divergence.  Do not re-throw cleanup errors.
+    console.error("handleWriteWorkItems: SQLite transaction failed, cleaning up YAML files:", (dbErr as Error).message);
+    for (const fp of writtenFilePaths) {
+      try {
+        if (fs.existsSync(fp)) fs.unlinkSync(fp);
+      } catch (cleanupErr) {
+        console.error(`handleWriteWorkItems: failed to remove ${fp} during cleanup:`, (cleanupErr as Error).message);
+      }
+    }
+    throw dbErr;
   } finally {
     if (fkWasOn) ctx.db.pragma("foreign_keys = ON");
   }
@@ -595,6 +675,7 @@ export async function handleWriteWorkItems(
  */
 const CYCLE_SCOPED_TYPES = new Set([
   "finding", "cycle_summary", "review_output", "review_manifest", "decision_log",
+  "proxy_human_decision",
 ]);
 
 function resolveArtifactPath(ideateDir: string, type: string, id: string, cycle?: number): string {
@@ -605,6 +686,9 @@ function resolveArtifactPath(ideateDir: string, type: string, id: string, cycle?
     const paddedCycle = String(cycle).padStart(3, "0");
     if (type === "finding") {
       return path.join(ideateDir, "cycles", paddedCycle, "findings", `${id}.yaml`);
+    }
+    if (type === "proxy_human_decision") {
+      return path.join(ideateDir, "cycles", paddedCycle, "proxy-human", `${id}.yaml`);
     }
     return path.join(ideateDir, "cycles", paddedCycle, `${id}.yaml`);
   }
@@ -631,6 +715,12 @@ function resolveArtifactPath(ideateDir: string, type: string, id: string, cycle?
       return path.join(ideateDir, "domains", "index.yaml");
     case "module_spec":
       return path.join(ideateDir, "modules", `${id}.yaml`);
+    case "research_finding":
+      return path.join(ideateDir, "research", `${id}.yaml`);
+    case "metrics_event":
+      return path.join(ideateDir, "metrics", `${id}.yaml`);
+    case "interview_question":
+      return path.join(ideateDir, "interviews", `${id}.yaml`);
     case "interview":
       // id may include path segments like "refine-029/_general"
       return path.join(ideateDir, "interviews", `${id}.yaml`);
@@ -664,25 +754,28 @@ export async function handleWriteArtifact(
   if (type === "journal_entry") {
     return handleAppendJournal(ctx, content);
   }
+  // P-42: Validate that the artifact type is known before resolving the file path
+  const validTypes = Object.keys(TYPE_TO_EXTENSION_TABLE);
+  if (!validTypes.includes(type)) {
+    throw new Error(`Unknown artifact type '${type}'. Valid types: ${validTypes.join(", ")}`);
+  }
+
 
   // Resolve output path
   const absoluteFilePath = resolveArtifactPath(ctx.ideateDir, type, id, cycle);
   ensureDir(path.dirname(absoluteFilePath));
 
-  // Compute relative file_path from the .ideate/ directory name
-  // e.g., if ideateDir = /project/.ideate, file_path = .ideate/plan/overview.yaml
-  const ideateDirName = path.basename(ctx.ideateDir);
-  const relativeFilePath = path.join(
-    ideateDirName,
-    path.relative(ctx.ideateDir, absoluteFilePath)
-  );
-
   // Build YAML object: merge content with id and type
+  // For cycle-scoped types, ensure 'cycle' appears as a top-level YAML field so
+  // that the indexer can populate document_artifacts.cycle on a rebuild.
   const yamlObj: Record<string, unknown> = {
     id,
     type,
     ...content,
   };
+  if (cycle !== undefined && !("cycle" in yamlObj)) {
+    yamlObj.cycle = cycle;
+  }
 
   // Remove computed fields before hashing so hash is stable
   const forHash: Record<string, unknown> = {};
@@ -696,35 +789,232 @@ export async function handleWriteArtifact(
   const contentHash = sha256(yamlForHash);
   const tokens = tokenCount(yamlForHash);
 
-  // Add computed fields
+  // Add computed fields (no file_path in YAML — storage detail per P-33)
   yamlObj.content_hash = contentHash;
   yamlObj.token_count = tokens;
-  yamlObj.file_path = relativeFilePath;
 
   const finalYaml = stringifyYaml(yamlObj, { lineWidth: 0 });
 
-  // Write the YAML file
+  // ---------------------------------------------------------------------------
+  // Transaction pattern for handleWriteArtifact:
+  //
+  //   Phase 1 — Write the YAML file first (source of truth).  A crash here
+  //             leaves no SQLite state; re-running overwrites the file.
+  //
+  //   Phase 2 — Wrap ALL SQLite upserts (node row + any extension table rows +
+  //             edge inserts) in a single better-sqlite3 synchronous transaction.
+  //             better-sqlite3 is synchronous; use db.transaction(() => {...})()
+  //             rather than async/await.
+  //
+  //   Cleanup  — If the SQLite transaction throws, attempt to remove the written
+  //              YAML file (best-effort; do not re-throw cleanup errors).
+  // ---------------------------------------------------------------------------
+
+  // Phase 1 — Write the YAML file (source of truth)
   fs.writeFileSync(absoluteFilePath, finalYaml, "utf8");
 
-  // Upsert into SQLite (GP-8 write pattern)
-  const nodeRow = {
-    id,
-    type,
-    cycle_created: (content.cycle_created as number | null) ?? null,
-    cycle_modified: (content.cycle_modified as number | null) ?? null,
-    content_hash: contentHash,
-    token_count: tokens,
-    file_path: absoluteFilePath,
-    status: (content.status as string | null) ?? null,
-  };
+  // Phase 2 — Synchronously upsert into SQLite inside a single transaction (GP-8)
+  // For cycle-scoped types, use the cycle parameter for cycle_created
+  const cycleForNode = CYCLE_SCOPED_TYPES.has(type) && cycle !== undefined
+    ? cycle
+    : (content.cycle_created as number | null) ?? null;
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  ctx.drizzleDb.insert(nodes as any).values(nodeRow as any).onConflictDoUpdate({
-    target: (nodes as any).id,
-    set: nodeRow as any,
-  }).run();
+  try {
+    const upsertPhase = ctx.db.transaction(() => {
+      const nodeRow: NodeRow = {
+        id,
+        type,
+        cycle_created: cycleForNode,
+        cycle_modified: (content.cycle_modified as number | null) ?? null,
+        content_hash: contentHash,
+        token_count: tokens,
+        file_path: absoluteFilePath,
+        status: (content.status as string | null) ?? null,
+      };
 
-  return `Wrote ${type} artifact ${id} to ${absoluteFilePath}.`;
+      upsertNode(ctx.drizzleDb, nodeRow);
+
+      // Insert into type-specific extension tables for domain artifacts
+      if (type === "domain_policy") {
+        const policyRow: DomainPolicyRow = {
+          id,
+          domain: (content.domain as string) ?? "",
+          derived_from: content.derived_from ? JSON.stringify(content.derived_from) : null,
+          established: (content.established as string | null) ?? null,
+          amended: (content.amended as string | null) ?? null,
+          amended_by: (content.amended_by as string | null) ?? null,
+          description: (content.description as string | null) ?? null,
+        };
+        upsertDomainPolicy(ctx.drizzleDb, policyRow);
+      } else if (type === "domain_decision") {
+        const decisionRow: DomainDecisionRow = {
+          id,
+          domain: (content.domain as string) ?? "",
+          cycle: (content.cycle as number | null) ?? null,
+          supersedes: (content.supersedes as string | null) ?? null,
+          description: (content.description as string | null) ?? null,
+          rationale: (content.rationale as string | null) ?? null,
+        };
+        upsertDomainDecision(ctx.drizzleDb, decisionRow);
+      } else if (type === "domain_question") {
+        const questionRow: DomainQuestionRow = {
+          id,
+          domain: (content.domain as string) ?? "",
+          impact: (content.impact as string | null) ?? null,
+          source: (content.source as string | null) ?? null,
+          resolution: (content.resolution as string | null) ?? null,
+          resolved_in: (content.resolved_in as number | null) ?? null,
+          description: (content.description as string | null) ?? null,
+          addressed_by: (content.addressed_by as string | null) ?? null,
+        };
+        upsertDomainQuestion(ctx.drizzleDb, questionRow);
+      } else if (type === "proxy_human_decision") {
+        const decisionRow: ProxyHumanDecisionRow = {
+          id,
+          cycle: (content.cycle as number) ?? 0,
+          trigger: (content.trigger as string) ?? "",
+          triggered_by: content.triggered_by ? JSON.stringify(content.triggered_by) : null,
+          decision: (content.decision as string) ?? "",
+          rationale: (content.rationale as string | null) ?? null,
+          timestamp: (content.timestamp as string) ?? new Date().toISOString(),
+          status: (content.status as string) ?? "resolved",
+        };
+        upsertProxyHumanDecision(ctx.drizzleDb, decisionRow);
+
+        // Insert triggered_by edges
+        if (content.triggered_by && Array.isArray(content.triggered_by)) {
+          for (const ref of content.triggered_by as Array<{ type: string; id: string }>) {
+            if (ref && ref.id) {
+              insertEdge(ctx.drizzleDb, {
+                source_id: id,
+                target_id: ref.id,
+                edge_type: "triggered_by",
+                props: null,
+              });
+            }
+          }
+        }
+      } else if (type === "guiding_principle") {
+        const principleRow: GuidingPrincipleRow = {
+          id,
+          name: (content.name as string) ?? "",
+          description: (content.description as string | null) ?? null,
+          amendment_history: content.amendment_history ? JSON.stringify(content.amendment_history) : null,
+        };
+        upsertGuidingPrinciple(ctx.drizzleDb, principleRow);
+      } else if (type === "constraint") {
+        const constraintRow: ConstraintRow = {
+          id,
+          category: (content.category as string) ?? "",
+          description: (content.description as string | null) ?? null,
+        };
+        upsertConstraint(ctx.drizzleDb, constraintRow);
+      } else if (
+        type === "overview" ||
+        type === "execution_strategy" ||
+        type === "architecture" ||
+        type === "cycle_summary" ||
+        type === "review_output" ||
+        type === "decision_log" ||
+        type === "review_manifest" ||
+        type === "guiding_principles" ||
+        type === "constraints" ||
+        type === "research" ||
+        type === "interview" ||
+        type === "domain_index"
+      ) {
+        const docRow: DocumentArtifactRow = {
+          id,
+          title: (content.title as string | null) ?? null,
+          cycle: (content.cycle as number | null) ?? cycleForNode,
+          content: JSON.stringify(content),
+        };
+        upsertDocumentArtifact(ctx.drizzleDb, docRow);
+      } else if (type === "research_finding") {
+        const rfRow: ResearchFindingRow = {
+          id,
+          topic: (content.topic as string) ?? "",
+          date: (content.date as string | null) ?? null,
+          content: (content.content as string | null) ?? null,
+          sources: content.sources ? JSON.stringify(content.sources) : null,
+        };
+        upsertResearchFinding(ctx.drizzleDb, rfRow);
+      } else if (type === "module_spec") {
+        const msRow: ModuleSpecRow = {
+          id,
+          name: (content.name as string) ?? "",
+          scope: (content.scope as string | null) ?? null,
+          provides: content.provides ? JSON.stringify(content.provides) : null,
+          requires: content.requires ? JSON.stringify(content.requires) : null,
+          boundary_rules: content.boundary_rules ? JSON.stringify(content.boundary_rules) : null,
+        };
+        upsertModuleSpec(ctx.drizzleDb, msRow);
+      } else if (type === "finding") {
+        const findingRow: FindingRow = {
+          id,
+          severity: (content.severity as string) ?? "",
+          work_item: (content.work_item as string) ?? "",
+          file_refs: (content.file_refs as string | null) ?? null,
+          verdict: (content.verdict as string) ?? "",
+          cycle: (content.cycle as number) ?? cycleForNode ?? 0,
+          reviewer: (content.reviewer as string) ?? "",
+          description: (content.description as string | null) ?? null,
+          suggestion: (content.suggestion as string | null) ?? null,
+          addressed_by: (content.addressed_by as string | null) ?? null,
+        };
+        upsertFinding(ctx.drizzleDb, findingRow);
+      } else if (type === "metrics_event") {
+        const meRow: MetricsEventRow = {
+          id,
+          event_name: (content.event_name as string) ?? "",
+          timestamp: (content.timestamp as string | null) ?? null,
+          payload: content.payload ? JSON.stringify(content.payload) : null,
+          input_tokens: (content.input_tokens as number | null) ?? null,
+          output_tokens: (content.output_tokens as number | null) ?? null,
+          cache_read_tokens: (content.cache_read_tokens as number | null) ?? null,
+          cache_write_tokens: (content.cache_write_tokens as number | null) ?? null,
+          outcome: (content.outcome as string | null) ?? null,
+          finding_count: (content.finding_count as number | null) ?? null,
+          finding_severities: content.finding_severities
+            ? (typeof content.finding_severities === "string"
+                ? content.finding_severities
+                : JSON.stringify(content.finding_severities))
+            : null,
+          first_pass_accepted: (content.first_pass_accepted as number | null) ?? null,
+          rework_count: (content.rework_count as number | null) ?? null,
+          work_item_total_tokens: (content.work_item_total_tokens as number | null) ?? null,
+          cycle_total_tokens: (content.cycle_total_tokens as number | null) ?? null,
+          cycle_total_cost_estimate: (content.cycle_total_cost_estimate as string | null) ?? null,
+          convergence_cycles: (content.convergence_cycles as number | null) ?? null,
+          context_artifact_ids: content.context_artifact_ids ? JSON.stringify(content.context_artifact_ids) : null,
+        };
+        upsertMetricsEvent(ctx.drizzleDb, meRow);
+      } else if (type === "interview_question") {
+        const iqRow: InterviewQuestionRow = {
+          id,
+          interview_id: (content.interview_id as string) ?? "",
+          question: (content.question as string) ?? "",
+          answer: (content.answer as string) ?? "",
+          domain: (content.domain as string | null) ?? null,
+          seq: (content.seq as number) ?? 0,
+        };
+        upsertInterviewQuestion(ctx.drizzleDb, iqRow);
+      }
+    });
+    upsertPhase.exclusive();
+  } catch (dbErr) {
+    // SQLite transaction failed — attempt best-effort cleanup of the written YAML file
+    // to avoid filesystem/DB divergence.  Do not re-throw cleanup errors.
+    console.error("handleWriteArtifact: SQLite transaction failed, cleaning up YAML file:", (dbErr as Error).message);
+    try {
+      if (fs.existsSync(absoluteFilePath)) fs.unlinkSync(absoluteFilePath);
+    } catch (cleanupErr) {
+      console.error(`handleWriteArtifact: failed to remove ${absoluteFilePath} during cleanup:`, (cleanupErr as Error).message);
+    }
+    throw dbErr;
+  }
+
+  return `Wrote ${type} artifact ${id}.`;
 }
 
 // ---------------------------------------------------------------------------
@@ -765,6 +1055,7 @@ export async function handleUpdateWorkItems(
   const workItemsDir = path.join(ctx.ideateDir, "work-items");
 
   const updatedIds: string[] = [];
+  const originalContents = new Map<string, string>(); // id -> original YAML before overwrite
   const failures: Array<{ id: string; reason: string }> = [];
 
   for (const update of updates) {
@@ -778,7 +1069,7 @@ export async function handleUpdateWorkItems(
 
     // Check file exists
     if (!fs.existsSync(filePath)) {
-      failures.push({ id, reason: `Work item file not found: ${filePath}` });
+      failures.push({ id, reason: `Work item not found: ${id}` });
       continue;
     }
 
@@ -845,16 +1136,34 @@ export async function handleUpdateWorkItems(
 
       merged.content_hash = contentHash;
       merged.token_count = tokens;
+      // Remove file_path from YAML — storage detail per P-33 (also cleans legacy files)
+      delete merged.file_path;
 
-      // Write updated YAML back to same path
+      // Write updated YAML back to same path (save original first for rollback)
       const finalYaml = stringifyYaml(merged, { lineWidth: 0 });
+      originalContents.set(id, existingContent);
       fs.writeFileSync(filePath, finalYaml, "utf8");
 
       updatedIds.push(id);
     } catch (err) {
-      failures.push({ id, reason: (err as Error).message });
+      const e = err as NodeJS.ErrnoException;
+      const reason = e.code ? `${e.code} on work item ${id}` : "internal error updating work item";
+      failures.push({ id, reason });
     }
   }
+
+  // ---------------------------------------------------------------------------
+  // Transaction pattern for handleUpdateWorkItems:
+  //
+  //   Phase 1 — YAML files are updated in-place per item inside the loop above.
+  //             Errors per-item are collected in `failures`; successful writes
+  //             accumulate in `updatedIds`.
+  //
+  //   Phase 2 — Wrap ALL SQLite upserts for successfully-written items in a
+  //             single better-sqlite3 synchronous transaction.  If the transaction
+  //             throws, attempt best-effort removal of the updated YAML files for
+  //             those items (to avoid divergence between filesystem and DB).
+  // ---------------------------------------------------------------------------
 
   // Upsert changed items into SQLite
   if (updatedIds.length > 0) {
@@ -880,7 +1189,8 @@ export async function handleUpdateWorkItems(
             status: (parsedObj.status as string | null) ?? null,
           };
 
-          const wiRow = {
+          const wiRow: WorkItemRow = {
+            id,
             title: (parsedObj.title as string) ?? "",
             complexity: (parsedObj.complexity as string | null) ?? null,
             scope: parsedObj.scope ? JSON.stringify(parsedObj.scope) : null,
@@ -892,18 +1202,8 @@ export async function handleUpdateWorkItems(
             notes: (parsedObj.notes as string | null) ?? null,
           };
 
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          ctx.drizzleDb.insert(nodes as any).values(nodeRow as any).onConflictDoUpdate({
-            target: (nodes as any).id,
-            set: nodeRow as any,
-          }).run();
-
-          const wiRowWithId = { id, ...wiRow };
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          ctx.drizzleDb.insert(workItems as any).values(wiRowWithId as any).onConflictDoUpdate({
-            target: (workItems as any).id,
-            set: wiRow as any,
-          }).run();
+          upsertNode(ctx.drizzleDb, nodeRow);
+          upsertWorkItem(ctx.drizzleDb, wiRow);
 
           // Delete old dependency edges for this item
           ctx.db.prepare(`DELETE FROM edges WHERE source_id = ? AND edge_type IN ('depends_on', 'blocks')`).run(id);
@@ -920,7 +1220,23 @@ export async function handleUpdateWorkItems(
         }
       });
 
-      upsertPhase();
+      upsertPhase.exclusive();
+    } catch (dbErr) {
+      // SQLite transaction failed — attempt best-effort cleanup of updated YAML files
+      // to avoid filesystem/DB divergence.  Do not re-throw cleanup errors.
+      console.error("handleUpdateWorkItems: SQLite transaction failed, restoring original YAML files:", (dbErr as Error).message);
+      for (const id of updatedIds) {
+        const fp = path.join(workItemsDir, `${id}.yaml`);
+        const original = originalContents.get(id);
+        try {
+          if (original !== undefined) {
+            fs.writeFileSync(fp, original, "utf8");
+          }
+        } catch (cleanupErr) {
+          console.error(`handleUpdateWorkItems: failed to restore ${fp} during rollback:`, (cleanupErr as Error).message);
+        }
+      }
+      throw dbErr;
     } finally {
       if (fkWasOn) ctx.db.pragma("foreign_keys = ON");
     }

@@ -6,6 +6,7 @@ export interface IdeateConfigJson {
     schema_version: number;
     project_name?: string;
     agent_budgets?: Record<string, number>;
+    model_overrides?: Record<string, string>;
     ppr?: {
         alpha?: number;
         max_iterations?: number;
@@ -43,7 +44,7 @@ export interface IdeateConfig {
 /**
  * Subdirectories created inside .ideate/ by createIdeateDir().
  */
-export declare const IDEATE_SUBDIRS: readonly ["plan", "steering", "work-items", "principles", "constraints", "policies", "decisions", "questions", "modules", "research", "interviews", "cycles", "domains"];
+export declare const IDEATE_SUBDIRS: readonly ["plan", "steering", "work-items", "principles", "constraints", "policies", "decisions", "questions", "modules", "research", "interviews", "cycles", "domains", "metrics"];
 /**
  * Read and parse .ideate/config.json from a given directory.
  * Returns null if the directory doesn't contain a valid .ideate/config.json.
@@ -76,11 +77,19 @@ export declare function createIdeateDir(dirPath: string, config?: IdeateConfigJs
  */
 export declare function writeConfig(ideateDir: string, config: IdeateConfigJson): void;
 /**
+ * Read config.json from the given .ideate/ directory as-is, without applying
+ * any defaults. Returns only the fields actually stored in the file.
+ *
+ * @param ideateDir - Path to the .ideate/ directory
+ * @returns Raw stored config, or minimal default if file is missing/invalid
+ */
+export declare function readRawConfig(ideateDir: string): IdeateConfigJson;
+/**
  * Read config.json from the given .ideate/ directory and deep-merge with
  * defaults for any missing optional fields (agent_budgets, ppr).
  *
  * @param ideateDir - Path to the .ideate/ directory
  * @returns Config object with defaults applied for missing fields
  */
-export declare function getConfigWithDefaults(ideateDir: string): Required<Pick<IdeateConfigJson, "schema_version" | "agent_budgets" | "ppr">> & Omit<IdeateConfigJson, "agent_budgets" | "ppr">;
+export declare function getConfigWithDefaults(ideateDir: string): Required<Pick<IdeateConfigJson, "schema_version" | "agent_budgets" | "model_overrides" | "ppr">> & Omit<IdeateConfigJson, "agent_budgets" | "model_overrides" | "ppr">;
 //# sourceMappingURL=config.d.ts.map

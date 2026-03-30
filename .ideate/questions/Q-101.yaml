@@ -1,0 +1,12 @@
+id: Q-101
+type: domain_question
+domain: artifact-structure
+title: handleArchiveCycle leaves stale file_path values in SQLite after archival
+question: No transaction wraps copy-verify-delete. SQLite nodes table still references deleted source files after archival. Should archived nodes be removed from SQLite or updated to reflect new paths?
+source: cycle 1 gap-analysis Gap 1; decision-log Q3
+impact: Post-archive queries silently return empty content. PPR scoring operates on phantom nodes.
+status: open
+reexamination_trigger: Next cycle targeting archive handler or v3 migration completion.
+content_hash: ec3fc74f61db05e365988d67774a70d9d655ead15e7f3c4007add0b9c7641f68
+token_count: 148
+file_path: .ideate/questions/Q-101.yaml

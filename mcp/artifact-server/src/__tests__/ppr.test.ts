@@ -18,6 +18,7 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import Database from "better-sqlite3";
 import { drizzle } from "drizzle-orm/better-sqlite3";
 import { createSchema } from "../schema.js";
+import * as dbSchema from "../db.js";
 import { computePPR, PPROptions } from "../ppr.js";
 
 // ---------------------------------------------------------------------------
@@ -77,7 +78,7 @@ describe("computePPR — single seed", () => {
     insertEdge("SEED", "N2", "depends_on");
     insertEdge("SEED", "DISTANT", "depends_on");
 
-    const drizzleDb = drizzle(db);
+    const drizzleDb = drizzle(db, { schema: dbSchema });
     const results = computePPR(drizzleDb, ["SEED"]);
 
     expect(results.length).toBeGreaterThan(0);
@@ -101,7 +102,7 @@ describe("computePPR — single seed", () => {
 
   it("returns empty array when no seeds provided", () => {
     insertNode("A");
-    const drizzleDb = drizzle(db);
+    const drizzleDb = drizzle(db, { schema: dbSchema });
     const results = computePPR(drizzleDb, []);
     expect(results).toEqual([]);
   });
@@ -128,7 +129,7 @@ describe("computePPR — multiple seeds", () => {
     insertEdge("A", "C", "depends_on");
     insertEdge("B", "D", "depends_on");
 
-    const drizzleDb = drizzle(db);
+    const drizzleDb = drizzle(db, { schema: dbSchema });
     const results = computePPR(drizzleDb, ["A", "B"]);
 
     // Both seeds should appear in results
@@ -158,7 +159,7 @@ describe("computePPR — multiple seeds", () => {
     // to FRINGE but neither A nor B point to LEAF
     insertEdge("LEAF", "FRINGE", "references"); // low-weight edge type
 
-    const drizzleDb = drizzle(db);
+    const drizzleDb = drizzle(db, { schema: dbSchema });
     const results = computePPR(drizzleDb, ["A", "B"]);
 
     const scoreShared = results.find((r) => r.nodeId === "SHARED")!.score;
@@ -186,7 +187,7 @@ describe("computePPR — convergence", () => {
     insertEdge("N3", "N4", "depends_on");
     insertEdge("N4", "N1", "depends_on"); // cycle back
 
-    const drizzleDb = drizzle(db);
+    const drizzleDb = drizzle(db, { schema: dbSchema });
     const results1 = computePPR(drizzleDb, ["N1"]);
     const results2 = computePPR(drizzleDb, ["N1"]);
 
@@ -203,7 +204,7 @@ describe("computePPR — convergence", () => {
     insertNode("Y");
     insertEdge("X", "Y", "depends_on");
 
-    const drizzleDb = drizzle(db);
+    const drizzleDb = drizzle(db, { schema: dbSchema });
 
     // With a very loose threshold the algorithm stops in 1 iteration
     const looseOpts: PPROptions = { maxIterations: 1, convergenceThreshold: 1.0 };
@@ -234,7 +235,7 @@ describe("computePPR — edge type weighting", () => {
     insertEdge("S", "HIGH", "depends_on"); // weight 1.0
     insertEdge("S", "LOW", "references");  // weight 0.4
 
-    const drizzleDb = drizzle(db);
+    const drizzleDb = drizzle(db, { schema: dbSchema });
     const results = computePPR(drizzleDb, ["S"], {
       edgeTypeWeights: { depends_on: 1.0, references: 0.4 },
       maxIterations: 20,
@@ -254,7 +255,7 @@ describe("computePPR — edge type weighting", () => {
     insertEdge("S", "A", "type_alpha"); // custom type, will get weight 2.0
     insertEdge("S", "B", "type_beta");  // custom type, will get weight 0.1
 
-    const drizzleDb = drizzle(db);
+    const drizzleDb = drizzle(db, { schema: dbSchema });
     const results = computePPR(drizzleDb, ["S"], {
       edgeTypeWeights: { type_alpha: 2.0, type_beta: 0.1 },
       maxIterations: 20,
@@ -299,7 +300,7 @@ describe("computePPR — node specificity dampening", () => {
 
     insertEdge("SEED", "LEAF", "depends_on");
 
-    const drizzleDb = drizzle(db);
+    const drizzleDb = drizzle(db, { schema: dbSchema });
     const results = computePPR(drizzleDb, ["SEED"]);
 
     const scoreHub = results.find((r) => r.nodeId === "HUB")!.score;
@@ -319,7 +320,7 @@ describe("computePPR — node specificity dampening", () => {
     insertNode("TARGET");
     insertEdge("SEED", "TARGET", "depends_on");
 
-    const drizzleDb = drizzle(db);
+    const drizzleDb = drizzle(db, { schema: dbSchema });
     const results = computePPR(drizzleDb, ["SEED"]);
 
     // TARGET has inDegree=1 (pointed to by SEED), but SEED has inDegree=0.

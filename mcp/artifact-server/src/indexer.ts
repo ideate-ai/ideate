@@ -1,13 +1,29 @@
 import Database from "better-sqlite3";
 import { BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
-import { notInArray, eq } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import * as fs from "fs";
 import * as path from "path";
 import * as crypto from "crypto";
 import { parse as parseYaml } from "yaml";
 import { EDGE_TYPE_REGISTRY } from "./schema.js";
 import * as dbSchema from "./db.js";
-import { TYPE_TO_EXTENSION_TABLE, nodes } from "./db.js";
+import { TYPE_TO_EXTENSION_TABLE } from "./db.js";
+import {
+  type DrizzleDb,
+  type NodeRow,
+  type EdgeRow,
+  type NodeFileRefRow,
+  upsertNode,
+  upsertExtensionRow,
+  insertEdge,
+  insertFileRef,
+  deleteNodesNotIn,
+  deleteNodeById,
+  deleteEdgesBySourceId,
+  deleteFileRefsByNodeId,
+  selectAllEdges,
+  getTableName,
+} from "./db-helpers.js";
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -63,12 +79,49 @@ function walkDir(dir: string): string[] {
   return results;
 }
 
-/** Safely parse YAML; returns null on error */
-function safeParseYaml(content: string): unknown {
+
+/** Result of parsing YAML content */
+interface SafeParseYamlResult {
+  parsed: unknown;
+  errorMessage: string | null;
+}
+
+/** Extract caller function name from the call stack */
+function getCallerContext(): string {
+  const stack = new Error().stack;
+  if (!stack) return "unknown";
+  const lines = stack.split("\n");
+  // Stack format varies by Node.js version; look for function names after this function
+  // Typical format: "    at functionName (file:line:col)" or "    at Object.functionName (file:line:col)"
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    // Skip lines until we find our own function name
+    if (line.includes("getCallerContext")) continue;
+    if (line.includes("safeParseYaml")) continue;
+    // The next meaningful line should be the caller
+    const match = line.match(/at\s+(?:(\w+)\.)?(\w+)\s*\(/);
+    if (match && match[2]) {
+      return match[2];
+    }
+    // Alternative format: "    at functionName (file)"
+    const altMatch = line.match(/at\s+(\w+)\s*\(/);
+    if (altMatch && altMatch[1]) {
+      return altMatch[1];
+    }
+  }
+  return "unknown";
+}
+
+/** Safely parse YAML; logs warning with timestamp, context, file path and error details on failure */
+function safeParseYaml(content: string, filePath: string): SafeParseYamlResult {
   try {
-    return parseYaml(content);
-  } catch {
-    return null;
+    return { parsed: parseYaml(content), errorMessage: null };
+  } catch (err) {
+    const errMsg = err instanceof Error ? err.message : String(err);
+    const timestamp = new Date().toISOString();
+    const caller = getCallerContext();
+    console.warn(`[${timestamp}] [indexer:${caller}] YAML parse error in ${filePath}: ${errMsg}`);
+    return { parsed: null, errorMessage: errMsg };
   }
 }
 
@@ -98,10 +151,10 @@ function toNumOrNull(val: unknown): number | null {
 type Row = Record<string, unknown>;
 
 /** Build the nodes base-table row (8 common columns) */
-function buildNodeRow(doc: Row, content: string, filePath: string, hash: string): Row {
+function buildNodeRow(doc: Row, content: string, filePath: string, hash: string): NodeRow {
   return {
     id: toStrOrNull(doc.id) ?? filePath, // fall back to file path if no id
-    type: toStrOrNull(doc.type),
+    type: toStrOrNull(doc.type) ?? "",
     cycle_created: toNumOrNull(doc.cycle_created),
     cycle_modified: toNumOrNull(doc.cycle_modified),
     content_hash: hash,
@@ -250,55 +303,20 @@ function buildExtensionRow(table: string, doc: Row): Row {
         seq: toNumOrNull(doc.seq) ?? 0,
       };
 
+    case "proxy_human_decisions":
+      return {
+        cycle:        toNumOrNull(doc.cycle) ?? 0,
+        trigger:      toStrOrNull(doc.trigger) ?? "",
+        triggered_by: toJsonOrNull(doc.triggered_by),
+        decision:     toStrOrNull(doc.decision) ?? "",
+        rationale:    toStrOrNull(doc.rationale),
+        timestamp:    toStrOrNull(doc.timestamp) ?? new Date().toISOString(),
+        status:       toStrOrNull(doc.status) ?? "resolved",
+      };
+
     default:
       return {};
   }
-}
-
-// ---------------------------------------------------------------------------
-// UPSERT helpers
-// ---------------------------------------------------------------------------
-
-function upsertNode(drizzleDb: BetterSQLite3Database<typeof dbSchema>, nodeRow: Row): void {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  drizzleDb.insert(nodes as any).values(nodeRow as any).onConflictDoUpdate({
-    target: (nodes as any).id,
-    set: nodeRow as any,
-  }).run();
-}
-
-function upsertExtension(drizzleDb: BetterSQLite3Database<typeof dbSchema>, tableRef: dbSchema.AnyTable, id: string, extRow: Row): void {
-  const rowWithId = { id, ...extRow };
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  drizzleDb.insert(tableRef as any).values(rowWithId as any).onConflictDoUpdate({
-    target: (tableRef as any).id,
-    set: extRow as any,
-  }).run();
-}
-
-function upsertEdge(
-  drizzleDb: BetterSQLite3Database<typeof dbSchema>,
-  sourceId: string,
-  targetId: string,
-  edgeType: string
-): void {
-  drizzleDb.insert(dbSchema.edges).values({
-    source_id: sourceId,
-    target_id: targetId,
-    edge_type: edgeType,
-    props: null,
-  }).onConflictDoNothing().run();
-}
-
-function upsertFileRef(
-  drizzleDb: BetterSQLite3Database<typeof dbSchema>,
-  nodeId: string,
-  filePath: string
-): void {
-  drizzleDb.insert(dbSchema.nodeFileRefs).values({
-    node_id: nodeId,
-    file_path: filePath,
-  }).onConflictDoNothing().run();
 }
 
 // ---------------------------------------------------------------------------
@@ -306,7 +324,7 @@ function upsertFileRef(
 // ---------------------------------------------------------------------------
 
 function extractEdges(
-  drizzleDb: BetterSQLite3Database<typeof dbSchema>,
+  drizzleDb: DrizzleDb,
   doc: Row,
   nodeId: string,
   nodeType: string
@@ -325,13 +343,13 @@ function extractEdges(
       // Multi-value field (e.g. depends, blocks, derived_from)
       for (const item of fieldValue) {
         if (typeof item === "string" && item.trim()) {
-          upsertEdge(drizzleDb, nodeId, item.trim(), edgeType);
+          insertEdge(drizzleDb, { source_id: nodeId, target_id: item.trim(), edge_type: edgeType, props: null });
           edgesCreated++;
         }
       }
     } else if (typeof fieldValue === "string" && fieldValue.trim()) {
       // Single-value field (e.g. supersedes, work_item, module, domain)
-      upsertEdge(drizzleDb, nodeId, fieldValue.trim(), edgeType);
+      insertEdge(drizzleDb, { source_id: nodeId, target_id: fieldValue.trim(), edge_type: edgeType, props: null });
       edgesCreated++;
     }
   }
@@ -344,7 +362,7 @@ function extractEdges(
 // ---------------------------------------------------------------------------
 
 function extractFileRefs(
-  drizzleDb: BetterSQLite3Database<typeof dbSchema>,
+  drizzleDb: DrizzleDb,
   doc: Row,
   nodeId: string,
   nodeType: string
@@ -358,7 +376,7 @@ function extractFileRefs(
     if (entry && typeof entry === "object" && typeof (entry as Row).path === "string") {
       const refPath = ((entry as Row).path as string).trim();
       if (refPath) {
-        upsertFileRef(drizzleDb, nodeId, refPath);
+        insertFileRef(drizzleDb, { node_id: nodeId, file_path: refPath });
       }
     }
   }
@@ -368,19 +386,8 @@ function extractFileRefs(
 // Delete stale rows
 // ---------------------------------------------------------------------------
 
-function deleteStaleRows(drizzleDb: BetterSQLite3Database<typeof dbSchema>, keepIds: string[]): number {
-  const sentinel = keepIds.length > 0 ? keepIds : [''];
-
-  // Single delete on nodes — CASCADE handles extension tables, edges, and node_file_refs
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const staleRows = drizzleDb.select({ id: (nodes as any).id }).from(nodes as any).where(notInArray((nodes as any).id, sentinel)).all() as Array<{ id: string }>;
-
-  if (staleRows.length > 0) {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    drizzleDb.delete(nodes as any).where(notInArray((nodes as any).id, sentinel)).run();
-  }
-
-  return staleRows.length;
+function deleteStaleRows(drizzleDb: DrizzleDb, keepIds: string[]): number {
+  return deleteNodesNotIn(drizzleDb, keepIds);
 }
 
 // ---------------------------------------------------------------------------
@@ -390,14 +397,9 @@ function deleteStaleRows(drizzleDb: BetterSQLite3Database<typeof dbSchema>, keep
 export const MAX_DEPENDENCY_NODES = 10_000;
 export const MAX_DEPENDENCY_EDGES = 50_000;
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export function detectCycles(drizzleDb: BetterSQLite3Database<any>): string[][] {
+export function detectCycles(drizzleDb: DrizzleDb): string[][] {
   // SELECT all depends_on edges via Drizzle ORM
-  const edges = drizzleDb
-    .select({ source_id: dbSchema.edges.source_id, target_id: dbSchema.edges.target_id })
-    .from(dbSchema.edges)
-    .where(eq(dbSchema.edges.edge_type, 'depends_on'))
-    .all() as Array<{ source_id: string; target_id: string }>;
+  const edges = selectAllEdges(drizzleDb).filter(e => e.edge_type === 'depends_on');
 
   if (edges.length > MAX_DEPENDENCY_EDGES) {
     throw new Error(`detectCycles: edge count ${edges.length} exceeds limit ${MAX_DEPENDENCY_EDGES}`);
@@ -498,7 +500,7 @@ interface IndexSingleFileResult {
 
 function indexSingleFile(
   db: Database.Database,
-  drizzleDb: BetterSQLite3Database<typeof dbSchema>,
+  drizzleDb: DrizzleDb,
   filePath: string,
   hashCheckStmt: Database.Statement
 ): IndexSingleFileResult {
@@ -520,12 +522,14 @@ function indexSingleFile(
     return { nodeId: storedId, updated: false, failed: false, error: null, edgesCreated: 0 };
   }
 
-  const parsed = safeParseYaml(content);
-  if (!parsed || typeof parsed !== "object") {
-    return { nodeId: null, updated: false, failed: true, error: `${filePath}: YAML parse error`, edgesCreated: 0 };
+
+  const parseResult = safeParseYaml(content, filePath);
+  if (!parseResult.parsed || typeof parseResult.parsed !== "object") {
+    const errorMsg = parseResult.errorMessage ?? "unknown parse error";
+    return { nodeId: null, updated: false, failed: true, error: `${filePath}: YAML parse error - ${errorMsg}`, edgesCreated: 0 };
   }
 
-  const doc = parsed as Row;
+  const doc = parseResult.parsed as Row;
   const typeField = toStrOrNull(doc.type);
   if (!typeField) {
     return { nodeId: null, updated: false, failed: true, error: `${filePath}: missing type field`, edgesCreated: 0 };
@@ -536,33 +540,31 @@ function indexSingleFile(
     return { nodeId: null, updated: false, failed: true, error: `${filePath}: unknown type '${typeField}'`, edgesCreated: 0 };
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const tableName: string = (extensionTable as any)[Symbol.for("drizzle:Name")] ?? (extensionTable as any)._.name;
+  const tableName = getTableName(extensionTable);
 
   const nodeRow = buildNodeRow(doc, content, filePath, hash);
   const nodeId = nodeRow.id as string;
   const extRow = buildExtensionRow(tableName, doc);
 
   upsertNode(drizzleDb, nodeRow);
-  upsertExtension(drizzleDb, extensionTable, nodeId, extRow);
+  upsertExtensionRow(drizzleDb, tableName, nodeId, extRow);
 
   // Delete old edges and file refs before re-inserting
-  drizzleDb.delete(dbSchema.edges).where(eq(dbSchema.edges.source_id, nodeId)).run();
-  drizzleDb.delete(dbSchema.nodeFileRefs).where(eq(dbSchema.nodeFileRefs.node_id, nodeId)).run();
+  deleteEdgesBySourceId(drizzleDb, nodeId);
+  deleteFileRefsByNodeId(drizzleDb, nodeId);
 
   let edgesCreated = extractEdges(drizzleDb, doc, nodeId, typeField);
   extractFileRefs(drizzleDb, doc, nodeId, typeField);
 
   // Special handling for interview files with an entries array
   if (typeField === "interview" && Array.isArray(doc.entries)) {
-    const interviewQuestionsTable = TYPE_TO_EXTENSION_TABLE["interview_question"];
     for (const entry of doc.entries) {
       if (!entry || typeof entry !== "object") continue;
       const entryDoc = entry as Row;
       const entryId = toStrOrNull(entryDoc.id);
       if (!entryId) continue;
 
-      const entryNodeRow: Row = {
+      const entryNodeRow: NodeRow = {
         id: entryId,
         type: "interview_question",
         cycle_created: toNumOrNull(doc.cycle_created),
@@ -572,7 +574,7 @@ function indexSingleFile(
         file_path: filePath,
         status: null,
       };
-      const entryExtRow: Row = {
+      const entryExtRow: Record<string, unknown> = {
         interview_id: nodeId,
         question: toStrOrNull(entryDoc.question) ?? "",
         answer: toStrOrNull(entryDoc.answer) ?? "",
@@ -581,8 +583,8 @@ function indexSingleFile(
       };
 
       upsertNode(drizzleDb, entryNodeRow);
-      upsertExtension(drizzleDb, interviewQuestionsTable, entryId, entryExtRow);
-      upsertEdge(drizzleDb, entryId, nodeId, "references");
+      upsertExtensionRow(drizzleDb, "interview_questions", entryId, entryExtRow);
+      insertEdge(drizzleDb, { source_id: entryId, target_id: nodeId, edge_type: "references", props: null });
       edgesCreated++;
     }
   }
@@ -606,7 +608,7 @@ export interface IndexFilesResult {
  */
 export function indexFiles(
   db: Database.Database,
-  drizzleDb: BetterSQLite3Database<typeof dbSchema>,
+  drizzleDb: DrizzleDb,
   filePaths: string[]
 ): IndexFilesResult {
   const result: IndexFilesResult = { updated: 0, failed: 0, errors: [] };
@@ -644,7 +646,7 @@ export function indexFiles(
  */
 export function removeFiles(
   db: Database.Database,
-  drizzleDb: BetterSQLite3Database<typeof dbSchema>,
+  drizzleDb: DrizzleDb,
   filePaths: string[]
 ): { removed: number } {
   if (filePaths.length === 0) return { removed: 0 };
@@ -660,8 +662,7 @@ export function removeFiles(
         // Find node ID(s) for this file path
         const rows = db.prepare(`SELECT id FROM nodes WHERE file_path = ?`).all(filePath) as Array<{ id: string }>;
         for (const row of rows) {
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          drizzleDb.delete(nodes as any).where(eq((nodes as any).id, row.id)).run();
+          deleteNodeById(drizzleDb, row.id);
           removed++;
         }
       }
@@ -678,7 +679,7 @@ export function removeFiles(
 // Main rebuild function
 // ---------------------------------------------------------------------------
 
-export function rebuildIndex(db: Database.Database, drizzleDb: BetterSQLite3Database<typeof dbSchema>, ideateDir: string): RebuildStats {
+export function rebuildIndex(db: Database.Database, drizzleDb: DrizzleDb, ideateDir: string): RebuildStats {
   const stats: RebuildStats = {
     files_scanned: 0,
     files_updated: 0,

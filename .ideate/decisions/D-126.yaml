@@ -1,0 +1,12 @@
+id: D-126
+type: domain_decision
+domain: artifact-structure
+status: settled
+cycle_created: 0
+description: "P-33 scope extends to tool description strings in the TOOLS array and error fallback messages, not only tool response payloads. Three violations confirmed: index.ts:586 (ideate_bootstrap_project), index.ts:662 (ideate_update_config), index.ts:244 (ideate_append_journal) in descriptions; context.ts:959 in error fallback."
+rationale: S1 and P1 from full audit. Tool description strings are surfaced as agent documentation and are a path-leakage surface equivalent to response payloads. P-33 amended to cover both surfaces.
+source: full-audit-20260328 S1, P1
+supersedes: null
+content_hash: 92059f7a455aa43ed61ab979b145bc84233878e14a23d5c11cb0816b648ff388
+token_count: 170
+file_path: .ideate/decisions/D-126.yaml

@@ -1,0 +1,11 @@
+id: Q-115
+type: domain_question
+domain: artifact-structure
+title: Metrics query filtering uses LIKE against raw JSON — should dedicated columns be added?
+description: handleGetMetrics in metrics.ts uses LIKE '%value%' against raw JSON payload text for work_item and phase filters, producing false positives (WI-1 matches WI-10, WI-100). The agent_type filter maps to event_name internally with no enforcement or documentation. Should dedicated indexed columns (work_item, phase, agent_type) be added to metrics_events to enable exact-match queries?
+impact: Metric queries return incorrect results when artifact IDs are substrings of other IDs. The agent_type/event_name mapping is undocumented, making the filter contract unclear for tool consumers.
+source: cycle 2 code-quality S1 (LIKE false positives), S2 (agent_type/event_name mapping)
+status: open
+content_hash: 6619c38e751722f6a2834c0ad4d83e8cba3e07a04a72b2cdc2f2e1f7cca8b3c2
+token_count: 213
+file_path: .ideate/questions/Q-115.yaml

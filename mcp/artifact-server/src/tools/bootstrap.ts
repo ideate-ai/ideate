@@ -1,5 +1,5 @@
 import * as path from "path";
-import { ToolContext } from "./index.js";
+import type { ToolContext } from "../types.js";
 import { createIdeateDir, CONFIG_SCHEMA_VERSION, IdeateConfigJson, IDEATE_SUBDIRS } from "../config.js";
 
 // ---------------------------------------------------------------------------
@@ -22,11 +22,11 @@ export async function handleBootstrapProject(
     config.project_name = projectName;
   }
 
-  const createdDir = createIdeateDir(projectRoot, config);
+  createIdeateDir(projectRoot, config);
 
   return JSON.stringify(
     {
-      created_dir: createdDir,
+      status: "initialized",
       subdirectories: [...IDEATE_SUBDIRS],
     },
     null,

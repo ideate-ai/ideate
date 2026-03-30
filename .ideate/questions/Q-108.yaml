@@ -1,0 +1,12 @@
+id: Q-108
+type: domain_question
+domain: artifact-structure
+title: assertRequiredFields not applied to all extension table types
+question: Guard applied to work_items, findings, and proxy_human_decisions only. Other types with NOT NULL columns (guiding_principles.name, research_findings.topic) use fallback empty strings. Should all types get assertRequiredFields?
+source: cycle 1 gap-analysis Gap 11; decision-log Q10
+impact: Invalid data (empty strings for NOT NULL fields) inserted silently for unguarded types.
+status: open
+reexamination_trigger: Next cycle extending assertRequiredFields or db-helpers.ts coverage.
+content_hash: 1c97d13d9401573c5bfca1f3e2f8600b9e3f90ea8afc9b1fc0ad04f61c8927ad
+token_count: 155
+file_path: .ideate/questions/Q-108.yaml

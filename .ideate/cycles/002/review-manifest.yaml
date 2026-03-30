@@ -1,0 +1,18 @@
+id: review-manifest
+type: review_manifest
+critical_count: 1
+minor_count: 3
+overall_verdict: FAIL
+reviewers_assigned:
+  - code-reviewer
+  - spec-reviewer
+  - gap-analyst
+significant_count: 2
+work_items_reviewed:
+  - WI-385
+  - WI-386
+  - WI-387
+  - WI-388
+content_hash: 8b8af816e3b7390b7733ef8b38c0aa5564ace90744ec76fe565e3bc6e969b16b
+token_count: 63
+file_path: .ideate/cycles/002/review-manifest.yaml

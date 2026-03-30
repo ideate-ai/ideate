@@ -1,7 +1,7 @@
 import * as fs from "fs";
 import * as path from "path";
 import { parse as parseYaml } from "yaml";
-import { ToolContext } from "./index.js";
+import type { ToolContext } from "../types.js";
 import { computePPR } from "../ppr.js";
 import { getConfigWithDefaults } from "../config.js";
 import { nodes } from "../db.js";
@@ -14,7 +14,6 @@ import { eq } from "drizzle-orm";
 interface WorkItemRow {
   id: string;
   type: string;
-  file_path: string;
   status: string | null;
   cycle_created: number | null;
   cycle_modified: number | null;
@@ -60,21 +59,18 @@ interface DocumentArtifactRow {
   title: string | null;
   cycle: number | null;
   content: string | null;
-  file_path: string;
 }
 
 interface GuidingPrincipleRow {
   id: string;
   name: string;
   description: string | null;
-  file_path: string;
 }
 
 interface ConstraintRow {
   id: string;
   category: string;
   description: string | null;
-  file_path: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -230,7 +226,7 @@ export async function handleGetWorkItemContext(
   const placeholders = idCandidates.map(() => "?").join(", ");
   const workItemRow = ctx.db
     .prepare(
-      `SELECT n.id, n.type, n.file_path, n.status, n.cycle_created, n.cycle_modified,
+      `SELECT n.id, n.type, n.status, n.cycle_created, n.cycle_modified,
               w.title, w.complexity, w.scope, w.depends, w.blocks, w.criteria, w.module, w.domain, w.notes
        FROM nodes n JOIN work_items w ON w.id = n.id
        WHERE n.id IN (${placeholders})
@@ -269,7 +265,6 @@ export async function handleGetWorkItemContext(
     `**Complexity**: ${workItemRow.complexity ?? "unknown"}`,
     `**Domain**: ${workItemRow.domain ?? "unassigned"}`,
     `**Module**: ${workItemRow.module ?? "unassigned"}`,
-    `**File**: ${workItemRow.file_path}`,
   ];
 
   if (workItemRow.cycle_created != null) {
@@ -300,34 +295,25 @@ export async function handleGetWorkItemContext(
   sections.push(workItemSection.join("\n"));
 
   // -------------------------------------------------------------------------
-  // 3. Read implementation notes from disk
+  // 3. Render inline implementation notes from DB column
   // -------------------------------------------------------------------------
 
   if (workItemRow.notes) {
-    const projectRoot = path.dirname(ctx.ideateDir);
-    const notesPath = path.resolve(projectRoot, workItemRow.notes);
-    try {
-      const notesContent = fs.readFileSync(notesPath, "utf8");
-      const { text: notesText, truncated, total } = truncateLines(notesContent, 200);
-      const notesSection: string[] = [
-        `## Implementation Notes`,
+    const { text: notesText, truncated, total } = truncateLines(workItemRow.notes, 200);
+    const notesSection: string[] = [
+      `## Implementation Notes`,
+      "",
+      `> Source: Implementation notes`,
+      "",
+      notesText,
+    ];
+    if (truncated) {
+      notesSection.push(
         "",
-        `> Source: \`${notesPath}\``,
-        "",
-        notesText,
-      ];
-      if (truncated) {
-        notesSection.push(
-          "",
-          `*(truncated — showing 200 of ${total} lines; read the full file for complete notes)*`
-        );
-      }
-      sections.push(notesSection.join("\n"));
-    } catch {
-      sections.push(
-        `## Implementation Notes\n\n> Notes file not found: \`${notesPath}\``
+        `*(truncated — showing 200 of ${total} lines)*`
       );
     }
+    sections.push(notesSection.join("\n"));
   }
 
   // -------------------------------------------------------------------------
@@ -533,7 +519,6 @@ export async function handleGetContextPackage(
   void args; // args unused now
 
   const sections: string[] = [];
-  const fullDocPaths: Array<{ label: string; path: string }> = [];
 
   // -------------------------------------------------------------------------
   // 1. Architecture document
@@ -541,7 +526,7 @@ export async function handleGetContextPackage(
 
   const archRow = ctx.db
     .prepare(
-      `SELECT da.id, da.title, da.cycle, da.content, n.file_path
+      `SELECT da.id, da.title, da.cycle, da.content
        FROM document_artifacts da
        JOIN nodes n ON n.id = da.id
        WHERE n.type = 'architecture'
@@ -551,8 +536,6 @@ export async function handleGetContextPackage(
     .get() as DocumentArtifactRow | undefined;
 
   if (archRow) {
-    fullDocPaths.push({ label: "Architecture", path: archRow.file_path });
-
     if (archRow.content) {
       const archLines = archRow.content.split("\n");
       const archSection: string[] = [`## Architecture`];
@@ -563,7 +546,7 @@ export async function handleGetContextPackage(
         // Provide a component/interface summary by scanning headings and key lines
         archSection.push(
           "",
-          `> Full document: \`${archRow.file_path}\` (${archLines.length} lines — summary shown below)`,
+          `> Document is ${archLines.length} lines — summary shown below`,
           ""
         );
 
@@ -600,7 +583,7 @@ export async function handleGetContextPackage(
 
   const principleRows = ctx.db
     .prepare(
-      `SELECT gp.id, gp.name, gp.description, n.file_path
+      `SELECT gp.id, gp.name, gp.description
        FROM guiding_principles gp
        JOIN nodes n ON n.id = gp.id
        ORDER BY n.id`
@@ -612,7 +595,6 @@ export async function handleGetContextPackage(
 
     for (let i = 0; i < principleRows.length; i++) {
       const gp = principleRows[i];
-      fullDocPaths.push({ label: `Principle: ${gp.name}`, path: gp.file_path });
       principleSection.push(`### ${i + 1}. ${gp.name}`);
       if (gp.description) {
         const { text, truncated, total } = truncateLines(gp.description, 20);
@@ -635,7 +617,7 @@ export async function handleGetContextPackage(
 
   const constraintRows = ctx.db
     .prepare(
-      `SELECT c.id, c.category, c.description, n.file_path
+      `SELECT c.id, c.category, c.description
        FROM constraints c
        JOIN nodes n ON n.id = c.id
        ORDER BY c.category, n.id`
@@ -647,8 +629,6 @@ export async function handleGetContextPackage(
 
     let currentCategory = "";
     for (const constraint of constraintRows) {
-      fullDocPaths.push({ label: `Constraint: ${constraint.id}`, path: constraint.file_path });
-
       if (constraint.category !== currentCategory) {
         currentCategory = constraint.category;
         constraintSection.push(`### ${currentCategory}`);
@@ -731,39 +711,7 @@ export async function handleGetContextPackage(
   }
 
   // -------------------------------------------------------------------------
-  // 5. Full Document Paths
-  // -------------------------------------------------------------------------
-
-  // Add architecture and other key document paths from the DB
-  const allDocRows = ctx.db
-    .prepare(
-      `SELECT n.id, n.type, n.file_path, da.title
-       FROM document_artifacts da
-       JOIN nodes n ON n.id = da.id
-       ORDER BY n.type, n.id`
-    )
-    .all() as Array<{ id: string; type: string; file_path: string; title: string | null }>;
-
-  for (const doc of allDocRows) {
-    const label = doc.title ? `${doc.type}: ${doc.title}` : `${doc.type}: ${doc.id}`;
-    // Don't duplicate paths already captured
-    if (!fullDocPaths.some((p) => p.path === doc.file_path)) {
-      fullDocPaths.push({ label, path: doc.file_path });
-    }
-  }
-
-  if (fullDocPaths.length > 0) {
-    const pathSection: string[] = [`## Full Document Paths`, ""];
-
-    for (const { label, path: docPath } of fullDocPaths) {
-      pathSection.push(`- **${label}**: \`${docPath}\``);
-    }
-
-    sections.push(pathSection.join("\n"));
-  }
-
-  // -------------------------------------------------------------------------
-  // 6. Assemble final response, target 500-800 lines
+  // 5. Assemble final response, target 500-800 lines
   // -------------------------------------------------------------------------
 
   let result = sections.join("\n\n---\n\n");
@@ -786,7 +734,7 @@ export async function handleGetContextPackage(
 interface NodeRow {
   id: string;
   type: string;
-  file_path: string;
+  file_path: string; // Kept for reading artifact content, not exposed in responses
   token_count: number | null;
   status: string | null;
 }
@@ -1001,7 +949,7 @@ export async function handleAssembleContext(
       if (content) {
         typeSection.push("", "```yaml", content.trim(), "```");
       } else {
-        typeSection.push("", `*Content not available for \`${row.file_path}\`*`);
+        typeSection.push("", `*Content not available for ${row.id} (${row.type})*`);
       }
     }
 

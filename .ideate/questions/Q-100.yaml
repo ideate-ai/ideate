@@ -1,0 +1,12 @@
+id: Q-100
+type: domain_question
+domain: artifact-structure
+title: handleAppendJournal has no transaction boundary
+question: YAML write and SQLite upserts are independent operations with no atomic boundary or cleanup. Should handleAppendJournal adopt the two-phase pattern from P-44?
+source: cycle 1 gap-analysis Gap 3; decision-log Q2
+impact: Crash between file write and SQLite upsert leaves unindexed journal entry invisible to MCP queries until full index rebuild.
+status: open
+reexamination_trigger: Next cycle implementing P-44 coverage for remaining handlers.
+content_hash: e73a20791bb3680adaf6ae87add85549134ffd8c9038def24c904bdabb2345ca
+token_count: 141
+file_path: .ideate/questions/Q-100.yaml

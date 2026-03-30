@@ -1,0 +1,39 @@
+id: code-quality
+type: cycle_summary
+cycle: 5
+reviewer: code-reviewer
+verdict: Fail
+content: |-
+  ## Verdict: Fail
+
+  Two significant findings.
+
+  ## Significant Findings
+
+  ### S1: `parsePrincipleVerdict` Step 2 silently broken for DB-path content
+  - **File**: `mcp/artifact-server/src/tools/analysis.ts:49-81`
+  - **Issue**: `handleWriteArtifact` stores `document_artifacts.content` as `JSON.stringify(content)`. When `handleGetConvergenceStatus` reads `da_content` and passes it to `parsePrincipleVerdict`, Step 2 splits on `\n` and looks for `## heading` lines. In a JSON-encoded string, `\n` is an escape sequence (two characters), not a real newline — `split("\n")` won't tokenize the markdown into lines. Only Step 1 (the bold `**Principle Violation Verdict**: Pass` regex) works in both paths. If a cycle_summary lacks the explicit bold tag and relies on section-heading format, Step 2 returns `unknown` via the DB path while returning the correct verdict from the file-path fallback, causing silent divergence.
+  - **Impact**: Convergence silently fails for any spec-adherence artifact that doesn't use the explicit bold verdict tag.
+  - **Suggested fix**: In `resolveContent`, when `da_content` is present, try `JSON.parse(da_content).content` before passing to `parsePrincipleVerdict`. Fall through to raw string on parse failure.
+
+  ### S2: `handleArchiveCycle` SQLite cleanup DELETEs run outside a transaction (carried from CQ-003 M1)
+  - **File**: `mcp/artifact-server/src/tools/write.ts:304-311`
+  - **Issue**: Individual `DELETE FROM nodes WHERE file_path = ?` statements in a loop with no enclosing transaction. Interrupted mid-loop leaves index partially cleaned — some finding nodes still reference deleted file paths.
+  - **Impact**: Stale node entries remain in the index; `handleGetConvergenceStatus` file-path fallback reads these and returns null content, reporting `unknown` convergence.
+  - **Suggested fix**: Wrap delete loop in `ctx.db.transaction(() => { ... }).exclusive()`.
+
+  ## Minor Findings
+
+  ### M1: `suggestionsCount` dead variable always zero
+  - **File**: `mcp/artifact-server/src/tools/analysis.ts:158`
+  - `const suggestionsCount = 0` is never populated from the database, always written as 0 to output.
+
+  ### M2: `file_path` fields in cycle YAML artifacts contain relative paths
+  - **Files**: `.ideate/cycles/003/CS-003.yaml:34`, `CQ-003.yaml:33`, `GA-003.yaml` — `file_path` field contains relative path. P-33 restricts tool responses, not YAML content. Not a violation, but inconsistently normalized across artifact types.
+
+  ## Confirmed Fixed
+  - CQ-003 S1: agent_type filter description — resolved (tools/index.ts:469 now reads "Include only events whose payload.agent_type field equals this value.")
+  - WI-424: LEFT JOIN + three-branch WHERE clause correctly implemented and tested (499/499 tests pass).
+content_hash: 0909e1e9e7d2819b4866ec877aa41393bfb00bf73b29453ead6030f3d81230a5
+token_count: 714
+file_path: .ideate/cycles/005/code-quality.yaml

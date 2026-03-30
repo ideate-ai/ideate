@@ -11,8 +11,9 @@ import os from "os";
 import path from "path";
 
 import { createSchema } from "../schema.js";
-import { ToolContext } from "../tools/index.js";
-import { handleGetExecutionStatus } from "../tools/execution.js";
+import * as dbSchema from "../db.js";
+import type { ToolContext } from "../types.js";
+import { handleGetExecutionStatus, handleGetReviewManifest } from "../tools/execution.js";
 
 // ---------------------------------------------------------------------------
 // Setup / teardown
@@ -47,7 +48,7 @@ beforeEach(() => {
   db = new Database(dbPath);
   createSchema(db);
 
-  const drizzleDb = drizzle(db);
+  const drizzleDb = drizzle(db, { schema: dbSchema });
   ctx = { db, drizzleDb, ideateDir: artifactDir };
 });
 
@@ -158,5 +159,93 @@ describe("handleGetExecutionStatus — obsolete items", () => {
 
     // WI-B should NOT appear in blocked
     expect(result).not.toMatch(/WI-B blocked by/);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Helper: insert a finding row
+// ---------------------------------------------------------------------------
+
+function insertFinding(
+  id: string,
+  workItem: string,
+  severity: "critical" | "significant" | "minor",
+  verdict: "pass" | "fail",
+  cycle: number
+): void {
+  insertNode(id, "finding", { cycle_created: cycle });
+  db.prepare(`
+    INSERT OR REPLACE INTO findings (id, severity, work_item, verdict, cycle, reviewer, file_refs)
+    VALUES (?, ?, ?, ?, ?, ?, NULL)
+  `).run(id, severity, workItem, verdict, cycle, "code-reviewer");
+}
+
+describe("handleGetReviewManifest — SQLite-based verdicts", () => {
+  it("returns None verdict for work items with no findings", async () => {
+    insertNode("WI-001", "work_item", { status: "pending" });
+    insertWorkItem("WI-001", "Item with no findings");
+
+    const result = await handleGetReviewManifest(ctx, {});
+
+    expect(result).toContain("Item with no findings");
+    expect(result).toContain("None");
+  });
+
+  it("returns Pass verdict for work items with only minor findings", async () => {
+    insertNode("WI-010", "work_item", { status: "pending" });
+    insertWorkItem("WI-010", "Item with minor finding");
+    insertFinding("F-001-001", "WI-010", "minor", "pass", 1);
+
+    const result = await handleGetReviewManifest(ctx, { cycle_number: 1 });
+
+    expect(result).toContain("Item with minor finding");
+    expect(result).toContain("Pass");
+  });
+
+  it("returns Fail verdict for work items with significant findings", async () => {
+    insertNode("WI-020", "work_item", { status: "pending" });
+    insertWorkItem("WI-020", "Item with significant finding");
+    insertFinding("F-002-001", "WI-020", "significant", "fail", 2);
+
+    const result = await handleGetReviewManifest(ctx, { cycle_number: 2 });
+
+    expect(result).toContain("Item with significant finding");
+    expect(result).toContain("Fail");
+  });
+
+  it("filters by cycle_number when provided", async () => {
+    insertNode("WI-030", "work_item", { status: "pending" });
+    insertWorkItem("WI-030", "Filtered item");
+    // Cycle 1 finding
+    insertFinding("F-003-001", "WI-030", "critical", "fail", 1);
+    // Cycle 2 finding (minor)
+    insertFinding("F-003-002", "WI-030", "minor", "pass", 2);
+
+    // Requesting cycle 2 — should show Pass (only minor), not Fail
+    const result = await handleGetReviewManifest(ctx, { cycle_number: 2 });
+    expect(result).toContain("Pass");
+    expect(result).not.toContain("Fail");
+  });
+
+  it("returns most recent cycle when no cycle_number is provided", async () => {
+    insertNode("WI-040", "work_item", { status: "pending" });
+    insertWorkItem("WI-040", "Recent cycle item");
+    insertFinding("F-004-001", "WI-040", "minor", "pass", 3);
+
+    // No cycle_number — should use max cycle (3)
+    const result = await handleGetReviewManifest(ctx, {});
+    expect(result).toContain("Pass");
+    expect(result).toContain("Cycle 3");
+  });
+
+  it("returns Fail verdict for critical-severity finding", async () => {
+    insertNode("WI-900", "work_item", { status: "pending" });
+    insertWorkItem("WI-900", "Item with critical finding");
+    insertFinding("F-900-001", "WI-900", "critical", "fail", 9);
+
+    const result = await handleGetReviewManifest(ctx, { cycle_number: 9 });
+
+    expect(result).toContain("Item with critical finding");
+    expect(result).toContain("Fail");
   });
 });

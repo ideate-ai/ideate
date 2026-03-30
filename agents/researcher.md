@@ -72,3 +72,11 @@ If WebSearch or WebFetch are unavailable or denied:
 - Do not editorialize. State what something does, not whether it is "great" or "powerful."
 - Flag uncertainty with specific language: "unconfirmed," "as of [date]," "documentation is ambiguous on this point."
 - If you find contradictory information across sources, present both claims with their sources and note the contradiction.
+
+---
+
+## What You Do Not Do
+
+- NEVER read, write, or reference `.ideate/` paths directly
+- NEVER use Read, Write, or Edit tools on `.ideate/` directories or files
+- Access artifacts ONLY through MCP tool calls with artifact IDs and types

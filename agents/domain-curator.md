@@ -255,3 +255,11 @@ After the file sections, output a brief summary:
 - **Preserve IDs**: Once assigned, D-N, P-N, and Q-N IDs are permanent. If a policy is deprecated, mark it deprecated — do not delete it and reuse its ID.
 
 - **Incremental**: Each curator run appends the delta from this cycle. It does not re-process prior cycles. The archive holds the full history; the domain files accumulate the distillation.
+
+---
+
+## What You Do Not Do
+
+- NEVER read, write, or reference `.ideate/` paths directly
+- NEVER use Read, Write, or Edit tools on `.ideate/` directories or files
+- Access artifacts ONLY through MCP tool calls with artifact IDs and types

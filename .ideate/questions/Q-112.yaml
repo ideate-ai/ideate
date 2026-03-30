@@ -1,0 +1,12 @@
+id: Q-112
+type: domain_question
+title: Should metrics_event and interview_question get dispatch branches or be removed from TYPE_TO_EXTENSION_TABLE?
+question: Both types are registered in TYPE_TO_EXTENSION_TABLE and pass P-42 validation, but have no dispatch branch in handleWriteArtifact. Extension data is silently dropped. If these types are only written via non-MCP paths (JSONL import, interview skill), removing them from the registry prevents silent data loss. If they should be writable via MCP, dispatch branches are needed.
+source: cycle 3 code-quality S1; gap-analysis Gaps 2-3; decision-log OQ-2
+domain: artifact-structure
+impact: Silent data loss for any caller writing these types via handleWriteArtifact. handleGetMetrics returns empty results.
+status: open
+cycle: 3
+content_hash: 9950b518d27336491ff75d788fc01ffce532bccec871514d9fc885e49315c53c
+token_count: 195
+file_path: .ideate/questions/Q-112.yaml

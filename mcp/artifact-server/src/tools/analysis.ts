@@ -1,16 +1,10 @@
 import * as fs from "fs";
 import * as path from "path";
-import { eq, and } from "drizzle-orm";
-import { nodes, documentArtifacts } from "../db.js";
-import { ToolContext } from "./index.js";
+import type { ToolContext } from "../types.js";
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
-
-function padCycle(n: number): string {
-  return String(n).padStart(3, "0");
-}
 
 function readFileSafe(filePath: string): string | null {
   try {
@@ -28,31 +22,6 @@ function parseCycleFromIndex(indexMd: string): number | null {
   const match = indexMd.match(/^current_cycle:\s*(\d+)/m);
   if (match) return parseInt(match[1], 10);
   return null;
-}
-
-/**
- * Count bullet items under a named ## section in a markdown string.
- * A bullet is any line starting with `- ` (after optional whitespace).
- * Counting stops at the next ## heading (or end of file).
- */
-function countBulletsUnderSection(content: string, sectionName: string): number {
-  const lines = content.split("\n");
-  let inSection = false;
-  let count = 0;
-
-  for (const line of lines) {
-    if (/^##\s/.test(line)) {
-      if (inSection) break; // hit next section
-      if (line.replace(/^##\s+/, "").trim().toLowerCase() === sectionName.toLowerCase()) {
-        inSection = true;
-      }
-      continue;
-    }
-    if (inSection && /^\s*-\s/.test(line)) {
-      count++;
-    }
-  }
-  return count;
 }
 
 // ---------------------------------------------------------------------------
@@ -126,36 +95,54 @@ export async function handleGetConvergenceStatus(
     throw new Error("Missing or invalid required parameter: cycle_number");
   }
 
-  // Query cycle_summary rows from SQLite for this cycle
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const rows = (ctx.drizzleDb as any).select().from(nodes)
-    .innerJoin(documentArtifacts, eq(documentArtifacts.id, nodes.id))
-    .where(and(
-      eq(nodes.type, "cycle_summary"),
-      eq(documentArtifacts.cycle, cycleNumber)
-    ))
-    .all() as Array<{
-      nodes: typeof nodes.$inferSelect;
-      document_artifacts: typeof documentArtifacts.$inferSelect;
-    }>;
+  // Query cycle_summary rows from SQLite for this cycle using LEFT JOIN so we
+  // can fall back to file_path matching when document_artifacts row is absent.
+  const paddedCycle = String(cycleNumber).padStart(3, "0");
+  type RawRow = { id: string; file_path: string; da_content: string | null };
+  const likePattern = `%/cycles/${paddedCycle}/%`;
+  const rawRows = ctx.db.prepare(`
+    SELECT n.id, n.file_path, da.content AS da_content
+    FROM nodes n
+    LEFT JOIN document_artifacts da ON n.id = da.id
+    WHERE n.type = 'cycle_summary'
+      AND (
+        da.cycle = ?
+        OR (da.id IS NULL AND n.file_path LIKE ?)
+        OR (da.id IS NOT NULL AND da.cycle IS NULL AND n.file_path LIKE ?)
+      )
+  `).all(cycleNumber, likePattern, likePattern) as RawRow[];
 
   // Find spec-adherence and summary rows by node id pattern.
   // In the current structure, spec-adherence content is embedded in the cycle summary (CS-* nodes).
   // SA-* nodes contain spec-adherence if written separately; fall back to CS-* content for both.
-  const adherenceRow = rows.find((r) =>
-    r.nodes.id.toUpperCase().startsWith("SA-") ||
-    r.nodes.id.toLowerCase().includes("adherence")
-  );
-  const summaryRow = rows.find((r) =>
-    r.nodes.id.toUpperCase().startsWith("CS-") ||
-    r.nodes.id.toLowerCase().includes("summary")
-  ) ?? rows[0];
+  const adherenceRow =
+    rawRows.find((r) => r.id.toUpperCase().startsWith("SA-")) ??
+    rawRows.find((r) => r.id.toLowerCase().includes("adherence"));
+  const summaryRow = rawRows.find((r) =>
+    r.id.toUpperCase().startsWith("CS-") ||
+    r.id.toLowerCase().includes("summary")
+  ) ?? rawRows[0];
 
-  // Resolve content: use document_artifacts.content if available, otherwise read from file_path
-  function resolveContent(row: typeof rows[0] | undefined): string | null {
+  // Resolve content: use document_artifacts.content if available, otherwise read from file_path.
+  // handleWriteArtifact stores content as JSON.stringify(content) in document_artifacts.content,
+  // so attempt to unwrap the `.content` field from the parsed JSON before returning the raw string.
+  function resolveContent(row: RawRow | undefined): string | null {
     if (!row) return null;
-    if (row.document_artifacts.content) return row.document_artifacts.content;
-    return readFileSafe(row.nodes.file_path);
+    if (row.da_content !== null && row.da_content !== undefined) {
+      try {
+        const parsed = JSON.parse(row.da_content) as Record<string, unknown>;
+        if (parsed && typeof parsed.content === "string") {
+          return parsed.content;
+        }
+        // JSON parsed but .content is not a string — return null rather than raw JSON
+        console.warn("resolveContent: da_content parsed successfully but .content is not a string for id:", row.id);
+        return null;
+      } catch {
+        // not JSON — fall through to raw string
+      }
+      return row.da_content;
+    }
+    return readFileSafe(row.file_path);
   }
 
   // Use adherence-specific row if found, else fall back to summary row (which embeds verdict)
@@ -168,22 +155,29 @@ export async function handleGetConvergenceStatus(
     principleResult = parsePrincipleVerdict(adherenceContent);
   }
 
-  // Get summary content for finding counts
-  const summaryContent = resolveContent(summaryRow);
+  // Query finding counts directly from the findings table
+  const countResult = ctx.db.prepare(
+    `SELECT COUNT(*) as cnt FROM findings WHERE cycle = ? AND severity IN ('critical', 'significant')`
+  ).get(cycleNumber) as { cnt: number };
+  const critSigCount = countResult.cnt;
+
+  // Also get per-severity counts for the output
+  const severityRows = ctx.db.prepare(
+    `SELECT severity, COUNT(*) as count FROM findings WHERE cycle = ? GROUP BY severity`
+  ).all(cycleNumber) as Array<{ severity: string; count: number }>;
 
   let criticalCount = 0;
   let significantCount = 0;
   let minorCount = 0;
-  let suggestionsCount = 0;
+  const suggestionsCount = 0;
 
-  if (summaryContent !== null) {
-    criticalCount = countBulletsUnderSection(summaryContent, "Critical Findings");
-    significantCount = countBulletsUnderSection(summaryContent, "Significant Findings");
-    minorCount = countBulletsUnderSection(summaryContent, "Minor Findings");
-    suggestionsCount = countBulletsUnderSection(summaryContent, "Suggestions");
+  for (const row of severityRows) {
+    if (row.severity === "critical") criticalCount = row.count;
+    else if (row.severity === "significant") significantCount = row.count;
+    else if (row.severity === "minor") minorCount = row.count;
   }
 
-  const conditionA = criticalCount === 0 && significantCount === 0;
+  const conditionA = critSigCount === 0;
   const conditionB = principleResult.verdict === "pass";
   const converged = conditionA && conditionB;
 
@@ -347,21 +341,21 @@ export async function handleGetProjectStatus(
   const wiInProgress = wiByStatus["in_progress"] ?? 0;
   const wiObsolete = wiByStatus["obsolete"] ?? 0;
 
-  // Finding counts from latest cycle summary.md (if cycle is known)
+  // Finding counts from the findings table for the current cycle
   let criticalCount = 0;
   let significantCount = 0;
   let minorCount = 0;
-  let suggestionsCount = 0;
 
   if (cycleNumber !== null) {
-    const cyclePad = padCycle(cycleNumber);
-    const summaryPath = path.join(ctx.ideateDir, "archive", "cycles", cyclePad, "summary.md");
-    const summaryContent = readFileSafe(summaryPath);
-    if (summaryContent !== null) {
-      criticalCount = countBulletsUnderSection(summaryContent, "Critical Findings");
-      significantCount = countBulletsUnderSection(summaryContent, "Significant Findings");
-      minorCount = countBulletsUnderSection(summaryContent, "Minor Findings");
-      suggestionsCount = countBulletsUnderSection(summaryContent, "Suggestions");
+    const countRows = ctx.db.prepare(`
+      SELECT severity, COUNT(*) as count
+      FROM findings WHERE cycle = ?
+      GROUP BY severity
+    `).all(cycleNumber) as Array<{ severity: string; count: number }>;
+    for (const r of countRows) {
+      if (r.severity === "critical") criticalCount = r.count;
+      else if (r.severity === "significant") significantCount = r.count;
+      else if (r.severity === "minor") minorCount = r.count;
     }
   }
 
@@ -407,7 +401,6 @@ export async function handleGetProjectStatus(
   lines.push(`- Critical: ${criticalCount}`);
   lines.push(`- Significant: ${significantCount}`);
   lines.push(`- Minor: ${minorCount}`);
-  lines.push(`- Suggestions: ${suggestionsCount}`);
   lines.push("");
 
   lines.push("## Open Domain Questions");

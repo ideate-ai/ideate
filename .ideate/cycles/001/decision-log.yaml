@@ -1,0 +1,53 @@
+id: decision-log
+type: cycle_summary
+cycle: 1
+reviewer: journal-keeper
+title: Decision Log and Open Questions — Cycle 1
+content: |-
+  ## Decision Log
+
+  **D1**: Scope Cycle 1 to II1 (prose-parsing convergence), II2 (disconnected metrics write), MI1 (metrics/ subdir), M1 (dead helper). WI-414, WI-415, WI-416.
+
+  **D2**: Prose parsing retained only for spec-adherence verdict; critical/significant counts moved to SQL query on findings table.
+
+  **D3**: Discard existing metrics.jsonl; adopt Option A (YAML + SQLite). User: "Option A seems good. We can discard existing metrics."
+
+  **D4**: All guiding principles held unchanged.
+
+  **D5**: WI-414/415/416 run in full parallel — non-overlapping file scope.
+
+  **D6 (rework)**: WI-414 rework replaced prose-path remnant with full SQL COUNT on findings table.
+
+  **D7 (rework)**: WI-415 rework extracted ToolContext to src/types.ts; metrics.ts imports from ../types.js.
+
+  **D8 (defect)**: handleEmitMetric stores relative file_path — should be absolute. Flagged as S1 in code-quality review.
+
+  **D9 (defect)**: handleEmitMetric uses deferred transaction instead of exclusive. P-44 consistency gap. Flagged as Gap 3 in gap-analysis.
+
+  **D10**: Cycle 1 verdict: Fail. 4 significant findings total (S1, S2 from code-review; Gap 2, Gap 3 from gap-analysis). Cycle 2 required.
+
+  ## Open Questions
+
+  **OQ-1**: handleEmitMetric stores relative file_path — one-line fix, correctness bug, must address in Cycle 2.
+
+  **OQ-2**: ToolContext import migration incomplete — 8 tool files still use circular import path via ./index.js.
+
+  **OQ-3**: createIdeateDir test does not assert "metrics" subdir — test fix required.
+
+  **OQ-4**: handleEmitMetric uses deferred transaction — should use .exclusive() per P-44.
+
+  **OQ-5**: MG1 (untested finding_severities object-input branch) — verify whether WI-415 criterion 5 covered this.
+
+  **OQ-6**: Report scripts reference deprecated metrics.jsonl — user decision required on deprecation vs rewrite.
+
+  **OQ-7**: ideate_emit_metric tool description still references JSONL behavior — description update needed.
+
+  ## Cross-References
+
+  - S1 (relative file_path) + Gap 3 (deferred transaction): both in metrics.ts write path — fix together in Cycle 2.
+  - S2 (circular imports) + N1 (spec-reviewer): same incomplete migration, identified independently.
+  - Gap 2 (createIdeateDir test) + GP-08: implementation correct, test doesn't protect the invariant.
+  - Gap 4 + Gap 1: WI-415 closes II2 but leaves downstream tool surfaces (report scripts, tool description) stale.
+content_hash: c0c49d755f22da2610491815fcb17f5fe8c16eb291135712c830cdc7fd487dfc
+token_count: 638
+file_path: .ideate/cycles/001/decision-log.yaml

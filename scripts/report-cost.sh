@@ -1,6 +1,17 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+echo "ERROR: report-cost.sh is deprecated and no longer functional." >&2
+echo "" >&2
+echo "metrics.jsonl is no longer written as of the YAML+SQLite migration (D-155)." >&2
+echo "Metrics are now stored as YAML files under .ideate/metrics/ and are" >&2
+echo "accessible via the ideate_get_metrics MCP tool." >&2
+exit 1
+
+# --- DEPRECATED CODE BELOW (retained for reference only) ---
+# shellcheck disable=all
+if false; then
+
 if ! command -v python3 &>/dev/null; then
     echo "Error: python3 is required but not found on PATH" >&2
     exit 1
@@ -299,3 +310,5 @@ def main():
 if __name__ == '__main__':
     main()
 PYTHON_SCRIPT
+
+fi

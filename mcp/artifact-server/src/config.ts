@@ -10,6 +10,7 @@ export interface IdeateConfigJson {
   schema_version: number;
   project_name?: string;
   agent_budgets?: Record<string, number>;
+  model_overrides?: Record<string, string>;
   ppr?: {
     alpha?: number;
     max_iterations?: number;
@@ -75,6 +76,7 @@ export const IDEATE_SUBDIRS = [
   "interviews",
   "cycles",
   "domains",
+  "metrics",
 ] as const;
 
 /**
@@ -170,6 +172,25 @@ export function writeConfig(
 }
 
 /**
+ * Read config.json from the given .ideate/ directory as-is, without applying
+ * any defaults. Returns only the fields actually stored in the file.
+ *
+ * @param ideateDir - Path to the .ideate/ directory
+ * @returns Raw stored config, or minimal default if file is missing/invalid
+ */
+export function readRawConfig(ideateDir: string): IdeateConfigJson {
+  const configPath = path.join(ideateDir, "config.json");
+  if (!existsSync(configPath)) {
+    return { schema_version: CONFIG_SCHEMA_VERSION };
+  }
+  try {
+    return JSON.parse(readFileSync(configPath, "utf8")) as IdeateConfigJson;
+  } catch {
+    return { schema_version: CONFIG_SCHEMA_VERSION };
+  }
+}
+
+/**
  * Read config.json from the given .ideate/ directory and deep-merge with
  * defaults for any missing optional fields (agent_budgets, ppr).
  *
@@ -177,9 +198,9 @@ export function writeConfig(
  * @returns Config object with defaults applied for missing fields
  */
 export function getConfigWithDefaults(ideateDir: string): Required<
-  Pick<IdeateConfigJson, "schema_version" | "agent_budgets" | "ppr">
+  Pick<IdeateConfigJson, "schema_version" | "agent_budgets" | "model_overrides" | "ppr">
 > &
-  Omit<IdeateConfigJson, "agent_budgets" | "ppr"> {
+  Omit<IdeateConfigJson, "agent_budgets" | "model_overrides" | "ppr"> {
   const configPath = path.join(ideateDir, "config.json");
   let raw: IdeateConfigJson = { schema_version: CONFIG_SCHEMA_VERSION };
 
@@ -210,9 +231,14 @@ export function getConfigWithDefaults(ideateDir: string): Required<
       rawPpr.default_token_budget ?? DEFAULT_PPR_CONFIG.default_token_budget,
   };
 
+  const model_overrides: Record<string, string> = {
+    ...(raw.model_overrides ?? {}),
+  };
+
   return {
     ...raw,
     agent_budgets,
+    model_overrides,
     ppr,
   };
 }

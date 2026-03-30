@@ -435,39 +435,23 @@ Migrates an existing artifact directory to the v3 YAML-backed structure.
 
 ## Reporting Scripts
 
-All reporting scripts require Python 3 on PATH. Each reads a `metrics.jsonl` file produced by the ideate runtime. If no file argument is supplied, the script auto-discovers it by walking up from CWD looking for `.ideate.json`.
+> **Note**: `report-cycle.sh`, `report-cost.sh`, and `report-executive.sh` are deprecated and will exit 1 with an error message. `report.sh` is also deprecated. Use the `ideate_get_metrics` MCP tool instead.
 
-### `report.sh`
+### `report.sh` (deprecated)
 
-Full metrics report: executive summary, per-cycle breakdown, per-task breakdown, phase analysis, agent performance, RAG vs flat-file MCP usage, and quality trends.
+Previously generated a full metrics report. Now exits 1 with a deprecation message. Use `ideate_get_metrics` MCP tool instead.
 
-```bash
-./scripts/report.sh [METRICS_FILE]
-```
+### `report-cycle.sh` (deprecated)
 
-### `report-cycle.sh`
+Previously generated a cycle-focused report. Now exits 1 with a deprecation message. Use `ideate_get_metrics` MCP tool instead.
 
-Cycle-focused report: cycle-over-cycle quality trends, convergence speed, and first-pass acceptance rate.
+### `report-cost.sh` (deprecated)
 
-```bash
-./scripts/report-cycle.sh [METRICS_FILE]
-```
+Previously generated a token cost report. Now exits 1 with a deprecation message. Use `ideate_get_metrics` MCP tool instead.
 
-### `report-cost.sh`
+### `report-executive.sh` (deprecated)
 
-Token cost report: per-work-item token cost, per-cycle token cost with phase breakdown, and cycle-over-cycle cost trends with optional dollar estimates.
-
-```bash
-./scripts/report-cost.sh [METRICS_FILE]
-```
-
-### `report-executive.sh`
-
-High-level executive summary: project summary, quality metrics, cost summary, and ROI indicators (rework rate trend, convergence speed trend, tokens-per-finding, first-pass rate trend).
-
-```bash
-./scripts/report-executive.sh [METRICS_FILE]
-```
+Previously generated a high-level executive summary. Now exits 1 with a deprecation message. Use `ideate_get_metrics` MCP tool instead.
 
 ---
 

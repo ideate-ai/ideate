@@ -1,0 +1,12 @@
+id: Q-105
+type: domain_question
+domain: artifact-structure
+title: handleWriteArtifact missing extension table rows for guiding_principle and constraint types
+question: Only upsertNode is called for these types in handleWriteArtifact. Extension tables only populated by rebuildIndex. Should handleWriteArtifact include extension table upserts for all artifact types?
+source: cycle 1 gap-analysis Gap 2; decision-log Q7
+impact: Agents writing guiding_principle or constraint via MCP then immediately querying get empty results. Extension tables inconsistent until next full index rebuild.
+status: open
+reexamination_trigger: Next cycle adding new artifact types to handleWriteArtifact or extending db-helpers.ts coverage.
+content_hash: fb8af5aebe6e35cf7ec28f43b1cbb16da229a2cfb33c3919ca6d458931cc018c
+token_count: 180
+file_path: .ideate/questions/Q-105.yaml

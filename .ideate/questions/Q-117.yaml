@@ -1,0 +1,11 @@
+id: Q-117
+type: domain_question
+domain: artifact-structure
+title: No end-to-end write-to-convergence roundtrip test
+description: "No test exists that calls handleWriteArtifact with type cycle_summary and cycle: N, then calls handleGetConvergenceStatus(N) and asserts the spec-adherence artifact is found and parsed. Existing tests cover the write path and query path in isolation but not the full roundtrip."
+source: cycle 4 gap-analysis-004 Gap 2
+impact: A regression in either handleWriteArtifact's DB upsert logic or handleGetConvergenceStatus's query would go undetected until a real review cycle fails.
+status: open
+content_hash: 339a668bdd71c9ba910bf56a03dde51705d61f4590e123f32522f57e5e428218
+token_count: 155
+file_path: .ideate/questions/Q-117.yaml

@@ -18,7 +18,7 @@ Available from controller context:
 
 ### Read Project Configuration
 
-Call `ideate_get_config()` to read project configuration. Hold the response as `{config}`. Use `{config}.agent_budgets.{agent_name}` as the maxTurns value when spawning agents. If `ideate_get_config` is unavailable or returns no agent_budgets, use the agent's frontmatter maxTurns as fallback.
+Call `ideate_get_config()` to read project configuration. Hold the response as `{config}`. Use `{config}.agent_budgets.{agent_name}` as the maxTurns value when spawning agents. If `ideate_get_config` is unavailable or returns no agent_budgets, use the agent's frontmatter maxTurns as fallback. Also hold `{config}.model_overrides` — a map of agent name to model string. When spawning any agent, use `{config}.model_overrides['{agent_name}']` as the model parameter if present and non-empty; otherwise use the hardcoded default listed in the spawn instruction.
 
 ### Build Shared Context Package
 
@@ -34,14 +34,14 @@ Pass `{context_package}` inline to all reviewer and journal-keeper prompts. Do n
 
 Determine whether to use **full review** or **differential review**.
 
-Call `ideate_get_autopilot_state()` and extract `last_full_review_cycle` and `full_review_interval`. Defaults: `last_full_review_cycle` = 0, `full_review_interval` = 3.
+Call `ideate_manage_autopilot_state({action: "get"})` and extract `last_full_review_cycle` and `full_review_interval`. Defaults: `last_full_review_cycle` = 0, `full_review_interval` = 3.
 
 **Full review conditions** (any one → use full review):
 - `{cycle_number}` is 1
 - `({cycle_number} - last_full_review_cycle) >= full_review_interval`
 - `{cycle_start_commit}` is null (git unavailable)
 
-**If full review**: Set `{diff_mode}` = `"full"`. Set `{changed_files}` = all source files. Call `ideate_update_autopilot_state({state: {last_full_review_cycle: {cycle_number}}})`. Continue with Generate Review Manifest.
+**If full review**: Set `{diff_mode}` = `"full"`. Set `{changed_files}` = all source files. Call `ideate_manage_autopilot_state({action: "update", state: {last_full_review_cycle: {cycle_number}}})`. Continue with Generate Review Manifest.
 
 **If differential** (cycles 2+ within the interval):
 
@@ -241,7 +241,6 @@ If the call fails, log `quality_summary event skipped: {reason}` and continue. D
 **ideate:domain-curator**
 - Model: opus
 - MaxTurns: `{config}.agent_budgets.domain-curator` (fallback to agent frontmatter default)
-- Tools: Read, Glob
 - Prompt:
   > Maintain the domain knowledge layer for this project.
   >
@@ -251,9 +250,18 @@ If the call fails, log `quality_summary event skipped: {reason}` and continue. D
   >
   > **Review source**: Call `ideate_artifact_query({type: "cycle_summary", cycle: {cycle_number}})` to retrieve the code-quality, spec-adherence, gap-analysis, and decision-log review artifacts for this cycle.
   >
-  > Follow the domain-curator agent instructions. Extract policy-grade, decision-grade, question-grade, and conflict-grade items from this cycle's review artifacts. Write all domain layer updates (policies, decisions, questions) using `ideate_write_artifact` — do NOT use the Write tool for any artifact files. Return a summary of updates made as the final section of your response.
+  > Follow the domain-curator agent instructions. Extract policy-grade, decision-grade, question-grade, and conflict-grade items from this cycle's review artifacts. **Do not write any artifacts directly.** Return all proposed domain updates as structured content in the final section of your response. For each update, include the artifact type, designation, and the full content.
 
-After the domain-curator returns, emit a metric via `ideate_emit_metric({payload: {phase: "6b", agent_type: "domain-curator", ...}})`. Best-effort only: if the call fails, continue without interruption. Extract `turns_used` from the `tool_uses` field in the Agent response `<usage>` block (integer; `null` if not available). The maxTurns budget for `domain-curator` is `{config}.agent_budgets.domain-curator` (fallback to agent frontmatter default). If `turns_used` is non-null and `turns_used / maxTurns > 0.80`, append to the cycle review journal entry: `Agent domain-curator used {turns_used}/{maxTurns} turns ({pct}%) — near budget limit`. Set `finding_count`, `finding_severities`, `outcome`, `first_pass_accepted`, and `rework_count` to `null` for domain-curator entries.
+Wait for the curator to complete. After the curator returns:
+1. Parse its response to extract each domain artifact it proposes to write (type, designation, content).
+2. For each proposed domain update, call `ideate_write_artifact` with the correct artifact type:
+   - For policies: `ideate_write_artifact({type: "domain_policy", id: "P-{N}", content: {...}})`
+   - For decisions: `ideate_write_artifact({type: "domain_decision", id: "D-{N}", content: {...}})`
+   - For questions: `ideate_write_artifact({type: "domain_question", id: "Q-{N}", content: {...}})`
+3. Update the domain index: call `ideate_write_artifact({type: "domain_index", content: {current_cycle: {cycle_number}}})`.
+4. Verify that at least one domain artifact was written. If not, note the failure in the journal.
+
+Emit a metric via `ideate_emit_metric({payload: {phase: "6b", agent_type: "domain-curator", ...}})`. Best-effort only: if the call fails, continue without interruption. Extract `turns_used` from the `tool_uses` field in the Agent response `<usage>` block (integer; `null` if not available). The maxTurns budget for `domain-curator` is `{config}.agent_budgets.domain-curator` (fallback to agent frontmatter default). If `turns_used` is non-null and `turns_used / maxTurns > 0.80`, append to the cycle review journal entry: `Agent domain-curator used {turns_used}/{maxTurns} turns ({pct}%) — near budget limit`. Set `finding_count`, `finding_severities`, `outcome`, `first_pass_accepted`, and `rework_count` to `null` for domain-curator entries.
 
 ### Archive Cycle (After Domain Curator)
 

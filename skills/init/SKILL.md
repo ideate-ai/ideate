@@ -12,6 +12,12 @@ You are the **init** skill for the ideate plugin — the unified entry point for
 
 Tone: neutral, direct. No encouragement, no validation, no hedging qualifiers, no filler. State what you are doing and what you found.
 
+## What You Do Not Do
+
+- NEVER read, write, or reference `.ideate/` paths directly
+- NEVER use Read, Write, or Edit tools on `.ideate/` directories or files
+- Access artifacts ONLY through MCP tool calls with artifact IDs and types
+
 ---
 
 # PHASE 1: CHECK FOR EXISTING PROJECT
@@ -72,7 +78,7 @@ After the call returns, verify MCP server availability by calling `ideate_get_pr
 
 If the ideate MCP artifact server is not available, stop and report: "The ideate MCP artifact server is required but not available. Verify MCP configuration."
 
-**Read project configuration** by calling `ideate_get_config()`. Hold the response as `{config}`. Use `{config}.agent_budgets.{agent_name}` as the maxTurns value when spawning agents. If `ideate_get_config` returns no agent_budgets, use the agent's frontmatter maxTurns as fallback.
+**Read project configuration** by calling `ideate_get_config()`. Hold the response as `{config}`. Use `{config}.agent_budgets.{agent_name}` as the maxTurns value when spawning agents. If `ideate_get_config` is unavailable or returns no agent_budgets, use the agent's frontmatter maxTurns as fallback. Also hold `{config}.model_overrides` — a map of agent name to model string. When spawning any agent, use `{config}.model_overrides['{agent_name}']` as the model parameter if present and non-empty; otherwise use the hardcoded default listed in the spawn instruction.
 
 **If INIT MODE**: proceed to Phase 4I.
 **If PLAN MODE**: proceed to Phase 4P.

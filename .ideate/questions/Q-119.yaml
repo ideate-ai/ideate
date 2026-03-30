@@ -1,0 +1,11 @@
+id: Q-119
+type: domain_question
+domain: artifact-structure
+title: P-44 not amended for handleAppendJournal single-transaction pattern
+description: "P-44 requires a two-phase pattern: Phase 1 writes YAML, Phase 2 wraps SQLite upserts in exclusive transaction. handleAppendJournal places both YAML write and SQLite upsert inside the same .exclusive() transaction (write.ts line 152). The spec-adherence reviewer verified and passed this implementation, but the P-44 policy text does not accommodate single-phase handlers. Should P-44 be amended to allow a single-transaction variant?"
+source: cycle 4 decision-log Pattern B / OQ-C4-03; spec-adherence-004 P-44 evidence
+impact: P-44 text is technically violated by handleAppendJournal's implementation. Future spec-adherence reviews may flag this inconsistently.
+status: open
+content_hash: 96a0eaa7f873d0caf9972b5e82b61036f0b78f20b6e0815400e6e43d8bf46b6a
+token_count: 205
+file_path: .ideate/questions/Q-119.yaml

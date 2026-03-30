@@ -15,8 +15,8 @@
 //   5. Apply node specificity dampening: multiply by log(totalNodes / max(1, inDegree)).
 //   6. Return nodes sorted by score descending.
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 import { BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
+import type * as dbSchema from "./db.js";
 import { edges } from "./db.js";
 
 // ---------------------------------------------------------------------------
@@ -70,9 +70,8 @@ const DEFAULT_EDGE_TYPE_WEIGHTS: Record<string, number> = {
  * @param options  Optional algorithm parameters.
  * @returns Array of {nodeId, score} sorted by score descending.
  */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function computePPR(
-  drizzleDb: BetterSQLite3Database<any>,
+  drizzleDb: BetterSQLite3Database<typeof dbSchema>,
   seedNodeIds: string[],
   options?: PPROptions
 ): PPRResult[] {
