@@ -14,11 +14,17 @@ Two evaluation pillars drive this review:
 
 Tone: neutral, factual. No encouragement, no validation, no hedging qualifiers. Let severity ratings speak for themselves. If something is wrong, state what is wrong and how severe it is. If everything is acceptable, say so without celebration.
 
+## What You Do Not Do
+
+- NEVER read, write, or reference `.ideate/` paths directly
+- NEVER use Read, Write, or Edit tools on `.ideate/` directories or files
+- Access artifacts ONLY through MCP tool calls with artifact IDs and types
+
 ---
 
 # Phase 0: Read Project Configuration
 
-Call `ideate_get_config()` to read project configuration. Hold the response as `{config}`. Use `{config}.agent_budgets.{agent_name}` as the maxTurns value when spawning agents. If `ideate_get_config` is unavailable or returns no agent_budgets, use the agent's frontmatter maxTurns as fallback.
+Call `ideate_get_config()` to read project configuration. Hold the response as `{config}`. Use `{config}.agent_budgets.{agent_name}` as the maxTurns value when spawning agents. If `ideate_get_config` is unavailable or returns no agent_budgets, use the agent's frontmatter maxTurns as fallback. Also hold `{config}.model_overrides` — a map of agent name to model string. When spawning any agent, use `{config}.model_overrides['{agent_name}']` as the model parameter if present and non-empty; otherwise use the hardcoded default listed in the spawn instruction.
 
 ---
 
@@ -426,12 +432,14 @@ Read the summary artifact to make this determination. If no such findings exist,
       - A finding references the same file path as a path mentioned in an existing policy
       - A finding's domain name matches an existing policy's domain name
       - A finding explicitly recommends changing or removing behavior that a policy prescribes
-   d. If any conflict signal is detected: use `model: opus` (full reasoning needed).
-   e. If no conflict signals detected: use `model: sonnet` (default for non-conflict curation).
+   d. If any conflict signal is detected: preferred model is `opus` (full reasoning needed).
+   e. If no conflict signals detected: preferred model is `sonnet` (default for non-conflict curation).
 
-3. Log the model selection decision in the journal entry for this review: which model was chosen and why (conflict detected / no conflict / first cycle).
+3. Check `{config}.model_overrides['domain-curator']` — if present and non-empty, that value takes precedence over the pre-screening result.
 
-**Spawn the `ideate:domain-curator`** with the model determined above (this overrides the agent's default model):
+4. Log the model selection decision in the journal entry for this review: which model was chosen and why (conflict detected / no conflict / first cycle / config override).
+
+**Spawn the `ideate:domain-curator`** with the final model determined above (this overrides the agent's default model):
 
 Provide:
 
@@ -439,7 +447,7 @@ Provide:
 >
 > Review type: {cycle | adhoc}
 >
-> Review source: Retrieve all review outputs for this cycle/scope via `ideate_artifact_query({type: "cycle_summary", cycle: N})`.
+> Review source: Use `ideate_artifact_query({type: "finding", cycle: N})` to retrieve findings.
 >
 > Cycle number: {N} (for cycle reviews) or slug: {date-slug} (for ad-hoc reviews)
 >
@@ -449,7 +457,10 @@ Provide:
 
 After the curator returns:
 1. Parse its response to extract each domain artifact it proposes to write (type, designation, content).
-2. For each proposed domain update, call `ideate_write_artifact({type: "domain_file", id: "<designation>", content: {content: <artifact content>}})` to persist the artifact via MCP.
+2. For each proposed domain update, call `ideate_write_artifact` with the correct artifact type:
+   - For policies: `ideate_write_artifact({type: "domain_policy", id: "P-{N}", content: {...}})`
+   - For decisions: `ideate_write_artifact({type: "domain_decision", id: "D-{N}", content: {...}})`
+   - For questions: `ideate_write_artifact({type: "domain_question", id: "Q-{N}", content: {...}})`
 3. Record a metrics entry (see Metrics Instrumentation).
 
 ## 7.3 After Curator Completes (Cycle Reviews Only)

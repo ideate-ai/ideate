@@ -1,17 +1,38 @@
 id: overview
 type: overview
-title: Cycle 065 — Consolidate plan and init into unified /ideate:init
-summary: Merge /ideate:plan and /ideate:init into a single /ideate:init command that auto-detects whether the project has existing source code and adjusts behavior accordingly. Delete /ideate:plan. Update all cross-references and docs.
-trigger: "User requirement: two entry points are wasteful and semantically unclear. One unified command with auto-detection."
-scope_boundary: Skill layer refactoring only. No MCP server changes, no agent definition changes (except cross-reference updates), no architecture changes.
-changes:
-  - area: Unified entry point
-    description: "/ideate:init becomes the single entry point. If .ideate/ exists: error. If source code exists: init flow (survey, lightweight interview, bootstrap). If no source code: plan flow (full interview, research, architecture, work items)."
-  - area: Skill deletion
-    description: /ideate:plan skill deleted. All references updated to /ideate:init.
-  - area: Documentation
-    description: CLAUDE.md, README.md, ARCHITECTURE.md updated.
-work_items: WI-336 through WI-339
-content_hash: 17938c3ce49ad7e45d87a46e7f6073c17e76677eb488c524e29a12af38cca0c2
-token_count: 284
+title: Cycle Change Plan — Metrics Unification and Convergence Fix
+content: |-
+  ## What is changing
+
+  Two deferred architectural gaps from the autopilot review cycles (cycles 3–7) and one minor cleanup:
+
+  **II1 — handleGetConvergenceStatus prose parsing (WI-414)**
+  `handleGetConvergenceStatus` in `tools/analysis.ts` currently counts critical/significant findings by scanning markdown bullet points in the cycle_summary content field. `handleGetProjectStatus` uses the correct approach — SQL queries on the `findings` table. WI-414 fixes the convergence check to use the same SQL path, eliminating the fragile prose-parsing dependency. The spec-adherence verdict (Pass/Fail) continues to be parsed from prose — that path is inherently content-based and is unchanged.
+
+  **II2 — Parallel metrics data stores (WI-415)**
+  `handleEmitMetric` appends raw JSON to `metrics.jsonl`. `handleGetMetrics` queries the `metrics_events` SQLite table. These are completely separate data stores with no connection — metrics emitted by skills are never visible in `handleGetMetrics`. WI-415 changes `handleEmitMetric` to write a proper `metrics_event` YAML artifact and upsert the corresponding SQLite row, following the standard P-44 two-phase write pattern. The `metrics.jsonl` file is deprecated and the appendFileSync call is removed. Existing JSONL data is discarded. WI-415 also adds 'metrics' to IDEATE_SUBDIRS in config.ts (gap MI1).
+
+  **Cleanup (WI-416)**
+  The `interviewFiles()` helper in `write-transaction.test.ts` is dead code after WI-413 removed its only call site. WI-416 deletes it.
+
+  ## Trigger
+
+  Deferred significant gaps II1 and II2 from autopilot gap-analysis-006, minor MI1 from gap-analysis-006, minor M1 from cycle 7 code-quality review.
+
+  ## Scope boundary — what is NOT changing
+
+  - Architecture, module boundaries, MCP API surface
+  - The `handleWriteArtifact` dispatch block for type metrics_event (unchanged)
+  - The `handleGetMetrics` aggregation logic (unchanged — it already reads SQLite correctly)
+  - The `parsePrincipleVerdict` logic in analysis.ts (unchanged)
+  - Any skill markdown files or agent definitions
+  - SQLite schema (no new columns or tables)
+
+  ## Expected impact
+
+  - Skills calling `ideate_emit_metric` will now produce data that `ideate_get_metrics` can aggregate. The metrics feedback loop closes.
+  - The autopilot convergence check becomes reliable: a review cycle that produces findings will correctly prevent convergence even if the cycle_summary prose format changes.
+  - IDEATE_SUBDIRS gains 'metrics', so new project scaffolding includes the directory.
+content_hash: e0376bc3964df41137f9b327736ff30a6ec4240028df6bb5613c95b0f5c2f17d
+token_count: 659
 file_path: .ideate/plan/overview.yaml

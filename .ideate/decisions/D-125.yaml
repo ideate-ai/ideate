@@ -1,0 +1,12 @@
+id: D-125
+type: domain_decision
+domain: agent-system
+status: settled
+cycle_created: 0
+description: The standalone review skill (skills/review/SKILL.md) correctly instructs domain-curator to return content for the skill to write via ideate_write_artifact. The autopilot review phase (skills/autopilot/phases/review.md:248-256) incorrectly instructs domain-curator to call ideate_write_artifact directly. The standalone review skill pattern is authoritative.
+rationale: "II1 from full audit. The domain-curator agent specification states 'Do not write artifacts directly — return content for the skill to parse.' Domain-curator has only Read/Glob tools, not Write tools. The autopilot review phase contradicts this contract. Result: all domain artifacts from autopilot cycles are silently discarded."
+source: full-audit-20260328 II1
+supersedes: null
+content_hash: 716d40a9414ef4b948e066c321f265f917000a86a08064eda7fea3d861bb7351
+token_count: 212
+file_path: .ideate/decisions/D-125.yaml

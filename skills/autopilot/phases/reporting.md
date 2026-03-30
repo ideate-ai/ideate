@@ -13,7 +13,7 @@ Available from controller context:
 - `{max_cycles}` — the configured maximum
 - `{convergence_achieved}` — true or false
 - `{last_cycle_findings}` — final cycle's finding counts (critical, significant, minor)
-- `{started_at}` — ISO 8601 timestamp from `ideate_get_autopilot_state()`
+- `{started_at}` — ISO 8601 timestamp from `ideate_manage_autopilot_state({action: "get"})`
 
 ## Instructions
 
@@ -27,7 +27,7 @@ Print:
 Zero critical findings. Zero significant findings. All guiding principles satisfied.
 ```
 
-Call `ideate_update_autopilot_state({state: {convergence_achieved: true, cycles_completed: {N}}})` to persist the final state.
+Call `ideate_manage_autopilot_state({action: "update", state: {convergence_achieved: true, cycles_completed: {N}}})` to persist the final state.
 
 Append via `ideate_append_journal`:
 
@@ -76,7 +76,7 @@ Total wall-clock across all cycles: {total_ms}ms
 
 If `ideate_emit_metric` calls failed, note "metrics unavailable".
 
-**Reconstructing per-cycle data**: The autopilot session state (via `ideate_get_autopilot_state()`) stores only aggregates. Retrieve journal entries via `ideate_artifact_query({type: "journal_entry"})` — collect all `[autopilot]` entries. For each cycle N, collect: work item completions, review summaries, and proxy-human decisions. Also retrieve proxy-human decisions from the journal entries. For each proxy-human decision where the decision is `DEFER`, record it as a deferred item for that cycle.
+**Reconstructing per-cycle data**: The autopilot session state (via `ideate_manage_autopilot_state({action: "get"})`) stores only aggregates. Retrieve journal entries via `ideate_artifact_query({type: "journal_entry"})` — collect all `[autopilot]` entries. For each cycle N, collect: work item completions, review summaries. Also retrieve proxy-human decisions via `ideate_artifact_query({type: "proxy_human_decision", filters: {cycle: N}})`. For each proxy-human decision where the decision is `deferred`, record it as a deferred item for that cycle.
 
 Present the full activity report:
 
@@ -105,14 +105,14 @@ Deferred decisions: {N} — {list of deferred event topics, or "None."}
 ...
 
 ### Proxy-Human Decision Log Summary
-{If proxy-human journal entries exist: summarize each decision entry — cycle number, event, decision, confidence.}
+{If proxy-human decision artifacts exist: summarize each — cycle number, trigger, decision, rationale.}
 {If no decisions were made: "No proxy-human decisions were required."}
 
 ### Open Items
 
 **Deferred Andon Events**
-{For each deferred proxy-human decision across all cycles, list:}
-- Cycle {N} — {event description} — Rationale: {proxy-human's deferral rationale from journal entries}
+{For each deferred proxy-human decision across all cycles (retrieved via `ideate_artifact_query({type: "proxy_human_decision"})`), list:}
+- Cycle {N} — {event description} — Rationale: {proxy-human's deferral rationale}
 {If no deferred Andon events: "None."}
 
 **Other Unresolved Items**
@@ -130,5 +130,5 @@ Activity report presented to user. Session ends.
 
 ## Artifacts Written (all via MCP)
 
-- Autopilot session state — `convergence_achieved`, `cycles_completed` updated via `ideate_update_autopilot_state` (Phase 7 only)
+- Autopilot session state — `convergence_achieved`, `cycles_completed` updated via `ideate_manage_autopilot_state` (Phase 7 only)
 - Journal entries — convergence/stop entry and overall metrics summary appended via `ideate_append_journal`

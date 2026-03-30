@@ -1,0 +1,13 @@
+id: D-135
+type: domain_decision
+domain: artifact-structure
+title: YAML-first two-phase write pattern with atomic SQLite transaction
+decision: "Phase 1 writes YAML files. Phase 2 wraps all SQLite upserts in a single transaction. On Phase 2 failure, Phase 1 is rolled back: new files deleted, modified files restored from captured originals."
+rationale: GP-08 — YAML is source of truth, SQLite is derived cache. On failure, YAML must remain consistent.
+assumes: Pattern applied to handleWriteWorkItems, handleWriteArtifact, handleUpdateWorkItems. handleAppendJournal and handleArchiveCycle not yet covered (Q-100, Q-101).
+policy: P-44
+source: cycle 1 decision-log D4; WI-398
+status: settled
+content_hash: d7f77b55351e66ff7825c3e1d1d4d93bf54d0f36d681035a5e231acc050d0ed7
+token_count: 172
+file_path: .ideate/decisions/D-135.yaml

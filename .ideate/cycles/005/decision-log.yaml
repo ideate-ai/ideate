@@ -1,0 +1,47 @@
+id: decision-log
+type: cycle_summary
+cycle: 5
+reviewer: journal-keeper
+content: |-
+  # Decision Log — Cycle 5 (WI-424 / WI-425 / WI-426)
+
+  ## Key Decisions
+
+  ### D5-E01: Replace Drizzle INNER JOIN with raw SQL LEFT JOIN in handleGetConvergenceStatus
+  IMPACT: Cycle 3 convergence regression fixed. All cycle_summary artifacts found regardless of document_artifacts indexing state.
+
+  ### D5-E02: Add third WHERE branch (da.id IS NOT NULL AND da.cycle IS NULL)
+  Implication: Deviation from WI-424 written spec (two-branch criterion) but additive and tested. Enables detection of artifacts indexed before cycle injection fix (WI-423).
+
+  ### D5-E04: WI-425 backfill via direct Edit (P-37 violation)
+  Necessitated by stale MCP server build (0.1.0 vs 3.3.0). Three-branch WHERE mitigates functional impact at query time. P-37 violation documented in spec-adherence.
+
+  ### D5-P02: Deprecate metrics.jsonl (Option A from interview-refine-071)
+  Report scripts NOT updated in scope. Creates regression: report-executive.sh, report-cycle.sh, report-cost.sh silently produce empty output.
+
+  ## Open Questions
+
+  ### OQ-5-01 [URGENT]: parsePrincipleVerdict Step 2 broken for JSON-encoded da_content
+  Fix: JSON.parse unwrap in resolveContent before passing to parsePrincipleVerdict.
+
+  ### OQ-5-02 [URGENT]: handleArchiveCycle DELETE loop untransacted
+  Severity elevated from M to S by WI-424 interaction (LEFT JOIN fallback now observable). Fix: wrap in .exclusive() transaction.
+
+  ### OQ-5-03 [USER DECISION]: Report scripts broken by metrics.jsonl deprecation
+  Options: (a) update scripts to read from ideate_get_metrics, (b) explicitly deprecate, (c) remove.
+
+  ### OQ-5-04: document_artifacts.content format inconsistency (indexer: raw string; write path: JSON.stringify)
+  Resolved by OQ-5-01 fix but underlying format divergence remains.
+
+  ### OQ-5-05: ARCHITECTURE.md Section 10 missing db-helpers.ts
+  ### OQ-5-06: WI-424 criterion documents two-branch WHERE; three branches implemented
+  ### OQ-5-07: suggestionsCount always zero (dead variable in analysis.ts:158)
+  ### OQ-5-08: P-44 scope ambiguity for archive delete operations
+
+  ## Cross-References
+  - CQ S1 + GA EC1: Same root cause — JSON-encoded da_content breaks Step 2 in parsePrincipleVerdict
+  - CQ S2: WI-424 made handleArchiveCycle untransacted-delete consequence observable (severity upgrade)
+  - GA MR1/II2: Planning decision (D5-P02) bounded to MCP server; did not carry through to report scripts
+content_hash: ae2604d88adf0ac72cdb9ad92cecce7c267facd2132cdc5453109df0535b64d4
+token_count: 618
+file_path: .ideate/cycles/005/decision-log.yaml

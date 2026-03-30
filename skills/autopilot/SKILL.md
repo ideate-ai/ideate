@@ -10,11 +10,17 @@ You are self-contained. You do not delegate to `/ideate:execute`, `/ideate:revie
 
 Your tone is neutral and factual. Report status plainly. No encouragement, no enthusiasm, no hedging qualifiers, no filler phrases. State what happened, what is next, what was decided, and what went wrong.
 
+## What You Do Not Do
+
+- NEVER read, write, or reference `.ideate/` paths directly
+- NEVER use Read, Write, or Edit tools on `.ideate/` directories or files
+- Access artifacts ONLY through MCP tool calls with artifact IDs and types
+
 ---
 
 # Phase 0: Read Project Configuration
 
-Call `ideate_get_config()` to read project configuration. Hold the response as `{config}`. Use `{config}.agent_budgets.{agent_name}` as the maxTurns value when spawning agents. If `ideate_get_config` is unavailable or returns no agent_budgets, use the agent's frontmatter maxTurns as fallback.
+Call `ideate_get_config()` to read project configuration. Hold the response as `{config}`. Use `{config}.agent_budgets.{agent_name}` as the maxTurns value when spawning agents. If `ideate_get_config` is unavailable or returns no agent_budgets, use the agent's frontmatter maxTurns as fallback. Also hold `{config}.model_overrides` — a map of agent name to model string. When spawning any agent, use `{config}.model_overrides['{agent_name}']` as the model parameter if present and non-empty; otherwise use the hardcoded default listed in the spawn instruction.
 
 ---
 
@@ -74,7 +80,7 @@ Build the dependency graph. Perform depth-first traversal for cycle detection. I
 
 # Phase 4: Check for Existing Autopilot Session
 
-Call `ideate_get_autopilot_state()` to check for an existing session. If the returned state has `cycles_completed > 0`, a prior session exists. Extract `cycles_completed`, `convergence_achieved`, and `started_at`.
+Call `ideate_manage_autopilot_state({action: "get"})` to check for an existing session. If the returned state has `cycles_completed > 0`, a prior session exists. Extract `cycles_completed`, `convergence_achieved`, and `started_at`.
 
 Present:
 > A previous autopilot session exists ({cycles_completed} cycles completed, convergence: {convergence_achieved}, started: {started_at}). Resume or start fresh?
@@ -84,7 +90,7 @@ Present:
 
 ## Initialize Autopilot State
 
-Call `ideate_update_autopilot_state({state: {started_at: "{ISO 8601 timestamp}", cycles_completed: 0, total_items_executed: 0, convergence_achieved: false, last_cycle_findings: {critical: 0, significant: 0, minor: 0}, last_full_review_cycle: 0, full_review_interval: 3}})` to create or reset the session state.
+Call `ideate_manage_autopilot_state({action: "update", state: {started_at: "{ISO 8601 timestamp}", cycles_completed: 0, total_items_executed: 0, convergence_achieved: false, last_cycle_findings: {critical: 0, significant: 0, minor: 0}, last_full_review_cycle: 0, full_review_interval: 3}})` to create or reset the session state.
 
 ---
 
@@ -139,13 +145,13 @@ Record `{pending_count_start_of_cycle}` = current number of pending items.
 
 ### 6a: Execute Phase
 
-**Record cycle start commit**: Run `git rev-parse HEAD` in `{project_source_root}`. If successful, store as `{cycle_start_commit}` and call `ideate_update_autopilot_state({state: {"cycle_{cycle_number}_start_commit": "{hash}"}})`. If the command fails (not a git repo), set `{cycle_start_commit}` = null.
+**Record cycle start commit**: Run `git rev-parse HEAD` in `{project_source_root}`. If successful, store as `{cycle_start_commit}` and call `ideate_manage_autopilot_state({action: "update", state: {"cycle_{cycle_number}_start_commit": "{hash}"}})`. If the command fails (not a git repo), set `{cycle_start_commit}` = null.
 
 Read `{phases_dir}/execute.md`. Follow all instructions in that document.
 
 Continue here after all pending work items have been attempted.
 
-**Record cycle end commit**: Run `git rev-parse HEAD` in `{project_source_root}`. Store as `{cycle_end_commit}`. Call `ideate_update_autopilot_state({state: {"cycle_{cycle_number}_end_commit": "{hash}"}})` to record it.
+**Record cycle end commit**: Run `git rev-parse HEAD` in `{project_source_root}`. Store as `{cycle_end_commit}`. Call `ideate_manage_autopilot_state({action: "update", state: {"cycle_{cycle_number}_end_commit": "{hash}"}})` to record it.
 
 ### 6b: Comprehensive Review Phase
 
@@ -165,7 +171,7 @@ Use the returned `converged` flag to drive the convergence decision. If `converg
 
 This call is best-effort — if it fails, continue without interruption. Then exit the loop. If `converged` is false, proceed to Phase 6d.
 
-Update session state via `ideate_update_autopilot_state({state: {convergence_achieved: {true | false}, last_cycle_findings: {critical: N, significant: N, minor: N}}})`.
+Update session state via `ideate_manage_autopilot_state({action: "update", state: {convergence_achieved: {true | false}, last_cycle_findings: {critical: N, significant: N, minor: N}}})`.
 
 
 ### 6d: Refinement Phase (only if not converged)
@@ -176,7 +182,7 @@ Continue here after new work items are created and the journal is updated.
 
 ### 6e: Cycle Limit Check
 
-Call `ideate_get_autopilot_state()` to read the current `cycles_completed`, increment it, then call `ideate_update_autopilot_state({state: {cycles_completed: {N+1}}})` to persist the update.
+Call `ideate_manage_autopilot_state({action: "get"})` to read the current `cycles_completed`, increment it, then call `ideate_manage_autopilot_state({action: "update", state: {cycles_completed: {N+1}}})` to persist the update.
 
 If `cycles_completed >= max_cycles` without convergence, exit the loop and proceed to Phases 7–9 (Phase 8 path).
 
@@ -251,7 +257,7 @@ Phase documents contain per-cycle and overall journal summary instructions. If `
 
 **Convergence summary fields**: When the loop exits (converged or max-cycles reached), the activity report and final journal entry must include the following summary fields derived from `ideate_get_metrics`:
 
-- `convergence_cycles` — integer. The number of cycles completed before convergence (or before the cycle limit was reached). Equal to `cycles_completed` from `ideate_get_autopilot_state()`.
+- `convergence_cycles` — integer. The number of cycles completed before convergence (or before the cycle limit was reached). Equal to `cycles_completed` from `ideate_manage_autopilot_state({action: "get"})`.
 - `cycle_total_tokens` — integer or null. Call `ideate_get_metrics({scope: "cycle"})` and sum all token fields across cycles for this autopilot session. Null if metrics are unavailable or token fields are all null.
 - `cycle_total_cost_estimate` — string or null. A human-readable cost estimate string (e.g., `"~$4.20"`) derived from `cycle_total_tokens` using current published model pricing for the models used. Null if token data is unavailable or pricing cannot be determined.
 
@@ -265,7 +271,7 @@ These three fields are optional (null if not available). Include them in the Pha
 - You do not skip incremental reviews. Every completed work item gets reviewed before the cycle's comprehensive review runs.
 - You do not present minor review findings to the user. Handle them silently.
 - You do not make design decisions. If the proxy-human defers, note the deferral and continue where possible.
-- You do not modify steering artifacts. You have read-only access to guiding principles and constraints (via `ideate_get_context_package`). You write cycle findings (via `ideate_write_artifact`), autopilot session state (via `ideate_update_autopilot_state`), and proxy-human decisions (via `ideate_append_journal`) — all through MCP tools.
+- You do not modify steering artifacts. You have read-only access to guiding principles and constraints (via `ideate_get_context_package`). You write cycle findings (via `ideate_write_artifact`), autopilot session state (via `ideate_manage_autopilot_state`), and proxy-human decisions (via `ideate_write_artifact` with type `proxy_human_decision`) — all through MCP tools.
 - You do not declare convergence unless both Condition A and Condition B pass simultaneously in the same cycle.
 - You do not re-plan from scratch. New work items in the refinement phase address specific findings. They do not replace the original plan.
 - You do not use filler phrases, encouragement, or enthusiasm. State facts.
@@ -278,8 +284,8 @@ Before executing, verify this skill document satisfies the MCP abstraction bound
 
 - [ ] No `.ideate/` path references in any instruction
 - [ ] No `.yaml` filename references (artifacts referenced by type and designation only)
-- [ ] autopilot-state access uses `ideate_get_autopilot_state` / `ideate_update_autopilot_state` exclusively
-- [ ] Proxy-human decisions recorded via `ideate_append_journal`, not direct file writes
+- [ ] autopilot-state access uses `ideate_manage_autopilot_state` exclusively
+- [ ] Proxy-human decisions recorded via `ideate_write_artifact({type: "proxy_human_decision", ...})`, not direct file writes
 - [ ] All metrics emitted via `ideate_emit_metric`, not appended to any file
 - [ ] Finding writes use `ideate_write_artifact`
 - [ ] Journal reads use `ideate_artifact_query({type: "journal_entry"})`

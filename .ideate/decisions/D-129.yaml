@@ -1,0 +1,12 @@
+id: D-129
+type: domain_decision
+cycle_created: 2
+description: Documentation debt items (ARCHITECTURE.md null-signal semantics, ARCHITECTURE.md config.ts exports) are deferred with re-examination triggers. Minor documentation inconsistencies have low reader impact when the implementation is correct and tested.
+domain: workflow
+rationale: The null-signal semantics are documented in MCP tool schema and tested. The config.ts functions are documented where used. Low reader impact assessment based on developer navigation patterns.
+source: cycle 002 decision-log, gap-analysis MI2/MI3
+status: settled
+supersedes: null
+content_hash: 90816c519e654a0a6c69d9ddbd84c1a9a746dd4df211129d7c1df96242f3d6e5
+token_count: 154
+file_path: .ideate/decisions/D-129.yaml

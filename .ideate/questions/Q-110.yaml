@@ -1,0 +1,12 @@
+id: Q-110
+type: domain_question
+domain: artifact-structure
+title: No direct unit tests for db-helpers.ts exported functions
+question: 20+ typed upsert functions tested only indirectly via write handler integration tests. Column mismatches or wrong field names in individual helpers go undetected in isolation.
+source: cycle 1 gap-analysis Gap 10; decision-log Q12
+impact: Regressions in individual helpers masked by integration tests passing for different reasons.
+status: open
+reexamination_trigger: Next cycle adding new extension table types or modifying db-helpers.ts.
+content_hash: d3cd14b0610564d71b974567f8c81346bbb08b58f5ee7e1ccc0212d048b461df
+token_count: 143
+file_path: .ideate/questions/Q-110.yaml

@@ -1,0 +1,12 @@
+id: D-128
+type: domain_decision
+cycle_created: 2
+description: "Autopilot execute phase updates work item status by calling ideate_update_work_items({updates: [{id: work_item_id, status: 'done'}]}) after the work_item.completed event. The call is logged but non-blocking on failure."
+domain: artifact-structure
+rationale: Machine-verifiable acceptance criteria; the MCP tool pattern matches existing execute.md style. Completed work items must transition to done status to prevent autopilot from re-executing them.
+source: cycle 002 decision-log, WI-383
+status: settled
+supersedes: null
+content_hash: 34933134187842a2bda955984499e399c76427e92c8ca7d7c202f4a8108ed8f5
+token_count: 146
+file_path: .ideate/decisions/D-128.yaml

@@ -105,3 +105,11 @@ Only include cross-references where the connection is substantive, not where fin
 - If alternatives were not documented, omit the alternatives line rather than speculating.
 - Chronological order matters. The decision log should read as a narrative of the project's evolution.
 - Every open question must have a concrete consequence of inaction. "This might cause problems" is not specific enough. State what will go wrong.
+
+---
+
+## What You Do Not Do
+
+- NEVER read, write, or reference `.ideate/` paths directly
+- NEVER use Read, Write, or Edit tools on `.ideate/` directories or files
+- Access artifacts ONLY through MCP tool calls with artifact IDs and types

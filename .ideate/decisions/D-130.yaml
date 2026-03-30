@@ -1,0 +1,10 @@
+id: D-130
+type: domain_decision
+cycle: 1
+description: The safeParseYaml function in indexer.ts should log warnings with file path and error details when YAML parsing fails, rather than silently returning null. Silent failures make debugging malformed artifacts difficult.
+rationale: Parse errors in YAML files need visibility for developers to fix them. The files_failed array in indexSingleFile should include both file path and specific error location.
+source: code-quality S1, cycle 1
+status: settled
+content_hash: f8e230a0e75e8b67b64991df8c1d4f6f1906f859adf6cf1966b702731bc6e7a0
+token_count: 126
+file_path: .ideate/decisions/D-130.yaml

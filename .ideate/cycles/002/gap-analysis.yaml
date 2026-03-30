@@ -1,0 +1,115 @@
+id: gap-analysis
+type: cycle_summary
+content: |-
+  ## Missing Requirements from Interview
+
+  None. All interview requirements have corresponding work items or implementations.
+
+  ## Unhandled Edge Cases
+
+  ### EC1: Malformed YAML During Indexing Recovery
+  - **Component**: `mcp/artifact-server/src/indexer.ts`
+  - **Scenario**: Indexer handles malformed YAML by logging error and continuing, but does not persist a record of the failure.
+  - **Current behavior**: Error logged to stderr, file skipped
+  - **Expected behavior**: Failed index attempts should be queryable
+  - **Severity**: Minor
+  - **Recommendation**: Defer - behavior is correct, error visible in logs
+
+  ### EC2: Very Large Result Sets in ideate_artifact_query
+  - **Component**: `mcp/artifact-server/src/tools/query.ts`
+  - **Scenario**: Tool caps results at 200 items but does not return total count of matching items.
+  - **Current behavior**: Caller receives 200 items with total count
+  - **Expected behavior**: Per Q-85 (deferred), pagination total count was considered but not implemented
+  - **Severity**: Minor
+  - **Recommendation**: Defer - 200-item limit makes pagination uncommon
+
+  ### EC3: Cycle Detection Limits Not Exposed to Callers
+  - **Component**: `mcp/artifact-server/src/indexer.ts`
+  - **Scenario**: detectCycles() has hard-coded limits (10,000 nodes, 50,000 edges) beyond which it throws.
+  - **Current behavior**: If limits exceeded, indexer throws error, server fails to initialize
+  - **Expected behavior**: Error message should guide users on resolution
+  - **Severity**: Minor
+  - **Recommendation**: Defer - limits unlikely to be hit in normal usage
+
+  ## Incomplete Integrations
+
+  ### II1: Settings Skill Not Documented in Architecture
+  - **Interface**: Architecture document
+  - **Producer**: `skills/settings/SKILL.md`
+  - **Consumer**: `ARCHITECTURE.md`
+  - **Gap**: Settings skill is implemented but not listed in architecture's skill table
+  - **Severity**: Minor
+  - **Recommendation**: Address now - Add /ideate:settings to architecture skill table
+
+  ### II2: Metrics Instrumentation Limited to Autopilot
+  - **Interface**: Metrics event emission
+  - **Producer**: `skills/autopilot/SKILL.md`
+  - **Consumer**: `ideate_emit_metric` tool
+  - **Gap**: Metrics not consistently documented in other skills (execute, review, refine, init)
+  - **Severity**: Minor
+  - **Recommendation**: Defer - functional in autopilot where most critical
+
+  ### II3: Hooks Configuration File Not Created by Bootstrap
+  - **Interface**: `ideate_bootstrap_project` tool
+  - **Producer**: `mcp/artifact-server/src/tools/bootstrap.ts`
+  - **Consumer**: `mcp/artifact-server/src/hooks.ts`
+  - **Gap**: Bootstrap does not create default hooks.json file
+  - **Severity**: Minor
+  - **Recommendation**: Defer - absence is harmless, users can create manually
+
+  ## Missing Infrastructure
+
+  ### MI1: Graceful Shutdown for File Watcher
+  - **Category**: Infrastructure
+  - **Gap**: File watcher close on SIGINT/SIGTERM not wrapped in try/catch, no wait for in-flight operations
+  - **Impact**: On abrupt shutdown, in-progress operations may leave SQLite inconsistent (WAL mode mitigates)
+  - **Severity**: Minor
+  - **Recommendation**: Defer - WAL mode provides crash recovery
+
+  ### MI2: No Rate Limiting on MCP Tool Calls
+  - **Category**: Error handling
+  - **Gap**: No rate limiting on tool calls; misbehaving client could overwhelm SQLite
+  - **Impact**: Normal usage unaffected; buggy skill loop could cause degradation
+  - **Severity**: Minor
+  - **Recommendation**: Defer - SQLite busy_timeout handles concurrent access
+
+  ### MI3: ARCHITECTURE.md Section 10 Does Not Document All Config Exports
+  - **Category**: Documentation
+  - **Gap**: Section 10 lists 4 config.ts exports; file actually exports 11 items
+  - **Impact**: Minor documentation inconsistency per Q-97 (deferred)
+  - **Severity**: Minor
+  - **Recommendation**: Defer - already documented in Q-97
+
+  ## Implicit Requirements
+
+  ### IR1: Settings Skill Not Listed in Available Skills
+  - **Expectation**: User running `/ideate:` would see all available skills
+  - **Current state**: Settings skill exists but not in architecture document's skill table
+  - **Severity**: Minor
+  - **Recommendation**: Address now - Add to architecture and skill discovery
+
+  ### IR2: No Interactive Configuration Discovery Mechanism
+  - **Expectation**: Users can discover configuration options without reading source
+  - **Current state**: `ideate_get_config` returns full config, but no discovery of valid values
+  - **Gap**: Settings skill provides interactive discovery but is not advertised
+  - **Severity**: Minor
+  - **Recommendation**: Defer - settings skill solves this; addressing IR1 makes it discoverable
+
+  ## Summary
+
+  | Category | Critical | Significant | Minor |
+  |----------|----------|-------------|-------|
+  | Missing Requirements | 0 | 0 | 0 |
+  | Unhandled Edge Cases | 0 | 0 | 3 |
+  | Incomplete Integrations | 0 | 0 | 3 |
+  | Missing Infrastructure | 0 | 0 | 3 |
+  | Implicit Requirements | 0 | 0 | 2 |
+
+  **Total Findings**: 11 (all Minor)
+cycle: 2
+date: "20260329"
+reviewer: gap-analyst
+scope: full-audit
+content_hash: 9cd2c0fb54ee185c2835b01dea149d5fbf2e6bba09f967255e0472d54e6dd0c2
+token_count: 1292
+file_path: .ideate/cycles/002/gap-analysis.yaml

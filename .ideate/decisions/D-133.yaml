@@ -1,0 +1,12 @@
+id: D-133
+type: domain_decision
+domain: artifact-structure
+title: assertRequiredFields as runtime guard before type casts
+decision: Use assertRequiredFields to fail loudly on missing required fields rather than silently inserting corrupt rows via type casts.
+rationale: Incremental review S2 flagged original type cast as runtime safety bypass. Guard restores safety guarantee. Currently covers 3 of 14 extension table types; coverage expansion tracked in Q-108.
+assumes: Guard currently checks undefined but not null (Q-106).
+source: cycle 1 decision-log D2; WI-397 rework
+status: settled
+content_hash: 9c0f73c6ec2ff99e01b5794e401777b563cda6f85670620f0969c6bdadf268a1
+token_count: 147
+file_path: .ideate/decisions/D-133.yaml

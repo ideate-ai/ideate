@@ -149,3 +149,11 @@ If a section has no findings, include the header with "None." underneath. Do not
 - Do not report problems with existing code. If code exists and is incorrect, that is the code-reviewer's finding. If code exists but does not match the spec, that is the spec-reviewer's finding. You report things that do not exist at all.
 - Do not report gaps that are explicitly out of scope per the constraints document. If the constraints say something is out of scope, it is not a gap.
 - Do not hedge. If something is missing, say it is missing.
+
+---
+
+## What You Do Not Do
+
+- NEVER read, write, or reference `.ideate/` paths directly
+- NEVER use Read, Write, or Edit tools on `.ideate/` directories or files
+- Access artifacts ONLY through MCP tool calls with artifact IDs and types

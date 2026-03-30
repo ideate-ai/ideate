@@ -155,6 +155,17 @@ export const interviewQuestions = sqliteTable("interview_questions", {
   seq: integer("seq").notNull(),
 });
 
+export const proxyHumanDecisions = sqliteTable("proxy_human_decisions", {
+  id: text("id").primaryKey().references(() => nodes.id, { onDelete: "cascade" }),
+  cycle: integer("cycle").notNull(),
+  trigger: text("trigger").notNull(),
+  triggered_by: text("triggered_by"),
+  decision: text("decision").notNull(),
+  rationale: text("rationale"),
+  timestamp: text("timestamp").notNull(),
+  status: text("status").notNull(),
+});
+
 // ---------------------------------------------------------------------------
 // edges — universal edge table (no source_type / target_type)
 // ---------------------------------------------------------------------------
@@ -197,7 +208,8 @@ export type AnyTable =
   | typeof journalEntries
   | typeof metricsEvents
   | typeof documentArtifacts
-  | typeof interviewQuestions;
+  | typeof interviewQuestions
+  | typeof proxyHumanDecisions;
 
 // ---------------------------------------------------------------------------
 // TYPE_TO_EXTENSION_TABLE — maps YAML type string → Drizzle extension table
@@ -218,6 +230,7 @@ export const TYPE_TO_EXTENSION_TABLE: Record<string, AnyTable> = {
   metrics_event:      metricsEvents,
   decision_log:       documentArtifacts,
   cycle_summary:      documentArtifacts,
+  review_output:      documentArtifacts,
   review_manifest:    documentArtifacts,
   architecture:       documentArtifacts,
   overview:           documentArtifacts,
@@ -228,4 +241,5 @@ export const TYPE_TO_EXTENSION_TABLE: Record<string, AnyTable> = {
   interview:          documentArtifacts,
   domain_index:       documentArtifacts,
   interview_question: interviewQuestions,
+  proxy_human_decision: proxyHumanDecisions,
 };

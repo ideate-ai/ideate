@@ -1,0 +1,71 @@
+id: code-quality
+type: cycle_summary
+content: |-
+  ## Verdict: Fail
+
+  A backup file (`indexer.ts.bak`) has been committed to the source tree, and there are several cross-cutting issues affecting code quality.
+
+  ## Critical Findings
+
+  None.
+
+  ## Significant Findings
+
+  ### S1: Backup file committed to source tree
+  - **File**: `/Users/dan/code/ideate/mcp/artifact-server/src/indexer.ts.bak:1-807`
+  - **Issue**: A `.bak` backup file (25,906 bytes) is present in the source directory. This is dead code that should be removed from version control.
+  - **Impact**: Bloats the repository, confuses code readers, may cause issues with build tools that scan the `src/` directory.
+  - **Suggested fix**: Delete the file.
+
+  ### S2: Excessive use of `any` type casts throughout Drizzle ORM operations
+  - **File**: Multiple files including `src/indexer.ts`, `src/tools/write.ts`, `src/tools/index.ts`, `src/ppr.ts`, `src/tools/analysis.ts`
+  - **Issue**: The codebase uses `// eslint-disable-next-line @typescript-eslint/no-explicit-any` extensively (30+ occurrences) to bypass TypeScript's type checking when using Drizzle ORM.
+  - **Impact**: Type safety is completely bypassed for all database operations. Errors that TypeScript would catch at compile time become runtime errors.
+  - **Suggested fix**: Create properly typed helper functions or use Drizzle's typed API more carefully.
+
+  ### S3: No transaction boundary handling in write operations
+  - **File**: `src/tools/write.ts:495-581` (handleWriteWorkItems)
+  - **Issue**: Multiple write operations (YAML file writes and SQLite upserts) without proper transaction boundaries. If SQLite transaction fails after files are written, filesystem is left in inconsistent state.
+  - **Impact**: Work item files can be written while database remains unupdated, causing data inconsistency.
+  - **Suggested fix**: Write YAML files first, then wrap all database operations in a single transaction.
+
+  ## Minor Findings
+
+  ### M1: Console logging uses stderr instead of structured logging
+  - **File**: `src/server.ts:92`, `src/server.ts:111`, `src/server.ts:138`, `src/index.ts:33`, `src/indexer.ts:107`, `src/indexer.ts:791`, `src/indexer.ts:801`, `src/hooks.ts:224-228`
+  - **Issue**: Uses `console.error` and `console.warn` for operational logging without structured logging capabilities.
+  - **Suggested fix**: Consider using a lightweight logging library with structured output.
+
+  ### M2: File path construction inconsistency in handleWriteArtifact
+  - **File**: `src/tools/write.ts:685-689`
+  - **Issue**: Relative path construction may be incorrect if `.ideate` directory has unusual structure.
+  - **Suggested fix**: Use `path.basename(ctx.ideateDir)` explicitly.
+
+  ### M3: PPR specificity dampening can produce zero scores for hub nodes
+  - **File**: `src/ppr.ts:229-233`
+  - **Issue**: IDF-like specificity dampening can produce negative scores for highly connected hub nodes.
+  - **Suggested fix**: Clamp result to ensure non-negative scores.
+
+  ### M4: Inconsistent error handling patterns across tools
+  - **File**: Multiple tool files
+  - **Issue**: Error handling varies across tools (YAML-formatted error summaries vs Thrown Error objects).
+  - **Suggested fix**: Standardize error handling pattern.
+
+  ### M5: Missing input validation for artifact type in handleWriteArtifact
+  - **File**: `src/tools/write.ts:673-676`
+  - **Issue**: Cycle parameter validation happens inside resolveArtifactPath after some processing.
+  - **Suggested fix**: Validate cycle requirement for cycle-scoped types at beginning of handleWriteArtifact.
+
+  ## Unmet Acceptance Criteria
+
+  None. This is a comprehensive code review without specific work item acceptance criteria.
+
+  ## Requires Human Review
+
+  None. All findings are machine-verifiable through static analysis and test execution.
+date: "20260329"
+reviewer: code-reviewer
+scope: full-audit
+content_hash: d95730ef8359b10e894c85300c1e6654f3a02b02f02bdd13033ee8d57fd0e7f5
+token_count: 973
+file_path: .ideate/cycles/002/code-quality.yaml

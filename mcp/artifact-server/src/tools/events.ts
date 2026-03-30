@@ -1,4 +1,4 @@
-import { ToolContext } from "./index.js";
+import type { ToolContext } from "../types.js";
 import { loadHooks, dispatchHook } from "../hooks.js";
 
 // ---------------------------------------------------------------------------

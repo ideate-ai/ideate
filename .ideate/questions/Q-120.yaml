@@ -1,0 +1,12 @@
+id: Q-120
+type: domain_question
+domain: artifact-structure
+title: document_artifacts.content format inconsistency between indexer and write path
+description: The indexer stores document_artifacts.content as the raw YAML content field string. handleWriteArtifact stores it as JSON.stringify(content) of the full content object. parsePrincipleVerdict Step 1 (bold-tag regex) works in both formats, but Step 2 (newline split + heading scan) only works for raw strings. D-153 proposes a JSON.parse unwrap as an immediate fix, but the underlying format divergence between two write paths into the same column remains unresolved.
+source: cycle 5 code-quality S1; gap-analysis EC1; decision-log OQ-5-04
+impact: Silent convergence failures for any spec-adherence artifact that lacks the explicit bold verdict tag and is read from the DB path rather than the file-path fallback. Future code reading document_artifacts.content must handle both formats defensively.
+status: open
+reexamination_trigger: When a work item normalizes the content format in one of the two write paths.
+content_hash: b45d110f44ca071a9e8677a3540b0f28df8a00b12f6affacf0881147fc7daf05
+token_count: 267
+file_path: .ideate/questions/Q-120.yaml

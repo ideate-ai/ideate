@@ -14,7 +14,8 @@
 import Database from "better-sqlite3";
 import { drizzle, BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
 import * as path from "path";
-import { ToolContext, signalIndexReady } from "./tools/index.js";
+import type { ToolContext } from "./types.js";
+import { signalIndexReady } from "./tools/index.js";
 import { artifactWatcher, BatchChangeEvent } from "./watcher.js";
 import { createIdeateDir, CONFIG_SCHEMA_VERSION, IDEATE_SUBDIRS, IdeateConfigJson } from "./config.js";
 import { createSchema, checkSchemaVersion } from "./schema.js";
@@ -127,17 +128,17 @@ export function handleBootstrapDormant(
   const config: IdeateConfigJson = { schema_version: CONFIG_SCHEMA_VERSION };
   if (projectName) config.project_name = projectName;
 
-  const createdDir = createIdeateDir(projectRoot, config);
+  const ideateDir = createIdeateDir(projectRoot, config);
 
   // Lazy initialization: now that .ideate/ exists, spin up DB + index
   if (!state.ctx) {
     try {
-      initServer(createdDir, state);
+      initServer(ideateDir, state);
     } catch (err) {
       const msg = (err as Error).message;
       console.error(`[ideate-artifact-server] Late initialization failed: ${msg}`);
       return JSON.stringify(
-        { created_dir: createdDir, subdirectories: [...IDEATE_SUBDIRS], warning: `DB initialization failed: ${msg}. Server is still dormant.` },
+        { status: "initialized", subdirectories: [...IDEATE_SUBDIRS], warning: `DB initialization failed: ${msg}. Server is still dormant.` },
         null,
         2
       );
@@ -145,7 +146,7 @@ export function handleBootstrapDormant(
   }
 
   return JSON.stringify(
-    { created_dir: createdDir, subdirectories: [...IDEATE_SUBDIRS] },
+    { status: "initialized", subdirectories: [...IDEATE_SUBDIRS] },
     null,
     2
   );

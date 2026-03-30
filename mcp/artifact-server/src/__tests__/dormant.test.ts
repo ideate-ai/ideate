@@ -114,7 +114,7 @@ describe("dormant mode", () => {
       const result = handleBootstrapDormant(state, {});
       const parsed = JSON.parse(result);
 
-      expect(parsed.created_dir).toBe(path.join(tmpDir, ".ideate"));
+      expect(parsed.status).toBe("initialized");
       expect(parsed.subdirectories).toEqual([...IDEATE_SUBDIRS]);
       expect(parsed.warning).toBeUndefined();
 
@@ -210,7 +210,7 @@ describe("dormant guards (routeToolCall)", () => {
       expect(response.isError).toBeUndefined();
 
       const parsed = JSON.parse(response.content[0].text);
-      expect(parsed.created_dir).toBe(path.join(tmpDir, ".ideate"));
+      expect(parsed.status).toBe("initialized");
     } finally {
       process.cwd = origCwd;
       state.db?.close();
@@ -311,7 +311,7 @@ describe("initServer failure", () => {
     try {
       const result = handleBootstrapDormant(state, {});
       const parsed = JSON.parse(result);
-      expect(parsed.created_dir).toBe(ideateDir);
+      expect(parsed.status).toBe("initialized");
       expect(parsed.subdirectories).toEqual([...IDEATE_SUBDIRS]);
       expect(parsed.warning).toBeDefined();
       expect(parsed.warning).toContain("DB initialization failed");

@@ -1,11 +1,10 @@
-import { notInArray, eq } from "drizzle-orm";
 import * as fs from "fs";
 import * as path from "path";
 import * as crypto from "crypto";
 import { parse as parseYaml } from "yaml";
 import { EDGE_TYPE_REGISTRY } from "./schema.js";
-import * as dbSchema from "./db.js";
-import { TYPE_TO_EXTENSION_TABLE, nodes } from "./db.js";
+import { TYPE_TO_EXTENSION_TABLE } from "./db.js";
+import { upsertNode, upsertExtensionRow, insertEdge, insertFileRef, deleteNodesNotIn, deleteNodeById, deleteEdgesBySourceId, deleteFileRefsByNodeId, selectAllEdges, getTableName, } from "./db-helpers.js";
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
@@ -43,13 +42,45 @@ function walkDir(dir) {
     walk(dir);
     return results;
 }
-/** Safely parse YAML; returns null on error */
-function safeParseYaml(content) {
-    try {
-        return parseYaml(content);
+/** Extract caller function name from the call stack */
+function getCallerContext() {
+    const stack = new Error().stack;
+    if (!stack)
+        return "unknown";
+    const lines = stack.split("\n");
+    // Stack format varies by Node.js version; look for function names after this function
+    // Typical format: "    at functionName (file:line:col)" or "    at Object.functionName (file:line:col)"
+    for (let i = 0; i < lines.length; i++) {
+        const line = lines[i];
+        // Skip lines until we find our own function name
+        if (line.includes("getCallerContext"))
+            continue;
+        if (line.includes("safeParseYaml"))
+            continue;
+        // The next meaningful line should be the caller
+        const match = line.match(/at\s+(?:(\w+)\.)?(\w+)\s*\(/);
+        if (match && match[2]) {
+            return match[2];
+        }
+        // Alternative format: "    at functionName (file)"
+        const altMatch = line.match(/at\s+(\w+)\s*\(/);
+        if (altMatch && altMatch[1]) {
+            return altMatch[1];
+        }
     }
-    catch {
-        return null;
+    return "unknown";
+}
+/** Safely parse YAML; logs warning with timestamp, context, file path and error details on failure */
+function safeParseYaml(content, filePath) {
+    try {
+        return { parsed: parseYaml(content), errorMessage: null };
+    }
+    catch (err) {
+        const errMsg = err instanceof Error ? err.message : String(err);
+        const timestamp = new Date().toISOString();
+        const caller = getCallerContext();
+        console.warn(`[${timestamp}] [indexer:${caller}] YAML parse error in ${filePath}: ${errMsg}`);
+        return { parsed: null, errorMessage: errMsg };
     }
 }
 /** Coerce a value to a JSON string, or null */
@@ -75,7 +106,7 @@ function toNumOrNull(val) {
 function buildNodeRow(doc, content, filePath, hash) {
     return {
         id: toStrOrNull(doc.id) ?? filePath, // fall back to file path if no id
-        type: toStrOrNull(doc.type),
+        type: toStrOrNull(doc.type) ?? "",
         cycle_created: toNumOrNull(doc.cycle_created),
         cycle_modified: toNumOrNull(doc.cycle_modified),
         content_hash: hash,
@@ -210,41 +241,19 @@ function buildExtensionRow(table, doc) {
                 domain: toStrOrNull(doc.domain),
                 seq: toNumOrNull(doc.seq) ?? 0,
             };
+        case "proxy_human_decisions":
+            return {
+                cycle: toNumOrNull(doc.cycle) ?? 0,
+                trigger: toStrOrNull(doc.trigger) ?? "",
+                triggered_by: toJsonOrNull(doc.triggered_by),
+                decision: toStrOrNull(doc.decision) ?? "",
+                rationale: toStrOrNull(doc.rationale),
+                timestamp: toStrOrNull(doc.timestamp) ?? new Date().toISOString(),
+                status: toStrOrNull(doc.status) ?? "resolved",
+            };
         default:
             return {};
     }
-}
-// ---------------------------------------------------------------------------
-// UPSERT helpers
-// ---------------------------------------------------------------------------
-function upsertNode(drizzleDb, nodeRow) {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    drizzleDb.insert(nodes).values(nodeRow).onConflictDoUpdate({
-        target: nodes.id,
-        set: nodeRow,
-    }).run();
-}
-function upsertExtension(drizzleDb, tableRef, id, extRow) {
-    const rowWithId = { id, ...extRow };
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    drizzleDb.insert(tableRef).values(rowWithId).onConflictDoUpdate({
-        target: tableRef.id,
-        set: extRow,
-    }).run();
-}
-function upsertEdge(drizzleDb, sourceId, targetId, edgeType) {
-    drizzleDb.insert(dbSchema.edges).values({
-        source_id: sourceId,
-        target_id: targetId,
-        edge_type: edgeType,
-        props: null,
-    }).onConflictDoNothing().run();
-}
-function upsertFileRef(drizzleDb, nodeId, filePath) {
-    drizzleDb.insert(dbSchema.nodeFileRefs).values({
-        node_id: nodeId,
-        file_path: filePath,
-    }).onConflictDoNothing().run();
 }
 // ---------------------------------------------------------------------------
 // Edge extraction
@@ -263,14 +272,14 @@ function extractEdges(drizzleDb, doc, nodeId, nodeType) {
             // Multi-value field (e.g. depends, blocks, derived_from)
             for (const item of fieldValue) {
                 if (typeof item === "string" && item.trim()) {
-                    upsertEdge(drizzleDb, nodeId, item.trim(), edgeType);
+                    insertEdge(drizzleDb, { source_id: nodeId, target_id: item.trim(), edge_type: edgeType, props: null });
                     edgesCreated++;
                 }
             }
         }
         else if (typeof fieldValue === "string" && fieldValue.trim()) {
             // Single-value field (e.g. supersedes, work_item, module, domain)
-            upsertEdge(drizzleDb, nodeId, fieldValue.trim(), edgeType);
+            insertEdge(drizzleDb, { source_id: nodeId, target_id: fieldValue.trim(), edge_type: edgeType, props: null });
             edgesCreated++;
         }
     }
@@ -289,7 +298,7 @@ function extractFileRefs(drizzleDb, doc, nodeId, nodeType) {
         if (entry && typeof entry === "object" && typeof entry.path === "string") {
             const refPath = entry.path.trim();
             if (refPath) {
-                upsertFileRef(drizzleDb, nodeId, refPath);
+                insertFileRef(drizzleDb, { node_id: nodeId, file_path: refPath });
             }
         }
     }
@@ -298,29 +307,16 @@ function extractFileRefs(drizzleDb, doc, nodeId, nodeType) {
 // Delete stale rows
 // ---------------------------------------------------------------------------
 function deleteStaleRows(drizzleDb, keepIds) {
-    const sentinel = keepIds.length > 0 ? keepIds : [''];
-    // Single delete on nodes — CASCADE handles extension tables, edges, and node_file_refs
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const staleRows = drizzleDb.select({ id: nodes.id }).from(nodes).where(notInArray(nodes.id, sentinel)).all();
-    if (staleRows.length > 0) {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        drizzleDb.delete(nodes).where(notInArray(nodes.id, sentinel)).run();
-    }
-    return staleRows.length;
+    return deleteNodesNotIn(drizzleDb, keepIds);
 }
 // ---------------------------------------------------------------------------
 // Cycle detection — Kahn's algorithm on depends_on edges
 // ---------------------------------------------------------------------------
 export const MAX_DEPENDENCY_NODES = 10_000;
 export const MAX_DEPENDENCY_EDGES = 50_000;
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function detectCycles(drizzleDb) {
     // SELECT all depends_on edges via Drizzle ORM
-    const edges = drizzleDb
-        .select({ source_id: dbSchema.edges.source_id, target_id: dbSchema.edges.target_id })
-        .from(dbSchema.edges)
-        .where(eq(dbSchema.edges.edge_type, 'depends_on'))
-        .all();
+    const edges = selectAllEdges(drizzleDb).filter(e => e.edge_type === 'depends_on');
     if (edges.length > MAX_DEPENDENCY_EDGES) {
         throw new Error(`detectCycles: edge count ${edges.length} exceeds limit ${MAX_DEPENDENCY_EDGES}`);
     }
@@ -414,11 +410,12 @@ function indexSingleFile(db, drizzleDb, filePath, hashCheckStmt) {
     if (storedHash === hash) {
         return { nodeId: storedId, updated: false, failed: false, error: null, edgesCreated: 0 };
     }
-    const parsed = safeParseYaml(content);
-    if (!parsed || typeof parsed !== "object") {
-        return { nodeId: null, updated: false, failed: true, error: `${filePath}: YAML parse error`, edgesCreated: 0 };
+    const parseResult = safeParseYaml(content, filePath);
+    if (!parseResult.parsed || typeof parseResult.parsed !== "object") {
+        const errorMsg = parseResult.errorMessage ?? "unknown parse error";
+        return { nodeId: null, updated: false, failed: true, error: `${filePath}: YAML parse error - ${errorMsg}`, edgesCreated: 0 };
     }
-    const doc = parsed;
+    const doc = parseResult.parsed;
     const typeField = toStrOrNull(doc.type);
     if (!typeField) {
         return { nodeId: null, updated: false, failed: true, error: `${filePath}: missing type field`, edgesCreated: 0 };
@@ -427,21 +424,19 @@ function indexSingleFile(db, drizzleDb, filePath, hashCheckStmt) {
     if (!extensionTable) {
         return { nodeId: null, updated: false, failed: true, error: `${filePath}: unknown type '${typeField}'`, edgesCreated: 0 };
     }
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const tableName = extensionTable[Symbol.for("drizzle:Name")] ?? extensionTable._.name;
+    const tableName = getTableName(extensionTable);
     const nodeRow = buildNodeRow(doc, content, filePath, hash);
     const nodeId = nodeRow.id;
     const extRow = buildExtensionRow(tableName, doc);
     upsertNode(drizzleDb, nodeRow);
-    upsertExtension(drizzleDb, extensionTable, nodeId, extRow);
+    upsertExtensionRow(drizzleDb, tableName, nodeId, extRow);
     // Delete old edges and file refs before re-inserting
-    drizzleDb.delete(dbSchema.edges).where(eq(dbSchema.edges.source_id, nodeId)).run();
-    drizzleDb.delete(dbSchema.nodeFileRefs).where(eq(dbSchema.nodeFileRefs.node_id, nodeId)).run();
+    deleteEdgesBySourceId(drizzleDb, nodeId);
+    deleteFileRefsByNodeId(drizzleDb, nodeId);
     let edgesCreated = extractEdges(drizzleDb, doc, nodeId, typeField);
     extractFileRefs(drizzleDb, doc, nodeId, typeField);
     // Special handling for interview files with an entries array
     if (typeField === "interview" && Array.isArray(doc.entries)) {
-        const interviewQuestionsTable = TYPE_TO_EXTENSION_TABLE["interview_question"];
         for (const entry of doc.entries) {
             if (!entry || typeof entry !== "object")
                 continue;
@@ -467,8 +462,8 @@ function indexSingleFile(db, drizzleDb, filePath, hashCheckStmt) {
                 seq: toNumOrNull(entryDoc.seq) ?? 0,
             };
             upsertNode(drizzleDb, entryNodeRow);
-            upsertExtension(drizzleDb, interviewQuestionsTable, entryId, entryExtRow);
-            upsertEdge(drizzleDb, entryId, nodeId, "references");
+            upsertExtensionRow(drizzleDb, "interview_questions", entryId, entryExtRow);
+            insertEdge(drizzleDb, { source_id: entryId, target_id: nodeId, edge_type: "references", props: null });
             edgesCreated++;
         }
     }
@@ -527,8 +522,7 @@ export function removeFiles(db, drizzleDb, filePaths) {
                 // Find node ID(s) for this file path
                 const rows = db.prepare(`SELECT id FROM nodes WHERE file_path = ?`).all(filePath);
                 for (const row of rows) {
-                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                    drizzleDb.delete(nodes).where(eq(nodes.id, row.id)).run();
+                    deleteNodeById(drizzleDb, row.id);
                     removed++;
                 }
             }

@@ -106,6 +106,25 @@ If no test runner is discoverable, note this in findings and skip dynamic testin
    - Flaky or environment-specific test failures (with evidence of pre-existing flakiness) → Minor finding with note.
 3. If the test suite does not exist or cannot be run (missing deps, env vars, external services), note this as a Minor finding: "Test suite not runnable in review environment — {reason}."
 
+### 7. Artifact Edit Validation
+
+Check whether any modified files are in the `.ideate/` directory:
+
+- If any file matches `.ideate/**/*.yaml`, verify the change was made via MCP tools:
+  - Direct file edits (using Edit/Write tools) bypass the SQLite index and violate P-33 (MCP abstraction layer)
+  - Valid: changes made through ideate_write_artifact, ideate_update_work_items, or other MCP tools
+  - Invalid: direct file edits that should have used MCP
+
+Report violations as **Minor findings** with title "Direct .ideate/ file edit — use MCP tools":
+
+```
+### M#: Direct .ideate/ file edit — use MCP tools
+- **File**: `.ideate/questions/Q-07.yaml`
+- **Issue**: File was edited directly instead of using MCP tools (ideate_write_artifact).
+- **Impact**: Bypasses SQLite indexing, may leave content_hash and token_count stale.
+- **Suggested fix**: Use `ideate_write_artifact` for artifact modifications, or revert and re-apply via MCP.
+```
+
 ## How to Review
 
 1. Read the work item spec(s) to understand what was supposed to be built.
@@ -176,3 +195,11 @@ If a section has no findings, include the header with "None." underneath. Do not
 - Do not praise good code. Absence of findings in a section means the code is acceptable in that area.
 - Do not hedge. If something is a problem, say it is a problem. If you are unsure whether something is a problem, investigate further before reporting.
 - Verdict is Fail if there are any Critical or Significant findings, or any unmet machine-verifiable acceptance criteria. Human-validated criteria in the "Requires Human Review" section do not affect the verdict — they are tracked separately for stakeholder sign-off.
+
+---
+
+## What You Do Not Do
+
+- NEVER read, write, or reference `.ideate/` paths directly
+- NEVER use Read, Write, or Edit tools on `.ideate/` directories or files
+- Access artifacts ONLY through MCP tool calls with artifact IDs and types

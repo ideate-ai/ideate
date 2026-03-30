@@ -1,0 +1,11 @@
+id: D-131
+type: domain_decision
+description: "Autopilot review phase should unconditionally use opus for domain-curator because: (1) Autonomous operation lacks human oversight to detect subtle conflicts that benefit from stronger reasoning; (2) Conflict detection in domain knowledge curation requires nuanced judgment; (3) The cost difference is minimal for single-agent spawn per cycle; (4) Standalone review's conditional logic exists because a human reviewer can override the model choice if conflict detection seems unnecessary."
+domain: agent-system
+rationale: Autonomous autopilot runs without human oversight, making the stronger model choice (opus) appropriate for all domain curation tasks. The conditional sonnet/opus logic in standalone review exists for cost optimization when a human reviewer is present to make judgment calls.
+resolved_in: 3
+source: Q-36 resolution
+status: resolved
+content_hash: 0be716dc6c1c9721333502728e4441477f8f3f3c12aa34d85c0172b8ea7cb57e
+token_count: 224
+file_path: .ideate/decisions/D-131.yaml

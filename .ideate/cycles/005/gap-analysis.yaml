@@ -1,0 +1,39 @@
+id: gap-analysis
+type: cycle_summary
+cycle: 5
+reviewer: gap-analyst
+verdict: Fail
+content: |-
+  ## Verdict: Fail
+
+  Two significant gaps identified.
+
+  ## Significant Gaps
+
+  ### MR1 / II2: Report scripts broken by metrics deprecation
+  - **Files**: `scripts/report-executive.sh`, `scripts/report-cycle.sh`, `scripts/report-cost.sh`
+  - **Issue**: WI-415 deprecated `metrics.jsonl` write path. All three reporting scripts read exclusively from `metrics.jsonl`. No new data will be written to it after WI-415. The scripts will silently produce empty or stale reports.
+  - **Interview reference**: interview-refine-071 confirmed metrics JSONL deprecation — "we can discard existing metrics" — but the reporting scripts were not addressed in the plan.
+  - **Impact**: Users have no functional reporting path for metrics data outside the MCP layer. This is a regression from the previous cycle.
+  - **Recommendation**: Address — update scripts to call `ideate_get_metrics` or read from `metrics/*.yaml`, or explicitly deprecate and document as non-functional.
+
+  ## Minor Gaps
+
+  ### EC1: `document_artifacts.content` format inconsistency between indexer and write path
+  - Indexer stores raw YAML `content` field string; `handleWriteArtifact` stores `JSON.stringify(whole content object)`. `parsePrincipleVerdict` Step 1 works in both cases but Step 2 would diverge. Pre-existing architecture issue.
+
+  ### II1: ARCHITECTURE.md tool table missing `ideate_emit_metric` in `metrics.ts` row
+  - After WI-415 moved `handleEmitMetric` into `metrics.ts`, architecture table not updated. One-line fix.
+
+  ### MI1: No migration path for existing `metrics.jsonl` to new format
+  - `migrate-to-v3.js` still copies `metrics.jsonl`. Old JSONL data invisible to `handleGetMetrics`. Interview said "discard existing metrics" so data loss is acceptable, but orphaned file and migration script reference remain.
+
+  ### IR2: No test for handleGetConvergenceStatus with minor-only findings
+  - Missing precision test case. Logic is correct; test gap only.
+
+  ## Confirmed Addressed
+  - Cycle 3 convergence bug: WI-424 LEFT JOIN + three-branch WHERE clause fully addresses the da.cycle=NULL and da.id IS NULL fallback cases.
+  - Cycle 2 LIKE false positives: replaced with json_extract; confirmed zero LIKE patterns on payload columns.
+content_hash: b506851319cd9279f0552ad29ab9470cc2d8c18b8762456227cf7132baa959cf
+token_count: 578
+file_path: .ideate/cycles/005/gap-analysis.yaml

@@ -1,6 +1,13 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+echo "ERROR: report.sh is deprecated and no longer functional." >&2
+echo "" >&2
+echo "metrics.jsonl is no longer written as of the YAML+SQLite migration (D-155)." >&2
+echo "Metrics are now stored as YAML files under .ideate/metrics/ and are" >&2
+echo "accessible via the ideate_get_metrics MCP tool." >&2
+exit 1
+
 if ! command -v python3 &>/dev/null; then
     echo "Error: python3 is required but not found on PATH" >&2
     exit 1

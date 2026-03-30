@@ -23,6 +23,9 @@ export const EDGE_TYPES = [
   "references",
   "amended_by",
   "supersedes",
+  "triggered_by",
+  "governed_by",
+  "informed_by",
 ] as const;
 
 export type EdgeType = (typeof EDGE_TYPES)[number];
@@ -98,6 +101,24 @@ export const EDGE_TYPE_REGISTRY: Record<EdgeType, EdgeTypeSpec> = {
     source_types: ["domain_decision"],
     target_types: ["domain_decision"],
     yaml_field: "supersedes",
+  },
+  triggered_by: {
+    description: "Proxy-human decision was triggered by a finding or work item",
+    source_types: ["proxy_human_decision"],
+    target_types: ["finding", "work_item"],
+    yaml_field: "triggered_by",
+  },
+  governed_by: {
+    description: "Artifact is governed by a guiding principle, policy, or constraint",
+    source_types: ["work_item", "module_spec", "constraint"],
+    target_types: ["guiding_principle", "domain_policy", "constraint"],
+    yaml_field: "governed_by",
+  },
+  informed_by: {
+    description: "Artifact is informed by a decision, research finding, or domain question",
+    source_types: ["work_item", "module_spec", "guiding_principle"],
+    target_types: ["research_finding", "domain_decision", "domain_question"],
+    yaml_field: "informed_by",
   },
 };
 
@@ -279,6 +300,17 @@ export interface InterviewQuestion extends ArtifactCommon {
   seq: number;
 }
 
+export interface ProxyHumanDecision extends ArtifactCommon {
+  type: "proxy_human_decision";
+  cycle: number;
+  trigger: "andon" | "fallback" | "deferral";
+  triggered_by: Array<{ type: string; id: string }>;
+  decision: "approved" | "deferred" | "escalated";
+  rationale: string;
+  timestamp: string;
+  status: "resolved" | "pending_user_input";
+}
+
 // ---------------------------------------------------------------------------
 // Union type of all artifacts
 // ---------------------------------------------------------------------------
@@ -296,7 +328,8 @@ export type Artifact =
   | JournalEntry
   | MetricsEvent
   | DocumentArtifact
-  | InterviewQuestion;
+  | InterviewQuestion
+  | ProxyHumanDecision;
 
 // ---------------------------------------------------------------------------
 // Edge interface
@@ -515,6 +548,21 @@ export function createSchema(db: Database.Database): void {
       )
     `);
     db.exec(`CREATE INDEX IF NOT EXISTS idx_interview_questions_interview ON interview_questions(interview_id)`);
+
+    // -- proxy_human_decisions --
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS proxy_human_decisions (
+        id        TEXT PRIMARY KEY REFERENCES nodes(id) ON DELETE CASCADE,
+        cycle     INTEGER NOT NULL,
+        trigger   TEXT NOT NULL,
+        triggered_by TEXT,
+        decision  TEXT NOT NULL,
+        rationale TEXT,
+        timestamp TEXT NOT NULL,
+        status   TEXT NOT NULL
+      )
+    `);
+    db.exec(`CREATE INDEX IF NOT EXISTS idx_proxy_human_decisions_cycle ON proxy_human_decisions(cycle)`);
 
     // ----- Universal edges table -----
     db.exec(`

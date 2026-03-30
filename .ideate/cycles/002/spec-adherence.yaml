@@ -1,0 +1,71 @@
+id: spec-adherence
+type: cycle_summary
+content: |-
+  ## Architecture Deviations
+
+  ### D1: Extension table count mismatch
+  - **Expected**: Architecture Section 3 states "Extension tables (12 tables)"
+  - **Actual**: Implementation has 14 extension tables (work_items, findings, domain_policies, domain_decisions, domain_questions, guiding_principles, constraints, module_specs, research_findings, journal_entries, metrics_events, document_artifacts, interview_questions, proxy_human_decisions)
+  - **Evidence**: `mcp/artifact-server/src/db.ts:22-167` shows 14 extension tables defined; `mcp/artifact-server/src/schema.ts:381-564` confirms CREATE TABLE statements
+
+  ### D2: Undocumented source files in Section 10
+  - **Expected**: Architecture Section 10 lists specific source files
+  - **Actual**: Implementation includes additional files not documented: `server.ts`, `hooks.ts`, `ppr.ts` are present but not listed
+  - **Evidence**: Files exist in `mcp/artifact-server/src/` but not in architecture documentation
+
+  ## Unmet Acceptance Criteria
+
+  None.
+
+  ## Principle Violations
+
+  **Principle Violation Verdict**: Pass
+
+  None.
+
+  ### P-33: MCP tool responses must not expose file paths
+  - **Principle states**: "MCP tool descriptions (in TOOLS array), error fallback messages, and normal responses must not include file paths or storage implementation details."
+  - **Adherence Evidence**: Write tools return designations; Query tools return tables with artifact IDs; `handleAssembleContext` uses `file_path` internally but does not expose it in responses
+
+  ## Principle Adherence Evidence
+
+  - **GP-8 (Durable Knowledge Capture)**: YAML files in `.ideate/` are source of truth; SQLite is derived cache; write tools follow YAML-first write pattern
+  - **GP-14 (MCP Abstraction Boundary)**: Skills access artifacts exclusively through MCP tools; skill files explicitly prohibit direct file access
+  - **P-06 (Skills start cold, read through MCP)**: Verified across skill implementations
+  - **P-32 (MCP availability checks only for external servers)**: Skills call ideate MCP tools directly without availability checks
+  - **P-36 (Testing requirements for new tools)**: Test files exist covering tools, schema, indexer, watcher, config, events, metrics, bootstrap, autopilot-state, execution, dormant, hooks, ppr
+  - **P-37 (All .ideate/ modifications through MCP tools)**: Verified write operations use MCP tools
+
+  ## Undocumented Additions
+
+  ### U1: server.ts not documented in architecture
+  - **Location**: `mcp/artifact-server/src/server.ts`
+  - **Description**: Contains server lifecycle management and dormant mode support
+  - **Risk**: Low - architecture should document for completeness
+
+  ### U2: ppr.ts not documented in architecture
+  - **Location**: `mcp/artifact-server/src/ppr.ts`
+  - **Description**: Implements Personalized PageRank for context assembly
+  - **Risk**: Low - mentioned in Section 9 but not in Section 10 source file list
+
+  ### U3: hooks.ts not documented in architecture
+  - **Location**: `mcp/artifact-server/src/hooks.ts`
+  - **Description**: Implements hook registry loading and dispatch
+  - **Risk**: Low - supports ideate_emit_event but not documented in Section 10
+
+  ## Naming/Pattern Inconsistencies
+
+  ### N1: Extension table count in architecture
+  - **Convention**: Architecture Section 3 documents "Extension tables (12 tables)"
+  - **Violation**: Implementation has 14 extension tables
+
+  ### N2: Source file list in architecture Section 10 incomplete
+  - **Convention**: Section 10 should list all source files
+  - **Violation**: `server.ts`, `hooks.ts`, `ppr.ts` not included in documented source file list
+cycle: 2
+date: "20260329"
+reviewer: spec-reviewer
+scope: full-audit
+content_hash: a97c944fd705c46836f1a4ee606d200871e6ed02b223ab940176bc5a71618482
+token_count: 933
+file_path: .ideate/cycles/002/spec-adherence.yaml

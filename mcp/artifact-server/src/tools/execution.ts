@@ -1,6 +1,4 @@
-import * as fs from "fs";
-import * as path from "path";
-import { ToolContext } from "./index.js";
+import type { ToolContext } from "../types.js";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -11,79 +9,6 @@ interface WorkItemRow {
   status: string | null;
   title: string;
   depends: string | null;
-}
-
-interface IncrementalReview {
-  wiId: string;
-  verdict: "Pass" | "Fail" | null;
-  critical: number;
-  significant: number;
-  minor: number;
-  filePath: string;
-}
-
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
-/**
- * Scan archive/incremental/*.md files and extract review metadata.
- * Filename pattern: {NNN}-{slug}.md  — WI ID is derived from the number prefix.
- */
-function scanIncrementalReviews(artifactDir: string): Map<string, IncrementalReview> {
-  const incrementalDir = path.join(artifactDir, "archive", "incremental");
-  const reviews = new Map<string, IncrementalReview>();
-
-  if (!fs.existsSync(incrementalDir)) {
-    return reviews;
-  }
-
-  let files: string[];
-  try {
-    files = fs.readdirSync(incrementalDir);
-  } catch {
-    return reviews;
-  }
-
-  for (const file of files) {
-    if (!file.endsWith(".md")) continue;
-
-    const filePath = path.join(incrementalDir, file);
-    let content: string;
-    try {
-      content = fs.readFileSync(filePath, "utf8");
-    } catch {
-      continue;
-    }
-
-    // Extract WI ID from filename: e.g. "181-schema-v7-ddl.md" → "WI-181"
-    const numMatch = file.match(/^(\d+)/);
-    if (!numMatch) continue;
-    const wiId = `WI-${numMatch[1]}`;
-
-    // Extract verdict: first occurrence of "## Verdict: Pass" or "## Verdict: Fail"
-    let verdict: "Pass" | "Fail" | null = null;
-    const verdictMatch = content.match(/##\s+Verdict:\s*(Pass|Fail)/i);
-    if (verdictMatch) {
-      verdict = verdictMatch[1].charAt(0).toUpperCase() + verdictMatch[1].slice(1).toLowerCase() as "Pass" | "Fail";
-    }
-
-    // Count finding headings by severity prefix: ### C, ### S, ### M
-    const criticalMatches = content.match(/^###\s+C\d+/gm);
-    const significantMatches = content.match(/^###\s+S\d+/gm);
-    const minorMatches = content.match(/^###\s+M\d+/gm);
-
-    reviews.set(wiId, {
-      wiId,
-      verdict,
-      critical: criticalMatches ? criticalMatches.length : 0,
-      significant: significantMatches ? significantMatches.length : 0,
-      minor: minorMatches ? minorMatches.length : 0,
-      filePath,
-    });
-  }
-
-  return reviews;
 }
 
 /**
@@ -139,7 +64,6 @@ export async function handleGetExecutionStatus(
   void args; // args unused now
 
   const rows = queryAllWorkItems(ctx);
-  const reviews = scanIncrementalReviews(ctx.ideateDir);
   const journalCompleted = buildJournalCompletedSet(ctx);
 
   // Build dependency map: id → array of dependency IDs
@@ -164,7 +88,6 @@ export async function handleGetExecutionStatus(
   // First pass: determine completed and obsolete items
   // An item is completed if:
   //   - DB status is "done" or "complete", OR
-  //   - incremental review verdict is "Pass", OR
   //   - journal entry records it as complete
   // An item is obsolete if:
   //   - DB status is "obsolete"
@@ -174,11 +97,9 @@ export async function handleGetExecutionStatus(
       obsoleteSet.add(row.id);
       continue;
     }
-    const review = reviews.get(row.id);
     const isComplete =
       status === "done" ||
       status === "complete" ||
-      (review !== undefined && review.verdict === "Pass") ||
       journalCompleted.has(row.id);
     if (isComplete) {
       completedSet.add(row.id);
@@ -248,39 +169,74 @@ export async function handleGetReviewManifest(
   ctx: ToolContext,
   args: Record<string, unknown>
 ): Promise<string> {
-  // cycle_number is reserved for future use — accepted but not yet applied
-  // const cycleNumber = typeof args.cycle_number === "number" ? args.cycle_number : null;
-  // artifact_dir is now always ctx.ideateDir — resolved at server startup
-  void args; // args unused now
+  const cycleArg = typeof args.cycle_number === "number" ? args.cycle_number : null;
 
   const rows = queryAllWorkItems(ctx);
-  const reviews = scanIncrementalReviews(ctx.ideateDir);
-
-  // Build table header
-  const header = "| # | Title | File Scope | Incremental Verdict | Findings (C/S/M) | Work Item Path | Review Path |";
-  const divider = "|---|-------|------------|---------------------|------------------|----------------|-------------|";
-
-  const tableRows: string[] = [];
-
-  // Fetch file_path for each work item from nodes
-  const pathStmt = ctx.db.prepare(
-    `SELECT id, file_path FROM nodes WHERE type = 'work_item'`
-  );
-  const pathRows = pathStmt.all() as Array<{ id: string; file_path: string }>;
-  const filePathMap = new Map(pathRows.map((r) => [r.id, r.file_path]));
 
   // Fetch scope for each work item (stored as JSON in work_items.scope)
-  const scopeStmt = ctx.db.prepare(
-    `SELECT id, scope FROM work_items`
-  );
+  const scopeStmt = ctx.db.prepare(`SELECT id, scope FROM work_items`);
   const scopeRows = scopeStmt.all() as Array<{ id: string; scope: string | null }>;
   const scopeMap = new Map(scopeRows.map((r) => [r.id, r.scope]));
 
+  // Determine which cycle to show: provided cycle or max cycle in findings
+  let targetCycle: number | null = cycleArg;
+  if (targetCycle === null) {
+    const maxRow = ctx.db.prepare(`SELECT MAX(cycle) as max_cycle FROM findings`).get() as { max_cycle: number | null };
+    targetCycle = maxRow.max_cycle;
+  }
+
+  // Query findings for the target cycle (or all if no cycle available)
+  let findingRows: Array<{ work_item: string; severity: string; verdict: string; cycle: number }>;
+  if (targetCycle !== null) {
+    findingRows = ctx.db.prepare(
+      `SELECT work_item, severity, verdict, cycle FROM findings WHERE cycle = ?`
+    ).all(targetCycle) as Array<{ work_item: string; severity: string; verdict: string; cycle: number }>;
+  } else {
+    findingRows = ctx.db.prepare(
+      `SELECT work_item, severity, verdict, cycle FROM findings`
+    ).all() as Array<{ work_item: string; severity: string; verdict: string; cycle: number }>;
+  }
+
+  // Group findings by work_item
+  interface WorkItemReview {
+    critical: number;
+    significant: number;
+    minor: number;
+    hasFailVerdictFinding: boolean;
+    hasFindingsAtAll: boolean;
+  }
+  const reviewMap = new Map<string, WorkItemReview>();
+  for (const f of findingRows) {
+    if (!reviewMap.has(f.work_item)) {
+      reviewMap.set(f.work_item, { critical: 0, significant: 0, minor: 0, hasFailVerdictFinding: false, hasFindingsAtAll: false });
+    }
+    const r = reviewMap.get(f.work_item)!;
+    r.hasFindingsAtAll = true;
+    if (f.severity === "critical") r.critical++;
+    else if (f.severity === "significant") r.significant++;
+    else if (f.severity === "minor") r.minor++;
+    if (f.verdict === "fail") r.hasFailVerdictFinding = true;
+  }
+
+  // Derive overall verdict for a work item:
+  // - "Fail" if any critical or significant findings, or any finding with verdict="fail"
+  // - "Pass" if there are only minor findings (or no findings but has been reviewed)
+  // - "None" if no findings at all for this item in this cycle
+  function deriveVerdict(r: WorkItemReview | undefined): string {
+    if (!r || !r.hasFindingsAtAll) return "None";
+    if (r.critical > 0 || r.significant > 0 || r.hasFailVerdictFinding) return "Fail";
+    return "Pass";
+  }
+
+  // Build table header
+  const header = "| # | Title | File Scope | Incremental Verdict | Findings (C/S/M) |";
+  const divider = "|---|-------|------------|---------------------|------------------|";
+
+  const tableRows: string[] = [];
+
   for (let i = 0; i < rows.length; i++) {
     const row = rows[i];
-    const review = reviews.get(row.id);
-    const workItemPath = filePathMap.get(row.id) ?? "";
-    const reviewPath = review ? review.filePath : "";
+    const review = reviewMap.get(row.id);
 
     // Resolve scope: extract file paths from scope JSON
     let scopeDisplay = "";
@@ -298,16 +254,17 @@ export async function handleGetReviewManifest(
       }
     }
 
-    const verdict = review ? (review.verdict ?? "None") : "None";
-    const findings = review
+    const verdict = deriveVerdict(review);
+    const findings = review && review.hasFindingsAtAll
       ? `${review.critical}/${review.significant}/${review.minor}`
       : "—";
 
     tableRows.push(
-      `| ${i + 1} | ${row.title} | ${scopeDisplay} | ${verdict} | ${findings} | ${workItemPath} | ${reviewPath} |`
+      `| ${i + 1} | ${row.title} | ${scopeDisplay} | ${verdict} | ${findings} |`
     );
   }
 
-  const lines = [header, divider, ...tableRows];
+  const cycleInfo = targetCycle !== null ? `(Cycle ${targetCycle})` : "(all cycles)";
+  const lines = [`## Review Manifest ${cycleInfo}`, "", header, divider, ...tableRows];
   return lines.join("\n");
 }

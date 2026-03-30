@@ -1,21 +1,16 @@
 id: J-058-001
 type: journal_entry
-phase: review
-date: 2026-03-27
+phase: autopilot
+date: 2026-03-28
 cycle_created: 58
-title: review-complete
+title: work-item-complete
 content: >-
-  ## [review] 2026-03-27 — Comprehensive review completed (cycle 065)
+  ## [autopilot] 2026-03-28 — Cycle 2 — Work item WI-379: Fix stale
+  ARCHITECTURE.md entries in section 9.2 (notes column, file_path field)
 
-  Critical findings: 0
+  Status: complete
 
-  Significant findings: 1 (fixed during review — server.ts dormant messages
-  still referenced /ideate:plan)
-
-  Minor findings: 0
-
-  Suggestions: 0
-
-  Items requiring user input: 0
-
-  Curator: skipped — skill consolidation cycle, no policy-grade findings
+  Added notes TEXT column to work_items extension table in Section 9.2. Removed
+  "file path" from handleGetWorkItemContext output fields list. No other
+  sections modified. All changes consistent with WI-370 inline-notes
+  implementation.

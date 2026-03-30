@@ -1,9 +1,12 @@
 import { describe, it, expect } from "vitest";
 import Database from "better-sqlite3";
-import { createSchema, checkSchemaVersion, CURRENT_SCHEMA_VERSION } from "../schema.js";
-import { existsSync, mkdtempSync, rmSync } from "fs";
+import { drizzle } from "drizzle-orm/better-sqlite3";
+import { writeFileSync, mkdirSync, mkdtempSync, rmSync, existsSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
+import { createSchema, checkSchemaVersion, CURRENT_SCHEMA_VERSION, EDGE_TYPES, EDGE_TYPE_REGISTRY } from "../schema.js";
+import { indexFiles } from "../indexer.js";
+import * as dbSchema from "../db.js";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -619,5 +622,111 @@ describe("checkSchemaVersion", () => {
     const result = checkSchemaVersion(db, "/nonexistent/path/not/used.db");
     expect(result).toBe(true);
     db.close();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// EDGE_TYPES — governed_by and informed_by
+// ---------------------------------------------------------------------------
+
+describe("EDGE_TYPES — governed_by and informed_by", () => {
+  it("EDGE_TYPES includes governed_by", () => {
+    expect(EDGE_TYPES).toContain("governed_by");
+  });
+
+  it("EDGE_TYPES includes informed_by", () => {
+    expect(EDGE_TYPES).toContain("informed_by");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// EDGE_TYPE_REGISTRY — governed_by and informed_by entries
+// ---------------------------------------------------------------------------
+
+describe("EDGE_TYPE_REGISTRY — governed_by entry", () => {
+  it("governed_by entry exists in EDGE_TYPE_REGISTRY", () => {
+    expect(EDGE_TYPE_REGISTRY).toHaveProperty("governed_by");
+  });
+
+  it("governed_by has correct source_types", () => {
+    expect(EDGE_TYPE_REGISTRY.governed_by.source_types).toEqual(["work_item", "module_spec", "constraint"]);
+  });
+
+  it("governed_by has correct target_types", () => {
+    expect(EDGE_TYPE_REGISTRY.governed_by.target_types).toEqual(["guiding_principle", "domain_policy", "constraint"]);
+  });
+
+  it("governed_by has yaml_field set", () => {
+    expect(EDGE_TYPE_REGISTRY.governed_by.yaml_field).toBe("governed_by");
+  });
+});
+
+describe("EDGE_TYPE_REGISTRY — informed_by entry", () => {
+  it("informed_by entry exists in EDGE_TYPE_REGISTRY", () => {
+    expect(EDGE_TYPE_REGISTRY).toHaveProperty("informed_by");
+  });
+
+  it("informed_by has correct source_types", () => {
+    expect(EDGE_TYPE_REGISTRY.informed_by.source_types).toEqual(["work_item", "module_spec", "guiding_principle"]);
+  });
+
+  it("informed_by has correct target_types", () => {
+    expect(EDGE_TYPE_REGISTRY.informed_by.target_types).toEqual(["research_finding", "domain_decision", "domain_question"]);
+  });
+
+  it("informed_by has yaml_field set", () => {
+    expect(EDGE_TYPE_REGISTRY.informed_by.yaml_field).toBe("informed_by");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// document_artifacts.cycle populated by indexer for cycle_summary YAML
+// ---------------------------------------------------------------------------
+
+describe("indexer — document_artifacts.cycle populated from YAML", () => {
+  it("indexing a cycle_summary YAML with top-level cycle:3 sets document_artifacts.cycle = 3", () => {
+    const tmpDir = mkdtempSync(join(tmpdir(), "ideate-da-cycle-test-"));
+    try {
+      // Set up a minimal .ideate/ directory with a cycles/003/ subdir
+      const cycleDir = join(tmpDir, "cycles", "003");
+      mkdirSync(cycleDir, { recursive: true });
+
+      // Write a cycle_summary YAML with a top-level cycle field
+      const yamlPath = join(cycleDir, "SA-TEST-001.yaml");
+      writeFileSync(
+        yamlPath,
+        [
+          "id: SA-TEST-001",
+          "type: cycle_summary",
+          "cycle: 3",
+          "title: Test Spec Adherence",
+          "reviewer: spec-reviewer",
+          "verdict: Pass",
+          "content: |",
+          "  ## Verdict: Pass",
+        ].join("\n") + "\n",
+        "utf8"
+      );
+
+      // Set up in-memory DB + drizzle
+      const db = new Database(":memory:");
+      createSchema(db);
+      const drizzleDb = drizzle(db, { schema: dbSchema });
+
+      // Run incremental indexer on the single file
+      indexFiles(db, drizzleDb, [yamlPath]);
+
+      // Query document_artifacts for SA-TEST-001
+      const row = db
+        .prepare("SELECT cycle FROM document_artifacts WHERE id = 'SA-TEST-001'")
+        .get() as { cycle: number | null } | undefined;
+
+      expect(row, "SA-TEST-001 should be present in document_artifacts").toBeDefined();
+      expect(row!.cycle, "document_artifacts.cycle should equal 3").toBe(3);
+
+      db.close();
+    } finally {
+      rmSync(tmpDir, { recursive: true, force: true });
+    }
   });
 });

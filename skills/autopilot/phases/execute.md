@@ -15,7 +15,7 @@ Execute all pending work items following the execution strategy (loaded by the c
 
 ### Read Project Configuration
 
-Call `ideate_get_config()` to read project configuration. Hold the response as `{config}`. Use `{config}.agent_budgets.{agent_name}` as the maxTurns value when spawning agents. If `ideate_get_config` is unavailable or returns no agent_budgets, use the agent's frontmatter maxTurns as fallback.
+Call `ideate_get_config()` to read project configuration. Hold the response as `{config}`. Use `{config}.agent_budgets.{agent_name}` as the maxTurns value when spawning agents. If `ideate_get_config` is unavailable or returns no agent_budgets, use the agent's frontmatter maxTurns as fallback. Also hold `{config}.model_overrides` — a map of agent name to model string. When spawning any agent, use `{config}.model_overrides['{agent_name}']` as the model parameter if present and non-empty; otherwise use the hardcoded default listed in the spawn instruction.
 
 ### Prepare Context Digest
 
@@ -98,6 +98,8 @@ This call is best-effort — if it fails, continue without interruption.
 - variables: { "WORK_ITEM_ID": "{work_item_id}", "VERDICT": "{review_verdict}" }
 
 Where `{review_verdict}` is `"pass"` if the review passed without rework, `"rework"` if it passed after rework, or `"fail"` if unresolvable. This call is best-effort — if it fails, continue without interruption.
+
+**Update work item status**: After each work item passes incremental review (findings handled, rework complete if any) and after emitting the `work_item.completed` event, call `ideate_update_work_items({updates: [{id: "{work_item_id}", status: "done"}]})` to transition the work item from 'pending' to 'done'. This ensures `ideate_get_execution_status` reflects completed items. If the call fails, log the error but continue — the status update is informational, not blocking.
 
 **Refreshing execution status mid-cycle**: If the `{completed_items}` set needs to be refreshed mid-cycle (e.g., after a partial failure and retry), call `ideate_get_execution_status()` — returns current completed, pending, and blocked sets. Use the returned `completed` set to update `{completed_items}` before skipping decisions. If the ideate MCP artifact server is not available, stop and report: "The ideate MCP artifact server is required but not available. Verify .mcp.json configuration."
 
@@ -203,27 +205,20 @@ When an Andon event occurs (scope-changing finding, merge conflict, spec ambigui
    Event:
    {andon_event_description}
 
-   Write your decision via ideate_append_journal following the entry format defined in your agent definition."
+   Write your decision via ideate_write_artifact with type 'proxy_human_decision' following the format defined in your agent definition."
    ```
 
 3. Wait for the proxy-human agent to respond.
 
-4. Record the proxy-human's decision via `ideate_append_journal`:
+4. The proxy-human agent writes its decision via `ideate_write_artifact({type: "proxy_human_decision", id: "PH-{cycle}-{seq}", content: {...}})`. No separate recording step needed.
 
-   ```markdown
-   ## [autopilot] {date} — Proxy-human decision (Cycle {N})
-   Event: {one-sentence summary of the Andon event}
-   Decision: {proxy-human's decision}
-   Confidence: {high | medium | low}
-   ```
-
-5. Apply the decision. If the decision is `DEFER`, add it to the cycle's deferred items list and continue with other work items where possible. Immediately print to running output:
+5. Apply the decision. If the decision is `"deferred"`, add it to the cycle's deferred items list and continue with other work items where possible. Immediately print to running output:
    ```
    [autopilot] ⚠ Deferred: {event description} — proxy-human deferred this decision. See activity report for details.
    ```
    Do NOT interrupt the loop or ask the user. This is logging only.
 
-**If the Agent tool is not available**: Handle the event yourself — use the guiding principles and constraints from `{context_package}` (loaded via `ideate_get_context_package()` in the Prepare Context Digest step), apply them to the event, make the best decision, and record it via `ideate_append_journal("autopilot-fallback", {ISO date}, "proxy_human_fallback", {body})` with heading: `## [autopilot-fallback] {ISO date} — Cycle {cycle_number}` followed by the same Event/Decision/Confidence/Rationale fields.
+**If the Agent tool is not available**: Handle the event yourself — use the guiding principles and constraints from `{context_package}` (loaded via `ideate_get_context_package()` in the Prepare Context Digest step), apply them to the event, make the best decision, and record it via `ideate_write_artifact({type: "proxy_human_decision", id: "PH-{cycle}-{seq}", content: {cycle: {cycle_number}, trigger: "fallback", triggered_by: [], decision: "{decision}", rationale: "{rationale}", timestamp: "{ISO timestamp}", status: "resolved"}})`.
 
 ### Worker Agent Failure
 
@@ -256,13 +251,14 @@ Rework: {N} minor, {N} significant findings fixed from incremental review.
 {Description of significant fixes if any.}
 ```
 
-After each item completes, call `ideate_get_autopilot_state()` to read the current `total_items_executed`, increment it, then call `ideate_update_autopilot_state({state: {total_items_executed: {N+1}}})` to persist the update.
+After each item completes, call `ideate_manage_autopilot_state({action: "get"})` to read the current `total_items_executed`, increment it, then call `ideate_manage_autopilot_state({action: "update", state: {total_items_executed: {N+1}}})` to persist the update.
 
 ## Exit Conditions
 
 - All pending work items have been attempted (skipped, completed, or failed+deferred)
 - Each completed item has an incremental review finding written via `ideate_write_artifact`
-- `total_items_executed` is updated via `ideate_update_autopilot_state`
+- Each completed item has its status updated to 'done' via `ideate_update_work_items`
+- `total_items_executed` is updated via `ideate_manage_autopilot_state`
 - Journal has an entry for each completed item (via `ideate_append_journal`)
 
 Return to the controller. The controller will proceed to Phase 6b (review.md).
@@ -271,6 +267,7 @@ Return to the controller. The controller will proceed to Phase 6b (review.md).
 
 - Findings (F-{WI}-{SEQ}) — one per work item reviewed, via `ideate_write_artifact`
 - Journal entries — appended per work item and per Andon event, via `ideate_append_journal`
-- Autopilot session state — `total_items_executed` updated via `ideate_update_autopilot_state`
-- Proxy-human decisions — if Andon events occurred, via `ideate_append_journal`
-- Metrics — one entry per agent spawned, via `ideate_emit_metric`
+- Work item status — updated to 'done' for each completed item, via `ideate_update_work_items`
+- Autopilot session state — `total_items_executed` updated via `ideate_manage_autopilot_state`
+- Proxy-human decisions (PH-{cycle}-{seq}) — if Andon events occurred, via `ideate_write_artifact` with type `proxy_human_decision`
+- Metrics — one entry per agent spawned, via `ideate_emit_metric

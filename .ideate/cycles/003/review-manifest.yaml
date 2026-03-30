@@ -1,0 +1,16 @@
+id: review-manifest
+type: review_manifest
+critical_count: 0
+minor_count: 0
+overall_verdict: PASS
+reviewers_assigned:
+  - code-reviewer
+  - spec-reviewer
+  - gap-analyst
+significant_count: 0
+work_items_reviewed:
+  - WI-389
+  - WI-390
+content_hash: f6e0d06e0132d6780a117a0ad4b51d433fd2d2d3745bf3dbfabd41e05e55fdb7
+token_count: 58
+file_path: .ideate/cycles/003/review-manifest.yaml

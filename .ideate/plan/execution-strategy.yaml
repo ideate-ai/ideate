@@ -1,21 +1,26 @@
 id: execution-strategy
 type: execution_strategy
-title: Execution Strategy — Cycle 065
-mode: sequential
-parallelism: 1
-worktrees: false
-review_cadence: per-item
+title: Execution Strategy — WI-414 through WI-416
+mode: full_parallel
+parallelism: 3
+worktree: false
+review_cadence: per_item
 groups:
-  - name: "Group 1: Core rewrite"
+  - name: main
     items:
-      - WI-336
-    notes: The unified SKILL.md must be written first.
-  - name: "Group 2: Cleanup"
-    items:
-      - WI-337
-      - WI-338
-      - WI-339
-    notes: Delete old plan skill, update cross-references, update docs. All depend on WI-336/337.
-content_hash: c289e87e619dbdbc4e0e29501f1253e8d2212126f321ba355c9ff8534801f13d
-token_count: 116
+      - WI-414
+      - WI-415
+      - WI-416
+    ordering: parallel
+    notes: All three items have non-overlapping file scope and no data dependencies. WI-414 and WI-415 are the substantive changes; WI-416 is trivial cleanup. All can run concurrently.
+dependency_graph:
+  WI-414: []
+  WI-415: []
+  WI-416: []
+agent_config:
+  model: sonnet
+  reviewer_model: sonnet
+notes: WI-414 modifies analysis.ts and tools.test.ts (convergence status section). WI-415 modifies metrics.ts, config.ts, and metrics.test.ts. WI-416 modifies only write-transaction.test.ts. No file overlap across items.
+content_hash: 9d238d31b8a632262d6484bacfc6493ffc55cc952047fa8e8ffd7f788b41947f
+token_count: 198
 file_path: .ideate/plan/execution-strategy.yaml

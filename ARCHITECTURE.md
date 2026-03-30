@@ -43,6 +43,7 @@ mcp/
                                             (repeating cycles)
 
 /ideate:autopilot = autonomous execute → review → refine loop
+/ideate:settings  = interactive configuration for agent budgets, model overrides, and PPR weights
 ```
 
 ### Data flow
@@ -118,7 +119,7 @@ resolveArtifactDir()       # Find .ideate/ via env var or directory walk
 
 ## 3. Schema Design
 
-The schema uses class table inheritance: a single `nodes` base table holds the 8 common columns shared by all artifact types, and 12 extension tables each hold type-specific columns. Every extension table's `id` column is a foreign key referencing `nodes(id)` with `ON DELETE CASCADE`.
+The schema uses class table inheritance: a single `nodes` base table holds the 8 common columns shared by all artifact types, and 14 extension tables each hold type-specific columns. Every extension table's `id` column is a foreign key referencing `nodes(id)` with `ON DELETE CASCADE`.
 
 ### nodes base table (8 columns)
 
@@ -135,13 +136,13 @@ The schema uses class table inheritance: a single `nodes` base table holds the 8
 
 Indexes: `idx_nodes_type` on `(type)`, `idx_nodes_file_path` on `(file_path)`.
 
-### Extension tables (12 tables)
+### Extension tables (14 tables)
 
 Each extension table has `id TEXT PRIMARY KEY REFERENCES nodes(id) ON DELETE CASCADE` as its only reference to the base table. Type-specific columns are NOT NULL only where required by business logic.
 
 | Table | Artifact type(s) | Key columns |
 |-------|-----------------|-------------|
-| `work_items` | `work_item` | `title`, `complexity`, `scope` (JSON), `depends` (JSON), `blocks` (JSON), `criteria` (JSON), `module`, `domain` |
+| `work_items` | `work_item` | `title`, `complexity`, `scope` (JSON), `depends` (JSON), `blocks` (JSON), `criteria` (JSON), `module`, `domain`, `notes` (TEXT, inline implementation notes) |
 | `findings` | `finding` | `severity`, `work_item`, `file_refs` (JSON), `verdict`, `cycle`, `reviewer` |
 | `domain_policies` | `domain_policy` | `domain`, `derived_from` (JSON), `established`, `amended`, `amended_by` |
 | `domain_decisions` | `domain_decision` | `domain`, `cycle`, `supersedes`, `description`, `rationale` |
@@ -152,6 +153,8 @@ Each extension table has `id TEXT PRIMARY KEY REFERENCES nodes(id) ON DELETE CAS
 | `research_findings` | `research_finding` | `topic`, `date`, `content`, `sources` (JSON) |
 | `journal_entries` | `journal_entry` | `phase`, `date`, `title`, `work_item`, `content` |
 | `metrics_events` | `metrics_event` | `event_name`, `timestamp`, `payload` (JSON) |
+| `interview_questions` | `interview_question` | `interview_id`, `question`, `answer`, `domain`, `seq` |
+| `proxy_human_decisions` | `proxy_human_decision` | `cycle`, `trigger`, `triggered_by` (JSON), `decision`, `rationale`, `status` |
 | `document_artifacts` | `decision_log`, `cycle_summary`, `review_manifest`, `architecture`, `overview`, `execution_strategy`, `guiding_principles`, `constraints`, `research`, `interview` | `title`, `cycle`, `content` |
 
 The `document_artifacts` table is a catch-all for Markdown document artifacts: plan docs, cycle summaries, review manifests, and interview transcripts. All map to the same table regardless of their YAML `type` field.
@@ -196,6 +199,7 @@ Artifact IDs include a type prefix to prevent cross-type collisions and aid read
 | `GP-N` | guiding_principle |
 | `C-N` | constraint |
 | `J-NNN-NNN` | journal_entry |
+| `PH-NNN-NN` | proxy_human_decision (cycle-scoped) |
 | `F-...` | finding |
 
 ### Schema versioning
@@ -317,7 +321,7 @@ interface ToolContext {
 
 The raw `db` is used for recursive CTE queries and other SQL that Drizzle cannot express. `drizzleDb` is used for CRUD operations. Both operate on the same underlying SQLite file.
 
-### 17 tools in 8 categories
+### 22 tools in 10 categories
 
 ```
 Context tools (3)
@@ -325,8 +329,9 @@ Context tools (3)
   ideate_get_context_package      — architecture + principles + constraints + source code index
   ideate_assemble_context         — PPR-scored, token-budgeted context assembly from seed nodes
 
-Query tools (1)
+Query tools (2)
   ideate_artifact_query           — filter by type/domain/status/cycle + graph traversal
+  ideate_get_next_id              — next available ID for artifact type (cycle-scoped for proxy_human_decision)
 
 Execution tools (2)
   ideate_get_execution_status     — work item counts by status, dependency-resolved ready list
@@ -338,21 +343,39 @@ Analysis tools (3)
   ideate_get_project_status       — high-level summary: cycle, work item counts, recent journal
 
 Write tools (5)
-  ideate_append_journal           — append YAML journal entry + sync SQLite upsert
-  ideate_archive_cycle            — create archive/cycles/NNN/ and write cycle summary
-  ideate_write_work_items         — write/create work item YAML files + sync SQLite upsert
-  ideate_update_work_items        — partial-update existing work items by id
-  ideate_write_artifact           — write any artifact type to .ideate/ as YAML
+  ideate_append_journal           — Append entry to the project journal. Use after significant work. Returns confirmation string.
+  ideate_archive_cycle            — Archive a completed review cycle with its summary artifacts. Use after review completes. Returns confirmation string.
+  ideate_write_work_items         — Write or update work items atomically. Use during plan/refine to define work. Returns confirmation.
+  ideate_update_work_items        — Update work item fields without full overwrite. Use for status changes, scope updates. Returns confirmation string.
+  ideate_write_artifact           — Write an artifact to the project store. Use for findings, policies, decisions, and cycle summaries. Returns confirmation.
 
 Events tools (1)
   ideate_emit_event               — fire hooks registered for a given event name
 
-Metrics tools (1)
+Metrics tools (2)
   ideate_get_metrics              — aggregated metrics from metrics_events table
+  ideate_emit_metric              — record a metrics event (token counts, outcomes, timing)
 
-Config tools (1)
-  ideate_get_config               — parsed .ideate/config.json with defaults applied
+Config tools (2)
+  ideate_get_config               — Parsed project config with defaults (agent_budgets, model_overrides, ppr). Use for token budget, model selection, and PPR settings. Returns JSON config object.
+  ideate_update_config            — Update project config settings. Accepts partial patch; deep-merges into current config. Validates before writing. Pass agent_budgets, model_overrides, or ppr keys. Returns updated keys. When `patch.model_overrides[key]` is `null`, that key is deleted from the stored map. An empty result omits the `model_overrides` field entirely (sparse invariant).
+
+Bootstrap tools (1)
+  ideate_bootstrap_project        — Create project artifact directory with config and subdirs. Use for project initialization. Returns subdirectory names.
+
+State tools (1)
+  ideate_manage_autopilot_state   — get or update autopilot session state
 ```
+
+### Testing requirements (P-36)
+
+New MCP tools require unit tests before merge. Test files are co-located with source in `__tests__/` directories (e.g., `src/__tests__/tools.test.ts`). Required coverage:
+
+- Happy path: primary code path with valid inputs
+- Error paths: missing required parameters, invalid inputs
+- Edge cases: empty inputs, boundary conditions
+
+Critical infrastructure tools (events, metrics, bootstrap, index) must have complete test coverage. Tests follow the vitest pattern established in `tools.test.ts` — each test creates a fresh temp-file SQLite database with `createSchema` applied and a ToolContext assembled from the temp DB and artifact directory.
 
 ### Hybrid query pattern
 
@@ -385,7 +408,7 @@ skill calls ideate_write_work_items
   → validate arguments
   → write YAML file to .ideate/work-items/{id}.yaml
   → upsertNode() + upsertExtension() + extractEdges()
-  → return confirmation with file path
+  → return YAML results list with id and result
 ```
 
 ---
@@ -394,7 +417,7 @@ skill calls ideate_write_work_items
 
 ### Edge type registry
 
-10 edge types are defined in `EDGE_TYPE_REGISTRY` in `schema.ts`. Each entry specifies allowed source types, allowed target types, and the YAML field that drives automatic extraction:
+13 edge types are defined in `EDGE_TYPE_REGISTRY` in `schema.ts`. Each entry specifies allowed source types, allowed target types, and the YAML field that drives automatic extraction:
 
 | Edge type | Source types | Target types | YAML field |
 |-----------|-------------|-------------|------------|
@@ -408,6 +431,9 @@ skill calls ideate_write_work_items
 | `references` | (any) | (any) | null (set explicitly) |
 | `amended_by` | `domain_policy` | `domain_policy` | `amended_by` |
 | `supersedes` | `domain_decision` | `domain_decision` | `supersedes` |
+| `triggered_by` | `proxy_human_decision` | `finding`, `work_item` | `triggered_by` |
+| `governed_by` | `work_item`, `module_spec`, `constraint` | `guiding_principle`, `domain_policy`, `constraint` | `governed_by` |
+| `informed_by` | `work_item`, `module_spec`, `guiding_principle` | `research_finding`, `domain_decision`, `domain_question` | `informed_by` |
 
 During indexing, `extractEdges()` iterates the registry. For each edge type whose `yaml_field` is non-null and whose `source_types` includes the current node's type, it reads the corresponding YAML field and upserts edges for each value found (array or scalar).
 
@@ -560,9 +586,9 @@ The function accepts `work_item_id` via the MCP tool's `ToolContext` (which incl
 
 **Assembly order** (sections joined with `---` dividers):
 
-1. **Work item** — loaded from the `nodes` + `work_items` JOIN. Includes: id, title, status, complexity, domain, module, file path, cycle created, depends/blocks lists, scope entries (file paths and operations), and acceptance criteria.
+1. **Work item** — loaded from the `nodes` + `work_items` JOIN. Includes: id, title, status, complexity, domain, module, cycle created, depends/blocks lists, scope entries (file paths and operations), and acceptance criteria.
 
-2. **Implementation notes** — if the work item row has a `notes` field, the notes file is read from disk. Capped at 200 lines; shows truncation notice if exceeded.
+2. **Implementation notes** — if the work item row has a `notes` field, the inline text content from the `work_items.notes` TEXT column is returned directly (no file read). Capped at 200 lines; shows truncation notice if exceeded.
 
 3. **Module spec** — resolved by following the `belongs_to_module` edge from the work item. The query is:
    ```sql
@@ -654,17 +680,21 @@ Based on the context assembly research (`context-assembly-strategies.yaml`, Ques
 | File | Purpose |
 |------|---------|
 | `mcp/artifact-server/src/index.ts` | Server entry point, startup sequence, MCP request handlers |
+| `mcp/artifact-server/src/server.ts` | Server lifecycle, dormant mode support, `ServerState`, `initServer`, `routeToolCall` |
 | `mcp/artifact-server/src/schema.ts` | SQLite DDL (`createSchema`), edge type registry, artifact interfaces |
 | `mcp/artifact-server/src/db.ts` | Drizzle ORM table definitions, `TYPE_TO_EXTENSION_TABLE` dispatch map |
 | `mcp/artifact-server/src/indexer.ts` | `rebuildIndex`, row builders, edge extraction, cycle detection |
-| `mcp/artifact-server/src/config.ts` | `getConfigWithDefaults`, `IdeateConfigJson`, `DEFAULT_AGENT_BUDGETS`, `DEFAULT_PPR_CONFIG` |
+| `mcp/artifact-server/src/config.ts` | `getConfigWithDefaults`, `writeConfig`, `readRawConfig`, `readIdeateConfig`, `findIdeateConfig`, `resolveArtifactDir`, `createIdeateDir`, `IdeateConfig`, `IDEATE_SUBDIRS`, `CONFIG_SCHEMA_VERSION`, `IdeateConfigJson`, `DEFAULT_AGENT_BUDGETS`, `DEFAULT_PPR_CONFIG` |
 | `mcp/artifact-server/src/watcher.ts` | `ArtifactWatcher` class (chokidar wrapper with debounce) |
-| `mcp/artifact-server/src/hooks.ts` | Hook registry loading, execution, variable substitution |
-| `mcp/artifact-server/src/tools/index.ts` | `ToolContext`, TOOLS array (17 definitions), `handleTool` dispatcher |
+| `mcp/artifact-server/src/hooks.ts` | Hook registry loading, execution, variable substitution, `fireEvent` |
+| `mcp/artifact-server/src/ppr.ts` | Personalized PageRank (`computePPR`) for context assembly from seed nodes |
+| `mcp/artifact-server/src/tools/index.ts` | `ToolContext`, TOOLS array (22 definitions), `handleTool` dispatcher |
 | `mcp/artifact-server/src/tools/context.ts` | `handleGetWorkItemContext`, `handleGetContextPackage`, `handleAssembleContext` |
-| `mcp/artifact-server/src/tools/query.ts` | `ideate_artifact_query` (filter mode + recursive CTE traversal) |
+| `mcp/artifact-server/src/tools/query.ts` | `ideate_artifact_query` (filter mode + recursive CTE traversal), `ideate_get_next_id` (cycle-scoped ID generation) |
 | `mcp/artifact-server/src/tools/execution.ts` | `ideate_get_execution_status`, `ideate_get_review_manifest` |
 | `mcp/artifact-server/src/tools/analysis.ts` | `ideate_get_convergence_status`, `ideate_get_domain_state`, `ideate_get_project_status` |
 | `mcp/artifact-server/src/tools/write.ts` | `ideate_append_journal`, `ideate_archive_cycle`, `ideate_write_work_items`, `ideate_update_work_items`, `ideate_write_artifact` |
 | `mcp/artifact-server/src/tools/events.ts` | `ideate_emit_event` (hook dispatch) |
 | `mcp/artifact-server/src/tools/metrics.ts` | `ideate_get_metrics` (agent/work_item/cycle aggregations) |
+| `mcp/artifact-server/src/tools/autopilot-state.ts` | `ideate_manage_autopilot_state` (get or update autopilot session state) |
+| `mcp/artifact-server/src/tools/config.ts` | `handleUpdateConfig` (deep-merge patch into config.json with validation) |

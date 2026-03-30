@@ -75,36 +75,46 @@ Based on your evaluation:
 
 ### Step 5: Record the Decision
 
-Call `ideate_append_journal` with `entry_type: "proxy-human-decision"` to record the decision. Each invocation adds one entry. The MCP server handles append semantics.
-
-#### Entry Fields
-
-Pass the following as the `content` map to `ideate_append_journal`:
+Call `ideate_write_artifact` with the following parameters to record the decision:
 
 ```yaml
-entry_type: proxy-human-decision
-cycle_number: {cycle_number}
-event_summary: {one-line event summary}
-decision: {PROCEED | DEFER | ESCALATE}
-confidence: {high | medium | low}
-rationale: {explanation of the decision and reasoning}
+type: proxy_human_decision
+id: PH-{cycle}-{seq}
+cycle: {cycle_number}
+content:
+  cycle: {cycle_number}
+  trigger: andon | fallback | deferral
+  triggered_by:
+    - type: {finding | work_item | other}
+      id: {artifact_id}
+  decision: "approved" | "deferred" | "escalated"
+  rationale: {explanation of the decision and reasoning}
+  timestamp: {ISO 8601 timestamp}
+  status: {resolved | pending_user_input}
 ```
 
-Use `high` confidence when the decision is clearly and directly answerable from principles or constraints with no ambiguity. Use `medium` when the decision requires judgment within the spirit of principles. Use `low` when the decision is at the edge of principle coverage or when you are uncertain whether the principles were intended to govern this situation.
+The `seq` is a 2-digit sequence number starting at 01 for the first proxy-human decision in the cycle. Use `ideate_get_next_id({type: "proxy_human_decision"})` to obtain the next available ID, passing the cycle number to scope the sequence.
 
-If the decision is `DEFER`, the Rationale must state specifically: what information or resolution is needed, and what cannot proceed until it is provided.
+If multiple artifacts triggered this decision, list all in `triggered_by`. For example:
+```yaml
+triggered_by:
+  - type: finding
+    id: F-058-012
+  - type: work_item
+    id: WI-234
+```
 
 ---
 
 ## Output Contract
 
-After calling `ideate_append_journal`, return a response with:
+After calling `ideate_write_artifact`, return a response with:
 
 1. **Decision**: State the decision (or deferral) clearly in one sentence.
 2. **Rationale**: Two to four sentences explaining the reasoning.
 3. **Principles Cited**: List any guiding principles or constraints that governed the decision.
 4. **Confidence**: `high`, `medium`, or `low`.
-5. **Journal Entry Written**: Confirm the entry was appended via `ideate_append_journal` with `entry_type: proxy-human-decision`.
+5. **Artifact Written**: Confirm the artifact was written via `ideate_write_artifact` with type `proxy_human_decision`.
 
 ---
 
@@ -116,3 +126,11 @@ After calling `ideate_append_journal`, return a response with:
 - Do not pad the log entry or the response with encouragement, validation, or filler. State the decision and the reasoning. Nothing else.
 - If the event description is ambiguous, make a reasonable interpretation, state your interpretation explicitly in the rationale, and proceed.
 - Principle 6 (Andon Cord Interaction Model) is the governing principle for your existence: user intervention is reserved for issues that cannot be resolved from existing steering documents. Your job is to shrink that set, not expand it.
+
+---
+
+## What You Do Not Do
+
+- NEVER read, write, or reference `.ideate/` paths directly
+- NEVER use Read, Write, or Edit tools on `.ideate/` directories or files
+- Access artifacts ONLY through MCP tool calls with artifact IDs and types

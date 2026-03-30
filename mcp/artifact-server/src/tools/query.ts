@@ -1,4 +1,4 @@
-import { ToolContext } from "./index.js";
+import type { ToolContext } from "../types.js";
 import { TYPE_TO_EXTENSION_TABLE } from "../db.js";
 
 // ---------------------------------------------------------------------------
@@ -12,13 +12,21 @@ const TYPE_PREFIX_MAP: Record<string, { prefix: string; padWidth: number }> = {
   policy: { prefix: "P-", padWidth: 2 },
   decision: { prefix: "D-", padWidth: 2 },
   question: { prefix: "Q-", padWidth: 2 },
+  domain_policy: { prefix: "P-", padWidth: 2 },
+  domain_decision: { prefix: "D-", padWidth: 2 },
+  domain_question: { prefix: "Q-", padWidth: 2 },
+  proxy_human_decision: { prefix: "PH-", padWidth: 2 },
 };
+
+// Types that require cycle-scoped IDs (format: {prefix}{cycle}-{seq})
+const CYCLE_SCOPED_ID_TYPES = ["proxy_human_decision"];
 
 export async function handleGetNextId(
   ctx: ToolContext,
   args: Record<string, unknown>
 ): Promise<string> {
   const type = args.type as string | undefined;
+  const cycle = args.cycle as number | undefined;
 
   if (!type) {
     throw new Error("Missing required parameter: type");
@@ -32,7 +40,30 @@ export async function handleGetNextId(
 
   const { prefix, padWidth } = mapping;
 
-  // Query SQLite for max numeric ID matching this prefix
+  // For cycle-scoped types, require cycle parameter and generate {prefix}{cycle}-{seq} format
+  if (CYCLE_SCOPED_ID_TYPES.includes(type)) {
+    if (cycle === undefined) {
+      throw new Error(`Parameter 'cycle' is required for type '${type}'`);
+    }
+
+    const paddedCycle = String(cycle).padStart(3, "0");
+    const pattern = `${prefix}${paddedCycle}-%`;
+
+    // Query for max seq within this cycle
+    const row = ctx.db.prepare(
+      `SELECT MAX(CAST(SUBSTR(id, ?) AS INTEGER)) as max_num
+       FROM nodes
+       WHERE id LIKE ?`
+    ).get(prefix.length + 4 + 1, pattern) as { max_num: number | null } | undefined;
+
+    const maxNum = row?.max_num ?? 0;
+    const nextNum = maxNum + 1;
+    const nextId = `${prefix}${paddedCycle}-${String(nextNum).padStart(padWidth, "0")}`;
+
+    return nextId;
+  }
+
+  // Standard (non-cycle-scoped) ID generation
   const row = ctx.db.prepare(
     `SELECT MAX(CAST(REPLACE(id, ?, '') AS INTEGER)) as max_num
      FROM nodes
@@ -142,6 +173,10 @@ const TYPE_EXTENSION_INFO: Record<
     table: "document_artifacts",
     summaryExpr: "COALESCE(e.title, n.type)",
   },
+  proxy_human_decision: {
+    table: "proxy_human_decisions",
+    summaryExpr: "e.trigger || ' → ' || e.decision || ' [' || e.status || ']'",
+  },
 };
 
 // ---------------------------------------------------------------------------
@@ -189,7 +224,29 @@ interface FilterModeRow {
   summary: string | null;
   domain: string | null;
   cycle: number | null;
-  file_path: string;
+}
+
+interface FilterModeResult {
+  rows: FilterModeRow[];
+  total_count: number;
+}
+
+// ---------------------------------------------------------------------------
+// Raw row type for graph traversal
+// ---------------------------------------------------------------------------
+
+type RawRow = {
+  node_id: string;
+  type: string;
+  edge_type: string;
+  direction: string;
+  depth: number;
+  status: string | null;
+};
+
+interface GraphModeResult {
+  rows: RawRow[];
+  total_count: number;
 }
 
 function runFilterMode(
@@ -198,7 +255,7 @@ function runFilterMode(
   filters: ParsedFilters,
   limit: number,
   offset: number
-): string {
+): FilterModeResult {
   const whereClauses: string[] = [];
   const params: (string | number)[] = [];
 
@@ -278,8 +335,7 @@ function runFilterMode(
       n.status,
       SUBSTR(COALESCE(${summaryExpr}, ''), 1, 81) AS summary,
       ${domainExpr} AS domain,
-      ${cycleExpr} AS cycle,
-      n.file_path
+      ${cycleExpr} AS cycle
     FROM nodes n
     ${extensionJoin}
     ${whereClause}
@@ -291,29 +347,31 @@ function runFilterMode(
 
   const rows = ctx.db.prepare(sql).all(...params) as FilterModeRow[];
 
+  // Count total matching items (without limit/offset)
+  const countSql = `
+    SELECT COUNT(*) as total_count
+    FROM nodes n
+    ${extensionJoin}
+    ${whereClause}
+  `;
+  const countRow = ctx.db.prepare(countSql).get(...params.slice(0, -2)) as { total_count: number };
+  const total_count = countRow.total_count;
+
   if (rows.length === 0) {
-    return "No results found.";
+    return { rows: [], total_count };
   }
 
-  const tableRows = rows.map((r) => [
-    r.id,
-    r.type,
-    r.status ?? "",
-    truncate(r.summary),
-    r.domain ?? "",
-    r.cycle != null ? String(r.cycle) : "",
-    r.file_path,
-  ]);
-
-  return markdownTable(
-    ["ID", "Type", "Status", "Summary", "Domain", "Cycle", "File"],
-    tableRows
-  );
+  return { rows, total_count };
 }
 
 // ---------------------------------------------------------------------------
 // Graph traversal mode
 // ---------------------------------------------------------------------------
+
+interface GraphModeResult {
+  rows: RawRow[];
+  total_count: number;
+}
 
 function runGraphMode(
   ctx: ToolContext,
@@ -325,14 +383,14 @@ function runGraphMode(
   filters: ParsedFilters,
   limit: number,
   offset: number
-): string {
+): GraphModeResult | { error: string } {
   // Verify the seed node exists
   const seedNode = ctx.db
     .prepare("SELECT id FROM nodes WHERE id = ?")
     .get(relatedTo) as { id: string } | undefined;
 
   if (!seedNode) {
-    return `Error: Node '${relatedTo}' not found`;
+    return { error: `Node '${relatedTo}' not found` };
   }
 
   if (depth === 1) {
@@ -357,7 +415,7 @@ function runGraphDepth1(
   filters: ParsedFilters,
   limit: number,
   offset: number
-): string {
+): GraphModeResult {
   const edgeTypeFilter = buildEdgeTypeFilter(edgeTypes, "e");
   const edgeTypeParams = edgeTypes ?? [];
 
@@ -366,7 +424,7 @@ function runGraphDepth1(
 
   if (direction === "outgoing") {
     sql = `
-      SELECT n.id AS node_id, n.type, e.edge_type, 'outgoing' AS direction, 1 AS depth, n.status, n.file_path
+      SELECT n.id AS node_id, n.type, e.edge_type, 'outgoing' AS direction, 1 AS depth, n.status
       FROM edges e
       JOIN nodes n ON n.id = e.target_id
       WHERE e.source_id = ?
@@ -375,7 +433,7 @@ function runGraphDepth1(
     params.push(relatedTo, ...edgeTypeParams);
   } else if (direction === "incoming") {
     sql = `
-      SELECT n.id AS node_id, n.type, e.edge_type, 'incoming' AS direction, 1 AS depth, n.status, n.file_path
+      SELECT n.id AS node_id, n.type, e.edge_type, 'incoming' AS direction, 1 AS depth, n.status
       FROM edges e
       JOIN nodes n ON n.id = e.source_id
       WHERE e.target_id = ?
@@ -385,13 +443,13 @@ function runGraphDepth1(
   } else {
     // both
     sql = `
-      SELECT n.id AS node_id, n.type, e.edge_type, 'outgoing' AS direction, 1 AS depth, n.status, n.file_path
+      SELECT n.id AS node_id, n.type, e.edge_type, 'outgoing' AS direction, 1 AS depth, n.status
       FROM edges e
       JOIN nodes n ON n.id = e.target_id
       WHERE e.source_id = ?
       ${edgeTypeFilter}
       UNION
-      SELECT n.id AS node_id, n.type, e.edge_type, 'incoming' AS direction, 1 AS depth, n.status, n.file_path
+      SELECT n.id AS node_id, n.type, e.edge_type, 'incoming' AS direction, 1 AS depth, n.status
       FROM edges e
       JOIN nodes n ON n.id = e.source_id
       WHERE e.target_id = ?
@@ -414,7 +472,7 @@ function runGraphRecursive(
   filters: ParsedFilters,
   limit: number,
   offset: number
-): string {
+): GraphModeResult {
   const edgeTypeFilter = buildEdgeTypeFilter(edgeTypes, "e");
   const edgeTypeParams = edgeTypes ?? [];
 
@@ -472,7 +530,7 @@ function runGraphRecursive(
     WITH RECURSIVE traversal(node_id, edge_type, direction, depth) AS (
       ${recursiveBody}
     )
-    SELECT n.id AS node_id, n.type, t.edge_type, t.direction, t.depth, n.status, n.file_path
+    SELECT n.id AS node_id, n.type, t.edge_type, t.direction, t.depth, n.status
     FROM traversal t
     JOIN nodes n ON n.id = t.node_id
     WHERE t.depth > 0
@@ -489,22 +547,12 @@ function executeTraversalQuery(
   filters: ParsedFilters,
   limit: number,
   offset: number
-): string {
+): GraphModeResult {
   // We need summaries — but the base traversal query doesn't include them.
   // We wrap it and JOIN with extension tables based on each row's type.
   // Since we can't easily do a dynamic per-row JOIN in SQLite, we'll do a two-phase approach:
   // 1. Run the traversal to get node ids + metadata
   // 2. Fetch summaries for each unique type
-
-  type RawRow = {
-    node_id: string;
-    type: string;
-    edge_type: string;
-    direction: string;
-    depth: number;
-    status: string | null;
-    file_path: string;
-  };
 
   // Apply type filter within the query if present
   let filteredSql = baseSql;
@@ -526,6 +574,11 @@ function executeTraversalQuery(
     filteredParams.push(filters.status);
   }
 
+  // Count total before pagination
+  const countSql = `SELECT COUNT(*) as total_count FROM (${filteredSql})`;
+  const countRow = ctx.db.prepare(countSql).get(...filteredParams) as { total_count: number };
+  const total_count = countRow.total_count;
+
   // Paginate
   filteredSql = `${filteredSql} ORDER BY depth, node_id LIMIT ? OFFSET ?`;
   filteredParams.push(limit, offset);
@@ -533,26 +586,10 @@ function executeTraversalQuery(
   const rows = ctx.db.prepare(filteredSql).all(...filteredParams) as RawRow[];
 
   if (rows.length === 0) {
-    return "No results found.";
+    return { rows: [], total_count };
   }
 
-  // Fetch summaries for each row by its type
-  const summaryMap = buildSummaryMap(ctx, rows.map((r) => ({ id: r.node_id, type: r.type })));
-
-  const tableRows = rows.map((r) => [
-    r.node_id,
-    r.type,
-    r.edge_type || "",
-    r.direction || "",
-    String(r.depth),
-    r.status ?? "",
-    truncate(summaryMap[r.node_id]),
-  ]);
-
-  return markdownTable(
-    ["ID", "Type", "Edge", "Dir", "Depth", "Status", "Summary"],
-    tableRows
-  );
+  return { rows, total_count };
 }
 
 // ---------------------------------------------------------------------------
@@ -605,7 +642,7 @@ function hasColumn(type: string, column: string): boolean {
   const domainTypes = [
     "domain_policy", "domain_decision", "domain_question", "work_item",
   ];
-  const cycleTypes = ["finding", "domain_decision"];
+  const cycleTypes = ["finding", "domain_decision", "proxy_human_decision"];
   const workItemRefTypes = ["finding"];
   const phaseTypes = ["journal_entry"];
 
@@ -669,7 +706,7 @@ export async function handleArtifactQuery(
 
   // Route to appropriate mode
   if (relatedTo) {
-    return runGraphMode(
+    const result = runGraphMode(
       ctx,
       relatedTo,
       depth,
@@ -680,7 +717,61 @@ export async function handleArtifactQuery(
       limit,
       offset
     );
+
+    // Handle error case
+    if ("error" in result) {
+      return `Error: ${result.error}`;
+    }
+
+    if (result.rows.length === 0) {
+      if (result.total_count === 0) {
+        return "No results found.";
+      }
+      return `No results on this page. **Total**: ${result.total_count} — use lower offset.`;
+    }
+
+    // Fetch summaries and build table
+    const summaryMap = buildSummaryMap(ctx, result.rows.map((r) => ({ id: r.node_id, type: r.type })));
+    const tableRows = result.rows.map((r) => [
+      r.node_id,
+      r.type,
+      r.edge_type || "",
+      r.direction || "",
+      String(r.depth),
+      r.status ?? "",
+      truncate(summaryMap[r.node_id]),
+    ]);
+
+    const table = markdownTable(
+      ["ID", "Type", "Edge", "Dir", "Depth", "Status", "Summary"],
+      tableRows
+    );
+
+    return `${table}\n\n**Total**: ${result.total_count}`;
   } else {
-    return runFilterMode(ctx, type, filters, limit, offset);
+    const result = runFilterMode(ctx, type, filters, limit, offset);
+
+    if (result.rows.length === 0) {
+      if (result.total_count === 0) {
+        return "No results found.";
+      }
+      return `No results on this page. **Total**: ${result.total_count} — use lower offset.`;
+    }
+
+    const tableRows = result.rows.map((r) => [
+      r.id,
+      r.type,
+      r.status ?? "",
+      truncate(r.summary),
+      r.domain ?? "",
+      r.cycle != null ? String(r.cycle) : "",
+    ]);
+
+    const table = markdownTable(
+      ["ID", "Type", "Status", "Summary", "Domain", "Cycle"],
+      tableRows
+    );
+
+    return `${table}\n\n**Total**: ${result.total_count}`;
   }
 }

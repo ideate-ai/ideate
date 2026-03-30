@@ -1,0 +1,12 @@
+id: Q-103
+type: domain_question
+domain: artifact-structure
+title: ideate_get_review_manifest ignores cycle_number parameter
+question: Handler scans archive/incremental/*.md (pre-v3 path, non-existent). Incremental verdict column always shows 'None'. Should it query cycles/{NNN}/findings/*.yaml from SQLite instead?
+source: cycle 1 gap-analysis Gap 4; decision-log Q5
+impact: Autopilot manifests show no incremental reviews. Cycle-scoped review scope not determinable programmatically.
+status: open
+reexamination_trigger: Next cycle targeting v3 migration completeness.
+content_hash: 5423ae3de659a2f78cbdcf8c59ead91939f59ae0ccff61dc372d632f8cdf63a2
+token_count: 142
+file_path: .ideate/questions/Q-103.yaml
