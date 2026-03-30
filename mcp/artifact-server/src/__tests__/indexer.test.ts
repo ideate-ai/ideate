@@ -45,6 +45,8 @@ function makeIdeateDir(baseDir: string): string {
     "research",
     "interviews",
     "cycles",
+    "projects",
+    "phases",
   ];
   for (const sub of subdirs) {
     fs.mkdirSync(path.join(ideateDir, sub), { recursive: true });
@@ -960,5 +962,196 @@ describe("removeFiles — cascade removal", () => {
       .prepare("SELECT * FROM work_items WHERE id = 'WI-200'")
       .get();
     expect(extAfter).toBeUndefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// rebuildIndex — project and phase type support
+// ---------------------------------------------------------------------------
+
+describe("rebuildIndex — project YAML creates node and extension row", () => {
+  it("indexes a project file into the projects table", () => {
+    const db = freshDb();
+    const ideateDir = makeIdeateDir(tmpDir);
+
+    const yaml = [
+      `id: "PROJ-001"`,
+      `type: "project"`,
+      `cycle_created: 1`,
+      `cycle_modified: null`,
+      `content_hash: ""`,
+      `token_count: 0`,
+      `file_path: ""`,
+      `status: "active"`,
+      `intent: "Build a great product"`,
+      `scope_boundary:`,
+      `  in:`,
+      `    - "backend"`,
+      `    - "frontend"`,
+      `  out: []`,
+      `success_criteria:`,
+      `  - "All tests pass"`,
+      `appetite: 6`,
+      `steering: null`,
+      `horizon:`,
+      `  current: "phase-1"`,
+      `  next: []`,
+      `  later: []`,
+    ].join("\n") + "\n";
+
+    writeYaml(path.join(ideateDir, "projects"), "PROJ-001.yaml", yaml);
+
+    const stats = rebuildIndex(db, drizzle(db), ideateDir);
+
+    expect(stats.parse_errors.filter((e) => e.includes("PROJ-001"))).toHaveLength(0);
+
+    const node = db
+      .prepare(`SELECT * FROM nodes WHERE id = 'PROJ-001' AND type = 'project'`)
+      .get() as { id: string; type: string } | undefined;
+    expect(node).toBeDefined();
+    expect(node!.type).toBe("project");
+
+    const row = db
+      .prepare(`SELECT * FROM projects WHERE id = 'PROJ-001'`)
+      .get() as { id: string; intent: string; status: string; appetite: number | null } | undefined;
+    expect(row).toBeDefined();
+    expect(row!.intent).toBe("Build a great product");
+    expect(row!.status).toBe("active");
+    expect(row!.appetite).toBe(6);
+  });
+});
+
+describe("rebuildIndex — phase YAML creates node and extension row", () => {
+  it("indexes a phase file into the phases table", () => {
+    const db = freshDb();
+    const ideateDir = makeIdeateDir(tmpDir);
+
+    const yaml = [
+      `id: "PHASE-001"`,
+      `type: "phase"`,
+      `cycle_created: 1`,
+      `cycle_modified: null`,
+      `content_hash: ""`,
+      `token_count: 0`,
+      `file_path: ""`,
+      `status: "active"`,
+      `project: "PROJ-001"`,
+      `phase_type: "execution"`,
+      `intent: "Deliver core features"`,
+      `steering: null`,
+      `work_items:`,
+      `  - "WI-001"`,
+      `  - "WI-002"`,
+    ].join("\n") + "\n";
+
+    writeYaml(path.join(ideateDir, "phases"), "PHASE-001.yaml", yaml);
+
+    const stats = rebuildIndex(db, drizzle(db), ideateDir);
+
+    expect(stats.parse_errors.filter((e) => e.includes("PHASE-001"))).toHaveLength(0);
+
+    const node = db
+      .prepare(`SELECT * FROM nodes WHERE id = 'PHASE-001' AND type = 'phase'`)
+      .get() as { id: string; type: string } | undefined;
+    expect(node).toBeDefined();
+    expect(node!.type).toBe("phase");
+
+    const row = db
+      .prepare(`SELECT * FROM phases WHERE id = 'PHASE-001'`)
+      .get() as { id: string; project: string; phase_type: string; intent: string } | undefined;
+    expect(row).toBeDefined();
+    expect(row!.project).toBe("PROJ-001");
+    expect(row!.phase_type).toBe("execution");
+    expect(row!.intent).toBe("Deliver core features");
+  });
+});
+
+describe("rebuildIndex — phase with project field creates belongs_to_project edge", () => {
+  it("creates a belongs_to_project edge from PHASE-001 to PROJ-001", () => {
+    const db = freshDb();
+    const ideateDir = makeIdeateDir(tmpDir);
+
+    const yaml = [
+      `id: "PHASE-002"`,
+      `type: "phase"`,
+      `cycle_created: 1`,
+      `cycle_modified: null`,
+      `content_hash: ""`,
+      `token_count: 0`,
+      `file_path: ""`,
+      `status: "active"`,
+      `project: "PROJ-001"`,
+      `phase_type: "planning"`,
+      `intent: "Plan the work"`,
+      `steering: null`,
+      `work_items: []`,
+    ].join("\n") + "\n";
+
+    writeYaml(path.join(ideateDir, "phases"), "PHASE-002.yaml", yaml);
+
+    rebuildIndex(db, drizzle(db), ideateDir);
+
+    const edge = db
+      .prepare(
+        `SELECT * FROM edges WHERE source_id = 'PHASE-002' AND target_id = 'PROJ-001' AND edge_type = 'belongs_to_project'`
+      )
+      .get() as { source_id: string; target_id: string; edge_type: string } | undefined;
+    expect(edge).toBeDefined();
+    expect(edge!.edge_type).toBe("belongs_to_project");
+  });
+});
+
+describe("rebuildIndex — work item with phase field creates belongs_to_phase edge", () => {
+  it("creates a belongs_to_phase edge from WI-001 to PHASE-001", () => {
+    const db = freshDb();
+    const ideateDir = makeIdeateDir(tmpDir);
+
+    writeYaml(
+      path.join(ideateDir, "work-items"),
+      "WI-003.yaml",
+      minimalWorkItem({ id: "WI-003", title: "Phase-scoped work item", phase: "PHASE-001" })
+    );
+
+    rebuildIndex(db, drizzle(db), ideateDir);
+
+    const edge = db
+      .prepare(
+        `SELECT * FROM edges WHERE source_id = 'WI-003' AND target_id = 'PHASE-001' AND edge_type = 'belongs_to_phase'`
+      )
+      .get() as { source_id: string; target_id: string; edge_type: string } | undefined;
+    expect(edge).toBeDefined();
+    expect(edge!.edge_type).toBe("belongs_to_phase");
+  });
+
+  it("journal_entry with phase field does NOT produce a belongs_to_phase edge", () => {
+    const db = freshDb();
+    const ideateDir = makeIdeateDir(tmpDir);
+
+    const yaml = [
+      `id: "JE-001"`,
+      `type: "journal_entry"`,
+      `cycle_created: 1`,
+      `cycle_modified: null`,
+      `content_hash: ""`,
+      `token_count: 0`,
+      `file_path: ""`,
+      `status: "active"`,
+      `phase: "PHASE-001"`,
+      `date: "2026-01-01"`,
+      `title: "Day one"`,
+      `work_item: null`,
+      `content: "Some content"`,
+    ].join("\n") + "\n";
+
+    writeYaml(path.join(ideateDir, "cycles"), "JE-001.yaml", yaml);
+
+    rebuildIndex(db, drizzle(db), ideateDir);
+
+    const edge = db
+      .prepare(
+        `SELECT * FROM edges WHERE source_id = 'JE-001' AND edge_type = 'belongs_to_phase'`
+      )
+      .get() as { source_id: string } | undefined;
+    expect(edge).toBeUndefined();
   });
 });

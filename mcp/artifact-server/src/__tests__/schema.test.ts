@@ -76,7 +76,7 @@ describe("createSchema — nodes table", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Extension tables — 12 tables, each with FK to nodes(id)
+// Extension tables — 15 tables, each with FK to nodes(id)
 // ---------------------------------------------------------------------------
 
 describe("createSchema — extension tables", () => {
@@ -94,15 +94,17 @@ describe("createSchema — extension tables", () => {
     "metrics_events",
     "document_artifacts",
     "interview_questions",
+    "projects",
+    "phases",
   ];
 
-  it("creates all 13 extension tables", () => {
+  it("creates all 15 extension tables", () => {
     const db = freshDb();
     const tables = tableNames(db);
     for (const name of extensionTables) {
       expect(tables, `expected extension table '${name}' to exist`).toContain(name);
     }
-    expect(extensionTables.length).toBe(13);
+    expect(extensionTables.length).toBe(15);
   });
 
   it("does not create an interview_responses table", () => {
@@ -350,18 +352,18 @@ describe("createSchema — node_file_refs table", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Schema version — CURRENT_SCHEMA_VERSION is 1
+// Schema version — CURRENT_SCHEMA_VERSION is 3
 // ---------------------------------------------------------------------------
 
 describe("createSchema — schema version", () => {
-  it("CURRENT_SCHEMA_VERSION is 1", () => {
-    expect(CURRENT_SCHEMA_VERSION).toBe(1);
+  it("CURRENT_SCHEMA_VERSION is 3", () => {
+    expect(CURRENT_SCHEMA_VERSION).toBe(3);
   });
 
-  it("sets user_version = 1 after createSchema", () => {
+  it("sets user_version = 3 after createSchema", () => {
     const db = freshDb();
     const version = db.pragma("user_version", { simple: true }) as number;
-    expect(version).toBe(1);
+    expect(version).toBe(3);
   });
 });
 
@@ -592,7 +594,7 @@ describe("checkSchemaVersion", () => {
     try {
       {
         const db = new Database(dbPath);
-        db.pragma("user_version = 5"); // stale — current is 1
+        db.pragma("user_version = 5"); // stale — current is 2
         db.close();
       }
 
@@ -616,9 +618,9 @@ describe("checkSchemaVersion", () => {
     }
   });
 
-  it("returns true when user_version matches CURRENT_SCHEMA_VERSION (1)", () => {
+  it("returns true when user_version matches CURRENT_SCHEMA_VERSION (3)", () => {
     const db = new Database(":memory:");
-    db.pragma(`user_version = ${CURRENT_SCHEMA_VERSION}`); // 1
+    db.pragma(`user_version = ${CURRENT_SCHEMA_VERSION}`); // 3
     const result = checkSchemaVersion(db, "/nonexistent/path/not/used.db");
     expect(result).toBe(true);
     db.close();
@@ -676,6 +678,138 @@ describe("EDGE_TYPE_REGISTRY — informed_by entry", () => {
 
   it("informed_by has yaml_field set", () => {
     expect(EDGE_TYPE_REGISTRY.informed_by.yaml_field).toBe("informed_by");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// projects table
+// ---------------------------------------------------------------------------
+
+describe("createSchema — projects table", () => {
+  it("projects table exists", () => {
+    const db = freshDb();
+    const tables = tableNames(db);
+    expect(tables).toContain("projects");
+  });
+
+  it("has expected columns: id, intent, scope_boundary, success_criteria, appetite, steering, horizon, status", () => {
+    const db = freshDb();
+    const cols = columnNames(db, "projects");
+    for (const col of ["id", "intent", "scope_boundary", "success_criteria", "appetite", "steering", "horizon", "status"]) {
+      expect(cols, `expected projects to have column '${col}'`).toContain(col);
+    }
+  });
+
+  it("ON DELETE CASCADE: deleting a node cascades to projects row", () => {
+    const db = freshDb();
+    db.pragma("foreign_keys = ON");
+    db.prepare(
+      `INSERT INTO nodes (id, type, content_hash, file_path) VALUES ('PRJ-001', 'project', 'hash-prj', '/tmp/prj-001.yaml')`
+    ).run();
+    db.prepare(
+      `INSERT INTO projects (id, intent, status) VALUES ('PRJ-001', 'Build something', 'active')`
+    ).run();
+    const before = db.prepare(`SELECT id FROM projects WHERE id = 'PRJ-001'`).get();
+    expect(before).toBeDefined();
+    db.prepare(`DELETE FROM nodes WHERE id = 'PRJ-001'`).run();
+    const after = db.prepare(`SELECT id FROM projects WHERE id = 'PRJ-001'`).get();
+    expect(after).toBeUndefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// phases table
+// ---------------------------------------------------------------------------
+
+describe("createSchema — phases table", () => {
+  it("phases table exists", () => {
+    const db = freshDb();
+    const tables = tableNames(db);
+    expect(tables).toContain("phases");
+  });
+
+  it("has expected columns: id, project, phase_type, intent, steering, status, work_items", () => {
+    const db = freshDb();
+    const cols = columnNames(db, "phases");
+    for (const col of ["id", "project", "phase_type", "intent", "steering", "status", "work_items"]) {
+      expect(cols, `expected phases to have column '${col}'`).toContain(col);
+    }
+  });
+
+  it("creates idx_phases_project index on phases", () => {
+    const db = freshDb();
+    const indexes = indexNames(db, "phases");
+    expect(indexes).toContain("idx_phases_project");
+  });
+
+  it("ON DELETE CASCADE: deleting a node cascades to phases row", () => {
+    const db = freshDb();
+    db.pragma("foreign_keys = ON");
+    db.prepare(
+      `INSERT INTO nodes (id, type, content_hash, file_path) VALUES ('PH-001', 'phase', 'hash-ph', '/tmp/ph-001.yaml')`
+    ).run();
+    db.prepare(
+      `INSERT INTO phases (id, project, phase_type, intent, status) VALUES ('PH-001', 'PRJ-001', 'execute', 'Build it', 'active')`
+    ).run();
+    const before = db.prepare(`SELECT id FROM phases WHERE id = 'PH-001'`).get();
+    expect(before).toBeDefined();
+    db.prepare(`DELETE FROM nodes WHERE id = 'PH-001'`).run();
+    const after = db.prepare(`SELECT id FROM phases WHERE id = 'PH-001'`).get();
+    expect(after).toBeUndefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// EDGE_TYPES — belongs_to_project and belongs_to_phase
+// ---------------------------------------------------------------------------
+
+describe("EDGE_TYPES — belongs_to_project and belongs_to_phase", () => {
+  it("EDGE_TYPES includes belongs_to_project", () => {
+    expect(EDGE_TYPES).toContain("belongs_to_project");
+  });
+
+  it("EDGE_TYPES includes belongs_to_phase", () => {
+    expect(EDGE_TYPES).toContain("belongs_to_phase");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// EDGE_TYPE_REGISTRY — belongs_to_project and belongs_to_phase entries
+// ---------------------------------------------------------------------------
+
+describe("EDGE_TYPE_REGISTRY — belongs_to_project entry", () => {
+  it("belongs_to_project entry exists in EDGE_TYPE_REGISTRY", () => {
+    expect(EDGE_TYPE_REGISTRY).toHaveProperty("belongs_to_project");
+  });
+
+  it("belongs_to_project has correct source_types", () => {
+    expect(EDGE_TYPE_REGISTRY.belongs_to_project.source_types).toEqual(["phase"]);
+  });
+
+  it("belongs_to_project has correct target_types", () => {
+    expect(EDGE_TYPE_REGISTRY.belongs_to_project.target_types).toEqual(["project"]);
+  });
+
+  it("belongs_to_project has yaml_field = 'project'", () => {
+    expect(EDGE_TYPE_REGISTRY.belongs_to_project.yaml_field).toBe("project");
+  });
+});
+
+describe("EDGE_TYPE_REGISTRY — belongs_to_phase entry", () => {
+  it("belongs_to_phase entry exists in EDGE_TYPE_REGISTRY", () => {
+    expect(EDGE_TYPE_REGISTRY).toHaveProperty("belongs_to_phase");
+  });
+
+  it("belongs_to_phase has correct source_types", () => {
+    expect(EDGE_TYPE_REGISTRY.belongs_to_phase.source_types).toEqual(["work_item"]);
+  });
+
+  it("belongs_to_phase has correct target_types", () => {
+    expect(EDGE_TYPE_REGISTRY.belongs_to_phase.target_types).toEqual(["phase"]);
+  });
+
+  it("belongs_to_phase has yaml_field = 'phase'", () => {
+    expect(EDGE_TYPE_REGISTRY.belongs_to_phase.yaml_field).toBe("phase");
   });
 });
 

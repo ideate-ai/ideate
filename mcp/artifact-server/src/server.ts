@@ -179,7 +179,7 @@ export async function routeToolCall(
 ): Promise<ToolCallResult> {
   // --- Dormant-safe tools: handle before requiring full ctx ---
 
-  if (name === "ideate_bootstrap_project") {
+  if (name === "ideate_bootstrap_workspace") {
     if (state.ctx) {
       const result = await handleToolFn(state.ctx, name, args);
       return { content: [{ type: "text", text: result }] };
@@ -196,7 +196,7 @@ export async function routeToolCall(
     }
   }
 
-  if (name === "ideate_get_project_status" && !state.ctx) {
+  if (name === "ideate_get_workspace_status" && !state.ctx) {
     const result = JSON.stringify({
       status: "not_initialized",
       message: "No .ideate/ directory found. Run /ideate:init to initialize the project.",

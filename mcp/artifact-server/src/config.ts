@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
 import path from "path";
 
-export const CONFIG_SCHEMA_VERSION = 2;
+export const CONFIG_SCHEMA_VERSION = 3;
 
 /**
  * Schema for .ideate/config.json
@@ -11,6 +11,8 @@ export interface IdeateConfigJson {
   project_name?: string;
   agent_budgets?: Record<string, number>;
   model_overrides?: Record<string, string>;
+  circuit_breaker_threshold?: number;
+  default_appetite?: number;
   ppr?: {
     alpha?: number;
     max_iterations?: number;
@@ -19,6 +21,16 @@ export interface IdeateConfigJson {
     default_token_budget?: number;
   };
 }
+
+/**
+ * Default circuit_breaker_threshold used when the field is absent from config.json.
+ */
+export const DEFAULT_CIRCUIT_BREAKER_THRESHOLD = 5;
+
+/**
+ * Default default_appetite used when the field is absent from config.json.
+ */
+export const DEFAULT_APPETITE = 6;
 
 /**
  * Default agent_budgets used when the field is absent from config.json.
@@ -77,6 +89,8 @@ export const IDEATE_SUBDIRS = [
   "cycles",
   "domains",
   "metrics",
+  "projects",
+  "phases",
 ] as const;
 
 /**
@@ -198,9 +212,9 @@ export function readRawConfig(ideateDir: string): IdeateConfigJson {
  * @returns Config object with defaults applied for missing fields
  */
 export function getConfigWithDefaults(ideateDir: string): Required<
-  Pick<IdeateConfigJson, "schema_version" | "agent_budgets" | "model_overrides" | "ppr">
+  Pick<IdeateConfigJson, "schema_version" | "agent_budgets" | "model_overrides" | "ppr" | "circuit_breaker_threshold" | "default_appetite">
 > &
-  Omit<IdeateConfigJson, "agent_budgets" | "model_overrides" | "ppr"> {
+  Omit<IdeateConfigJson, "agent_budgets" | "model_overrides" | "ppr" | "circuit_breaker_threshold" | "default_appetite"> {
   const configPath = path.join(ideateDir, "config.json");
   let raw: IdeateConfigJson = { schema_version: CONFIG_SCHEMA_VERSION };
 
@@ -235,10 +249,17 @@ export function getConfigWithDefaults(ideateDir: string): Required<
     ...(raw.model_overrides ?? {}),
   };
 
+  const circuit_breaker_threshold =
+    raw.circuit_breaker_threshold ?? DEFAULT_CIRCUIT_BREAKER_THRESHOLD;
+
+  const default_appetite = raw.default_appetite ?? DEFAULT_APPETITE;
+
   return {
     ...raw,
     agent_budgets,
     model_overrides,
     ppr,
+    circuit_breaker_threshold,
+    default_appetite,
   };
 }

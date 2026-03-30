@@ -177,6 +177,7 @@ function buildExtensionRow(table: string, doc: Row): Row {
         criteria: toJsonOrNull(doc.criteria),
         module: toStrOrNull(doc.module),
         domain: toStrOrNull(doc.domain),
+        phase: toStrOrNull(doc.phase),
         notes: toStrOrNull(doc.notes),
       };
 
@@ -312,6 +313,27 @@ function buildExtensionRow(table: string, doc: Row): Row {
         rationale:    toStrOrNull(doc.rationale),
         timestamp:    toStrOrNull(doc.timestamp) ?? new Date().toISOString(),
         status:       toStrOrNull(doc.status) ?? "resolved",
+      };
+
+    case "projects":
+      return {
+        intent:           toStrOrNull(doc.intent) ?? "",
+        scope_boundary:   toJsonOrNull(doc.scope_boundary),
+        success_criteria: toJsonOrNull(doc.success_criteria),
+        appetite:         toNumOrNull(doc.appetite),
+        steering:         toStrOrNull(doc.steering),
+        horizon:          toJsonOrNull(doc.horizon),
+        status:           toStrOrNull(doc.status) ?? "",
+      };
+
+    case "phases":
+      return {
+        project:    toStrOrNull(doc.project) ?? "",
+        phase_type: toStrOrNull(doc.phase_type) ?? "",
+        intent:     toStrOrNull(doc.intent) ?? "",
+        steering:   toStrOrNull(doc.steering),
+        status:     toStrOrNull(doc.status) ?? "",
+        work_items: toJsonOrNull(doc.work_items),
       };
 
     default:

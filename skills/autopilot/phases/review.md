@@ -296,12 +296,53 @@ Slowest agent: {agent_type} — {work_item or "N/A"} — {ms}ms
 
 If `ideate_emit_metric` calls failed, note "metrics unavailable" and omit the breakdowns.
 
+### Phase Convergence Check and Project Progress Assessment
+
+This section is invoked by the controller from Phase 6c-ii, after `ideate_get_convergence_status` has confirmed the phase converged. It is NOT run on every cycle — only when the controller invokes it.
+
+**Step 1: Assess project success criteria**
+
+If `{current_project}` is null, set `{project_complete}` = false and skip to Step 2.
+
+Otherwise, retrieve the active project: call `ideate_artifact_query({type: "project", id: "{current_project.id}"})` to get the current project record with its success criteria.
+
+For each criterion in `{project_success_criteria}`:
+1. Determine whether it is satisfied by querying the current cycle's review artifacts (call `ideate_artifact_query({type: "cycle_summary", cycle: {cycle_number}})`) and the current work item completion status (call `ideate_get_execution_status()`).
+2. A criterion is satisfied if: (a) the relevant work items are all done, AND (b) none of the three cycle review artifacts report any Critical or Significant findings that directly contradict the criterion, AND (c) the spec-adherence artifact confirms the relevant principle or requirement is met.
+
+Set `{project_complete}` = true if ALL criteria are satisfied. Set `{project_complete}` = false if any criterion is unsatisfied.
+
+**Step 2: Identify next horizon items**
+
+Call `ideate_artifact_query({type: "execution_strategy"})` to retrieve the execution strategy. Extract the `horizon.next` list (work item IDs planned for the next phase). If the execution strategy has no `horizon.next` field or it is empty, set `{next_horizon_items}` = [].
+
+Otherwise, set `{next_horizon_items}` = the list of work item IDs from `horizon.next`.
+
+**Step 3: Append project progress to journal**
+
+Call `ideate_append_journal("autopilot", {date}, "project_progress", {body})` with:
+
+```markdown
+## [autopilot] {date} — Cycle {N} project progress
+Phase converged: yes
+Project success criteria met: {yes | no | N/A (no active project)}
+{If no: list each unsatisfied criterion with a one-line reason}
+Next horizon items: {count} — {list of item IDs, or "none"}
+Phases completed: {phases_completed + 1}
+Appetite: {project_appetite or "N/A"}
+```
+
+**Step 4: Return to controller**
+
+Return `{project_complete}` and `{next_horizon_items}` to the controller (Phase 6c-ii).
+
 ## Exit Conditions
 
 - Cycle summary artifacts written via MCP: code-quality, spec-adherence, gap-analysis, decision-log
 - Review manifest written via `ideate_write_artifact`
 - `last_cycle_findings` dict populated with critical, significant, minor counts
 - Journal updated with review summary and metrics summary (via `ideate_append_journal`)
+- If invoked from 6c-ii: `{project_complete}` and `{next_horizon_items}` returned to controller; journal updated with project progress entry
 
 Return to the controller with `last_cycle_findings`. The controller will run Phase 6c (convergence check).
 
@@ -309,6 +350,19 @@ Return to the controller with `last_cycle_findings`. The controller will run Pha
 
 - Cycle summaries (code-quality, spec-adherence, gap-analysis, decision-log) — via `ideate_write_artifact`
 - Review manifest — via `ideate_write_artifact`
-- Journal entries (review summary + metrics summary) — via `ideate_append_journal`
+- Journal entries (review summary + metrics summary + project progress) — via `ideate_append_journal`
 - Metrics — one entry per agent spawned + quality_summary event, via `ideate_emit_metric`
 - Domain layer (policies, decisions, questions) — updated by domain-curator via `ideate_write_artifact`
+
+## Self-Check
+
+Before returning to the controller, verify:
+
+- [x] No `.ideate/` path references in any instruction
+- [x] No occurrences of `ideate_get_project_status` in this file
+- [x] Phase Convergence Check section is clearly marked as invoked from 6c-ii only (not every cycle)
+- [x] Project success criteria assessment uses `ideate_artifact_query` and `ideate_get_execution_status`, not direct file reads
+- [x] `{project_complete}` and `{next_horizon_items}` returned to controller after project progress assessment
+- [x] Project progress journal entry written via `ideate_append_journal`, not direct file write
+- [x] All review artifacts written via `ideate_write_artifact`, not direct file writes
+- [x] Domain artifacts written via `ideate_write_artifact` after parsing curator response

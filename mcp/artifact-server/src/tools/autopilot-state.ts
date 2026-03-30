@@ -19,6 +19,9 @@ interface AutopilotState {
   last_cycle_findings: { critical: number; significant: number; minor: number } | null;
   total_items_executed: number | null;
   full_review_interval: number | null;
+  phases_completed: number;
+  current_project: string | null;
+  workspace_label: string | null;
   [key: string]: unknown;
 }
 
@@ -35,6 +38,9 @@ const STATIC_STATE_PROPERTIES = new Set([
   "last_cycle_findings",
   "total_items_executed",
   "full_review_interval",
+  "phases_completed",
+  "current_project",
+  "workspace_label",
 ]);
 
 // Pattern for dynamic cycle commit properties: cycle_NNN_start_commit, cycle_NNN_end_commit
@@ -57,6 +63,9 @@ function defaultAutopilotState(): AutopilotState {
     last_cycle_findings: null,
     total_items_executed: null,
     full_review_interval: null,
+    phases_completed: 0,
+    current_project: null,
+    workspace_label: null,
   };
 }
 

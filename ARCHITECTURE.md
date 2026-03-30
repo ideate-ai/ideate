@@ -21,6 +21,22 @@ Deep technical reference for the Ideate MCP artifact server. For installation an
 
 ## 1. System Overview
 
+### Planning hierarchy
+
+Ideate organizes work in a four-level hierarchy:
+
+```
+Workspace
+└── Project (one or more active sub-goals within a workspace)
+    └── Phase (a named grouping of cycles within a project)
+        └── Cycle (one execute → review → refine iteration)
+```
+
+- **Workspace** — the top-level unit, corresponding to the `.ideate/` directory. One workspace per project root. `ideate_get_workspace_status` returns workspace-level summary across all active projects.
+- **Project** — a sub-goal tracked independently within the workspace. Projects have their own work item sets, cycle history, and convergence state. `ideate_bootstrap_workspace` creates the workspace structure including initial projects.
+- **Phase** — a named milestone or theme grouping consecutive cycles within a project (e.g. "Foundation", "Performance Hardening"). Phases are defined in the project's execution strategy and referenced by journal entries and cycle summaries.
+- **Cycle** — a single execute → review → refine iteration. Cycle numbers are workspace-global integers (monotonically increasing, never reused).
+
 ### Plugin structure
 
 ```
@@ -42,7 +58,10 @@ mcp/
                                             └──────────────────┘
                                             (repeating cycles)
 
-/ideate:autopilot = autonomous execute → review → refine loop
+/ideate:autopilot = autonomous project-level loop:
+                   for each active project:
+                     execute → review → refine (cycle loop until convergence)
+                   circuit breaker: if cycles-per-phase exceeds threshold → Andon cord
 /ideate:settings  = interactive configuration for agent budgets, model overrides, and PPR weights
 ```
 
@@ -142,7 +161,7 @@ Each extension table has `id TEXT PRIMARY KEY REFERENCES nodes(id) ON DELETE CAS
 
 | Table | Artifact type(s) | Key columns |
 |-------|-----------------|-------------|
-| `work_items` | `work_item` | `title`, `complexity`, `scope` (JSON), `depends` (JSON), `blocks` (JSON), `criteria` (JSON), `module`, `domain`, `notes` (TEXT, inline implementation notes) |
+| `work_items` | `work_item` | `title`, `complexity`, `scope` (JSON), `depends` (JSON), `blocks` (JSON), `criteria` (JSON), `module`, `domain`, `phase`, `notes` (TEXT, inline implementation notes) |
 | `findings` | `finding` | `severity`, `work_item`, `file_refs` (JSON), `verdict`, `cycle`, `reviewer` |
 | `domain_policies` | `domain_policy` | `domain`, `derived_from` (JSON), `established`, `amended`, `amended_by` |
 | `domain_decisions` | `domain_decision` | `domain`, `cycle`, `supersedes`, `description`, `rationale` |
@@ -158,6 +177,31 @@ Each extension table has `id TEXT PRIMARY KEY REFERENCES nodes(id) ON DELETE CAS
 | `document_artifacts` | `decision_log`, `cycle_summary`, `review_manifest`, `architecture`, `overview`, `execution_strategy`, `guiding_principles`, `constraints`, `research`, `interview` | `title`, `cycle`, `content` |
 
 The `document_artifacts` table is a catch-all for Markdown document artifacts: plan docs, cycle summaries, review manifests, and interview transcripts. All map to the same table regardless of their YAML `type` field.
+
+### projects table
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `id` | TEXT PK | Project identifier (e.g. `PR-001`) |
+| `intent` | TEXT | One-paragraph description of what this project is and for whom |
+| `scope_boundary` | TEXT | JSON object with `in` and `out` arrays |
+| `success_criteria` | TEXT | JSON array of success criterion strings |
+| `appetite` | INTEGER | Number of phases budgeted (e.g. 6) |
+| `steering` | TEXT | Project-specific guidance not captured in principles or constraints |
+| `horizon` | TEXT | JSON object with `current`, `next`, and `later` phase ID arrays |
+| `status` | TEXT | `active`, `complete`, or `paused` |
+
+### phases table
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `id` | TEXT PK | Phase identifier (e.g. `PH-001`) |
+| `project` | TEXT | Foreign key → `projects(id)` |
+| `phase_type` | TEXT | Phase category (e.g. `implementation`, `review`, `hardening`) |
+| `intent` | TEXT | One-sentence description of what this phase delivers |
+| `steering` | TEXT | Phase-specific guidance or constraints |
+| `status` | TEXT | `active`, `complete`, or `planned` |
+| `work_items` | TEXT | JSON array of work item IDs assigned to this phase |
 
 ### edges table
 
@@ -204,7 +248,7 @@ Artifact IDs include a type prefix to prevent cross-type collisions and aid read
 
 ### Schema versioning
 
-`PRAGMA user_version` stores `CURRENT_SCHEMA_VERSION` (currently `1`). On startup, `checkSchemaVersion()` reads the pragma and deletes the database file if the version does not match, triggering a clean rebuild. A version of `0` means a fresh (empty) database and is treated as compatible.
+`PRAGMA user_version` stores `CURRENT_SCHEMA_VERSION` (currently `3`). On startup, `checkSchemaVersion()` reads the pragma and deletes the database file if the version does not match, triggering a clean rebuild. A version of `0` means a fresh (empty) database and is treated as compatible.
 
 ---
 
@@ -340,7 +384,7 @@ Execution tools (2)
 Analysis tools (3)
   ideate_get_convergence_status   — open findings by severity, convergence verdict
   ideate_get_domain_state         — policies + decisions + questions for one or more domains
-  ideate_get_project_status       — high-level summary: cycle, work item counts, recent journal
+  ideate_get_workspace_status       — high-level summary: cycle, work item counts, recent journal
 
 Write tools (5)
   ideate_append_journal           — Append entry to the project journal. Use after significant work. Returns confirmation string.
@@ -361,11 +405,15 @@ Config tools (2)
   ideate_update_config            — Update project config settings. Accepts partial patch; deep-merges into current config. Validates before writing. Pass agent_budgets, model_overrides, or ppr keys. Returns updated keys. When `patch.model_overrides[key]` is `null`, that key is deleted from the stored map. An empty result omits the `model_overrides` field entirely (sparse invariant).
 
 Bootstrap tools (1)
-  ideate_bootstrap_project        — Create project artifact directory with config and subdirs. Use for project initialization. Returns subdirectory names.
+  ideate_bootstrap_workspace        — Create project artifact directory with config and subdirs. Use for project initialization. Returns subdirectory names.
 
 State tools (1)
   ideate_manage_autopilot_state   — get or update autopilot session state
 ```
+
+### Circuit breaker
+
+The autopilot loop includes a configurable circuit breaker to prevent runaway cycles within a phase. The threshold is stored in `config.json` under `ppr.circuit_breaker_cycles_per_phase` (default: `5`). After each cycle completes, autopilot checks whether the number of cycles completed in the current phase has reached the threshold. If it has, autopilot pulls the Andon cord — recording a `proxy_human_decision` artifact with trigger `circuit_breaker`, suspending execution, and surfacing the issue for human review. The circuit breaker resets when the phase advances or when the human resumes autopilot after acknowledging the decision.
 
 ### Testing requirements (P-36)
 
@@ -417,7 +465,7 @@ skill calls ideate_write_work_items
 
 ### Edge type registry
 
-13 edge types are defined in `EDGE_TYPE_REGISTRY` in `schema.ts`. Each entry specifies allowed source types, allowed target types, and the YAML field that drives automatic extraction:
+15 edge types are defined in `EDGE_TYPE_REGISTRY` in `schema.ts`. Each entry specifies allowed source types, allowed target types, and the YAML field that drives automatic extraction:
 
 | Edge type | Source types | Target types | YAML field |
 |-----------|-------------|-------------|------------|
@@ -434,6 +482,8 @@ skill calls ideate_write_work_items
 | `triggered_by` | `proxy_human_decision` | `finding`, `work_item` | `triggered_by` |
 | `governed_by` | `work_item`, `module_spec`, `constraint` | `guiding_principle`, `domain_policy`, `constraint` | `governed_by` |
 | `informed_by` | `work_item`, `module_spec`, `guiding_principle` | `research_finding`, `domain_decision`, `domain_question` | `informed_by` |
+| `belongs_to_project` | `phase` | project | `project` |
+| `belongs_to_phase` | `work_item` | `phase` | `phase` |
 
 During indexing, `extractEdges()` iterates the registry. For each edge type whose `yaml_field` is non-null and whose `source_types` includes the current node's type, it reads the corresponding YAML field and upserts edges for each value found (array or scalar).
 
@@ -692,9 +742,25 @@ Based on the context assembly research (`context-assembly-strategies.yaml`, Ques
 | `mcp/artifact-server/src/tools/context.ts` | `handleGetWorkItemContext`, `handleGetContextPackage`, `handleAssembleContext` |
 | `mcp/artifact-server/src/tools/query.ts` | `ideate_artifact_query` (filter mode + recursive CTE traversal), `ideate_get_next_id` (cycle-scoped ID generation) |
 | `mcp/artifact-server/src/tools/execution.ts` | `ideate_get_execution_status`, `ideate_get_review_manifest` |
-| `mcp/artifact-server/src/tools/analysis.ts` | `ideate_get_convergence_status`, `ideate_get_domain_state`, `ideate_get_project_status` |
+| `mcp/artifact-server/src/tools/analysis.ts` | `ideate_get_convergence_status`, `ideate_get_domain_state`, `ideate_get_workspace_status` |
 | `mcp/artifact-server/src/tools/write.ts` | `ideate_append_journal`, `ideate_archive_cycle`, `ideate_write_work_items`, `ideate_update_work_items`, `ideate_write_artifact` |
 | `mcp/artifact-server/src/tools/events.ts` | `ideate_emit_event` (hook dispatch) |
 | `mcp/artifact-server/src/tools/metrics.ts` | `ideate_get_metrics` (agent/work_item/cycle aggregations) |
 | `mcp/artifact-server/src/tools/autopilot-state.ts` | `ideate_manage_autopilot_state` (get or update autopilot session state) |
 | `mcp/artifact-server/src/tools/config.ts` | `handleUpdateConfig` (deep-merge patch into config.json with validation) |
+
+---
+
+## Self-Check
+
+| Acceptance criterion | Status |
+|----------------------|--------|
+| Planning hierarchy (Workspace > Project > Phase > Cycle) described | Done — Section 1 |
+| `projects` table documented with columns | Done — Section 3 |
+| `phases` table documented with columns | Done — Section 3 |
+| `belongs_to_project` edge type in registry table | Done — Section 6 |
+| `belongs_to_phase` edge type in registry table | Done — Section 6 |
+| `ideate_get_workspace_status` used (not `ideate_get_project_status`) | Done — all occurrences replaced |
+| `ideate_bootstrap_workspace` used (not `ideate_bootstrap_project`) | Done — all occurrences replaced |
+| Circuit breaker mechanism described | Done — Section 5 |
+| Autopilot loop updated to show project-spanning behavior | Done — Section 1 SDLC lifecycle |

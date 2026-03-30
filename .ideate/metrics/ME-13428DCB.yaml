@@ -1,0 +1,24 @@
+id: ME-13428DCB
+type: metrics_event
+event_name: unknown
+timestamp: 2026-03-30T15:00:00Z
+skill: review
+phase: 4a
+cycle: null
+agent_type: gap-analyst
+model: sonnet
+work_item: null
+wall_clock_ms: 296400
+turns_used: 82
+context_files_read: []
+input_tokens: 135782
+output_tokens: null
+cache_read_tokens: null
+cache_write_tokens: null
+mcp_tools_called:
+  - ideate_get_context_package
+finding_count: 14
+finding_severities:
+  critical: 3
+  significant: 4
+  minor: 5

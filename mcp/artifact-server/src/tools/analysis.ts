@@ -301,10 +301,10 @@ export async function handleGetDomainState(
 }
 
 // ---------------------------------------------------------------------------
-// ideate_get_project_status
+// ideate_get_workspace_status
 // ---------------------------------------------------------------------------
 
-export async function handleGetProjectStatus(
+export async function handleGetWorkspaceStatus(
   ctx: ToolContext,
   args: Record<string, unknown>
 ): Promise<string> {
@@ -374,7 +374,7 @@ export async function handleGetProjectStatus(
   // Build dashboard
   const lines: string[] = [];
 
-  lines.push("# Project Status Dashboard");
+  lines.push("# Workspace Status Dashboard");
   lines.push("");
   lines.push(`**Current cycle**: ${cycleNumber ?? "unknown"}`);
   lines.push("");
@@ -411,6 +411,42 @@ export async function handleGetProjectStatus(
     }
   } else {
     lines.push("None.");
+  }
+
+  // Active project
+  const activeProject = ctx.db.prepare(`
+    SELECT p.id, p.intent, p.appetite
+    FROM projects p
+    JOIN nodes n ON n.id = p.id
+    WHERE n.status = 'active'
+    ORDER BY n.id
+    LIMIT 1
+  `).get() as { id: string; intent: string; appetite: number | null } | undefined;
+
+  if (activeProject) {
+    lines.push("");
+    lines.push("## Active Project");
+    lines.push(`- ID: ${activeProject.id}`);
+    lines.push(`- Intent: ${activeProject.intent}`);
+    lines.push(`- Appetite: ${activeProject.appetite ?? "unset"}`);
+  }
+
+  // Active phase
+  const activePhase = ctx.db.prepare(`
+    SELECT p.id, p.phase_type, p.intent
+    FROM phases p
+    JOIN nodes n ON n.id = p.id
+    WHERE n.status = 'active'
+    ORDER BY n.id
+    LIMIT 1
+  `).get() as { id: string; phase_type: string; intent: string } | undefined;
+
+  if (activePhase) {
+    lines.push("");
+    lines.push("## Current Phase");
+    lines.push(`- ID: ${activePhase.id}`);
+    lines.push(`- Type: ${activePhase.phase_type}`);
+    lines.push(`- Intent: ${activePhase.intent}`);
   }
 
   return lines.join("\n");

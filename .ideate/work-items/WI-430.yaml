@@ -1,7 +1,7 @@
 id: WI-430
 type: work_item
 title: "Fix minor review findings: README deprecated scripts, report.sh deprecation, deletePhase style"
-status: pending
+status: done
 complexity: small
 scope:
   - path: README.md
@@ -59,7 +59,6 @@ notes: |-
   Place at the top of the script, after the shebang line, replacing any existing content (or before it if the script has a `false; then` guard like the other deprecated scripts).
 resolution: null
 cycle_created: 6
-cycle_modified: null
-content_hash: 4cd9c4f42fdeb0ef539e0b752504175ab0a1a26b2efa7df199d415531213f29b
-token_count: 635
-file_path: /Users/dan/code/ideate/.ideate/work-items/WI-430.yaml
+cycle_modified: 5
+content_hash: cf1834df3ffb7608ac2e0b7897634c8769baaf549dcb32bffaf01aaf6f8c1409
+token_count: 633

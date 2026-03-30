@@ -29,6 +29,7 @@ export const workItems = sqliteTable("work_items", {
   criteria: text("criteria"),
   module: text("module"),
   domain: text("domain"),
+  phase: text("phase"),
   notes: text("notes"),
 });
 
@@ -166,6 +167,27 @@ export const proxyHumanDecisions = sqliteTable("proxy_human_decisions", {
   status: text("status").notNull(),
 });
 
+export const projects = sqliteTable("projects", {
+  id: text("id").primaryKey().references(() => nodes.id, { onDelete: "cascade" }),
+  intent: text("intent").notNull(),
+  scope_boundary: text("scope_boundary"),
+  success_criteria: text("success_criteria"),
+  appetite: integer("appetite"),
+  steering: text("steering"),
+  horizon: text("horizon"),
+  status: text("status").notNull(),
+});
+
+export const phases = sqliteTable("phases", {
+  id: text("id").primaryKey().references(() => nodes.id, { onDelete: "cascade" }),
+  project: text("project").notNull(),
+  phase_type: text("phase_type").notNull(),
+  intent: text("intent").notNull(),
+  steering: text("steering"),
+  status: text("status").notNull(),
+  work_items: text("work_items"),
+});
+
 // ---------------------------------------------------------------------------
 // edges — universal edge table (no source_type / target_type)
 // ---------------------------------------------------------------------------
@@ -209,7 +231,9 @@ export type AnyTable =
   | typeof metricsEvents
   | typeof documentArtifacts
   | typeof interviewQuestions
-  | typeof proxyHumanDecisions;
+  | typeof proxyHumanDecisions
+  | typeof projects
+  | typeof phases;
 
 // ---------------------------------------------------------------------------
 // TYPE_TO_EXTENSION_TABLE — maps YAML type string → Drizzle extension table
@@ -242,4 +266,6 @@ export const TYPE_TO_EXTENSION_TABLE: Record<string, AnyTable> = {
   domain_index:       documentArtifacts,
   interview_question: interviewQuestions,
   proxy_human_decision: proxyHumanDecisions,
+  project:            projects,
+  phase:              phases,
 };

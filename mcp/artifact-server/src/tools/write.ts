@@ -23,6 +23,8 @@ import {
   type MetricsEventRow,
   type InterviewQuestionRow,
   type EdgeRow,
+  type ProjectRow,
+  type PhaseRow,
   upsertNode,
   upsertWorkItem,
   upsertJournalEntry,
@@ -39,6 +41,8 @@ import {
   upsertMetricsEvent,
   upsertInterviewQuestion,
   insertEdge,
+  upsertProject,
+  upsertPhase as upsertPhaseRow,
 } from "../db-helpers.js";
 
 // ---------------------------------------------------------------------------
@@ -332,6 +336,7 @@ interface WorkItemInput {
   status?: string;
   resolution?: string | null;
   cycle_created?: number | null;
+  phase?: string | null;
 }
 
 export async function handleWriteWorkItems(
@@ -545,6 +550,7 @@ export async function handleWriteWorkItems(
       blocks: item.blocks ?? [],
       criteria: item.criteria ?? [],
       domain: item.domain ?? null,
+      phase: item.phase ?? null,
       notes: notesContent,
       resolution: item.resolution !== undefined ? item.resolution : null,
       cycle_created: itemCycleCreated,
@@ -608,6 +614,7 @@ export async function handleWriteWorkItems(
           criteria: item.criteria ? JSON.stringify(item.criteria) : null,
           module: null,
           domain: item.domain ?? null,
+          phase: item.phase ?? null,
           notes: notesContent,
         };
 
@@ -726,6 +733,10 @@ function resolveArtifactPath(ideateDir: string, type: string, id: string, cycle?
       return path.join(ideateDir, "interviews", `${id}.yaml`);
     case "research":
       return path.join(ideateDir, "steering", "research", `${id}.yaml`);
+    case "project":
+      return path.join(ideateDir, "projects", `${id}.yaml`);
+    case "phase":
+      return path.join(ideateDir, "phases", `${id}.yaml`);
     default:
       return path.join(ideateDir, type, `${id}.yaml`);
   }
@@ -999,6 +1010,29 @@ export async function handleWriteArtifact(
           seq: (content.seq as number) ?? 0,
         };
         upsertInterviewQuestion(ctx.drizzleDb, iqRow);
+      } else if (type === "project") {
+        const row: ProjectRow = {
+          id,
+          intent: (content.intent as string) ?? "",
+          scope_boundary: content.scope_boundary ? JSON.stringify(content.scope_boundary) : null,
+          success_criteria: content.success_criteria ? JSON.stringify(content.success_criteria) : null,
+          appetite: (content.appetite as number | null) ?? null,
+          steering: (content.steering as string | null) ?? null,
+          horizon: content.horizon ? JSON.stringify(content.horizon) : null,
+          status: (content.status as string) ?? "active",
+        };
+        upsertProject(ctx.drizzleDb, row);
+      } else if (type === "phase") {
+        const row: PhaseRow = {
+          id,
+          project: (content.project as string) ?? "",
+          phase_type: (content.phase_type as string) ?? "implementation",
+          intent: (content.intent as string) ?? "",
+          steering: (content.steering as string | null) ?? null,
+          status: (content.status as string) ?? "pending",
+          work_items: content.work_items ? JSON.stringify(content.work_items) : null,
+        };
+        upsertPhaseRow(ctx.drizzleDb, row);
       }
     });
     upsertPhase.exclusive();
@@ -1033,6 +1067,7 @@ interface WorkItemUpdate {
   domain?: string;
   notes?: string;
   scope?: Array<{ path: string; op: string }>;
+  phase?: string | null;
 }
 
 // Fields that must not be overwritten
@@ -1112,6 +1147,7 @@ export async function handleUpdateWorkItems(
         "domain",
         "notes",
         "scope",
+        "phase",
       ];
 
       for (const field of updatableFields) {
@@ -1199,6 +1235,7 @@ export async function handleUpdateWorkItems(
             criteria: parsedObj.criteria ? JSON.stringify(parsedObj.criteria) : null,
             module: null,
             domain: (parsedObj.domain as string | null) ?? null,
+            phase: (parsedObj.phase as string | null) ?? null,
             notes: (parsedObj.notes as string | null) ?? null,
           };
 

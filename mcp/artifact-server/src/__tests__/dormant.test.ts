@@ -174,9 +174,9 @@ describe("dormant mode", () => {
 // ---------------------------------------------------------------------------
 
 describe("dormant guards (routeToolCall)", () => {
-  it("get_project_status returns not_initialized when ctx is null", async () => {
+  it("get_workspace_status returns not_initialized when ctx is null", async () => {
     const state = createDormantState();
-    const response = await routeToolCall(state, "ideate_get_project_status", {}, stubHandleTool);
+    const response = await routeToolCall(state, "ideate_get_workspace_status", {}, stubHandleTool);
 
     expect(response.isError).toBeUndefined();
     const parsed = JSON.parse(response.content[0].text);
@@ -206,7 +206,7 @@ describe("dormant guards (routeToolCall)", () => {
     const origCwd = process.cwd;
     process.cwd = () => tmpDir;
     try {
-      const response = await routeToolCall(state, "ideate_bootstrap_project", {}, stubHandleTool);
+      const response = await routeToolCall(state, "ideate_bootstrap_workspace", {}, stubHandleTool);
       expect(response.isError).toBeUndefined();
 
       const parsed = JSON.parse(response.content[0].text);
@@ -224,12 +224,12 @@ describe("dormant guards (routeToolCall)", () => {
     process.cwd = () => tmpDir;
     try {
       // First bootstrap to initialize
-      await routeToolCall(state, "ideate_bootstrap_project", {}, stubHandleTool);
+      await routeToolCall(state, "ideate_bootstrap_workspace", {}, stubHandleTool);
       expect(state.ctx).not.toBeNull();
 
       // Second bootstrap should delegate to handleToolFn, not handleBootstrapDormant
-      const response = await routeToolCall(state, "ideate_bootstrap_project", {}, stubHandleTool);
-      expect(response.content[0].text).toBe("handled:ideate_bootstrap_project");
+      const response = await routeToolCall(state, "ideate_bootstrap_workspace", {}, stubHandleTool);
+      expect(response.content[0].text).toBe("handled:ideate_bootstrap_workspace");
     } finally {
       process.cwd = origCwd;
       state.db?.close();
@@ -242,7 +242,7 @@ describe("dormant guards (routeToolCall)", () => {
     const origCwd = process.cwd;
     process.cwd = () => tmpDir;
     try {
-      await routeToolCall(state, "ideate_bootstrap_project", {}, stubHandleTool);
+      await routeToolCall(state, "ideate_bootstrap_workspace", {}, stubHandleTool);
       expect(state.ctx).not.toBeNull();
 
       // Non-dormant tool should delegate to handleTool
@@ -250,9 +250,9 @@ describe("dormant guards (routeToolCall)", () => {
       expect(response.isError).toBeUndefined();
       expect(response.content[0].text).toBe("handled:ideate_artifact_query");
 
-      // get_project_status should also delegate (not return not_initialized)
-      const statusResponse = await routeToolCall(state, "ideate_get_project_status", {}, stubHandleTool);
-      expect(statusResponse.content[0].text).toBe("handled:ideate_get_project_status");
+      // get_workspace_status should also delegate (not return not_initialized)
+      const statusResponse = await routeToolCall(state, "ideate_get_workspace_status", {}, stubHandleTool);
+      expect(statusResponse.content[0].text).toBe("handled:ideate_get_workspace_status");
     } finally {
       process.cwd = origCwd;
       state.db?.close();

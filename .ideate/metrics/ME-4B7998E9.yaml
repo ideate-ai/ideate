@@ -1,0 +1,21 @@
+id: ME-4B7998E9
+type: metrics_event
+event_name: unknown
+timestamp: 2026-03-30T12:30:00Z
+skill: refine
+phase: 7h
+cycle: null
+agent_type: decomposer
+model: opus
+work_item: null
+wall_clock_ms: 296136
+turns_used: 31
+context_files_read: []
+input_tokens: 105735
+output_tokens: null
+cache_read_tokens: null
+cache_write_tokens: null
+mcp_tools_called:
+  - ideate_get_context_package
+  - ideate_artifact_query
+  - ideate_get_domain_state

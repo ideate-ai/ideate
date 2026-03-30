@@ -6,7 +6,7 @@ import * as fs from "fs";
 // ---------------------------------------------------------------------------
 
 // SQLite user_version for the artifact index schema. Note: CONFIG_SCHEMA_VERSION in config.ts is a separate version for the .ideate/config.json format (D-79).
-export const CURRENT_SCHEMA_VERSION = 1;
+export const CURRENT_SCHEMA_VERSION = 3;
 
 // ---------------------------------------------------------------------------
 // Edge type enumeration
@@ -26,6 +26,8 @@ export const EDGE_TYPES = [
   "triggered_by",
   "governed_by",
   "informed_by",
+  "belongs_to_project",
+  "belongs_to_phase",
 ] as const;
 
 export type EdgeType = (typeof EDGE_TYPES)[number];
@@ -120,6 +122,18 @@ export const EDGE_TYPE_REGISTRY: Record<EdgeType, EdgeTypeSpec> = {
     target_types: ["research_finding", "domain_decision", "domain_question"],
     yaml_field: "informed_by",
   },
+  belongs_to_project: {
+    description: "Phase belongs to a project",
+    source_types: ["phase"],
+    target_types: ["project"],
+    yaml_field: "project",
+  },
+  belongs_to_phase: {
+    description: "Work item belongs to a phase",
+    source_types: ["work_item"],
+    target_types: ["phase"],
+    yaml_field: "phase",
+  },
 };
 
 // ---------------------------------------------------------------------------
@@ -157,6 +171,7 @@ export interface WorkItem extends ArtifactCommon {
   module: string | null;
   domain: string | null;
   notes?: string;
+  phase?: string | null;
 }
 
 export interface FileRef {
@@ -311,6 +326,27 @@ export interface ProxyHumanDecision extends ArtifactCommon {
   status: "resolved" | "pending_user_input";
 }
 
+export interface Project extends ArtifactCommon {
+  type: "project";
+  intent: string;
+  scope_boundary: { in: string[]; out: string[] };
+  success_criteria: string[];
+  appetite: number | null;
+  steering: string | null;
+  horizon: { current: string | null; next: string[]; later: string[] };
+  status: string;
+}
+
+export interface Phase extends ArtifactCommon {
+  type: "phase";
+  project: string;
+  phase_type: string;
+  intent: string;
+  steering: string | null;
+  status: string;
+  work_items: string[];
+}
+
 // ---------------------------------------------------------------------------
 // Union type of all artifacts
 // ---------------------------------------------------------------------------
@@ -329,7 +365,9 @@ export type Artifact =
   | MetricsEvent
   | DocumentArtifact
   | InterviewQuestion
-  | ProxyHumanDecision;
+  | ProxyHumanDecision
+  | Project
+  | Phase;
 
 // ---------------------------------------------------------------------------
 // Edge interface
@@ -389,6 +427,7 @@ export function createSchema(db: Database.Database): void {
         criteria   TEXT,
         module     TEXT,
         domain     TEXT,
+        phase      TEXT,
         notes      TEXT
       )
     `);
@@ -563,6 +602,34 @@ export function createSchema(db: Database.Database): void {
       )
     `);
     db.exec(`CREATE INDEX IF NOT EXISTS idx_proxy_human_decisions_cycle ON proxy_human_decisions(cycle)`);
+
+    // -- projects --
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS projects (
+        id                TEXT PRIMARY KEY REFERENCES nodes(id) ON DELETE CASCADE,
+        intent            TEXT NOT NULL,
+        scope_boundary    TEXT,
+        success_criteria  TEXT,
+        appetite          INTEGER,
+        steering          TEXT,
+        horizon           TEXT,
+        status            TEXT NOT NULL
+      )
+    `);
+
+    // -- phases --
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS phases (
+        id         TEXT PRIMARY KEY REFERENCES nodes(id) ON DELETE CASCADE,
+        project    TEXT NOT NULL,
+        phase_type TEXT NOT NULL,
+        intent     TEXT NOT NULL,
+        steering   TEXT,
+        status     TEXT NOT NULL,
+        work_items TEXT
+      )
+    `);
+    db.exec(`CREATE INDEX IF NOT EXISTS idx_phases_project ON phases(project)`);
 
     // ----- Universal edges table -----
     db.exec(`

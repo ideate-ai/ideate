@@ -1,0 +1,24 @@
+id: ME-0411163E
+type: metrics_event
+event_name: unknown
+timestamp: 2026-03-30T13:00:00Z
+skill: execute
+phase: 6b
+cycle: null
+agent_type: worker
+model: sonnet
+work_item: WI-431
+wall_clock_ms: 208368
+turns_used: 19
+context_files_read: []
+input_tokens: 40726
+output_tokens: null
+cache_read_tokens: null
+cache_write_tokens: null
+mcp_tools_called:
+  - ideate_get_work_item_context
+outcome: null
+finding_count: null
+finding_severities: null
+first_pass_accepted: null
+rework_count: null

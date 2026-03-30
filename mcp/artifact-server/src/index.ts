@@ -28,8 +28,8 @@ try {
   initServer(dir, state);
 } catch {
   // No .ideate/ found — start in dormant mode.
-  // The server stays alive and exposes bootstrap + get_project_status.
-  // Full initialization happens after ideate_bootstrap_project is called.
+  // The server stays alive and exposes bootstrap + get_workspace_status.
+  // Full initialization happens after ideate_bootstrap_workspace is called.
   console.error("[ideate-artifact-server] No .ideate/ found — starting in dormant mode");
 }
 

@@ -3,10 +3,10 @@ import type { ToolContext } from "../types.js";
 import { createIdeateDir, CONFIG_SCHEMA_VERSION, IdeateConfigJson, IDEATE_SUBDIRS } from "../config.js";
 
 // ---------------------------------------------------------------------------
-// handleBootstrapProject — create .ideate/ directory structure
+// handleBootstrapWorkspace — create .ideate/ directory structure
 // ---------------------------------------------------------------------------
 
-export async function handleBootstrapProject(
+export async function handleBootstrapWorkspace(
   ctx: ToolContext,
   args: Record<string, unknown>
 ): Promise<string> {

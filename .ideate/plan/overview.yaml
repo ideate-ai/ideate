@@ -1,38 +1,19 @@
 id: overview
 type: overview
-title: Cycle Change Plan — Metrics Unification and Convergence Fix
-content: |-
-  ## What is changing
+title: Cycle Change Plan — Second Correction Pass
+body: |-
+  ## What Is Changing
 
-  Two deferred architectural gaps from the autopilot review cycles (cycles 3–7) and one minor cleanup:
+  Addressing 1 critical and 4 significant findings from cycle review of WI-444–448.
 
-  **II1 — handleGetConvergenceStatus prose parsing (WI-414)**
-  `handleGetConvergenceStatus` in `tools/analysis.ts` currently counts critical/significant findings by scanning markdown bullet points in the cycle_summary content field. `handleGetProjectStatus` uses the correct approach — SQL queries on the `findings` table. WI-414 fixes the convergence check to use the same SQL path, eliminating the fragile prose-parsing dependency. The spec-adherence verdict (Pass/Fail) continues to be parsed from prose — that path is inherently content-based and is unchanged.
+  1. Add workspace_label to autopilot state whitelist (critical — autopilot crashes on phase transition)
+  2. Add phase column to work_items SQL extension table (significant — phase filtering via SQL broken)
+  3. Fix handleGetWorkspaceStatus to query nodes.status instead of projects.status (significant)
+  4. Fix ARCHITECTURE.md residuals: appetite type, schema version, phase column (significant)
+  5. Update P-41 policy with all new state keys (significant)
+  6. Mark self-check boxes in autopilot/SKILL.md and refine/SKILL.md (minor)
 
-  **II2 — Parallel metrics data stores (WI-415)**
-  `handleEmitMetric` appends raw JSON to `metrics.jsonl`. `handleGetMetrics` queries the `metrics_events` SQLite table. These are completely separate data stores with no connection — metrics emitted by skills are never visible in `handleGetMetrics`. WI-415 changes `handleEmitMetric` to write a proper `metrics_event` YAML artifact and upsert the corresponding SQLite row, following the standard P-44 two-phase write pattern. The `metrics.jsonl` file is deprecated and the appendFileSync call is removed. Existing JSONL data is discarded. WI-415 also adds 'metrics' to IDEATE_SUBDIRS in config.ts (gap MI1).
-
-  **Cleanup (WI-416)**
-  The `interviewFiles()` helper in `write-transaction.test.ts` is dead code after WI-413 removed its only call site. WI-416 deletes it.
-
-  ## Trigger
-
-  Deferred significant gaps II1 and II2 from autopilot gap-analysis-006, minor MI1 from gap-analysis-006, minor M1 from cycle 7 code-quality review.
-
-  ## Scope boundary — what is NOT changing
-
-  - Architecture, module boundaries, MCP API surface
-  - The `handleWriteArtifact` dispatch block for type metrics_event (unchanged)
-  - The `handleGetMetrics` aggregation logic (unchanged — it already reads SQLite correctly)
-  - The `parsePrincipleVerdict` logic in analysis.ts (unchanged)
-  - Any skill markdown files or agent definitions
-  - SQLite schema (no new columns or tables)
-
-  ## Expected impact
-
-  - Skills calling `ideate_emit_metric` will now produce data that `ideate_get_metrics` can aggregate. The metrics feedback loop closes.
-  - The autopilot convergence check becomes reliable: a review cycle that produces findings will correctly prevent convergence even if the cycle_summary prose format changes.
-  - IDEATE_SUBDIRS gains 'metrics', so new project scaffolding includes the directory.
-content_hash: e0376bc3964df41137f9b327736ff30a6ec4240028df6bb5613c95b0f5c2f17d
-token_count: 659
-file_path: .ideate/plan/overview.yaml
+  ## What Is NOT Changing
+  Everything else from the project/phase hierarchy and first correction cycle.
+content_hash: c73ba09660c512d67e08730cf9621ced33c18cced8b2edb128b9692de8d50445
+token_count: 209

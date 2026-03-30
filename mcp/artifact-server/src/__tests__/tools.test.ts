@@ -22,12 +22,12 @@ import type { ToolContext } from "../types.js";
 import { handleGetWorkItemContext, handleGetContextPackage, handleAssembleContext } from "../tools/context.js";
 import { handleArtifactQuery, handleGetNextId } from "../tools/query.js";
 import { handleGetExecutionStatus, handleGetReviewManifest } from "../tools/execution.js";
-import { handleGetConvergenceStatus, handleGetDomainState, handleGetProjectStatus } from "../tools/analysis.js";
+import { handleGetConvergenceStatus, handleGetDomainState, handleGetWorkspaceStatus } from "../tools/analysis.js";
 import { handleAppendJournal, handleArchiveCycle, handleWriteWorkItems, handleUpdateWorkItems, handleWriteArtifact } from "../tools/write.js";
 import { indexFiles } from "../indexer.js";
 import { handleTool, signalIndexReady } from "../tools/index.js";
 import { handleEmitMetric } from "../tools/metrics.js";
-import { handleBootstrapProject } from "../tools/bootstrap.js";
+import { handleBootstrapWorkspace } from "../tools/bootstrap.js";
 import { handleManageAutopilotState } from "../tools/autopilot-state.js";
 
 // ---------------------------------------------------------------------------
@@ -673,10 +673,10 @@ describe("handleGetDomainState", () => {
 });
 
 // ---------------------------------------------------------------------------
-// 8. handleGetProjectStatus
+// 8. handleGetWorkspaceStatus
 // ---------------------------------------------------------------------------
 
-describe("handleGetProjectStatus", () => {
+describe("handleGetWorkspaceStatus", () => {
   it("happy path: returns dashboard with work item counts and open questions", async () => {
     insertNode("WI-001", "work_item", { status: "done" });
     insertWorkItem("WI-001", "Done item");
@@ -684,20 +684,20 @@ describe("handleGetProjectStatus", () => {
     insertWorkItem("WI-002", "Pending item");
     insertDomainQuestion("DQ-001", "workflow", "Open question");
 
-    const result = await handleGetProjectStatus(ctx, {});
-    expect(result).toContain("Project Status Dashboard");
+    const result = await handleGetWorkspaceStatus(ctx, {});
+    expect(result).toContain("Workspace Status Dashboard");
     expect(result).toContain("Total: 2");
     expect(result).toContain("Done: 1");
   });
 
   it("happy path: shows current cycle from domains/index.md", async () => {
-    const result = await handleGetProjectStatus(ctx, {});
+    const result = await handleGetWorkspaceStatus(ctx, {});
     expect(result).toContain("Current cycle");
     expect(result).toContain("3");
   });
 
   it("error path: empty DB returns zeroed work items section", async () => {
-    const result = await handleGetProjectStatus(ctx, {});
+    const result = await handleGetWorkspaceStatus(ctx, {});
     expect(result).toContain("Total: 0");
   });
 
@@ -714,11 +714,47 @@ describe("handleGetProjectStatus", () => {
       db.prepare(`INSERT INTO findings (id, severity, work_item, verdict, cycle, reviewer) VALUES (?, 'minor', 'WI-001', 'pass', 3, 'code-reviewer')`).run(`F-003-00${i}`);
     }
 
-    const result = await handleGetProjectStatus(ctx, {});
+    const result = await handleGetWorkspaceStatus(ctx, {});
 
     expect(result).toContain("Critical: 2");
     expect(result).toContain("Significant: 1");
     expect(result).toContain("Minor: 3");
+  });
+
+  it("shows Active Project and Current Phase sections when both are active", async () => {
+    // Insert active project
+    insertNode("PROJ-001", "project", { status: "active" });
+    db.prepare(`
+      INSERT INTO projects (id, intent, scope_boundary, success_criteria, appetite, steering, horizon, status)
+      VALUES (?, ?, NULL, NULL, 6, NULL, NULL, 'active')
+    `).run("PROJ-001", "Build a great product");
+
+    // Insert active phase (project must exist in nodes for FK)
+    insertNode("PH-001", "phase", { status: "active" });
+    db.prepare(`
+      INSERT INTO phases (id, project, phase_type, intent, steering, status, work_items)
+      VALUES (?, ?, ?, ?, NULL, 'active', NULL)
+    `).run("PH-001", "PROJ-001", "execution", "Deliver core features");
+
+    const result = await handleGetWorkspaceStatus(ctx, {});
+
+    expect(result).toContain("## Active Project");
+    expect(result).toContain("PROJ-001");
+    expect(result).toContain("Build a great product");
+    expect(result).toContain("Appetite: 6");
+
+    expect(result).toContain("## Current Phase");
+    expect(result).toContain("PH-001");
+    expect(result).toContain("execution");
+    expect(result).toContain("Deliver core features");
+  });
+
+  it("omits Active Project and Current Phase sections when neither exists", async () => {
+    // No project or phase rows inserted
+    const result = await handleGetWorkspaceStatus(ctx, {});
+
+    expect(result).not.toContain("## Active Project");
+    expect(result).not.toContain("## Current Phase");
   });
 });
 
@@ -1282,6 +1318,49 @@ describe("handleWriteWorkItems", () => {
       .prepare(`SELECT id FROM nodes WHERE id = 'WI-001'`)
       .get() as { id: string } | undefined;
     expect(wrongRow).toBeUndefined();
+  });
+
+  it("phase field: writing a work item with phase field stores phase in YAML, extension table, and indexer creates belongs_to_phase edge", async () => {
+    await handleWriteWorkItems(ctx, {
+      items: [
+        {
+          id: "WI-PH01",
+          title: "Phase-scoped item",
+          phase: "PH-001",
+        },
+      ],
+    });
+
+    // The YAML file must contain the phase field
+    const yamlPath = path.join(artifactDir, "work-items", "WI-PH01.yaml");
+    expect(fs.existsSync(yamlPath)).toBe(true);
+    const content = fs.readFileSync(yamlPath, "utf8");
+    expect(content).toContain("phase:");
+    expect(content).toContain("PH-001");
+
+    // The phase value must be stored directly in the work_items extension table
+    const wiRow = db
+      .prepare(`SELECT phase FROM work_items WHERE id = 'WI-PH01'`)
+      .get() as { phase: string | null } | undefined;
+    expect(wiRow).toBeDefined();
+    expect(wiRow!.phase).toBe("PH-001");
+
+    // Force re-index by invalidating the stored hash
+    db.prepare(`UPDATE nodes SET content_hash = 'stale' WHERE id = 'WI-PH01'`).run();
+
+    // Rebuild index from the written YAML — this triggers edge extraction
+    const { rebuildIndex } = await import("../indexer.js");
+    const { drizzle } = await import("drizzle-orm/better-sqlite3");
+    rebuildIndex(db, drizzle(db), artifactDir);
+
+    // belongs_to_phase edge should now exist
+    const edge = db
+      .prepare(
+        `SELECT * FROM edges WHERE source_id = 'WI-PH01' AND target_id = 'PH-001' AND edge_type = 'belongs_to_phase'`
+      )
+      .get() as { source_id: string; target_id: string; edge_type: string } | undefined;
+    expect(edge).toBeDefined();
+    expect(edge!.edge_type).toBe("belongs_to_phase");
   });
 });
 
@@ -2029,10 +2108,10 @@ describe("handleEmitMetric", () => {
 });
 
 // ---------------------------------------------------------------------------
-// handleBootstrapProject
+// handleBootstrapWorkspace
 // ---------------------------------------------------------------------------
 
-describe("handleBootstrapProject", () => {
+describe("handleBootstrapWorkspace", () => {
   it("creates .ideate/ directory structure with config.json", async () => {
     // Use a fresh temp dir as the project root (not the existing artifactDir)
     const projectRoot = fs.mkdtempSync(path.join(os.tmpdir(), "ideate-bootstrap-test-"));
@@ -2041,7 +2120,7 @@ describe("handleBootstrapProject", () => {
     // Create a temporary context pointing to the new .ideate dir
     const bootstrapCtx: ToolContext = { ...ctx, ideateDir: bootstrapIdeateDir };
 
-    const result = await handleBootstrapProject(bootstrapCtx, { project_name: "test-project" });
+    const result = await handleBootstrapWorkspace(bootstrapCtx, { project_name: "test-project" });
     const parsed = JSON.parse(result);
 
     expect(parsed.status).toBe("initialized");
@@ -2052,7 +2131,7 @@ describe("handleBootstrapProject", () => {
     const configPath = path.join(bootstrapIdeateDir, "config.json");
     expect(fs.existsSync(configPath)).toBe(true);
     const config = JSON.parse(fs.readFileSync(configPath, "utf8"));
-    expect(config.schema_version).toBe(2);
+    expect(config.schema_version).toBe(3);
     expect(config.project_name).toBe("test-project");
 
     // Verify subdirectories exist
@@ -2090,6 +2169,111 @@ describe("handleGetNextId", () => {
 
   it("throws when type is missing", async () => {
     await expect(handleGetNextId(ctx, {})).rejects.toThrow("Missing required parameter: type");
+  });
+
+  it("type=project on empty DB returns PR-001", async () => {
+    const result = await handleGetNextId(ctx, { type: "project" });
+    expect(result).toBe("PR-001");
+  });
+
+  it("type=phase on empty DB returns PH-001", async () => {
+    const result = await handleGetNextId(ctx, { type: "phase" });
+    expect(result).toBe("PH-001");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// handleWriteArtifact — project and phase
+// ---------------------------------------------------------------------------
+
+describe("handleWriteArtifact — project and phase types", () => {
+  it("type=project creates YAML at projects/{id}.yaml and upserts DB row", async () => {
+    const result = await handleWriteArtifact(ctx, {
+      type: "project",
+      id: "PR-001",
+      content: {
+        intent: "Build ideate 3.0 with YAML backend",
+        success_criteria: ["All tests pass", "Build succeeds"],
+        appetite: 6,
+        status: "active",
+      },
+    });
+
+    expect(result).toContain("project");
+    expect(result).toContain("PR-001");
+
+    // YAML file created
+    const filePath = path.join(artifactDir, "projects", "PR-001.yaml");
+    expect(fs.existsSync(filePath)).toBe(true);
+
+    const content = fs.readFileSync(filePath, "utf8");
+    expect(content).toContain("PR-001");
+    expect(content).toContain("project");
+    expect(content).toContain("Build ideate 3.0");
+    expect(content).toContain("content_hash:");
+    expect(content).toContain("token_count:");
+    expect(content).not.toContain("file_path:");
+
+    // SQLite node row
+    const nodeRow = db.prepare(`SELECT id, type, status FROM nodes WHERE id = 'PR-001'`).get() as { id: string; type: string; status: string } | undefined;
+    expect(nodeRow).toBeDefined();
+    expect(nodeRow!.type).toBe("project");
+    expect(nodeRow!.status).toBe("active");
+
+    // Extension table row
+    const projRow = db.prepare(`SELECT id, intent, status, appetite FROM projects WHERE id = 'PR-001'`).get() as { id: string; intent: string; status: string; appetite: number | null } | undefined;
+    expect(projRow).toBeDefined();
+    expect(projRow!.intent).toBe("Build ideate 3.0 with YAML backend");
+    expect(projRow!.status).toBe("active");
+    expect(projRow!.appetite).toBe(6);
+  });
+
+  it("type=phase creates YAML at phases/{id}.yaml and upserts DB row", async () => {
+    // First create a project node so FK is satisfied
+    db.prepare(`INSERT OR REPLACE INTO nodes (id, type, cycle_created, content_hash, file_path, status) VALUES ('PR-001', 'project', NULL, 'hash', '/tmp/PR-001.yaml', 'active')`).run();
+    db.prepare(`INSERT OR REPLACE INTO projects (id, intent, status) VALUES ('PR-001', 'Test project', 'active')`).run();
+
+    const result = await handleWriteArtifact(ctx, {
+      type: "phase",
+      id: "PH-001",
+      content: {
+        project: "PR-001",
+        phase_type: "implementation",
+        intent: "Build MCP tools for project and phase",
+        steering: "Follow P-44 two-phase write pattern",
+        status: "active",
+        work_items: ["WI-432", "WI-433", "WI-434"],
+      },
+    });
+
+    expect(result).toContain("phase");
+    expect(result).toContain("PH-001");
+
+    // YAML file created
+    const filePath = path.join(artifactDir, "phases", "PH-001.yaml");
+    expect(fs.existsSync(filePath)).toBe(true);
+
+    const content = fs.readFileSync(filePath, "utf8");
+    expect(content).toContain("PH-001");
+    expect(content).toContain("phase");
+    expect(content).toContain("Build MCP tools");
+    expect(content).toContain("content_hash:");
+    expect(content).toContain("token_count:");
+    expect(content).not.toContain("file_path:");
+
+    // SQLite node row
+    const nodeRow = db.prepare(`SELECT id, type, status FROM nodes WHERE id = 'PH-001'`).get() as { id: string; type: string; status: string } | undefined;
+    expect(nodeRow).toBeDefined();
+    expect(nodeRow!.type).toBe("phase");
+    expect(nodeRow!.status).toBe("active");
+
+    // Extension table row
+    const phaseRow = db.prepare(`SELECT id, project, phase_type, intent, status FROM phases WHERE id = 'PH-001'`).get() as { id: string; project: string; phase_type: string; intent: string; status: string } | undefined;
+    expect(phaseRow).toBeDefined();
+    expect(phaseRow!.project).toBe("PR-001");
+    expect(phaseRow!.phase_type).toBe("implementation");
+    expect(phaseRow!.intent).toBe("Build MCP tools for project and phase");
+    expect(phaseRow!.status).toBe("active");
   });
 });
 
@@ -2426,6 +2610,25 @@ describe("P-46: TYPE_TO_EXTENSION_TABLE completeness", () => {
     { type: "research", id: "rs-p46", content: { title: "research" }, tableName: "document_artifacts" },
     { type: "interview", id: "refine-p46", content: { title: "interview" }, tableName: "document_artifacts" },
     { type: "domain_index", id: "index", content: { current_cycle: 1 }, tableName: "document_artifacts" },
+    {
+      type: "project", id: "PR-p46",
+      content: { intent: "p46 project intent", status: "active" },
+      tableName: "projects",
+      checkFields: (row) => {
+        expect(row.intent).toBe("p46 project intent");
+        expect(row.status).toBe("active");
+      },
+    },
+    {
+      type: "phase", id: "PH-p46",
+      content: { project: "PR-p46", phase_type: "implementation", intent: "p46 phase intent", status: "pending" },
+      tableName: "phases",
+      checkFields: (row) => {
+        expect(row.project).toBe("PR-p46");
+        expect(row.phase_type).toBe("implementation");
+        expect(row.intent).toBe("p46 phase intent");
+      },
+    },
   ];
 
   it("cases array covers all TYPE_TO_EXTENSION_TABLE types (except redirected) — bidirectional", () => {

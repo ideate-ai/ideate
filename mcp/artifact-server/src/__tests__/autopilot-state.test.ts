@@ -26,6 +26,9 @@ describe("isValidStateKey", () => {
     expect(isValidStateKey("last_cycle_findings")).toBe(true);
     expect(isValidStateKey("total_items_executed")).toBe(true);
     expect(isValidStateKey("full_review_interval")).toBe(true);
+    expect(isValidStateKey("phases_completed")).toBe(true);
+    expect(isValidStateKey("current_project")).toBe(true);
+    expect(isValidStateKey("workspace_label")).toBe(true);
   });
 
   it("accepts valid cycle commit properties", () => {

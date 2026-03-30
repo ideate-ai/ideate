@@ -53,7 +53,90 @@ After producing new work items, update `{completed_items}`: remove any items res
 
 Return to the controller. The controller will run Phase 6e (cycle limit check) and, if within limit, start the next cycle.
 
+---
+
+## Phase Transition
+
+This section is invoked by the controller from Phase 6c-ii **only** — when the current phase has converged but the project is not yet complete and `{next_horizon_items}` is non-empty. It is NOT run as part of the normal refinement loop.
+
+### Step 1: Promote Next Horizon
+
+Call `ideate_artifact_query({type: "project", id: "{current_project}"})` to retrieve the current project artifact. Extract:
+- `horizon.next` — the list of phase IDs to promote into active scope
+- `horizon.later` — any phases beyond the next horizon (may be absent)
+
+For each work item in `horizon.next`, call `ideate_update_work_items({updates: [{id: "{work_item_id}", status: "pending", phase: "active"}]})` to promote it from horizon to active scope.
+
+Update the project artifact to reflect the promotion: call `ideate_write_artifact({type: "project", id: "{current_project}", content: {horizon: {next: {horizon.later items or []}, later: []}}})`. Preserve all other project artifact fields.
+
+Print:
+```
+[autopilot] Phase transition — promoting {N} work items from horizon.next to active scope
+Items: {list of work item IDs and titles}
+```
+
+### Step 2: Clear Completed Set
+
+Remove all previously completed items from `{completed_items}` that are not part of the newly promoted set. The new cycle begins fresh against the promoted work items.
+
+Call `ideate_get_execution_status()` to refresh the pending/completed sets. Update `{completed_items}` from the returned `completed` set.
+
+### Step 3: Spawn Transition Architect (optional)
+
+If the promoted work items have unclear dependencies, ordering conflicts, or if the execution strategy does not specify an ordering for the new items, spawn the `ideate:architect` agent to produce a revised execution order:
+
+```
+subagent_type: "ideate:architect"
+model: "{config.model_overrides.architect or 'sonnet'}"
+prompt: "The autopilot is transitioning to the next project phase.
+Newly promoted work items: {list of IDs and titles}
+Execution strategy: {current strategy content}
+Review the promoted items, resolve any dependency conflicts, and return a revised dependency ordering for the new items only. Do not modify the overall strategy fields. Return the revised ordering as structured content."
+```
+
+If the architect returns a revised ordering, update the execution strategy: call `ideate_write_artifact({type: "execution_strategy", content: {revised strategy with updated ordering for promoted items}})`.
+
+If no ordering conflict exists, skip this step.
+
+### Step 4: Write Transition Journal Entry
+
+Call `ideate_append_journal("autopilot", {date}, "phase_transition", {body})`:
+
+```markdown
+## [autopilot] {date} — Phase transition
+Previous phase converged at cycle {cycle_number}
+Items promoted to active scope: {N} — {list of IDs and titles}
+Items remaining in horizon.future: {N or "none"}
+Phases completed so far: {phases_completed + 1}
+Project appetite remaining: {project_appetite - (phases_completed + 1)} phases
+```
+
+### Exit Conditions (Phase Transition)
+
+- `horizon.next` items promoted to active/pending via `ideate_update_work_items`
+- Execution strategy updated to reflect new horizon state via `ideate_write_artifact`
+- `{completed_items}` refreshed via `ideate_get_execution_status`
+- Journal updated with phase transition entry
+- If architect was spawned: execution strategy updated with revised ordering
+
+Return to the controller (Phase 6c-ii). The controller will start the next cycle with the promoted work items.
+
 ## Artifacts Written (all via MCP)
 
-- Work items (WI-{NNN}) — new items created via `ideate_write_work_items`
-- Journal entries — refinement summary appended via `ideate_append_journal`
+- Work items (WI-{NNN}) — new items created via `ideate_write_work_items` (normal refinement)
+- Work item status — promoted items updated via `ideate_update_work_items` (phase transition)
+- Execution strategy — horizon updated via `ideate_write_artifact` (phase transition)
+- Journal entries — refinement summary and/or phase transition entry appended via `ideate_append_journal`
+
+## Self-Check
+
+Before returning to the controller, verify:
+
+- [x] No `.ideate/` path references in any instruction
+- [x] No occurrences of `ideate_get_project_status` in this file
+- [x] Phase Transition section is invoked only from controller Phase 6c-ii, not from normal refine loop
+- [x] Phase transition promotes items via `ideate_update_work_items`, not direct file writes
+- [x] Project artifact horizon updated via `ideate_write_artifact`, not direct file writes
+- [x] `{completed_items}` refreshed via `ideate_get_execution_status` after phase transition
+- [x] Divergence check present in normal refinement path (pending count not decreasing)
+- [x] Journal updated via `ideate_append_journal`, not direct file writes

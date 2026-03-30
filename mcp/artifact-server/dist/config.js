@@ -1,6 +1,14 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
 import path from "path";
-export const CONFIG_SCHEMA_VERSION = 2;
+export const CONFIG_SCHEMA_VERSION = 3;
+/**
+ * Default circuit_breaker_threshold used when the field is absent from config.json.
+ */
+export const DEFAULT_CIRCUIT_BREAKER_THRESHOLD = 5;
+/**
+ * Default default_appetite used when the field is absent from config.json.
+ */
+export const DEFAULT_APPETITE = 6;
 /**
  * Default agent_budgets used when the field is absent from config.json.
  */
@@ -49,6 +57,8 @@ export const IDEATE_SUBDIRS = [
     "cycles",
     "domains",
     "metrics",
+    "projects",
+    "phases",
 ];
 /**
  * Read and parse .ideate/config.json from a given directory.
@@ -181,11 +191,15 @@ export function getConfigWithDefaults(ideateDir) {
     const model_overrides = {
         ...(raw.model_overrides ?? {}),
     };
+    const circuit_breaker_threshold = raw.circuit_breaker_threshold ?? DEFAULT_CIRCUIT_BREAKER_THRESHOLD;
+    const default_appetite = raw.default_appetite ?? DEFAULT_APPETITE;
     return {
         ...raw,
         agent_budgets,
         model_overrides,
         ppr,
+        circuit_breaker_threshold,
+        default_appetite,
     };
 }
 //# sourceMappingURL=config.js.map

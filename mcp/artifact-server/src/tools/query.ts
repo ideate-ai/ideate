@@ -15,7 +15,9 @@ const TYPE_PREFIX_MAP: Record<string, { prefix: string; padWidth: number }> = {
   domain_policy: { prefix: "P-", padWidth: 2 },
   domain_decision: { prefix: "D-", padWidth: 2 },
   domain_question: { prefix: "Q-", padWidth: 2 },
-  proxy_human_decision: { prefix: "PH-", padWidth: 2 },
+  proxy_human_decision: { prefix: "PHD-", padWidth: 2 },
+  project: { prefix: "PR-", padWidth: 3 },
+  phase: { prefix: "PH-", padWidth: 3 },
 };
 
 // Types that require cycle-scoped IDs (format: {prefix}{cycle}-{seq})
@@ -176,6 +178,14 @@ const TYPE_EXTENSION_INFO: Record<
   proxy_human_decision: {
     table: "proxy_human_decisions",
     summaryExpr: "e.trigger || ' → ' || e.decision || ' [' || e.status || ']'",
+  },
+  project: {
+    table: "projects",
+    summaryExpr: "e.intent",
+  },
+  phase: {
+    table: "phases",
+    summaryExpr: "e.phase_type || ': ' || e.intent",
   },
 };
 

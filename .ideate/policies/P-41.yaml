@@ -20,6 +20,9 @@ description: |
   - last_cycle_findings
   - total_items_executed
   - full_review_interval
+  - workspace_label
+  - phases_completed
+  - current_project
 
   Dynamic cycle commit properties (pattern): cycle_NNN_start_commit, cycle_NNN_end_commit
   where NNN is one or more digits (matches regex /^cycle_\d+_(start|end)_commit$/).

@@ -28,6 +28,8 @@ Skills produce YAML artifacts in `.ideate/`, accessed exclusively through MCP to
 ```
 .ideate/
 ├── config.json              # Schema version, agent budgets, PPR config
+├── projects/                # PR-{NNN}.yaml per project
+├── phases/                  # PH-{NNN}.yaml per phase (scoped within a project)
 ├── plan/                    # architecture.yaml, overview.yaml, execution-strategy.yaml
 ├── steering/                # guiding-principles.yaml, constraints.yaml, research/
 ├── work-items/              # WI-{NNN}.yaml per work item
@@ -61,3 +63,12 @@ To run a review cycle on ideate itself: `/ideate:review`
 - The domain curator uses opus; all other agents default to sonnet unless overridden
 - `spawn_session` (outpost) is an optional enhancement; Agent tool is the primary spawning mechanism
 - `DEFER` (not `DEFERRED`) is the proxy-human deferral signal that autopilot checks for
+
+## Self-Check
+
+| Acceptance criterion | Status |
+|----------------------|--------|
+| `projects/` directory in artifact structure diagram | Done |
+| `phases/` directory in artifact structure diagram | Done |
+| Zero references to `ideate_get_project_status` | Done — not present |
+| Zero references to `ideate_bootstrap_project` | Done — not present |

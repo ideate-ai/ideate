@@ -1,0 +1,24 @@
+id: ME-8DAF7DD2
+type: metrics_event
+event_name: unknown
+timestamp: 2026-03-30T15:00:00Z
+skill: review
+phase: 4a
+cycle: null
+agent_type: spec-reviewer
+model: sonnet
+work_item: null
+wall_clock_ms: 452582
+turns_used: 107
+context_files_read: []
+input_tokens: 128687
+output_tokens: null
+cache_read_tokens: null
+cache_write_tokens: null
+mcp_tools_called:
+  - ideate_get_context_package
+finding_count: 13
+finding_severities:
+  critical: 0
+  significant: 5
+  minor: 8

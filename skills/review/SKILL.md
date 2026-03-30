@@ -45,7 +45,13 @@ Parse the invocation for:
 
 All MCP tool calls resolve paths internally from the project configuration — the skill never constructs artifact paths.
 
-Validate by calling `ideate_get_project_status` with the resolved path. If the MCP server cannot find artifacts, stop and report the error.
+Validate by calling `ideate_get_workspace_status` with the resolved path. If the MCP server cannot find artifacts, stop and report the error.
+
+3. **Active project and phase** — Call `ideate_get_workspace_status()`. Extract and hold:
+   - `{active_project}`: the active project name
+   - `{active_phase}`: the active phase name (e.g., `"alpha"`, `"beta"`, `"v1"`)
+
+   These are used in the Phase Convergence and circuit breaker logic below.
 
 ## 1.2 Determine Review Mode
 
@@ -65,6 +71,36 @@ Based on parsed arguments:
 **Cycle number for cycle reviews**: Call `ideate_get_domain_state()` — the response includes `current_cycle`. Add 1 to get the new cycle number. If the domain state is unavailable, use `001`.
 
 Store the determined mode, cycle number (if applicable), and the slug or scope label for ad-hoc modes.
+
+## 1.3 Circuit Breaker Check (Cycle Reviews Only)
+
+For **cycle reviews only**, check whether the current phase has exceeded its cycle budget before proceeding.
+
+1. Call `ideate_get_config()` (already loaded in Phase 0). Read `{config}.circuit_breaker_threshold`. If the key is absent or null, use the default value of `5`.
+
+2. Count the number of review cycles completed within the **current phase**:
+   - Call `ideate_artifact_query({type: "cycle_summary", filter: {id: "summary"}})` to retrieve all existing cycle summary artifacts.
+   - For each summary, check whether the work items reviewed in that cycle belong to `{active_phase}`. A cycle belongs to the current phase if the majority of its reviewed work items carry `phase: {active_phase}` in their metadata.
+   - Hold this count as `{phase_cycle_count}`.
+
+3. If `{phase_cycle_count}` >= `{config}.circuit_breaker_threshold`:
+   - Do **not** proceed with the review.
+   - Trigger an Andon cord event per C-12 by calling `ideate_emit_event` with:
+     - `event: "andon.triggered"`
+     - `variables: { "PHASE": "{active_phase}", "CYCLE_COUNT": "{phase_cycle_count}", "THRESHOLD": "{circuit_breaker_threshold}", "REASON": "Circuit breaker: phase {active_phase} has completed {phase_cycle_count} review cycles, exceeding the threshold of {circuit_breaker_threshold}. The phase is not converging. Human intervention is required before another review cycle can begin." }`
+   - Present the following message to the user and stop:
+
+     > **Circuit breaker triggered**: Phase `{active_phase}` has completed `{phase_cycle_count}` review cycles, exceeding the configured threshold of `{circuit_breaker_threshold}`. This phase is not converging normally.
+     >
+     > Review cycles in this phase: `{phase_cycle_count}`
+     > Threshold: `{circuit_breaker_threshold}` (from `circuit_breaker_threshold` in config)
+     >
+     > The review will not proceed. Recommended actions:
+     > - Run `/ideate:review --full` to audit whether the phase goal is achievable as defined
+     > - Run `/ideate:refine` with explicit scope to restructure remaining work
+     > - Adjust `circuit_breaker_threshold` in config if the threshold is too low for this project
+
+4. If `{phase_cycle_count}` < `{config}.circuit_breaker_threshold`, continue to Phase 2.
 
 ---
 
@@ -356,7 +392,17 @@ For each:
 - Explain why existing context does not resolve it
 - State the impact of leaving it unresolved
 
-## 6.4 Propose Refinement Plan (If Warranted)
+## 6.4 Route Findings by Severity
+
+Before writing the summary, assign each finding to its routing destination:
+
+- **Critical and Significant findings**: Route to the **current phase** — these must be addressed before the phase is considered done. Include in the `## Critical Findings` and `## Significant Findings` sections below.
+- **Minor findings**: Carry forward to the **next cycle** within the current phase. Include in the `## Minor Findings` section, tagged with a `→ carry-forward` marker so `/ideate:refine` can pick them up.
+- **Suggestions**: Document for reference but do not route; they are deferred to future planning.
+
+This routing ensures incremental progress without losing track of lower-severity issues.
+
+## 6.6 Propose Refinement Plan (If Warranted)
 
 If there are critical or significant findings, outline what `/ideate:refine` should address. Be specific:
 
@@ -367,7 +413,7 @@ If there are critical or significant findings, outline what `/ideate:refine` sho
 
 If no critical or significant findings exist, state that no refinement cycle is needed. The project is ready for user evaluation.
 
-## 6.5 Write Summary Artifact
+## 6.7 Write Summary Artifact
 
 Compose the summary content in memory using this format, then call `ideate_write_artifact({type: "cycle_summary", id: "summary", content: {cycle: N, content: <summary text>}})` to persist it. Do NOT use the Write tool for this artifact.
 
@@ -377,6 +423,22 @@ Compose the summary content in memory using this format, then call `ideate_write
 ## Overview
 {2-3 sentence assessment of the project's state. Neutral, factual.}
 
+## Phase Convergence
+Phase: {active_phase}
+Cycles completed in this phase: {phase_cycle_count} / {circuit_breaker_threshold} (threshold)
+Convergence status: {one of: Converging | Stalled | Not assessed (ad-hoc review)}
+
+Trend: {brief description — e.g., "Critical findings dropped from N to N this cycle", "Significant finding count unchanged across last N cycles", or "First cycle in phase — no trend data"}
+
+## Project Progress
+{For each success criterion in the project overview or architecture, list its current status.}
+
+| Success Criterion | Status |
+|---|---|
+| {criterion from overview/architecture} | {pass / partial / not-started} |
+
+{If no success criteria are defined in the project artifacts, state: "No success criteria defined in project artifacts."}
+
 ## Critical Findings
 - [{source reviewer}] {finding} — relates to: {principle name or work item NNN, or "cross-cutting"}
 
@@ -384,7 +446,7 @@ Compose the summary content in memory using this format, then call `ideate_write
 - [{source reviewer}] {finding} — relates to: {principle name or work item NNN, or "cross-cutting"}
 
 ## Minor Findings
-- [{source reviewer}] {finding} — relates to: {principle name or work item NNN, or "cross-cutting"}
+- [{source reviewer}] {finding} — relates to: {principle name or work item NNN, or "cross-cutting"} → carry-forward
 
 ## Suggestions
 - [{source reviewer}] {suggestion} — relates to: {principle name or work item NNN, or "cross-cutting"}
@@ -729,3 +791,9 @@ Before completing this skill, verify all of the following:
 6. **Metrics via ideate_emit_metric**: All metric emissions use `ideate_emit_metric` with a payload object. No direct file appends.
 7. **Domain check via MCP**: Domain existence and state are checked via `ideate_get_domain_state()`, not by checking filesystem existence.
 8. **Review orchestration preserved**: The phase structure, reviewer spawn order (4a parallel, 4b sequential), curator logic, archival, and user presentation remain unchanged from the original.
+9. **Zero occurrences of ideate_get_project_status**: The skill contains no references to `ideate_get_project_status`. All workspace status queries use `ideate_get_workspace_status`.
+10. **Active project and phase queried early**: Phase 1.1 calls `ideate_get_workspace_status()` and extracts `{active_project}` and `{active_phase}` before any other phase-dependent logic runs.
+11. **Phase Convergence section present**: The summary output template (Phase 6.7) includes a `## Phase Convergence` section showing phase name, cycle count vs threshold, convergence status, and trend.
+12. **Project Progress section present**: The summary output template includes a `## Project Progress` table listing each success criterion with its status (pass / partial / not-started).
+13. **Circuit breaker reads threshold from config**: Phase 1.3 reads `{config}.circuit_breaker_threshold` via `ideate_get_config` (loaded in Phase 0). Default is `5` if the key is absent. If `{phase_cycle_count}` >= threshold, Andon is triggered and the review halts.
+14. **Finding routing guidance present**: Phase 6.4 specifies that critical/significant findings are routed to the current phase, minor findings carry forward, and suggestions are deferred.

@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import fs from "fs";
 import os from "os";
 import path from "path";
-import { readIdeateConfig, readRawConfig, findIdeateConfig, resolveArtifactDir, createIdeateDir, writeConfig, getConfigWithDefaults, CONFIG_SCHEMA_VERSION, DEFAULT_AGENT_BUDGETS, DEFAULT_PPR_CONFIG, IDEATE_SUBDIRS, } from "../config.js";
+import { readIdeateConfig, readRawConfig, findIdeateConfig, resolveArtifactDir, createIdeateDir, writeConfig, getConfigWithDefaults, CONFIG_SCHEMA_VERSION, DEFAULT_AGENT_BUDGETS, DEFAULT_PPR_CONFIG, DEFAULT_CIRCUIT_BREAKER_THRESHOLD, DEFAULT_APPETITE, IDEATE_SUBDIRS, } from "../config.js";
 import { handleUpdateConfig } from "../tools/config.js";
 let tmpDir;
 function write(relPath, content) {
@@ -273,6 +273,26 @@ describe("getConfigWithDefaults", () => {
             "domain-curator": "claude-opus-4-5",
             architect: "claude-opus-4-5",
         });
+    });
+    it("applies defaults for circuit_breaker_threshold and default_appetite when absent", () => {
+        const ideateDir = path.join(tmpDir, ".ideate");
+        fs.mkdirSync(ideateDir, { recursive: true });
+        writeConfig(ideateDir, { schema_version: 3 });
+        const result = getConfigWithDefaults(ideateDir);
+        expect(result.circuit_breaker_threshold).toBe(DEFAULT_CIRCUIT_BREAKER_THRESHOLD);
+        expect(result.default_appetite).toBe(DEFAULT_APPETITE);
+    });
+    it("respects circuit_breaker_threshold and default_appetite overrides from config.json", () => {
+        const ideateDir = path.join(tmpDir, ".ideate");
+        fs.mkdirSync(ideateDir, { recursive: true });
+        writeConfig(ideateDir, {
+            schema_version: 3,
+            circuit_breaker_threshold: 10,
+            default_appetite: 3,
+        });
+        const result = getConfigWithDefaults(ideateDir);
+        expect(result.circuit_breaker_threshold).toBe(10);
+        expect(result.default_appetite).toBe(3);
     });
 });
 // -----------------------------------------------------------------------

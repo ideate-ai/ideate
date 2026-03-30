@@ -115,6 +115,8 @@ Execute according to the mode in the execution strategy (loaded by the controlle
 
 **Worktree isolation**: If the execution strategy specifies worktrees, create a git worktree for each concurrent subagent before spawning it (`git worktree add` with branch `ideate/NNN-{name}`). After a work item's incremental review passes, merge back using `git merge --no-ff ideate/NNN-{name}`. Resolve trivial conflicts (whitespace, import ordering) automatically. For substantive merge conflicts, route to the Andon cord → proxy-human (see below). After a successful merge: `git worktree remove {path}` and `git branch -d ideate/NNN-{name}`.
 
+**Workspace rename on phase transition**: When a phase transition has occurred (i.e., the controller entered this cycle via Phase 6c-ii → Phase Transition in refine.md), update the workspace label by calling `ideate_manage_autopilot_state({action: "update", state: {workspace_label: "phase-{phases_completed}"}})`. This is informational — it tags the session state so activity reports can group work by phase. Best-effort: if the call fails, continue without interruption.
+
 **Metrics**: After each worker agent returns, emit a metric via `ideate_emit_metric({payload: {phase: "6a", agent_type: "worker", ...}})` (full field schema in controller SKILL.md). Best-effort only: if the call fails, continue without interruption. Extract `turns_used` from the `tool_uses` field in the Agent response `<usage>` block (integer; `null` if not available — do NOT leave as `null` if the usage block is present). Include `input_tokens`, `output_tokens`, `cache_read_tokens`, `cache_write_tokens` from agent response metadata (null if unavailable), and `mcp_tools_called` (array of MCP tool names used to assemble context for the spawn, or `[]` if none). Before each Agent tool call, record which MCP tool calls (if any) were made to assemble context for that spawn. Set `outcome`, `finding_count`, `finding_severities`, `first_pass_accepted` to `null` for worker entries. Set `rework_count` to the number of fix-and-re-review cycles completed for this work item (0 if first review passed without rework). If `turns_used` is non-null and the worker's maxTurns is known, and `turns_used / maxTurns > 0.80`, append to the journal entry for this work item: `Agent worker used {turns_used}/{maxTurns} turns ({pct}%) — near budget limit`.
 
 ### Incremental Review (Per Work Item)
@@ -268,6 +270,18 @@ Return to the controller. The controller will proceed to Phase 6b (review.md).
 - Findings (F-{WI}-{SEQ}) — one per work item reviewed, via `ideate_write_artifact`
 - Journal entries — appended per work item and per Andon event, via `ideate_append_journal`
 - Work item status — updated to 'done' for each completed item, via `ideate_update_work_items`
-- Autopilot session state — `total_items_executed` updated via `ideate_manage_autopilot_state`
+- Autopilot session state — `total_items_executed` and `workspace_label` updated via `ideate_manage_autopilot_state`
 - Proxy-human decisions (PH-{cycle}-{seq}) — if Andon events occurred, via `ideate_write_artifact` with type `proxy_human_decision`
-- Metrics — one entry per agent spawned, via `ideate_emit_metric
+- Metrics — one entry per agent spawned, via `ideate_emit_metric`
+
+## Self-Check
+
+Before returning to the controller, verify:
+
+- [x] No `.ideate/` path references in any instruction
+- [x] No occurrences of `ideate_get_project_status` in this file
+- [x] Workspace rename on phase transition uses `ideate_manage_autopilot_state`, not direct file writes
+- [x] Every completed work item has a finding written via `ideate_write_artifact`
+- [x] Every completed work item has status updated via `ideate_update_work_items`
+- [x] `total_items_executed` updated via `ideate_manage_autopilot_state` after each item
+- [x] Journal entries written via `ideate_append_journal`, not direct file writes

@@ -31,7 +31,7 @@ Determine the **project root** — the directory containing the ideate artifact 
 3. Check for a project-level ideate pointer in the current working directory — if found, use its `artifactDir` value (resolved relative to that file's location) to locate the project root.
 4. Otherwise ask: "Where is the project root? (The directory containing the ideate artifact directory)"
 
-Validate by calling `ideate_get_project_status` with the resolved path. If the MCP server cannot find artifacts, stop and report the error. Do not proceed without a valid artifact directory.
+Validate by calling `ideate_get_workspace_status` with the resolved path. If the MCP server cannot find artifacts, stop and report the error. Do not proceed without a valid artifact directory.
 
 Store the project root path. All MCP tool calls use this implicitly — the server resolves paths from the project configuration.
 
@@ -91,6 +91,22 @@ If any artifact does not exist, note its absence and continue. The MCP server va
 
 Combine the architect's codebase analysis with these artifacts to form your complete understanding of the project's current state.
 
+## 3.2 Active Project and Phase Context
+
+Call `ideate_artifact_query({type: "project", filters: {status: "active"}})` to retrieve the active project record.
+
+If an active project is found, hold it as `{active_project}` and display its strategic context to the user in a brief summary block before proceeding to Phase 4:
+
+> **Project**: {active_project.name}
+> **Intent**: {active_project.intent}
+> **Current phase**: {active_project.current_phase_id} — {active_project.current_phase.name}
+> **Phase goal**: {active_project.current_phase.success_criteria}
+> **Horizon** (next planned phases): {active_project.horizon.next | names, comma-separated, or "none defined"}
+
+Then load the current phase artifact: call `ideate_artifact_query({type: "phase", id: active_project.current_phase_id})`. Hold it as `{current_phase}`.
+
+If no active project is found, set `{active_project}` to `null` and `{current_phase}` to `null`. This is normal for projects that predate the project/phase model or that have not used `/ideate:init` with project tracking enabled.
+
 ---
 
 # Phase 4: Determine Refinement Mode
@@ -101,11 +117,41 @@ Assess what is driving this refinement. There are two primary modes:
 
 **Requirement evolution** — The user wants to change or extend what the project does. Prior review findings may or may not be relevant. In this mode, the user's stated intent drives the interview.
 
-If review findings exist (check via `ideate_get_project_status`), note this to the user and ask:
+If review findings exist (check the loaded project/phase context from Phase 3), note this to the user and ask:
 
 > Review findings exist from a previous cycle. Are you here to address those findings, to make other changes, or both?
 
 The answer determines which interview track to emphasize. If the user provided a change description as an argument, use it to infer the mode — but confirm if ambiguous.
+
+## 4.1 Project Context: Continuing a Phase vs. Starting New Work
+
+If `{active_project}` is non-null, consider the phase context when framing the refinement:
+
+- **Phase still in progress** — `{current_phase}` has open work items (items with status other than `done`). This refinement is adding to or adjusting the current phase. Use the phase's `success_criteria` as a guardrail: proposed changes should advance or stay within the phase's goal.
+- **Phase complete** — All work items in `{current_phase}` are `done`. See Section 4.2 for phase transition handling.
+- **No active project** — Treat this as a standalone refinement with no phase constraints. Proceed normally.
+
+## 4.2 Phase Completion: Transition Recommendation
+
+If `{current_phase}` is loaded and all its work items are `done`, this is a natural transition point. Do not force a transition — present a recommendation and confirm with the user:
+
+> The current phase **{current_phase.name}** appears complete — all its work items are done.
+>
+> Recommendation: transition to the next phase before planning new work.
+>
+> Next phase candidate: **{active_project.horizon.next[0].name}** — {active_project.horizon.next[0].description}
+>
+> Proceed with phase transition, or continue adding work to the current phase?
+
+If the user confirms the transition, set a flag `{phase_transition_requested: true}` and hold `{next_phase_candidate}` as `active_project.horizon.next[0]`. The actual phase transition artifacts are written in Phase 7.
+
+If `active_project.horizon.next` is empty when all phase work items are done, ask:
+
+> The current phase is complete and there are no further phases planned on the horizon.
+>
+> Is the project complete, or do you want to define a new phase before planning work?
+
+If the user says the project is complete, note this for the journal entry and do not create new work items. If the user wants a new phase, proceed with the interview to gather the new phase's intent and name — you will create the phase artifact in Phase 7.
 
 ---
 
@@ -284,7 +330,45 @@ Validate all new work items:
 - Acceptance criteria are machine-verifiable where possible
 - 100% coverage of the changes identified in the interview
 
-## 7i. Journal — APPEND Refinement Entry
+## 7i. Phase Management — UPDATE if Active Project
+
+This section executes only if `{active_project}` is non-null.
+
+### 7i-1. Update Current Phase Work Items List
+
+After writing new work items in Section 7h, update the current phase record to include the new work item IDs. Call `ideate_write_artifact` with type `phase` and id `{current_phase.id}`, merging the new work item IDs into the phase's `work_items` array. Do not overwrite existing work item references — append only.
+
+### 7i-2. Phase Transition: Promote Next Horizon Item
+
+If `{phase_transition_requested}` is true:
+
+1. **Mark the current phase complete**: Call `ideate_write_artifact` with type `phase` and id `{current_phase.id}`, setting `status` to `complete` and recording `completed_date` as `{date}`.
+
+2. **Select the phase type for the new phase**: Ask the user (or infer from `{next_phase_candidate}`) which phase type applies:
+   - `research` — investigation, discovery, unknowns reduction
+   - `design` — architecture, interface design, planning
+   - `implementation` — building, coding, testing
+   - `spike` — time-boxed exploration with a specific question to answer
+
+   Use the candidate's description to suggest the most appropriate type. Confirm with the user before creating the phase.
+
+3. **Create the new phase**: Call `ideate_write_artifact` with type `phase` for the promoted phase. Use `ideate_get_next_id({type: "phase"})` for the phase ID. Set:
+   - `name`: from `{next_phase_candidate.name}`
+   - `description`: from `{next_phase_candidate.description}`
+   - `phase_type`: the selected type from step 2
+   - `status`: `active`
+   - `started_date`: `{date}`
+   - `work_items`: IDs of work items created in Section 7h that belong to this phase
+   - `success_criteria`: from `{next_phase_candidate.success_criteria}` if present, otherwise derive from interview
+
+4. **Update the project record**: Call `ideate_write_artifact` with type `project` and id `{active_project.id}`, setting:
+   - `current_phase_id`: the new phase's ID
+   - `horizon.next`: remove `{next_phase_candidate}` from the front of the array (it is now active)
+   - `horizon.completed`: append `{current_phase.id}` to record the completed phase
+
+If a user-defined new phase was gathered in Phase 4.2 (empty horizon case), create the phase artifact using the same steps above with the user-provided name, description, and type.
+
+## 7j. Journal — APPEND Refinement Entry
 
 Call `ideate_append_journal("refine", {date}, {entry_type}, {body})` — appends a structured journal entry atomically.
 
@@ -394,10 +478,15 @@ Before completing, verify:
 
 - [ ] No `.ideate/` path references appear anywhere in this skill's output or internal logic
 - [ ] No `.yaml` filename references appear — artifacts are referenced by type and designation only
-- [ ] All artifact reads go through `ideate_artifact_query`, `ideate_get_context_package`, `ideate_get_domain_state`, or `ideate_get_project_status`
+- [ ] All artifact reads go through `ideate_artifact_query`, `ideate_get_context_package`, `ideate_get_domain_state`, or `ideate_get_workspace_status`
 - [ ] All artifact writes go through `ideate_write_artifact` or `ideate_write_work_items`
-- [ ] Next ID for work items, principles, and constraints obtained via `ideate_get_next_id` — no glob patterns
+- [ ] Next ID for work items, principles, constraints, and phases obtained via `ideate_get_next_id` — no glob patterns
 - [ ] Metrics emitted via `ideate_emit_metric` — no direct file appends
 - [ ] Journal entries appended via `ideate_append_journal` — no direct file writes
 - [ ] MCP query descriptions do not leak internal storage paths
 - [ ] Decomposer agent prompts pass artifact content, not file paths
+- [ ] Active project queried via `ideate_artifact_query({type: "project", filters: {status: "active"}})` — not via `ideate_get_workspace_status`
+- [ ] Phase transitions recommended to user and confirmed before executing — not forced
+- [ ] After creating work items, current phase `work_items` list updated (if active project exists)
+- [ ] After phase transition, project `current_phase_id` and `horizon` updated
+- [x] Zero occurrences of `ideate_get_project_status` in this skill

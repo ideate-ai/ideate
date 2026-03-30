@@ -1,4 +1,4 @@
-export declare const CONFIG_SCHEMA_VERSION = 2;
+export declare const CONFIG_SCHEMA_VERSION = 3;
 /**
  * Schema for .ideate/config.json
  */
@@ -7,6 +7,8 @@ export interface IdeateConfigJson {
     project_name?: string;
     agent_budgets?: Record<string, number>;
     model_overrides?: Record<string, string>;
+    circuit_breaker_threshold?: number;
+    default_appetite?: number;
     ppr?: {
         alpha?: number;
         max_iterations?: number;
@@ -15,6 +17,14 @@ export interface IdeateConfigJson {
         default_token_budget?: number;
     };
 }
+/**
+ * Default circuit_breaker_threshold used when the field is absent from config.json.
+ */
+export declare const DEFAULT_CIRCUIT_BREAKER_THRESHOLD = 5;
+/**
+ * Default default_appetite used when the field is absent from config.json.
+ */
+export declare const DEFAULT_APPETITE = 6;
 /**
  * Default agent_budgets used when the field is absent from config.json.
  */
@@ -44,7 +54,7 @@ export interface IdeateConfig {
 /**
  * Subdirectories created inside .ideate/ by createIdeateDir().
  */
-export declare const IDEATE_SUBDIRS: readonly ["plan", "steering", "work-items", "principles", "constraints", "policies", "decisions", "questions", "modules", "research", "interviews", "cycles", "domains", "metrics"];
+export declare const IDEATE_SUBDIRS: readonly ["plan", "steering", "work-items", "principles", "constraints", "policies", "decisions", "questions", "modules", "research", "interviews", "cycles", "domains", "metrics", "projects", "phases"];
 /**
  * Read and parse .ideate/config.json from a given directory.
  * Returns null if the directory doesn't contain a valid .ideate/config.json.
@@ -91,5 +101,5 @@ export declare function readRawConfig(ideateDir: string): IdeateConfigJson;
  * @param ideateDir - Path to the .ideate/ directory
  * @returns Config object with defaults applied for missing fields
  */
-export declare function getConfigWithDefaults(ideateDir: string): Required<Pick<IdeateConfigJson, "schema_version" | "agent_budgets" | "model_overrides" | "ppr">> & Omit<IdeateConfigJson, "agent_budgets" | "model_overrides" | "ppr">;
+export declare function getConfigWithDefaults(ideateDir: string): Required<Pick<IdeateConfigJson, "schema_version" | "agent_budgets" | "model_overrides" | "ppr" | "circuit_breaker_threshold" | "default_appetite">> & Omit<IdeateConfigJson, "agent_budgets" | "model_overrides" | "ppr" | "circuit_breaker_threshold" | "default_appetite">;
 //# sourceMappingURL=config.d.ts.map

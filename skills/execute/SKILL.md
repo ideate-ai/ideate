@@ -24,11 +24,18 @@ Call `ideate_get_config()` to read project configuration. Hold the response as `
 
 # Phase 1: Locate Artifact Directory
 
-Call `ideate_get_project_status()` to identify the **project root**. The MCP server locates the project root automatically. If the user provided a path argument, pass it as a hint.
+Call `ideate_get_workspace_status()` to identify the **project root**. The MCP server locates the project root automatically. If the user provided a path argument, pass it as a hint.
 
 If the MCP server cannot find a project, stop and report the error. Do not proceed without a valid project.
 
 Store the project root path returned by the server. All subsequent MCP tool calls use this implicitly.
+
+## Query Active Phase
+
+After locating the project root, call `ideate_artifact_query({type: "phase", filters: {status: "active"}})` to check whether an active phase exists. Hold the result as `{active_phase}`.
+
+- If a phase is returned, extract and store: `{active_phase}.id`, `{active_phase}.type`, `{active_phase}.name` (if present), `{active_phase}.work_items` (array of work item IDs assigned to this phase, may be absent), and `{active_phase}.steering` (phase-level principles or constraints, may be absent).
+- If no phase is returned (empty result or tool unavailable), set `{active_phase}` to null. Proceed with all work items and no phase steering. This is the backward-compatible path.
 
 ## Derive Project Source Root
 
@@ -61,6 +68,12 @@ After reading, verify:
 - The execution strategy references work items that exist
 
 If validation fails, report the specific issues and stop. Do not execute a broken plan.
+
+## Phase Steering Load
+
+If `{active_phase}` is non-null and `{active_phase}.steering` is present and non-empty, hold it as `{phase_steering}`. Phase steering supplements (does not replace) workspace-level guiding principles. It will be surfaced alongside principles in the execution plan and passed to workers.
+
+If `{active_phase}` is null or has no steering, set `{phase_steering}` to null.
 
 ## Completed Items Scan (Resume Detection)
 
@@ -102,8 +115,14 @@ Present the execution plan to the user with this structure:
 ```
 ## Execution Plan
 
+### Active Phase
+{If active_phase is non-null: "Phase: {active_phase.id} ({active_phase.type})" and, if active_phase.name is set, "Name: {active_phase.name}". If active_phase has a work_items list, note "Scoped to {N} work items assigned to this phase." If active_phase is null: "No active phase — executing all work items."}
+
+### Phase Steering
+{If phase_steering is non-null: display the phase steering content. Otherwise: "None — workspace principles apply."}
+
 ### Work Items
-{Numbered list of all work items with titles and complexity}
+{Numbered list of all work items in scope (phase-filtered if applicable) with titles and complexity}
 
 ### Dependency Structure
 {ASCII diagram or structured list showing dependency relationships}
@@ -170,6 +189,8 @@ Wait for explicit confirmation. Do not begin building until the user confirms. I
 
 Execute according to the mode specified in the execution strategy.
 
+**Phase-scoped work item filtering**: If `{active_phase}` is non-null and `{active_phase}.work_items` is a non-empty array, restrict execution to only those work items whose IDs appear in the array, plus any work items that are not assigned to any phase. Work items assigned to a different phase are excluded silently — do not report them as skipped. If `{active_phase}` is null, or if `{active_phase}.work_items` is absent or empty, execute all work items (backward-compatible path).
+
 **Skipping completed items**: In all execution modes, before starting a work item, check whether its number appears in the `completed_items` set built during the Completed Items Scan. If it does, skip the item and report: "Skipping work item NNN: {title} — already completed." Treat skipped items as having satisfied dependencies for downstream work items.
 
 **Hook: work_item.started**: Before spawning the worker for each work item (after the skip check passes), call `ideate_emit_event` with:
@@ -200,6 +221,7 @@ Regardless of execution mode, every worker (subagent, teammate, or the main sess
 6. **Relevant research** — included in the `ideate_get_work_item_context` response for research referenced in the work item's implementation notes or relevant to its scope.
 7. **Project source root** — the absolute path to the project source root derived in Phase 1, so workers know where to create and modify source files.
 8. **Relevant domain policies** — included in the `ideate_get_work_item_context` response. Domain policies supplement the guiding principles — they are more specific rules derived from prior review cycles.
+9. **Phase steering** — if `{phase_steering}` is non-null, include it verbatim under a "Phase Steering" heading. Instruct the worker: "Phase steering supplements workspace-level principles. Apply it as additional guidance specific to this phase." If `{phase_steering}` is null, omit this item.
 
 All paths provided to workers must be absolute. Do not use relative paths that depend on the worker's current working directory matching the artifact directory.
 
@@ -508,7 +530,7 @@ Report status to the user at these milestones:
 - **Andon cord presentation**: When presenting issues (Phase 9), include current progress.
 - **Halfway point**: When approximately half the work items are complete, report overall progress.
 
-Call `ideate_get_project_status()` — returns a structured project status summary including completed, in-progress, remaining, rework, and Andon cord item counts. Use the response directly to populate the status report below.
+Call `ideate_get_workspace_status()` — returns a structured project status summary including completed, in-progress, remaining, rework, and Andon cord item counts. Use the response directly to populate the status report below.
 
 If the ideate MCP artifact server is not available, stop and report: "The ideate MCP artifact server is required but not available. Verify .mcp.json configuration."
 
@@ -517,6 +539,7 @@ Status format:
 ```
 ## Status: {N}/{total} items complete
 
+Phase: {active_phase.id} ({active_phase.type}) — or "No active phase" if active_phase is null
 Completed: {list of completed item numbers and titles}
 In progress: {list, if any}
 Remaining: {list of not-yet-started items}
@@ -671,10 +694,15 @@ If `ideate_emit_metric` calls failed, note "metrics unavailable" and omit the br
 
 This skill document satisfies the MCP abstraction boundary (GP-14):
 
-- [ ] No `.ideate/` path references remain in this document
-- [ ] No `.yaml` filename references remain (e.g., `architecture.yaml`, `execution-strategy.yaml`)
-- [ ] Findings are written via `ideate_write_artifact`, not to file paths
-- [ ] Metrics are emitted via `ideate_emit_metric`, not written to `metrics.jsonl`
-- [ ] Principles and constraints are accessed via MCP tools, not path references
-- [ ] Work item format description references MCP tools, not YAML syntax
-- [ ] Phase 1 uses `ideate_get_project_status()` instead of filesystem traversal for `.ideate/config.json`
+- [x] No `.ideate/` path references remain in this document
+- [x] No `.yaml` filename references remain (e.g., `architecture.yaml`, `execution-strategy.yaml`)
+- [x] Findings are written via `ideate_write_artifact`, not to file paths
+- [x] Metrics are emitted via `ideate_emit_metric`, not written to `metrics.jsonl`
+- [x] Principles and constraints are accessed via MCP tools, not path references
+- [x] Work item format description references MCP tools, not YAML syntax
+- [x] Phase 1 uses `ideate_get_workspace_status()` instead of `ideate_get_project_status()`
+- [x] Zero occurrences of `ideate_get_project_status` in this document
+- [x] Active phase queried via `ideate_artifact_query({type: "phase", filters: {status: "active"}})` in Phase 1
+- [x] Phase steering loaded in Phase 2 and surfaced in Phase 4 execution plan and Phase 6 worker context
+- [x] Work item selection filtered to active phase's `work_items` array (with backward compat for null phase or absent list)
+- [x] Status report in Phase 11 includes current phase ID and type

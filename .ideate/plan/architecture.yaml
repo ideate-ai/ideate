@@ -344,14 +344,19 @@ content: |
   | `ideate_get_review_manifest` | Execution status | tools/execution.ts |
   | `ideate_get_convergence_status` | Analysis | tools/analysis.ts |
   | `ideate_get_domain_state` | Analysis | tools/analysis.ts |
-  | `ideate_get_project_status` | Analysis | tools/analysis.ts |
+  | `ideate_get_workspace_status` | Analysis | tools/analysis.ts |
   | `ideate_append_journal` | Write | tools/write.ts |
   | `ideate_archive_cycle` | Write | tools/write.ts |
   | `ideate_write_work_items` | Write | tools/write.ts |
   | `ideate_update_work_items` | Write | tools/write.ts |
   | `ideate_write_artifact` | Write | tools/write.ts |
   | `ideate_emit_event` | Events | tools/events.ts |
+  | `ideate_emit_metric` | Metrics | tools/metrics.ts |
   | `ideate_get_metrics` | Metrics | tools/metrics.ts |
+  | `ideate_get_next_id` | Query | tools/query.ts |
+  | `ideate_bootstrap_workspace` | Bootstrap | tools/bootstrap.ts |
+  | `ideate_manage_autopilot_state` | Autopilot | tools/autopilot-state.ts |
+  | `ideate_update_config` | Configuration | tools/config.ts |
   
   Session orchestration and remote work dispatch remain in external MCP servers.
   

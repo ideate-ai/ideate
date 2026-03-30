@@ -26,7 +26,7 @@ Call `ideate_get_config()` to read project configuration. Hold the response as `
 
 # Phase 1: Parse Invocation Arguments
 
-1. **Artifact directory path** — positional argument. If not provided, call `ideate_get_project_status()` to resolve the project location from the current working directory. If multiple candidates are found, ask the user to choose. If none, ask: "What is the path to the artifact directory for this project?"
+1. **Artifact directory path** — positional argument. If not provided, call `ideate_get_workspace_status()` to resolve the project location from the current working directory. If multiple candidates are found, ask the user to choose. If none, ask: "What is the path to the artifact directory for this project?"
 2. **`--max-cycles N`** — optional integer. Default: 20.
 
 Store both values. All subsequent phases reference these.
@@ -35,7 +35,7 @@ Store both values. All subsequent phases reference these.
 
 # Phase 2: Locate and Validate Artifact Directory
 
-Determine the **project root** by calling `ideate_get_project_status()`. If a candidate artifact directory was provided as an argument, pass it to the call. If no argument, the MCP server resolves from the current working directory. If the MCP server cannot find artifacts, stop and report the error.
+Determine the **project root** by calling `ideate_get_workspace_status()`. If a candidate artifact directory was provided as an argument, pass it to the call. If no argument, the MCP server resolves from the current working directory. If the MCP server cannot find artifacts, stop and report the error.
 
 Store the project root as `{project_root}`. All MCP tool calls use this implicitly.
 
@@ -44,6 +44,19 @@ Store the project root as `{project_root}`. All MCP tool calls use this implicit
 Determine the **project source root**. In most cases this is the same as the project root. If the architecture documents specify a different source path, use that instead. If ambiguous, ask: "Where is the project source code?"
 
 Store as `{project_source_root}`.
+
+---
+
+# Phase 2b: Load Active Project
+
+Call `ideate_artifact_query({type: "project", filters: {status: "active"}})` to retrieve the active project record.
+
+If an active project is found, store:
+- `{current_project}` — the project artifact (id, title, success_criteria, appetite)
+- `{project_success_criteria}` — the success criteria array from the project artifact
+- `{project_appetite}` — integer. The maximum number of phases autopilot will execute before triggering Andon. If absent or null, default to 10.
+
+If no active project is found, set `{current_project}` = null, `{project_success_criteria}` = null, `{project_appetite}` = null. Autopilot runs in single-project mode without project-level convergence checks.
 
 ---
 
@@ -90,7 +103,7 @@ Present:
 
 ## Initialize Autopilot State
 
-Call `ideate_manage_autopilot_state({action: "update", state: {started_at: "{ISO 8601 timestamp}", cycles_completed: 0, total_items_executed: 0, convergence_achieved: false, last_cycle_findings: {critical: 0, significant: 0, minor: 0}, last_full_review_cycle: 0, full_review_interval: 3}})` to create or reset the session state.
+Call `ideate_manage_autopilot_state({action: "update", state: {started_at: "{ISO 8601 timestamp}", cycles_completed: 0, total_items_executed: 0, convergence_achieved: false, last_cycle_findings: {critical: 0, significant: 0, minor: 0}, last_full_review_cycle: 0, full_review_interval: 3, phases_completed: 0, current_project: "{current_project.id or null}"}})` to create or reset the session state.
 
 ---
 
@@ -159,24 +172,56 @@ Read `{phases_dir}/review.md`. Follow all instructions in that document. The pha
 
 Continue here after all four review artifacts have been written via MCP and the journal is updated. The phase document returns `{last_cycle_findings}`.
 
-### 6c: Convergence Check
+### 6c: Phase Convergence Check
 
 Call `ideate_get_convergence_status({cycle_number})` — parses the spec-adherence review artifact and `{last_cycle_findings}` and returns a convergence status object with `converged: true|false`, `condition_a: true|false` (zero critical/significant findings), and `condition_b: true|false` (principle adherence verdict).
 
 If the ideate MCP artifact server is not available, stop and report: "The ideate MCP artifact server is required but not available. Verify .mcp.json configuration."
 
-Use the returned `converged` flag to drive the convergence decision. If `converged` is true, set `{convergence_achieved}` = true, call `ideate_emit_event` with:
-- event: "cycle.converged"
-- variables: { "CYCLE_NUMBER": "{cycle_number}", "TOTAL_CYCLES": "{cycles_completed}" }
-
-This call is best-effort — if it fails, continue without interruption. Then exit the loop. If `converged` is false, proceed to Phase 6d.
+Use the returned `converged` flag to drive the convergence decision. If `converged` is true, set `{phase_converged}` = true. Proceed to Phase 6c-ii. If `converged` is false, set `{phase_converged}` = false and proceed to Phase 6d.
 
 Update session state via `ideate_manage_autopilot_state({action: "update", state: {convergence_achieved: {true | false}, last_cycle_findings: {critical: N, significant: N, minor: N}}})`.
 
+### 6c-ii: Project Progress Assessment (only if phase converged)
 
-### 6d: Refinement Phase (only if not converged)
+Read `{phases_dir}/review.md` Phase Convergence Check and Project Progress Assessment sections. Follow those instructions.
 
-Read `{phases_dir}/refine.md`. Follow all instructions in that document.
+The review.md phase returns:
+- `{project_complete}` — true if all project success criteria are met, false otherwise (always false if `{current_project}` is null)
+- `{next_horizon_items}` — list of work item IDs from `horizon.next` (may be empty)
+
+**If `{project_complete}` is true**:
+1. Call `ideate_write_artifact({type: "project", id: "{current_project.id}", content: {status: "completed", completed_at: "{ISO 8601 timestamp}"}})` to mark the project completed.
+2. Call `ideate_emit_event` with event: "project.completed", variables: { "PROJECT_ID": "{current_project.id}", "CYCLES": "{cycles_completed}" }. Best-effort.
+3. Set `{convergence_achieved}` = true.
+4. Call `ideate_manage_autopilot_state({action: "update", state: {convergence_achieved: true}})`.
+5. Exit the loop. Proceed to Phases 7–9 (convergence path).
+
+**If `{project_complete}` is false and `{current_project}` is not null**:
+
+Check appetite: call `ideate_manage_autopilot_state({action: "get"})` and read `phases_completed`. Increment by 1. Persist: `ideate_manage_autopilot_state({action: "update", state: {phases_completed: {phases_completed + 1}}})`.
+
+If `phases_completed >= {project_appetite}`:
+- Trigger Andon → proxy-human:
+  > Andon: Appetite exhausted. Project "{current_project.title}" has completed {phases_completed} phases (appetite: {project_appetite}) without satisfying all success criteria. Options: (a) extend appetite, (b) declare partial success, (c) stop.
+- Apply the proxy-human decision. If deferred, exit the loop and proceed to Phases 7–9 (max cycles path, noting appetite exhaustion).
+
+If appetite not exhausted and `{next_horizon_items}` is non-empty:
+1. Read `{phases_dir}/refine.md` Phase Transition section. Follow those instructions to promote the next horizon and run a transition refine.
+2. Continue here after the refine phase completes. Start the next cycle.
+
+If appetite not exhausted and `{next_horizon_items}` is empty:
+- There is no next phase defined. Set `{convergence_achieved}` = true. Exit the loop. Proceed to Phases 7–9 (convergence path, noting no further horizon items).
+
+**If `{current_project}` is null** (single-project mode):
+- Set `{convergence_achieved}` = true. Call `ideate_emit_event` with:
+  - event: "cycle.converged"
+  - variables: { "CYCLE_NUMBER": "{cycle_number}", "TOTAL_CYCLES": "{cycles_completed}" }
+  Best-effort. Exit the loop. Proceed to Phases 7–9 (convergence path).
+
+### 6d: Refinement Phase (only if phase not converged)
+
+Read `{phases_dir}/refine.md`. Follow all instructions in that document (excluding the Phase Transition section, which is only invoked from 6c-ii).
 
 Continue here after new work items are created and the journal is updated.
 
@@ -284,7 +329,15 @@ Before executing, verify this skill document satisfies the MCP abstraction bound
 
 - [ ] No `.ideate/` path references in any instruction
 - [ ] No `.yaml` filename references (artifacts referenced by type and designation only)
+- [x] No occurrences of `ideate_get_project_status` — replaced by `ideate_get_workspace_status`
 - [ ] autopilot-state access uses `ideate_manage_autopilot_state` exclusively
+- [ ] autopilot state includes `phases_completed` and `current_project` fields
+- [ ] Active project loaded at startup via `ideate_artifact_query({type: "project", filters: {status: "active"}})`
+- [ ] Project success criteria and appetite loaded and stored as `{project_success_criteria}` and `{project_appetite}`
+- [ ] Phase convergence check (6c-ii) assesses project success criteria before deciding next action
+- [ ] Project completion writes project artifact status via `ideate_write_artifact`
+- [ ] Appetite exhaustion triggers Andon → proxy-human, not a silent stop
+- [ ] Phase transition invokes refine.md Phase Transition section (not the full refine loop)
 - [ ] Proxy-human decisions recorded via `ideate_write_artifact({type: "proxy_human_decision", ...})`, not direct file writes
 - [ ] All metrics emitted via `ideate_emit_metric`, not appended to any file
 - [ ] Finding writes use `ideate_write_artifact`

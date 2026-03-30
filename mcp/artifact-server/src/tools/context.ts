@@ -651,7 +651,113 @@ export async function handleGetContextPackage(
   }
 
   // -------------------------------------------------------------------------
-  // 4. Source Code Index
+  // 4. Active Project
+  // -------------------------------------------------------------------------
+
+  interface ProjectRow {
+    id: string;
+    intent: string;
+    success_criteria: string | null;
+    appetite: number | null;
+    horizon: string | null;
+    status: string | null;
+  }
+
+  const activeProject = ctx.db
+    .prepare(
+      `SELECT p.id, p.intent, p.success_criteria, p.appetite, p.horizon, n.status
+       FROM projects p
+       JOIN nodes n ON n.id = p.id
+       WHERE n.status = 'active'
+       LIMIT 1`
+    )
+    .get() as ProjectRow | undefined;
+
+  if (activeProject) {
+    const projectSection: string[] = [`## Active Project`, ""];
+    projectSection.push(`**ID**: ${activeProject.id}`);
+    projectSection.push(`**Intent**: ${activeProject.intent}`);
+
+    if (activeProject.appetite) {
+      projectSection.push(`**Appetite**: ${activeProject.appetite}`);
+    }
+
+    if (activeProject.success_criteria) {
+      try {
+        const criteria = JSON.parse(activeProject.success_criteria);
+        if (Array.isArray(criteria) && criteria.length > 0) {
+          projectSection.push("", "**Success Criteria**:");
+          for (const c of criteria as string[]) {
+            projectSection.push(`- ${c}`);
+          }
+        }
+      } catch {
+        projectSection.push(`**Success Criteria**: ${activeProject.success_criteria}`);
+      }
+    }
+
+    if (activeProject.horizon) {
+      try {
+        const horizon = JSON.parse(activeProject.horizon);
+        projectSection.push(`**Horizon**: ${JSON.stringify(horizon)}`);
+      } catch {
+        projectSection.push(`**Horizon**: ${activeProject.horizon}`);
+      }
+    }
+
+    sections.push(projectSection.join("\n"));
+  }
+
+  // -------------------------------------------------------------------------
+  // 5. Current Phase
+  // -------------------------------------------------------------------------
+
+  interface PhaseRow {
+    id: string;
+    project: string;
+    phase_type: string;
+    intent: string;
+    steering: string | null;
+    status: string | null;
+    work_items: string | null;
+  }
+
+  const activePhase = ctx.db
+    .prepare(
+      `SELECT p.id, p.project, p.phase_type, p.intent, p.steering, p.work_items, n.status
+       FROM phases p
+       JOIN nodes n ON n.id = p.id
+       WHERE n.status = 'active'
+       LIMIT 1`
+    )
+    .get() as PhaseRow | undefined;
+
+  if (activePhase) {
+    const phaseSection: string[] = [`## Current Phase`, ""];
+    phaseSection.push(`**ID**: ${activePhase.id}`);
+    phaseSection.push(`**Type**: ${activePhase.phase_type}`);
+    phaseSection.push(`**Intent**: ${activePhase.intent}`);
+
+    if (activePhase.steering) {
+      phaseSection.push(`**Steering**: ${activePhase.steering}`);
+    }
+
+    if (activePhase.work_items) {
+      try {
+        const workItems = JSON.parse(activePhase.work_items);
+        if (Array.isArray(workItems) && workItems.length > 0) {
+          phaseSection.push("", `**Work Items**: ${(workItems as string[]).join(", ")}`);
+        }
+      } catch {
+        phaseSection.push(`**Work Items**: ${activePhase.work_items}`);
+      }
+    }
+
+    sections.push(phaseSection.join("\n"));
+  }
+
+  // -------------------------------------------------------------------------
+  // 6. Source Code Index
   // -------------------------------------------------------------------------
 
   // Derive project source root: ideateDir is <project>/.ideate/,
@@ -711,7 +817,7 @@ export async function handleGetContextPackage(
   }
 
   // -------------------------------------------------------------------------
-  // 5. Assemble final response, target 500-800 lines
+  // 7. Assemble final response, target 500-800 lines
   // -------------------------------------------------------------------------
 
   let result = sections.join("\n\n---\n\n");

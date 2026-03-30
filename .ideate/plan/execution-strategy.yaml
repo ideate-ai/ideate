@@ -1,26 +1,19 @@
 id: execution-strategy
 type: execution_strategy
-title: Execution Strategy — WI-414 through WI-416
-mode: full_parallel
-parallelism: 3
-worktree: false
-review_cadence: per_item
+title: Execution Strategy — WI-449 through WI-450 (Second Correction Pass)
+mode: sequential
+parallelism:
+  max_concurrent: 1
+review_cadence: per_work_item
 groups:
-  - name: main
+  - name: Code fixes
     items:
-      - WI-414
-      - WI-415
-      - WI-416
-    ordering: parallel
-    notes: All three items have non-overlapping file scope and no data dependencies. WI-414 and WI-415 are the substantive changes; WI-416 is trivial cleanup. All can run concurrently.
-dependency_graph:
-  WI-414: []
-  WI-415: []
-  WI-416: []
-agent_config:
-  model: sonnet
-  reviewer_model: sonnet
-notes: WI-414 modifies analysis.ts and tools.test.ts (convergence status section). WI-415 modifies metrics.ts, config.ts, and metrics.test.ts. WI-416 modifies only write-transaction.test.ts. No file overlap across items.
-content_hash: 9d238d31b8a632262d6484bacfc6493ffc55cc952047fa8e8ffd7f788b41947f
-token_count: 198
-file_path: .ideate/plan/execution-strategy.yaml
+      - WI-449
+    notes: Schema + autopilot state whitelist fixes. Must complete before WI-450.
+  - name: Documentation + policy
+    items:
+      - WI-450
+    notes: Depends on WI-449 for correct schema to document.
+dependency_graph: WI-449 → WI-450
+content_hash: c758dff0a02298b4159be5877ea634b8a0450d5aa7a64e44f332e2c1d51db171
+token_count: 123

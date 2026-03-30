@@ -1,7 +1,7 @@
 id: WI-429
 type: work_item
 title: Fix analysis.ts resolveContent guards and adherenceRow selection priority; rebuild dist/
-status: pending
+status: done
 complexity: small
 scope:
   - path: mcp/artifact-server/src/tools/analysis.ts
@@ -56,7 +56,6 @@ notes: |-
   4. Verify `dist/tools/analysis.js` has the three changes
 resolution: null
 cycle_created: 6
-cycle_modified: null
-content_hash: 82ee7fef2d32b3f13cde86a49c4791fbcea33bd5a1ad9cc27fd79cfeabe0ee62
-token_count: 816
-file_path: /Users/dan/code/ideate/.ideate/work-items/WI-429.yaml
+cycle_modified: 5
+content_hash: d8faa470b27546061dcb6051efc9ad03887488a9da5cd39823312fd024b1d40e
+token_count: 815

@@ -27,7 +27,7 @@ Determine the **project root** — the directory to initialize. Use this precede
 1. If the user provided a path argument, resolve it to an absolute path and use it as the project root.
 2. Otherwise, use the current working directory.
 
-**Check if the artifact directory already exists** by calling `ideate_get_project_status()`.
+**Check if the artifact directory already exists** by calling `ideate_get_workspace_status()`.
 
 If the status is NOT `not_initialized` — the project already has an artifact directory — **stop immediately** and report:
 
@@ -67,14 +67,14 @@ If the user overrides, switch modes. Then proceed to Phase 3.
 
 # PHASE 3: BOOTSTRAP PROJECT
 
-Call `ideate_bootstrap_project()` to create the artifact directory structure with config and all standard subdirectories. Pass `project_name` if known from context.
+Call `ideate_bootstrap_workspace()` to create the artifact directory structure with config and all standard subdirectories. Pass `project_name` if known from context.
 
 This single MCP call handles:
 - Creating the artifact directory
 - Writing config with the current schema version
 - Creating all standard subdirectories
 
-After the call returns, verify MCP server availability by calling `ideate_get_project_status()`.
+After the call returns, verify MCP server availability by calling `ideate_get_workspace_status()`.
 
 If the ideate MCP artifact server is not available, stop and report: "The ideate MCP artifact server is required but not available. Verify MCP configuration."
 
@@ -151,6 +151,43 @@ The interview is complete after:
 - Constraints are captured (even if none)
 
 Do not extend the interview. If the user gives short answers, accept them and proceed.
+
+---
+
+# PHASE 5I.5: CREATE PROJECT ARTIFACT
+
+After the interview closes, create a project artifact to capture the project's identity and intent.
+
+Call `ideate_get_next_id({type: "project"})` to obtain the project ID (e.g., `PR-001`).
+
+Write the project artifact via `ideate_write_artifact` with type `project` and the obtained ID:
+
+```
+ideate_write_artifact({
+  type: "project",
+  id: "{PR-NNN}",
+  content: {
+    intent: "{One-paragraph description of what this project is, what problem it solves, and for whom — derived from the interview.}",
+    scope_boundary: {
+      in: ["{What is being built — one item per line}"],
+      out: ["{What is explicitly excluded — one item per line, or omit if nothing was stated out of scope}"]
+    },
+    success_criteria: ["{Criterion 1 — how the user will know the project succeeded}", "{Criterion 2}"],
+    appetite: "{default from config, or user-specified if stated during interview}",
+    steering: "{Any project-specific guidance from the interview that does not fit into guiding principles or constraints — omit if none.}",
+    horizon: {
+      current: null,
+      next: [],
+      later: []
+    },
+    status: "active",
+    cycle_created: 0,
+    cycle_modified: null
+  }
+})
+```
+
+The `horizon` fields are left null/empty here and will be populated after the phase artifact is created. Derive `success_criteria` from interview answers about what "done" looks like or what success means. If the user did not state success criteria explicitly, derive reasonable criteria from the project purpose.
 
 ---
 
@@ -252,6 +289,37 @@ ideate_append_journal({
   body: "{Summary of the init session: codebase analyzed, principles established, constraints captured, domains identified. 2-4 sentences.}"
 })
 ```
+
+---
+
+# PHASE 6I.5: CREATE PHASE ARTIFACT
+
+After steering artifacts are written, create a single default phase to represent the first execution cycle for this existing codebase.
+
+Call `ideate_get_next_id({type: "phase"})` to obtain the phase ID (e.g., `PH-001`).
+
+Write the phase artifact via `ideate_write_artifact` with type `phase` and the obtained ID:
+
+```
+ideate_write_artifact({
+  type: "phase",
+  id: "{PH-NNN}",
+  content: {
+    title: "Initial Implementation",
+    phase_type: "implementation",
+    project: "{project_id}",
+    description: "{One sentence: what this phase covers — the first planned changes to this codebase.}",
+    work_items: [],
+    status: "pending",
+    cycle_created: 0,
+    cycle_modified: null
+  }
+})
+```
+
+The `work_items` array is empty — init mode does not create work items. Work items will be added when `/ideate:refine` plans the first cycle.
+
+After creating the phase, update the project artifact (from Phase 5I.5) to populate the `horizon` field. Re-call `ideate_write_artifact` with type `project` and the same project ID, passing the full content with `horizon.current` set to the phase ID just created.
 
 ---
 
@@ -364,7 +432,7 @@ Rewrite the interview artifact with updated `domain` fields on each entry. Call 
 
 # PHASE 8I: PRESENT INIT SUMMARY
 
-After all artifacts are written, call `ideate_get_project_status()` to confirm the artifact state, then present a summary:
+After all artifacts are written, call `ideate_get_workspace_status()` to confirm the artifact state, then present a summary:
 
 ```
 ## Init Complete
@@ -385,7 +453,9 @@ After all artifacts are written, call `ideate_get_project_status()` to confirm t
 {List: domain name — one-sentence description. Or "None — domains will be established in /ideate:refine."}
 
 ### Artifacts Written
-- Config bootstrapped via ideate_bootstrap_project
+- Config bootstrapped via ideate_bootstrap_workspace
+- Project: {PR-NNN}
+- Phase: {PH-NNN} (single implementation phase, work items pending)
 - GP-01 through GP-{NN} ({N} principles)
 - C-01 through C-{NN} ({N} constraints, or "none")
 - Interview: interview-init-001
@@ -566,6 +636,43 @@ Before closing the interview, present a structured summary:
 Ask the user: "Do you want to address any of the open questions before I proceed to architecture, or should I proceed and make reasonable assumptions where needed?"
 
 If the user wants to address questions, continue the interview for those specific points. If the user says to proceed, note which questions remain open — these become documented assumptions in the architecture.
+
+---
+
+# PHASE 4P.8: CREATE PROJECT ARTIFACT
+
+After the interview closes (and before writing steering artifacts), create a project artifact to capture the project's identity and intent.
+
+Call `ideate_get_next_id({type: "project"})` to obtain the project ID (e.g., `PR-001`).
+
+Write the project artifact via `ideate_write_artifact` with type `project` and the obtained ID:
+
+```
+ideate_write_artifact({
+  type: "project",
+  id: "{PR-NNN}",
+  content: {
+    intent: "{One-paragraph description of what this project is, what problem it solves, and for whom — derived from the interview.}",
+    scope_boundary: {
+      in: ["{What is being built — one item per line}"],
+      out: ["{What is explicitly excluded — one item per line, or omit if nothing was stated out of scope}"]
+    },
+    success_criteria: ["{Criterion 1 — how the user will know the project succeeded}", "{Criterion 2}"],
+    appetite: "{default from config, or user-specified if stated during interview}",
+    steering: "{Any project-specific guidance from the interview that does not fit into guiding principles or constraints — omit if none.}",
+    horizon: {
+      current: null,
+      next: [],
+      later: []
+    },
+    status: "active",
+    cycle_created: 0,
+    cycle_modified: null
+  }
+})
+```
+
+The `horizon` fields are left null/empty here and will be populated after phase artifacts are created in Phase 7P.5. Derive `success_criteria` from interview answers about what success looks like. If the user did not state criteria explicitly, derive them from the project purpose and stated goals.
 
 ---
 
@@ -768,6 +875,71 @@ If any work item fails this test, add more detail until it passes.
 
 ---
 
+# PHASE 7P.5: CREATE PHASE ARTIFACTS
+
+After all work items are validated, group them into phases and create phase artifacts. Phases represent logical progressions of work — not just execution groups. A phase is a milestone that delivers meaningful value or capability.
+
+## 7P.5.1 Propose Phase Grouping
+
+Analyze the validated work items and the dependency graph. Identify natural phase boundaries based on:
+
+- **Foundational work**: Infrastructure, core data models, shared utilities — work that everything else depends on
+- **Functional delivery**: Features and capabilities the user identified as primary goals
+- **Integration and polish**: Cross-cutting concerns, end-to-end wiring, testing, deployment
+
+Draft 1-3 phases. Present the proposed grouping to the user:
+
+```
+## Proposed Phase Grouping
+
+### Phase 1: {Name}
+Goal: {What this phase delivers}
+Work items: WI-{NNN}, WI-{NNN}, ...
+
+### Phase 2: {Name}
+Goal: {What this phase delivers}
+Work items: WI-{NNN}, WI-{NNN}, ...
+
+[...]
+
+Does this grouping make sense, or would you like to adjust?
+```
+
+Wait for user confirmation or adjustment before writing phase artifacts. If the user approves or suggests minor changes, incorporate feedback and proceed. If the user wants significant restructuring, revise the grouping and re-present.
+
+## 7P.5.2 Write Phase Artifacts
+
+For each approved phase, call `ideate_get_next_id({type: "phase"})` to obtain the phase ID. Write the phase artifact via `ideate_write_artifact` with type `phase`:
+
+```
+ideate_write_artifact({
+  type: "phase",
+  id: "{PH-NNN}",
+  content: {
+    title: "{Phase name}",
+    phase_type: "implementation",
+    project: "{project_id}",
+    description: "{One sentence: what this phase delivers and why it comes before the next.}",
+    work_items: ["{WI-NNN}", "{WI-NNN}"],
+    status: "pending",
+    cycle_created: 0,
+    cycle_modified: null
+  }
+})
+```
+
+Call `ideate_get_next_id({type: "phase"})` separately for each phase to ensure non-colliding IDs.
+
+## 7P.5.3 Update Project Horizon
+
+After all phase artifacts are written, update the project artifact (from Phase 4P.8) to populate the `horizon` field. Re-call `ideate_write_artifact` with type `project` and the same project ID, passing the full content with:
+
+- `horizon.current` — the first phase ID (PH-001 or equivalent)
+- `horizon.next` — IDs of subsequent phases
+- `horizon.later` — empty array (phases beyond the current plan are not yet defined)
+
+---
+
 # PHASE 8P: EXECUTION STRATEGY
 
 ## 8P.1 Write Execution Strategy
@@ -808,7 +980,7 @@ State whether each group should run in parallel or sequentially, and why.
 
 Verify and write every artifact that has not been written yet. All writes use `ideate_write_artifact`.
 
-**Work items**: All work items should already be written (from Phase 7P.3). Verify they are all present via `ideate_get_project_status()`.
+**Work items**: All work items should already be written (from Phase 7P.3). Verify they are all present via `ideate_get_workspace_status()`.
 
 **Execution strategy**: Written in Phase 8P.1. Verify it exists.
 
@@ -823,8 +995,10 @@ ideate_append_journal({
 })
 ```
 
-Verify that the following artifacts exist and are complete by calling `ideate_get_project_status()`:
+Verify that the following artifacts exist and are complete by calling `ideate_get_workspace_status()`:
 - Project config
+- Project artifact (PR-{NNN})
+- Phase artifacts (PH-{NNN}, one per logical phase)
 - Interview (interview-plan-001)
 - Guiding principles (GP-{NN}, one per principle)
 - Constraints (C-{NN}, one per constraint)
@@ -958,7 +1132,7 @@ ideate_append_journal({
 
 # PHASE 11P: VERIFICATION AND SUMMARY
 
-Call `ideate_get_project_status()` to confirm all artifacts are present. Then present the plan summary (from Phase 9P.2) if not already presented.
+Call `ideate_get_workspace_status()` to confirm all artifacts are present. Then present the plan summary (from Phase 9P.2) if not already presented.
 
 Write a final metrics journal entry via `ideate_append_journal`:
 
@@ -1068,7 +1242,7 @@ If the user provides fewer than 2 guiding principles, write what was provided. D
 If the project root does not exist or is not a directory, stop and report the error. Do not create a project root that does not exist.
 
 ## Bootstrap failure
-If `ideate_bootstrap_project` fails during Phase 3, stop immediately — the artifact directory structure is required for all subsequent writes.
+If `ideate_bootstrap_workspace` fails during Phase 3, stop immediately — the artifact directory structure is required for all subsequent writes.
 
 ## Partial write failures
 If an MCP write call fails during artifact writing phases, note the failure and continue. Partial artifact sets are better than nothing. List failed writes in the summary.
@@ -1095,16 +1269,21 @@ If an MCP write call fails during artifact writing phases, note the failure and 
 
 Before considering the init skill complete, verify the following invariants:
 
-1. **Existing project detection**: Phase 1 calls `ideate_get_project_status()` and returns an error if the project already exists, instructing the user to remove the artifact directory manually or use `/ideate:refine`.
+1. **Existing project detection**: Phase 1 calls `ideate_get_workspace_status()` and returns an error if the project already exists, instructing the user to remove the artifact directory manually or use `/ideate:refine`.
 2. **Source code detection**: Phase 2 uses Glob to check for source files and determines init mode vs plan mode.
-3. **Both flows call ideate_bootstrap_project**: Phase 3 calls `ideate_bootstrap_project()` regardless of mode.
-4. **Init mode produces steering artifacts only**: Guiding principles, constraints, interview transcript, domain layer. No work items, architecture, overview, execution strategy, or module specs.
-5. **Plan mode produces full plan artifacts**: Guiding principles, constraints, interview, research, architecture, overview, execution strategy, module specs (if applicable), work items, and domain layer.
-6. **No direct file I/O**: Every artifact was written through an MCP tool (`ideate_write_artifact`, `ideate_append_journal`, `ideate_emit_metric`, `ideate_bootstrap_project`). No Write tool calls targeting the artifact directory.
+3. **Both flows call ideate_bootstrap_workspace**: Phase 3 calls `ideate_bootstrap_workspace()` regardless of mode.
+4. **Init mode produces steering artifacts only**: Guiding principles, constraints, interview transcript, domain layer, one project artifact, one phase artifact. No work items, architecture, overview, execution strategy, or module specs.
+5. **Plan mode produces full plan artifacts**: Guiding principles, constraints, interview, research, architecture, overview, execution strategy, module specs (if applicable), work items, phase artifacts (one per logical phase), one project artifact, and domain layer.
+6. **No direct file I/O**: Every artifact was written through an MCP tool (`ideate_write_artifact`, `ideate_append_journal`, `ideate_emit_metric`, `ideate_bootstrap_workspace`). No Write tool calls targeting the artifact directory.
 7. **No path references**: No instructions reference filesystem paths within the artifact directory. All artifacts are identified by type and designation (e.g., GP-01, C-02, interview-init-001).
-8. **Bootstrap via MCP**: The artifact directory was created by `ideate_bootstrap_project`, not by manual directory creation.
-9. **Designations, not filenames**: Artifacts are referenced by their designation (GP-01, C-01, D-1, P-1, Q-1, WI-001, interview-init-001, interview-plan-001) throughout, never by filename.
+8. **Bootstrap via MCP**: The artifact directory was created by `ideate_bootstrap_workspace`, not by manual directory creation.
+9. **Designations, not filenames**: Artifacts are referenced by their designation (GP-01, C-01, D-1, P-1, Q-1, WI-001, PR-001, PH-001, interview-init-001, interview-plan-001) throughout, never by filename.
 10. **Metrics via MCP**: Metric entries are emitted through `ideate_emit_metric`, not appended to a file directly.
 11. **Journal via MCP**: Journal entries are written through `ideate_append_journal`, not as direct YAML file writes.
 12. **All agent references use ideate: qualified names**: Agents are referenced as `ideate:architect`, `ideate:researcher`, `ideate:decomposer` — not bare names.
 13. **GP-14 self-check**: This skill does not reference `.ideate/` paths, directory structures, or `.yaml` filenames. Artifacts are referenced by designation only.
+14. **Project artifact created in both modes**: A project artifact (type `project`) is written via `ideate_write_artifact` after the interview completes in both init mode (Phase 5I.5) and plan mode (Phase 4P.8). IDs are obtained via `ideate_get_next_id({type: "project"})`.
+15. **Phase artifacts created in both modes**: Phase artifacts (type `phase`) are written via `ideate_write_artifact`. Init mode creates a single phase with `phase_type=implementation` and empty `work_items` (Phase 6I.5). Plan mode creates one phase per logical group, populated with `work_items` after user approval (Phase 7P.5).
+16. **Project horizon populated**: After phase artifacts are created, the project artifact's `horizon.current` field is updated to reference the first phase ID. This update is performed in both modes.
+17. **IDs via ideate_get_next_id**: Project and phase IDs are never hardcoded. Each is obtained by calling `ideate_get_next_id({type: "project"})` and `ideate_get_next_id({type: "phase"})` respectively.
+18. **Correct workspace tool names**: All workspace status checks use `ideate_get_workspace_status`. All bootstrap calls use `ideate_bootstrap_workspace`. No deprecated tool names appear anywhere in this skill.

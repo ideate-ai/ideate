@@ -1,0 +1,53 @@
+id: interview-refine-006
+type: interview
+title: Refinement Interview — Project/Phase/Cycle Hierarchy
+cycle: 6
+date: 2026-03-30
+entries:
+  - question: What specific changes do you want to make?
+    answer: Ideate currently has no concept larger than a single cycle. When features are too large for one cycle, context windows overflow and rework increases. Need a concept that spans multiple cycles for long-term planning without loading all details into context.
+    domain: workflow
+  - question: What triggered this change?
+    answer: "Direct observation: large cycles don't scale, autopilot has excessive rework, context gets too large. This is a requirements miss — ideate cannot plan long-term or large-scale projects."
+    domain: workflow
+  - question: "Research conducted: Scrum/Agile/XP, SAFe/LeSS/Nexus, Lean/Six Sigma/Shape Up, military planning"
+    answer: "Universal pattern: progressive elaboration with planning horizons. Every framework uses lightweight strategic containers (epic, PI, bet, mission) that carry intent across iterations without carrying implementation detail. Key tension: how much structure to add (SAFe adds too much, LeSS adds almost none, Shape Up takes radical stance of no multi-cycle work)."
+    domain: workflow
+  - question: Which problem is primary — context overload or strategic drift?
+    answer: Both equally important. Guiding principles and domain policies maintain spec adherence well, but need more granularity on how they apply to a specific body of work. Need awareness of direction and pragmatic choices about what to address now vs defer.
+    domain: workflow
+  - question: How do you feel about Shape Up's circuit breaker?
+    answer: Circuit breakers make sense in autopilot. Keep each cycle lean. Could see circuit-breaker-style mechanism used to pull Andon. Should be configurable. Should also apply reasoning when evaluating if new work being added is isolated or a symptom of a larger issue.
+    domain: workflow
+  - question: Should the top-level concept be user-created or AI-inferred?
+    answer: Mostly AI inference unless otherwise specified. When an ask is large, suggest how to split work into cycles and elicit suggestions. Not keen on calling it 'mission'.
+    domain: workflow
+  - question: How should autopilot work across multiple cycles?
+    answer: Autopilot should span multiple cycles. Should go until the original scope is fulfilled or Andon is pulled.
+    domain: workflow
+  - question: Should the hierarchy support nesting?
+    answer: "Yes, but defer nesting to future work. Start flat: projects contain phases which contain cycles. Nesting (projects containing sub-projects) will be needed eventually but adds too much complexity for the initial pass."
+    domain: workflow
+  - question: "Naming: the top-level concept conflicts with existing 'project' terminology in MCP tools"
+    answer: Go with 'project' for the new concept. Rename existing 'project' references to 'workspace'. A migration tool is needed. 'Workspace' is more descriptive of the tooling.
+    domain: artifact-structure
+  - question: Are projects always required or optional?
+    answer: Always created for simplicity. Even single-cycle work gets a project.
+    domain: workflow
+  - question: How should guiding principles relate to projects?
+    answer: "Guiding principles stay workspace-level. Projects and phases get 'steering' — lighter, contextual guidance. This enables different phase types: brainstorming, spikes, research cycles as part of a larger project. E.g. 'design a feature' = design+research phase followed by implementation phase."
+    domain: workflow
+  - question: What happens to existing work items (352 across 5 cycles)?
+    answer: Create a single retroactive project PR-001 'Ideate Development' covering all existing work.
+    domain: artifact-structure
+  - question: Should cycles become explicit artifacts?
+    answer: "Renamed the planned units to 'phases' (PH-NNN). Cycles remain as they are — execute/review iterations within a phase. Four-level hierarchy: Workspace > Project > Phase > Cycle."
+    domain: artifact-structure
+  - question: How does execute work with multiple phases? What happens when reviewers find issues?
+    answer: "Severity-based routing: critical/significant findings fixed in current phase (same cycle loop), minor findings carried forward to next phase. Circuit breaker fires when a phase can't converge after N cycles — evaluates whether issues are isolated or systemic. Systemic issues escalate to project-level Andon."
+    domain: workflow
+  - question: "Structural concern: cycles doing double duty (planned units AND autopilot iterations)"
+    answer: Resolved by renaming planned units to 'phases'. Cycles retain their existing meaning as execute/review iterations. Phases are the explicit artifacts with type, intent, steering. This preserves existing cycle infrastructure while adding structure above it.
+    domain: workflow
+content_hash: bc261bfec6e021ceac60e74b32d5af32f31dcbf3fa94f8c6c6bd5f3db7c89f49
+token_count: 1235

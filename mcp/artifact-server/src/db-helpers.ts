@@ -27,6 +27,8 @@ export {
   documentArtifacts,
   interviewQuestions,
   proxyHumanDecisions,
+  projects,
+  phases,
   edges,
   nodeFileRefs,
 } from "./db.js";
@@ -69,6 +71,7 @@ export interface WorkItemRow {
   criteria: string | null;
   module: string | null;
   domain: string | null;
+  phase: string | null;
   notes: string | null;
 }
 
@@ -215,6 +218,29 @@ export interface ProxyHumanDecisionRow {
   status: string;
 }
 
+/** Row type for projects table */
+export interface ProjectRow {
+  id: string;
+  intent: string;
+  scope_boundary: string | null;
+  success_criteria: string | null;
+  appetite: number | null;
+  steering: string | null;
+  horizon: string | null;
+  status: string;
+}
+
+/** Row type for phases table */
+export interface PhaseRow {
+  id: string;
+  project: string;
+  phase_type: string;
+  intent: string;
+  steering: string | null;
+  status: string;
+  work_items: string | null;
+}
+
 /** Row type for edges table */
 export interface EdgeRow {
   source_id: string;
@@ -283,6 +309,7 @@ export function upsertWorkItem(db: DrizzleDb, row: WorkItemRow): void {
       criteria: row.criteria,
       module: row.module,
       domain: row.domain,
+      phase: row.phase,
       notes: row.notes,
     })
     .onConflictDoUpdate({
@@ -296,6 +323,7 @@ export function upsertWorkItem(db: DrizzleDb, row: WorkItemRow): void {
         criteria: row.criteria,
         module: row.module,
         domain: row.domain,
+        phase: row.phase,
         notes: row.notes,
       },
     })
@@ -666,6 +694,64 @@ export function upsertProxyHumanDecision(db: DrizzleDb, row: ProxyHumanDecisionR
     .run();
 }
 
+/**
+ * Upsert a row into the projects table.
+ */
+export function upsertProject(db: DrizzleDb, row: ProjectRow): void {
+  db.insert(dbSchema.projects)
+    .values({
+      id: row.id,
+      intent: row.intent,
+      scope_boundary: row.scope_boundary,
+      success_criteria: row.success_criteria,
+      appetite: row.appetite,
+      steering: row.steering,
+      horizon: row.horizon,
+      status: row.status,
+    })
+    .onConflictDoUpdate({
+      target: dbSchema.projects.id,
+      set: {
+        intent: row.intent,
+        scope_boundary: row.scope_boundary,
+        success_criteria: row.success_criteria,
+        appetite: row.appetite,
+        steering: row.steering,
+        horizon: row.horizon,
+        status: row.status,
+      },
+    })
+    .run();
+}
+
+/**
+ * Upsert a row into the phases table.
+ */
+export function upsertPhase(db: DrizzleDb, row: PhaseRow): void {
+  db.insert(dbSchema.phases)
+    .values({
+      id: row.id,
+      project: row.project,
+      phase_type: row.phase_type,
+      intent: row.intent,
+      steering: row.steering,
+      status: row.status,
+      work_items: row.work_items,
+    })
+    .onConflictDoUpdate({
+      target: dbSchema.phases.id,
+      set: {
+        project: row.project,
+        phase_type: row.phase_type,
+        intent: row.intent,
+        steering: row.steering,
+        status: row.status,
+        work_items: row.work_items,
+      },
+    })
+    .run();
+}
+
 // ---------------------------------------------------------------------------
 // Typed insert helpers for edges and file refs (no conflict handling)
 // ---------------------------------------------------------------------------
@@ -856,6 +942,14 @@ export function upsertExtensionRow(
     case "proxy_human_decisions":
       assertRequiredFields(tableName, row, "cycle", "trigger", "decision", "timestamp", "status");
       upsertProxyHumanDecision(db, { id, ...row } as ProxyHumanDecisionRow);
+      break;
+    case "projects":
+      assertRequiredFields(tableName, row, "intent", "status");
+      upsertProject(db, { id, ...row } as ProjectRow);
+      break;
+    case "phases":
+      assertRequiredFields(tableName, row, "project", "phase_type", "intent", "status");
+      upsertPhase(db, { id, ...row } as PhaseRow);
       break;
     default:
       throw new Error(`Unknown extension table: ${tableName}`);

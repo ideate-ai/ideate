@@ -4,11 +4,11 @@ export type { ToolContext } from "../types.js";
 import { handleGetWorkItemContext, handleGetContextPackage, handleAssembleContext } from "./context.js";
 import { handleArtifactQuery, handleGetNextId } from "./query.js";
 import { handleGetExecutionStatus, handleGetReviewManifest } from "./execution.js";
-import { handleGetConvergenceStatus, handleGetDomainState, handleGetProjectStatus } from "./analysis.js";
+import { handleGetConvergenceStatus, handleGetDomainState, handleGetWorkspaceStatus } from "./analysis.js";
 import { handleAppendJournal, handleArchiveCycle, handleWriteWorkItems, handleUpdateWorkItems, handleWriteArtifact } from "./write.js";
 import { handleEmitEvent } from "./events.js";
 import { handleEmitMetric, handleGetMetrics } from "./metrics.js";
-import { handleBootstrapProject } from "./bootstrap.js";
+import { handleBootstrapWorkspace } from "./bootstrap.js";
 import { handleManageAutopilotState } from "./autopilot-state.js";
 import { handleUpdateConfig } from "./config.js";
 import { getConfigWithDefaults } from "../config.js";
@@ -71,14 +71,14 @@ export const TOOLS: Tool[] = [
   {
     name: "ideate_artifact_query",
     description:
-      "Query artifacts by type with filters. Use for: work items (type=work_item), findings, policies. Graph traversal: related_to + edge_types. Returns array (up to 200 items).",
+      "Query artifacts by type with filters. Use for: work items (type=work_item), findings, policies, projects (type=project), phases (type=phase). Graph traversal: related_to + edge_types. Returns array (up to 200 items).",
     inputSchema: {
       type: "object",
       properties: {
         type: {
           type: "string",
           description:
-            "Artifact type to filter by (e.g. 'work_item', 'finding', 'domain_policy', 'domain_decision', 'domain_question', 'guiding_principle', 'constraint', 'module_spec', 'journal_entry').",
+            "Artifact type to filter by (e.g. 'work_item', 'finding', 'domain_policy', 'domain_decision', 'domain_question', 'guiding_principle', 'constraint', 'module_spec', 'journal_entry', 'project', 'phase').",
         },
         filters: {
           type: "object",
@@ -213,9 +213,9 @@ export const TOOLS: Tool[] = [
     },
   },
   {
-    name: "ideate_get_project_status",
+    name: "ideate_get_workspace_status",
     description:
-      "Project status: current cycle, work item counts, journal entries, open questions. Use for overview. Returns ~800 chars.",
+      "Workspace status: current cycle, work item counts, journal entries, open questions. Use for overview. Returns ~800 chars.",
     inputSchema: {
       type: "object",
       properties: {},
@@ -390,6 +390,7 @@ export const TOOLS: Tool[] = [
               domain: { type: "string" },
               notes: { type: "string" },
               scope: { type: "array", items: { type: "object" } },
+              phase: { type: "string" },
             },
             required: ["id"],
           },
@@ -407,7 +408,7 @@ export const TOOLS: Tool[] = [
   {
     name: "ideate_write_artifact",
     description:
-      "Write an artifact to the project store. Use for findings, policies, decisions, and cycle summaries. Returns confirmation.",
+      "Write an artifact to the project store. Use for findings, policies, decisions, projects, phases, and cycle summaries. Returns confirmation.",
     inputSchema: {
       type: "object",
       properties: {
@@ -569,9 +570,9 @@ export const TOOLS: Tool[] = [
     },
   },
   {
-    name: "ideate_bootstrap_project",
+    name: "ideate_bootstrap_workspace",
     description:
-      "Initialize project artifacts. Use for project initialization. Returns confirmation with status.",
+      "Initialize workspace artifacts. Use for workspace initialization. Returns confirmation with status.",
     inputSchema: {
       type: "object",
       properties: {
@@ -599,7 +600,7 @@ export const TOOLS: Tool[] = [
       properties: {
         type: {
           type: "string",
-          enum: ["work_item", "guiding_principle", "constraint", "policy", "decision", "question", "domain_policy", "domain_decision", "domain_question", "proxy_human_decision"],
+          enum: ["work_item", "guiding_principle", "constraint", "policy", "decision", "question", "domain_policy", "domain_decision", "domain_question", "proxy_human_decision", "project", "phase"],
           description:
             "Artifact type to generate the next ID for.",
         },
@@ -715,8 +716,8 @@ export async function handleTool(
     case "ideate_get_domain_state":
       return handleGetDomainState(ctx, _args);
 
-    case "ideate_get_project_status":
-      return handleGetProjectStatus(ctx, _args);
+    case "ideate_get_workspace_status":
+      return handleGetWorkspaceStatus(ctx, _args);
 
     case "ideate_append_journal":
       return handleAppendJournal(ctx, _args);
@@ -745,8 +746,8 @@ export async function handleTool(
     case "ideate_emit_metric":
       return handleEmitMetric(ctx, _args);
 
-    case "ideate_bootstrap_project":
-      return handleBootstrapProject(ctx, _args);
+    case "ideate_bootstrap_workspace":
+      return handleBootstrapWorkspace(ctx, _args);
 
     case "ideate_get_next_id":
       return handleGetNextId(ctx, _args);
