@@ -4,8 +4,20 @@ import { parse as parseYaml } from "yaml";
 import type { ToolContext } from "../types.js";
 import { computePPR } from "../ppr.js";
 import { getConfigWithDefaults } from "../config.js";
-import { nodes } from "../db.js";
-import { eq } from "drizzle-orm";
+
+// ---------------------------------------------------------------------------
+// Module-level caches
+// ---------------------------------------------------------------------------
+
+/** Cached source code index: maps file path to {mtime, exports} */
+interface SourceCacheEntry {
+  mtimeMs: number;
+  exports: string[];
+  language: string;
+  relPath: string;
+}
+let sourceIndexCache: Map<string, SourceCacheEntry> | null = null;
+let sourceIndexProjectRoot: string | null = null;
 
 // ---------------------------------------------------------------------------
 // Internal types
@@ -417,26 +429,37 @@ export async function handleGetWorkItemContext(
   // 6. Find relevant research by topic match
   // -------------------------------------------------------------------------
 
-  const researchRows = ctx.db
-    .prepare(
-      `SELECT rf.id, rf.topic, rf.date, rf.content, rf.sources
-       FROM research_findings rf
-       JOIN nodes n ON n.id = rf.id
-       ORDER BY rf.id`
-    )
-    .all() as ResearchFindingRow[];
-
-  // Filter by topic relevance: match against domain or module name
+  // Filter research by topic relevance using SQL WHERE clause
   const relevanceTokens: string[] = [];
   if (workItemRow.domain) relevanceTokens.push(workItemRow.domain.toLowerCase());
   if (workItemRow.module) relevanceTokens.push(workItemRow.module.toLowerCase());
 
-  const relevantResearch = relevanceTokens.length > 0
-    ? researchRows.filter((r) => {
-        const topicLower = r.topic.toLowerCase();
-        return relevanceTokens.some((t) => topicLower.includes(t));
-      })
-    : researchRows.slice(0, 3); // fallback: first 3 if no domain/module
+  let relevantResearch: ResearchFindingRow[];
+  if (relevanceTokens.length > 0) {
+    // Build SQL with LIKE conditions for each relevance token
+    const likeClauses = relevanceTokens.map(() => `LOWER(rf.topic) LIKE ?`).join(" OR ");
+    const likeParams = relevanceTokens.map((t) => `%${t}%`);
+    relevantResearch = ctx.db
+      .prepare(
+        `SELECT rf.id, rf.topic, rf.date, rf.content, rf.sources
+         FROM research_findings rf
+         JOIN nodes n ON n.id = rf.id
+         WHERE ${likeClauses}
+         ORDER BY rf.id`
+      )
+      .all(...likeParams) as ResearchFindingRow[];
+  } else {
+    // No domain/module — fetch first 3 as fallback
+    relevantResearch = ctx.db
+      .prepare(
+        `SELECT rf.id, rf.topic, rf.date, rf.content, rf.sources
+         FROM research_findings rf
+         JOIN nodes n ON n.id = rf.id
+         ORDER BY rf.id
+         LIMIT 3`
+      )
+      .all() as ResearchFindingRow[];
+  }
 
   if (relevantResearch.length > 0) {
     const researchSection: string[] = [
@@ -768,8 +791,13 @@ export async function handleGetContextPackage(
   const SOURCE_DIRS = ["src", "lib", "agents", "skills", "scripts", "mcp"];
   const SOURCE_EXTS = [".ts", ".js", ".py"];
 
-  const sourceFiles: Array<{ file: string; relPath: string; ext: string }> = [];
+  // Initialize or invalidate cache if project root changed
+  if (sourceIndexProjectRoot !== projectRoot) {
+    sourceIndexCache = new Map();
+    sourceIndexProjectRoot = projectRoot;
+  }
 
+  const sourceFiles: Array<{ file: string; relPath: string; ext: string }> = [];
   for (const srcDir of SOURCE_DIRS) {
     const fullSrcDir = path.join(projectRoot, srcDir);
     const files = walkDir(fullSrcDir, SOURCE_EXTS);
@@ -796,9 +824,18 @@ export async function handleGetContextPackage(
     for (const { file, relPath, ext } of shown) {
       const language = extToLanguage(ext);
       let exports: string[] = [];
+
+      // Use mtime-based cache to avoid re-reading unchanged files
       try {
-        const content = fs.readFileSync(file, "utf8");
-        exports = extractExports(content, ext);
+        const stat = fs.statSync(file);
+        const cached = sourceIndexCache!.get(file);
+        if (cached && cached.mtimeMs === stat.mtimeMs) {
+          exports = cached.exports;
+        } else {
+          const content = fs.readFileSync(file, "utf8");
+          exports = extractExports(content, ext);
+          sourceIndexCache!.set(file, { mtimeMs: stat.mtimeMs, exports, language, relPath });
+        }
       } catch {
         // skip unreadable files
       }
@@ -1005,11 +1042,13 @@ export async function handleAssembleContext(
 
   const includedIds: string[] = [];
   const includedRows: NodeRow[] = [];
+  const contentCache = new Map<string, string>(); // file_path -> content
   let usedTokens = 0;
 
   // Always-include first (seeds + include_types)
   for (const row of alwaysInclude) {
     const content = readArtifactContent(row.file_path);
+    contentCache.set(row.file_path, content);
     const tokenCount = row.token_count ?? estimateTokens(content);
     usedTokens += tokenCount;
     includedIds.push(row.id);
@@ -1020,6 +1059,7 @@ export async function handleAssembleContext(
   for (const row of ranked) {
     if (usedTokens >= tokenBudget) break;
     const content = readArtifactContent(row.file_path);
+    contentCache.set(row.file_path, content);
     const tokenCount = row.token_count ?? estimateTokens(content);
     if (usedTokens + tokenCount > tokenBudget) continue; // skip if would bust budget
     usedTokens += tokenCount;
@@ -1049,7 +1089,7 @@ export async function handleAssembleContext(
     const typeSection: string[] = [`## ${typeHeader}`];
 
     for (const row of rows) {
-      const content = readArtifactContent(row.file_path);
+      const content = contentCache.get(row.file_path) ?? readArtifactContent(row.file_path);
       const label = extractArtifactLabel(row.id, row.type, content);
       typeSection.push("", `### ${label}`);
       if (content) {

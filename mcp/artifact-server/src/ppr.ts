@@ -133,6 +133,9 @@ export function computePPR(
   for (const e of allEdges) {
     const w = edgeTypeWeights[e.edge_type] ?? 1.0;
 
+    // Skip edges with zero weight — they contribute nothing to score propagation
+    if (w === 0) continue;
+
     // source → target (forward direction)
     adj.get(e.source_id)!.push({ neighbour: e.target_id, weight: w });
     // target → source (reverse direction — undirected traversal)

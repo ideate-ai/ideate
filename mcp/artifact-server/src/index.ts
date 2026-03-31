@@ -61,17 +61,14 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 });
 
 // Graceful shutdown
-process.on("SIGINT", () => {
+function shutdown() {
   artifactWatcher.close();
   state.db?.close();
   process.exit(0);
-});
+}
 
-process.on("SIGTERM", () => {
-  artifactWatcher.close();
-  state.db?.close();
-  process.exit(0);
-});
+process.on("SIGINT", shutdown);
+process.on("SIGTERM", shutdown);
 
 const transport = new StdioServerTransport();
 await server.connect(transport);

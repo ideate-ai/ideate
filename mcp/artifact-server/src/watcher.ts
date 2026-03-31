@@ -2,11 +2,6 @@ import chokidar, { FSWatcher, WatchOptions } from "chokidar";
 import { EventEmitter } from "events";
 import path from "path";
 
-export interface FileChangeEvent {
-  artifactDir: string;
-  filePath: string;
-}
-
 export interface BatchChangeEvent {
   artifactDir: string;
   changed: string[];

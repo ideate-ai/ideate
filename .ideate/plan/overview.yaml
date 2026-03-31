@@ -1,33 +1,19 @@
 id: overview
 type: overview
-title: Cycle Change Plan — Comprehensive Code Quality Audit Triage
+title: Cycle Change Plan — Structure & Coherence Phase
 body: |-
   ## What Is Changing
 
-  All 88 findings from a full-codebase quality audit are being triaged into 18 work items covering: git hygiene, dead script cleanup, DRY refactors, server core structure, schema/type correctness, write handler correctness, query/analysis correctness, context assembly performance, error handling, dead code removal, skill/agent fixes, test quality improvements, documentation updates, and autopilot coherence.
+  Structural quality improvements: DRY refactors, duplication elimination, agent definition accuracy.
 
-  ## Trigger
+  ## Scope
 
-  User-requested comprehensive code review after many recent changes. Goal: take stock of the full codebase state.
+  **In scope**: Generic upsert for db-helpers.ts (~500 LOC reduction), server core helper extraction (pragma, watcher, bootstrap, shutdown), agent definition fixes (5 agents), worker agent creation.
 
-  ## Scope Boundary
+  **Not in scope**: Performance (PH-005), test quality (PH-006). Principles and architecture unchanged.
 
-  **In scope**: All findings from the 5-agent audit (MCP server core, tool handlers, tests, skills/agents, scripts/config).
-  **Not in scope**: Guiding principles unchanged. No architectural changes. No new features. This is purely corrective/quality work.
+  ## Work Items
 
-  ## Expected Impact
-
-  - ~500 LOC reduction from db-helpers.ts generic upsert refactor
-  - Multiple correctness fixes (archived WI file_path, DAG transactions, domain decisions in getDomainState)
-  - Performance improvements in context assembly (bounded queries, caching, dedup reads)
-  - 1 critical test gap fixed (fireEvent behavioral verification)
-  - 7 dead/obsolete scripts removed
-  - dist/ and metrics.jsonl untracked from git
-  - 5 agent definitions updated for accuracy
-  - Review skill tool references corrected
-
-  ## New Work Items
-
-  WI-451 through WI-468 (18 items)
-content_hash: 77596b49387eaa6b62387cb1130340a0ac73e00f7158ba397ef03d595a605a36
-token_count: 382
+  WI-453, WI-454, WI-463, WI-464
+content_hash: 9fd72d14c4da1e90578464ab9aaf15f43a632c4458f787627ac86dc6d697d200
+token_count: 146

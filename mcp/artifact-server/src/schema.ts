@@ -300,7 +300,9 @@ export interface DocumentArtifact extends ArtifactCommon {
     | "guiding_principles"
     | "constraints"
     | "research"
-    | "interview";
+    | "interview"
+    | "review_output"
+    | "domain_index";
   title: string | null;
   cycle: number | null;
   content: string | null;

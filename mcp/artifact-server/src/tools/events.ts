@@ -1,5 +1,37 @@
+import * as fs from "fs";
+import * as path from "path";
 import type { ToolContext } from "../types.js";
-import { loadHooks, dispatchHook } from "../hooks.js";
+import { loadHooks, dispatchHook, type HooksConfig } from "../hooks.js";
+
+// ---------------------------------------------------------------------------
+// Hooks cache — avoids re-reading and re-parsing hooks file on every event
+// ---------------------------------------------------------------------------
+
+let cachedHooks: HooksConfig | null = null;
+let cachedHooksMtimeMs: number | null = null;
+let cachedHooksDir: string | null = null;
+
+function getCachedHooks(ideateDir: string): HooksConfig {
+  const hooksFile = path.join(ideateDir, "hooks.json");
+  try {
+    const stat = fs.statSync(hooksFile);
+    if (cachedHooksDir === ideateDir && cachedHooksMtimeMs === stat.mtimeMs && cachedHooks) {
+      return cachedHooks;
+    }
+    cachedHooks = loadHooks(ideateDir);
+    cachedHooksMtimeMs = stat.mtimeMs;
+    cachedHooksDir = ideateDir;
+    return cachedHooks;
+  } catch {
+    // File doesn't exist or can't be read — load fresh (returns empty hooks)
+    if (cachedHooksDir !== ideateDir) {
+      cachedHooks = loadHooks(ideateDir);
+      cachedHooksDir = ideateDir;
+      cachedHooksMtimeMs = null;
+    }
+    return cachedHooks!;
+  }
+}
 
 // ---------------------------------------------------------------------------
 // handleEmitEvent
@@ -30,7 +62,7 @@ export async function handleEmitEvent(
     }
   }
 
-  const { hooks } = loadHooks(ctx.ideateDir);
+  const { hooks } = getCachedHooks(ctx.ideateDir);
   const matching = hooks.filter((h) => h.event === event && h.enabled);
 
   let executed = 0;

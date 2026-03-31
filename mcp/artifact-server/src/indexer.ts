@@ -86,40 +86,13 @@ interface SafeParseYamlResult {
   errorMessage: string | null;
 }
 
-/** Extract caller function name from the call stack */
-function getCallerContext(): string {
-  const stack = new Error().stack;
-  if (!stack) return "unknown";
-  const lines = stack.split("\n");
-  // Stack format varies by Node.js version; look for function names after this function
-  // Typical format: "    at functionName (file:line:col)" or "    at Object.functionName (file:line:col)"
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i];
-    // Skip lines until we find our own function name
-    if (line.includes("getCallerContext")) continue;
-    if (line.includes("safeParseYaml")) continue;
-    // The next meaningful line should be the caller
-    const match = line.match(/at\s+(?:(\w+)\.)?(\w+)\s*\(/);
-    if (match && match[2]) {
-      return match[2];
-    }
-    // Alternative format: "    at functionName (file)"
-    const altMatch = line.match(/at\s+(\w+)\s*\(/);
-    if (altMatch && altMatch[1]) {
-      return altMatch[1];
-    }
-  }
-  return "unknown";
-}
-
-/** Safely parse YAML; logs warning with timestamp, context, file path and error details on failure */
-function safeParseYaml(content: string, filePath: string): SafeParseYamlResult {
+/** Safely parse YAML; logs warning with timestamp, caller context, file path and error details on failure */
+function safeParseYaml(content: string, filePath: string, caller: string = "unknown"): SafeParseYamlResult {
   try {
     return { parsed: parseYaml(content), errorMessage: null };
   } catch (err) {
     const errMsg = err instanceof Error ? err.message : String(err);
     const timestamp = new Date().toISOString();
-    const caller = getCallerContext();
     console.warn(`[${timestamp}] [indexer:${caller}] YAML parse error in ${filePath}: ${errMsg}`);
     return { parsed: null, errorMessage: errMsg };
   }
@@ -405,14 +378,6 @@ function extractFileRefs(
 }
 
 // ---------------------------------------------------------------------------
-// Delete stale rows
-// ---------------------------------------------------------------------------
-
-function deleteStaleRows(drizzleDb: DrizzleDb, keepIds: string[]): number {
-  return deleteNodesNotIn(drizzleDb, keepIds);
-}
-
-// ---------------------------------------------------------------------------
 // Cycle detection — Kahn's algorithm on depends_on edges
 // ---------------------------------------------------------------------------
 
@@ -545,7 +510,7 @@ function indexSingleFile(
   }
 
 
-  const parseResult = safeParseYaml(content, filePath);
+  const parseResult = safeParseYaml(content, filePath, "indexSingleFile");
   if (!parseResult.parsed || typeof parseResult.parsed !== "object") {
     const errorMsg = parseResult.errorMessage ?? "unknown parse error";
     return { nodeId: null, updated: false, failed: true, error: `${filePath}: YAML parse error - ${errorMsg}`, edgesCreated: 0 };
@@ -634,6 +599,7 @@ export function indexFiles(
   filePaths: string[]
 ): IndexFilesResult {
   const result: IndexFilesResult = { updated: 0, failed: 0, errors: [] };
+  // Defensive: watcher already filters for YAML, but callers outside watcher may not
   const yamlPaths = filePaths.filter(f => f.endsWith('.yaml') || f.endsWith('.yml'));
   if (yamlPaths.length === 0) return result;
 
@@ -766,7 +732,7 @@ export function rebuildIndex(db: Database.Database, drizzleDb: DrizzleDb, ideate
   // Phase 2: delete stale rows with FK ON so that ON DELETE CASCADE removes
   // extension table rows, edges, and node_file_refs automatically.
   const deletePhase = db.transaction(() => {
-    stats.files_deleted = deleteStaleRows(drizzleDb, keepIds);
+    stats.files_deleted = deleteNodesNotIn(drizzleDb, keepIds);
   });
 
   deletePhase();

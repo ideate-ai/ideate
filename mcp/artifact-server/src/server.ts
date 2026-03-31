@@ -43,18 +43,20 @@ export function createDormantState(): ServerState {
 // openDatabase — create + configure a SQLite DB in the given directory
 // ---------------------------------------------------------------------------
 
+function configurePragmas(db: InstanceType<typeof Database>): void {
+  db.pragma("journal_mode = WAL");
+  db.pragma("busy_timeout = 5000");
+  db.pragma("foreign_keys = ON");
+}
+
 export function openDatabase(dir: string): InstanceType<typeof Database> {
   const dbPath = path.join(dir, "index.db");
   let newDb = new Database(dbPath);
-  newDb.pragma("journal_mode = WAL");
-  newDb.pragma("busy_timeout = 5000");
-  newDb.pragma("foreign_keys = ON");
+  configurePragmas(newDb);
   if (!checkSchemaVersion(newDb, dbPath)) {
     // DB was stale — reopen fresh
     newDb = new Database(dbPath);
-    newDb.pragma("journal_mode = WAL");
-    newDb.pragma("busy_timeout = 5000");
-    newDb.pragma("foreign_keys = ON");
+    configurePragmas(newDb);
   }
   try {
     createSchema(newDb);
@@ -98,15 +100,14 @@ export function initServer(dir: string, state: ServerState): void {
     watchedDirs.add(dir);
     artifactWatcher.on("change", (event: BatchChangeEvent) => {
       try {
+        if (!state.ctx) return;
         const yamlChanged = event.changed.filter(f => f.endsWith('.yaml') || f.endsWith('.yml'));
         const yamlDeleted = event.deleted.filter(f => f.endsWith('.yaml') || f.endsWith('.yml'));
-        if (yamlChanged.length > 0 && state.db) {
-          const dDb = drizzle(state.db, { schema: dbSchema });
-          indexFiles(state.db, dDb, yamlChanged);
+        if (yamlChanged.length > 0) {
+          indexFiles(state.ctx.db, state.ctx.drizzleDb, yamlChanged);
         }
-        if (yamlDeleted.length > 0 && state.db) {
-          const dDb = drizzle(state.db, { schema: dbSchema });
-          removeFiles(state.db, dDb, yamlDeleted);
+        if (yamlDeleted.length > 0) {
+          removeFiles(state.ctx.db, state.ctx.drizzleDb, yamlDeleted);
         }
       } catch (err) {
         console.error("[watcher] incremental index failed:", err);
@@ -119,33 +120,35 @@ export function initServer(dir: string, state: ServerState): void {
 // handleBootstrapDormant — create .ideate/ and lazily initialize
 // ---------------------------------------------------------------------------
 
+function buildBootstrapResponse(warning?: string): string {
+  const result: Record<string, unknown> = { status: "initialized", subdirectories: [...IDEATE_SUBDIRS] };
+  if (warning) result.warning = warning;
+  return JSON.stringify(result, null, 2);
+}
+
+function tryInitServer(dir: string, state: ServerState): string | null {
+  if (state.ctx) return null;
+  try {
+    initServer(dir, state);
+    return null;
+  } catch (err) {
+    const msg = (err as Error).message;
+    console.error(`[ideate-artifact-server] Late initialization failed: ${msg}`);
+    return `DB initialization failed: ${msg}. Server is still dormant.`;
+  }
+}
+
 export function handleBootstrapDormant(
   state: ServerState,
-  args: Record<string, unknown>
+  args: Record<string, unknown>,
+  cwd?: string
 ): string {
-  const projectRoot = process.cwd();
+  const projectRoot = cwd ?? process.cwd();
   const existingConfig = readIdeateConfig(projectRoot);
 
   if (existingConfig) {
-    // .ideate/ exists — initialize server without overwriting config
-    if (!state.ctx) {
-      try {
-        initServer(existingConfig.artifactDir, state);
-      } catch (err) {
-        const msg = (err as Error).message;
-        console.error(`[ideate-artifact-server] Late initialization failed: ${msg}`);
-        return JSON.stringify(
-          { status: "initialized", subdirectories: [...IDEATE_SUBDIRS], warning: `DB initialization failed: ${msg}. Server is still dormant.` },
-          null,
-          2
-        );
-      }
-    }
-    return JSON.stringify(
-      { status: "initialized", subdirectories: [...IDEATE_SUBDIRS] },
-      null,
-      2
-    );
+    const warning = tryInitServer(existingConfig.artifactDir, state);
+    return buildBootstrapResponse(warning ?? undefined);
   }
 
   // No existing .ideate/ — create fresh
@@ -154,26 +157,8 @@ export function handleBootstrapDormant(
   if (projectName) config.project_name = projectName;
 
   const ideateDir = createIdeateDir(projectRoot, config);
-
-  if (!state.ctx) {
-    try {
-      initServer(ideateDir, state);
-    } catch (err) {
-      const msg = (err as Error).message;
-      console.error(`[ideate-artifact-server] Late initialization failed: ${msg}`);
-      return JSON.stringify(
-        { status: "initialized", subdirectories: [...IDEATE_SUBDIRS], warning: `DB initialization failed: ${msg}. Server is still dormant.` },
-        null,
-        2
-      );
-    }
-  }
-
-  return JSON.stringify(
-    { status: "initialized", subdirectories: [...IDEATE_SUBDIRS] },
-    null,
-    2
-  );
+  const warning = tryInitServer(ideateDir, state);
+  return buildBootstrapResponse(warning ?? undefined);
 }
 
 // ---------------------------------------------------------------------------

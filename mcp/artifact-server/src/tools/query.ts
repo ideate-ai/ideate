@@ -67,7 +67,7 @@ export async function handleGetNextId(
 
   // Standard (non-cycle-scoped) ID generation
   const row = ctx.db.prepare(
-    `SELECT MAX(CAST(REPLACE(id, ?, '') AS INTEGER)) as max_num
+    `SELECT MAX(CAST(SUBSTR(id, LENGTH(?) + 1) AS INTEGER)) as max_num
      FROM nodes
      WHERE id LIKE ? || '%'`
   ).get(prefix, prefix) as { max_num: number | null } | undefined;
@@ -378,11 +378,6 @@ function runFilterMode(
 // Graph traversal mode
 // ---------------------------------------------------------------------------
 
-interface GraphModeResult {
-  rows: RawRow[];
-  total_count: number;
-}
-
 function runGraphMode(
   ctx: ToolContext,
   relatedTo: string,
@@ -575,12 +570,7 @@ function executeTraversalQuery(
 
   // Status filter from nodes
   if (filters.status) {
-    const wrapper = typeFilter ? filteredSql : `SELECT * FROM (${baseSql})`;
-    if (typeFilter) {
-      filteredSql = `SELECT * FROM (${filteredSql}) WHERE status = ?`;
-    } else {
-      filteredSql = `${wrapper} WHERE status = ?`;
-    }
+    filteredSql = `SELECT * FROM (${filteredSql}) WHERE status = ?`;
     filteredParams.push(filters.status);
   }
 
