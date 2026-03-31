@@ -138,15 +138,15 @@ export async function handleGetExecutionStatus(
   }
 
   const total = rows.length;
-  const completedList = [...completedSet].sort();
-  const obsoleteList = [...obsoleteSet].sort();
   const pendingList = [...pendingSet].sort();
   const readyList = [...readySet].sort();
 
+  // Completed and obsolete: count only (full ID lists waste tokens at scale).
+  // Pending, ready, and blocked: full IDs (these are the actionable sets).
   const lines: string[] = [
     "## Execution Status",
-    `Completed: ${completedSet.size} (${completedList.join(", ") || "none"})`,
-    `Obsolete: ${obsoleteSet.size} (${obsoleteList.join(", ") || "none"})`,
+    `Completed: ${completedSet.size}`,
+    `Obsolete: ${obsoleteSet.size}`,
     `Pending: ${pendingSet.size} (${pendingList.join(", ") || "none"})`,
     `Ready to execute: ${readySet.size} (${readyList.join(", ") || "none"})`,
     `Blocked: ${blockedMap.size}`,

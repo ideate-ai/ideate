@@ -5,10 +5,39 @@
  * eliminating the need for `as any` casts throughout the codebase.
  */
 
+import * as crypto from "crypto";
+import { stringify as stringifyYaml } from "yaml";
 import Database from "better-sqlite3";
 import { BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
 import { eq, notInArray, getTableName as drizzleGetTableName } from "drizzle-orm";
 import * as dbSchema from "./db.js";
+
+// ---------------------------------------------------------------------------
+// Shared artifact hash computation
+// ---------------------------------------------------------------------------
+
+/**
+ * Compute a stable content hash for a YAML artifact object.
+ *
+ * Excludes metadata fields that are computed at write/index time:
+ *   - content_hash  (would be self-referential)
+ *   - token_count   (derived from serialized length)
+ *   - file_path     (storage detail, not content)
+ *
+ * This matches the exclusion pattern used by write handlers (write.ts ~line 780)
+ * so that a file written by a write handler and later re-indexed by rebuildIndex
+ * produces the same content_hash value.
+ */
+export function computeArtifactHash(yamlObj: Record<string, unknown>): string {
+  const forHash: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(yamlObj)) {
+    if (k !== "content_hash" && k !== "token_count" && k !== "file_path") {
+      forHash[k] = v;
+    }
+  }
+  const serialized = stringifyYaml(forHash, { lineWidth: 0 });
+  return crypto.createHash("sha256").update(serialized, "utf8").digest("hex");
+}
 
 // Re-export all table references for convenience
 export {
@@ -524,8 +553,9 @@ export function getTableName(table: dbSchema.AnyTable): string {
  */
 function assertRequiredFields(tableName: string, row: Record<string, unknown>, ...fields: string[]): void {
   for (const field of fields) {
-    if (row[field] === undefined) {
-      throw new Error(`upsertExtensionRow(${tableName}): required field '${field}' is missing`);
+    if (row[field] === undefined || row[field] === null) {
+      const reason = row[field] === undefined ? 'missing' : 'null';
+      throw new Error(`upsertExtensionRow(${tableName}): required field '${field}' is ${reason}`);
     }
   }
 }

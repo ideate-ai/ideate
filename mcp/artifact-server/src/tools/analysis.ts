@@ -6,6 +6,12 @@ import type { ToolContext } from "../types.js";
 // Helpers
 // ---------------------------------------------------------------------------
 
+const DESC_MAX_CHARS = 200;
+function truncateDesc(text: string): string {
+  if (text.length <= DESC_MAX_CHARS) return text;
+  return text.slice(0, DESC_MAX_CHARS) + "...";
+}
+
 function readFileSafe(filePath: string): string | null {
   try {
     return fs.readFileSync(filePath, "utf8");
@@ -124,7 +130,7 @@ export async function handleGetConvergenceStatus(
   ) ?? rawRows[0];
 
   // Resolve content: use document_artifacts.content if available, otherwise read from file_path.
-  // handleWriteArtifact stores content as JSON.stringify(content) in document_artifacts.content,
+  // handleWriteArtifact stores content.content as a raw string when it is a string, or JSON.stringify(content) otherwise, in document_artifacts.content,
   // so attempt to unwrap the `.content` field from the parsed JSON before returning the raw string.
   function resolveContent(row: RawRow | undefined): string | null {
     if (!row) return null;
@@ -293,7 +299,7 @@ export async function handleGetDomainState(
       sections.push("None.");
     } else {
       for (const p of policies) {
-        const desc = p.description ? ` — ${p.description}` : "";
+        const desc = p.description ? ` — ${truncateDesc(p.description)}` : "";
         sections.push(`- **${p.id}**${desc}`);
       }
     }
@@ -303,7 +309,7 @@ export async function handleGetDomainState(
       sections.push("None.");
     } else {
       for (const d of decisions) {
-        const desc = d.description ? ` — ${d.description}` : "";
+        const desc = d.description ? ` — ${truncateDesc(d.description)}` : "";
         sections.push(`- **${d.id}**${desc}`);
       }
     }
@@ -313,7 +319,7 @@ export async function handleGetDomainState(
       sections.push("None.");
     } else {
       for (const q of questions) {
-        const desc = q.description ? ` — ${q.description}` : "";
+        const desc = q.description ? ` — ${truncateDesc(q.description)}` : "";
         sections.push(`- **${q.id}**${desc}`);
       }
     }

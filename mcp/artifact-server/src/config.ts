@@ -6,6 +6,8 @@ export const CONFIG_SCHEMA_VERSION = 3;
 /**
  * Schema for .ideate/config.json
  */
+export type SpawnMode = "subagent" | "teammate";
+
 export interface IdeateConfigJson {
   schema_version: number;
   project_name?: string;
@@ -13,6 +15,7 @@ export interface IdeateConfigJson {
   model_overrides?: Record<string, string>;
   circuit_breaker_threshold?: number;
   default_appetite?: number;
+  spawn_mode?: SpawnMode;
   ppr?: {
     alpha?: number;
     max_iterations?: number;
@@ -31,6 +34,12 @@ export const DEFAULT_CIRCUIT_BREAKER_THRESHOLD = 5;
  * Default default_appetite used when the field is absent from config.json.
  */
 export const DEFAULT_APPETITE = 6;
+
+/**
+ * Default spawn_mode used when the field is absent from config.json.
+ * "subagent" = standard Agent tool spawning; "teammate" = agent teams mode.
+ */
+export const DEFAULT_SPAWN_MODE: SpawnMode = "subagent";
 
 /**
  * Default agent_budgets used when the field is absent from config.json.
@@ -216,9 +225,9 @@ export function readRawConfig(ideateDir: string): IdeateConfigJson {
  * @returns Config object with defaults applied for missing fields
  */
 export function getConfigWithDefaults(ideateDir: string): Required<
-  Pick<IdeateConfigJson, "schema_version" | "agent_budgets" | "model_overrides" | "ppr" | "circuit_breaker_threshold" | "default_appetite">
+  Pick<IdeateConfigJson, "schema_version" | "agent_budgets" | "model_overrides" | "ppr" | "circuit_breaker_threshold" | "default_appetite" | "spawn_mode">
 > &
-  Omit<IdeateConfigJson, "agent_budgets" | "model_overrides" | "ppr" | "circuit_breaker_threshold" | "default_appetite"> {
+  Omit<IdeateConfigJson, "agent_budgets" | "model_overrides" | "ppr" | "circuit_breaker_threshold" | "default_appetite" | "spawn_mode"> {
   const configPath = path.join(ideateDir, "config.json");
   let raw: IdeateConfigJson = { schema_version: CONFIG_SCHEMA_VERSION };
 
@@ -257,6 +266,7 @@ export function getConfigWithDefaults(ideateDir: string): Required<
     raw.circuit_breaker_threshold ?? DEFAULT_CIRCUIT_BREAKER_THRESHOLD;
 
   const default_appetite = raw.default_appetite ?? DEFAULT_APPETITE;
+  const spawn_mode = raw.spawn_mode ?? DEFAULT_SPAWN_MODE;
 
   return {
     ...raw,
@@ -265,5 +275,6 @@ export function getConfigWithDefaults(ideateDir: string): Required<
     ppr,
     circuit_breaker_threshold,
     default_appetite,
+    spawn_mode,
   };
 }

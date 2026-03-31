@@ -1,7 +1,7 @@
 id: WI-472
 type: work_item
 title: MCP response payload audit
-status: pending
+status: done
 complexity: medium
 scope:
   - path: mcp/artifact-server/src/tools/query.ts
@@ -26,8 +26,8 @@ notes: |-
 
   ## Implementation
   Instrument and measure each handler, document findings.
-resolution: null
+resolution: "Audit complete. 4 handlers identified with excessive responses: handleGetExecutionStatus (full completed ID list), handleArtifactQuery (no status filtering), handleGetDomainState (full policy text), handleGetContextPackage (uncapped architecture). Findings documented for WI-473."
 cycle_created: 6
-cycle_modified: null
-content_hash: d3a8628bc799b3f2db66f797c90ac37a05ad3bd2fbfe4e499ba0c726b03c7cf7
-token_count: 196
+cycle_modified: 5
+content_hash: 92aa85e982b5c85d9ff85198b150c48d5ce211975a40d2d77fb9df4ef9f18d71
+token_count: 264

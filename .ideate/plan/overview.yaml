@@ -1,23 +1,24 @@
 id: overview
 type: overview
-title: Cycle Change Plan — Frictionless Updates, Spawn Config, Response Optimization, Phase Chunking, Reporting
+title: "Refinement: Generalize context retrieval and enforce GP-14"
 body: |-
-  ## What Is Changing
+  ## What is changing
 
-  Five initiatives spanning infrastructure, developer experience, and new capabilities:
-  1. GP-16 (Frictionless Install): automatic migration on MCP server startup when data model changes
-  2. Spawn mode configuration: choose subagent vs teammate mode for all agent spawns
-  3. MCP response optimization: trim excessive payloads to reduce token waste
-  4. Intelligent phase chunking: auto-group work items into thin-slice phases by shared context
-  5. Reporting skill: /ideate:report generating markdown/PDF reports with mermaid diagrams
+  1. **ideate_get_work_item_context → ideate_get_artifact_context**: The work-item-specific context tool is generalized to accept any artifact ID. It queries the nodes table for type, then dispatches to type-specific context assembly (work item details, phase + linked work items, or generic YAML + edges).
 
-  ## Scope Boundary
+  2. **ideate_assemble_context description**: Tool description and parameter examples updated to make clear that any artifact ID (phases, policies, principles) works as a PPR seed, not just work items.
 
-  In scope: migration infrastructure, config schema, all skills spawn logic, MCP tool handlers, refine/init phase chunking, new report skill.
-  Not in scope: existing guiding principles (unchanged except GP-16 addition), architecture document, existing test infrastructure.
+  3. **GP-14 guardrail in skills**: All skill files that use MCP tools gain an explicit guardrail: MCP tool failures must be reported and halt execution — never trigger fallback to direct .ideate/ file access.
 
-  ## Work Items
+  4. **Domain policy P-52**: Formalizes the GP-14 enforcement rule as a reviewable domain policy.
 
-  WI-469 through WI-477 (9 items across 4 phases)
-content_hash: 5ed3e8194a4341d49b6a672c726c812fa05748b8273f1b7c2bc35ac5a30ebce2
-token_count: 268
+  ## What is NOT changing
+  - PPR algorithm (ppr.ts) — already type-agnostic
+  - ideate_assemble_context function logic — already works for any node ID
+  - ideate_get_context_package — unchanged
+  - Schema, indexer, watcher — unchanged
+
+  ## Trigger
+  Attempted ideate_assemble_context with artifact_id parameter (wrong name) for PH-013. Tool failed. Fallback was direct .ideate/ file reads, violating GP-14.
+content_hash: 0367bcd02e946f80c8633c5e98e2098d2092e5741640ba7ebd59cd472bc01ab9
+token_count: 339

@@ -22,6 +22,10 @@ Your tone is neutral and factual. Report status plainly. No encouragement, no en
 
 Call `ideate_get_config()` to read project configuration. Hold the response as `{config}`. Use `{config}.agent_budgets.{agent_name}` as the maxTurns value when spawning agents. If `ideate_get_config` is unavailable or returns no agent_budgets, use the agent's frontmatter maxTurns as fallback. Also hold `{config}.model_overrides` — a map of agent name to model string. When spawning any agent, use `{config}.model_overrides['{agent_name}']` as the model parameter if present and non-empty; otherwise use the hardcoded default listed in the spawn instruction.
 
+Also hold `{config}.spawn_mode` — either `"subagent"` (default) or `"teammate"`. When spawning agents:
+- If `spawn_mode` is `"teammate"`: check that `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1` is set in the environment. If set, use teammate/team mode for agent spawning. If not set, fall back to standard subagent mode and log a warning: "spawn_mode is 'teammate' but CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS is not set — falling back to subagent mode."
+- If `spawn_mode` is `"subagent"` or absent: use standard Agent tool spawning (the default).
+
 ---
 
 # Phase 1: Parse Invocation Arguments
@@ -279,7 +283,7 @@ After each agent spawn (via the Agent tool), emit a metric via `ideate_emit_metr
 - `output_tokens` — integer or null. Output token count from agent response metadata. Null if not available.
 - `cache_read_tokens` — integer or null. Prompt caching read tokens if available. Null if not available.
 - `cache_write_tokens` — integer or null. Prompt caching write tokens if available. Null if not available.
-- `mcp_tools_called` — array of strings. Names of MCP tools called to assemble context for this agent spawn (e.g., `["ideate_get_context_package", "ideate_get_work_item_context"]`). Empty array `[]` if no MCP tools were called.
+- `mcp_tools_called` — array of strings. Names of MCP tools called to assemble context for this agent spawn (e.g., `["ideate_get_context_package", "ideate_get_artifact_context"]`). Empty array `[]` if no MCP tools were called.
 - `outcome` — optional (null if not available). For `code-reviewer` entries (phase `"6a"`): `"pass"` if the incremental review verdict is Pass with no rework, `"rework"` if the verdict is Pass after rework, `"fail"` if the verdict is Fail. For all other agent types: `null`.
 - `finding_count` — optional (null if not available). For `code-reviewer` entries (phase `"6a"`): total findings from the incremental review. For reviewer entries (phase `"6b"`, agent types `"code-reviewer"`, `"spec-reviewer"`, `"gap-analyst"`): total findings from that reviewer's output. Null for `worker`, `journal-keeper`, `domain-curator`, and `proxy-human` entries, and null if output cannot be parsed.
 - `finding_severities` — optional (null if not available). Object with keys `critical`, `significant`, `minor` and integer values. Populated for `code-reviewer` phase `"6a"` entries and reviewer phase `"6b"` entries. Null for all other agent types and null if output cannot be parsed.
@@ -321,27 +325,29 @@ These three fields are optional (null if not available). Include them in the Pha
 - You do not re-plan from scratch. New work items in the refinement phase address specific findings. They do not replace the original plan.
 - You do not use filler phrases, encouragement, or enthusiasm. State facts.
 
+**GP-14 enforcement**: If an MCP tool call fails, report the error and stop. Do NOT fall back to reading, grepping, or globbing .ideate/ files directly. The MCP abstraction boundary (GP-14) is inviolable — a tool failure is a signal to fix the tool, not to bypass it.
+
 ---
 
 # Self-Check
 
 Before executing, verify this skill document satisfies the MCP abstraction boundary (GP-14):
 
-- [ ] No `.ideate/` path references in any instruction
-- [ ] No `.yaml` filename references (artifacts referenced by type and designation only)
+- [x] No `.ideate/` path references in any instruction — only in "What You Do Not Do" and self-check
+- [x] No `.yaml` filename references (artifacts referenced by type and designation only)
 - [x] No occurrences of `ideate_get_project_status` — replaced by `ideate_get_workspace_status`
-- [ ] autopilot-state access uses `ideate_manage_autopilot_state` exclusively
-- [ ] autopilot state includes `phases_completed` and `current_project` fields
-- [ ] Active project loaded at startup via `ideate_artifact_query({type: "project", filters: {status: "active"}})`
-- [ ] Project success criteria and appetite loaded and stored as `{project_success_criteria}` and `{project_appetite}`
-- [ ] Phase convergence check (6c-ii) assesses project success criteria before deciding next action
-- [ ] Project completion writes project artifact status via `ideate_write_artifact`
-- [ ] Appetite exhaustion triggers Andon → proxy-human, not a silent stop
-- [ ] Phase transition invokes refine.md Phase Transition section (not the full refine loop)
-- [ ] Proxy-human decisions recorded via `ideate_write_artifact({type: "proxy_human_decision", ...})`, not direct file writes
-- [ ] All metrics emitted via `ideate_emit_metric`, not appended to any file
-- [ ] Finding writes use `ideate_write_artifact`
-- [ ] Journal reads use `ideate_artifact_query({type: "journal_entry"})`
-- [ ] Convergence summary uses `ideate_get_metrics` for aggregated data
-- [ ] Quality summary uses structured MCP data, not manual file parsing
-- [ ] Review manifest retrieved via `ideate_artifact_query`, not path-based reads
+- [x] autopilot-state access uses `ideate_manage_autopilot_state` exclusively
+- [x] autopilot state includes `phases_completed` and `current_project` fields — initialized in Phase 4 state update
+- [x] Active project loaded at startup via `ideate_artifact_query({type: "project", filters: {status: "active"}})`
+- [x] Project success criteria and appetite loaded and stored as `{project_success_criteria}` and `{project_appetite}`
+- [x] Phase convergence check (6c-ii) assesses project success criteria before deciding next action
+- [x] Project completion writes project artifact status via `ideate_write_artifact`
+- [x] Appetite exhaustion triggers Andon → proxy-human, not a silent stop
+- [x] Phase transition invokes refine.md Phase Transition section (not the full refine loop)
+- [x] Proxy-human decisions recorded via `ideate_write_artifact({type: "proxy_human_decision", ...})`, not direct file writes
+- [x] All metrics emitted via `ideate_emit_metric`, not appended to any file
+- [x] Finding writes use `ideate_write_artifact` — asserted in "What You Do Not Do"; review.md phase doc confirms
+- [x] Journal reads use `ideate_artifact_query({type: "journal_entry"})`
+- [x] Convergence summary uses `ideate_get_metrics` for aggregated data
+- [x] Quality summary uses structured MCP data, not manual file parsing — satisfied in review.md phase doc
+- [x] Review manifest retrieved via `ideate_artifact_query`, not path-based reads — satisfied in review.md phase doc

@@ -1,7 +1,7 @@
 id: WI-473
 type: work_item
 title: Implement MCP response trimming
-status: pending
+status: done
 complexity: large
 scope:
   - path: mcp/artifact-server/src/tools/query.ts
@@ -30,6 +30,6 @@ notes: |-
   Default filtering, count-only summaries, truncation with markers, verbose flags.
 resolution: null
 cycle_created: 6
-cycle_modified: null
-content_hash: 5cf83cd58e7cec3858bfcf5b4fc4606316ffcddbe6a2dd5db53d23f996a0fe9e
-token_count: 230
+cycle_modified: 5
+content_hash: 373c7e783090c6a0cb893f199917e1fa188204eba44f0be1259d526d84ee2a18
+token_count: 228

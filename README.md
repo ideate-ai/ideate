@@ -175,7 +175,7 @@ What each skill reads and writes through MCP tools:
 | Skill | MCP Tools Read | MCP Tools Written | Key Artifacts |
 |-------|---------------|-------------------|---------------|
 | `plan` | `ideate_get_context_package`, `ideate_get_config` | `ideate_write_work_items`, `ideate_append_journal` | overview, architecture, work items |
-| `execute` | `ideate_get_work_item_context`, `ideate_get_execution_status`, `ideate_assemble_context` | `ideate_append_journal`, `ideate_emit_event`, `ideate_write_artifact` | findings, journal entries |
+| `execute` | `ideate_get_artifact_context`, `ideate_get_execution_status`, `ideate_assemble_context` | `ideate_append_journal`, `ideate_emit_event`, `ideate_write_artifact` | findings, journal entries |
 | `review` | `ideate_get_review_manifest`, `ideate_get_context_package` | `ideate_archive_cycle`, `ideate_append_journal`, `ideate_write_artifact` | cycle summary, findings |
 | `refine` | `ideate_get_context_package`, `ideate_get_domain_state` | `ideate_write_work_items`, `ideate_append_journal` | new work items |
 | `autopilot` | all of the above | all of the above | autonomous loop |
@@ -205,7 +205,8 @@ All artifacts live in `.ideate/` in the project root:
 ├── research/
 ├── modules/
 ├── steering/
-└── metrics.jsonl
+├── domains/
+└── metrics/
 ```
 
 `cycles/` is immutable once written. `policies/`, `decisions/`, and `questions/` are maintained by the domain-curator agent after each review cycle.
@@ -272,7 +273,7 @@ Skills read agent turn budgets from `.ideate/config.json` at startup. The `agent
 
 ```json
 {
-  "schema_version": 2,
+  "schema_version": 3,
   "agent_budgets": {
     "code-reviewer": 80,
     "spec-reviewer": 100,
@@ -288,6 +289,68 @@ Skills read agent turn budgets from `.ideate/config.json` at startup. The `agent
 ```
 
 Skills fall back to each agent's frontmatter `maxTurns` default if `agent_budgets` is absent or does not include a given agent type. Override individual budgets by editing `config.json` directly.
+
+### Model overrides (`config.json`)
+
+The `model_overrides` key maps agent names to model strings, overriding the default model tier for that agent. Skills read `model_overrides` at startup and pass the value as the `model` parameter when spawning matching agents.
+
+Set a key to `null` to remove a previously stored override (null-as-deletion semantics — the key is removed from storage).
+
+```json
+{
+  "schema_version": 3,
+  "model_overrides": {
+    "architect": "claude-opus-4-5",
+    "code-reviewer": "claude-sonnet-4-6"
+  }
+}
+```
+
+### Other config.json options
+
+`default_appetite` — maximum number of phases budgeted for a project. Used by `/ideate:init` when creating a new project. Default: `6`.
+
+`circuit_breaker_threshold` — maximum number of consecutive work item failures before the Andon cord is pulled automatically. Default: `5`.
+
+`spawn_mode` — how agents are launched. Valid values: `"subagent"` (default) or `"teammate"`.
+
+### Complete config.json example
+
+All keys with their defaults:
+
+```json
+{
+  "schema_version": 3,
+  "agent_budgets": {
+    "code-reviewer": 80,
+    "spec-reviewer": 100,
+    "gap-analyst": 100,
+    "journal-keeper": 60,
+    "domain-curator": 100,
+    "architect": 160,
+    "researcher": 80,
+    "decomposer": 100,
+    "proxy-human": 160
+  },
+  "model_overrides": {},
+  "default_appetite": 6,
+  "circuit_breaker_threshold": 5,
+  "spawn_mode": "subagent",
+  "ppr": {
+    "alpha": 0.15,
+    "max_iterations": 50,
+    "convergence_threshold": 1e-6,
+    "edge_type_weights": {
+      "depends_on": 1.0,
+      "governed_by": 0.8,
+      "informed_by": 0.6,
+      "references": 0.4,
+      "blocks": 0.3
+    },
+    "default_token_budget": 50000
+  }
+}
+```
 
 ### PPR configuration (`config.json`)
 

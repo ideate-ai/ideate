@@ -17,6 +17,7 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import * as crypto from "crypto";
 import Database from "better-sqlite3";
 import { drizzle } from "drizzle-orm/better-sqlite3";
 import fs from "fs";
@@ -26,6 +27,7 @@ import path from "path";
 import { createSchema } from "../schema.js";
 import * as dbSchema from "../db.js";
 import type { DrizzleDb } from "../db-helpers.js";
+import { computeArtifactHash } from "../db-helpers.js";
 import type { ToolContext } from "../types.js";
 import { handleWriteWorkItems, handleWriteArtifact, handleUpdateWorkItems, handleAppendJournal } from "../tools/write.js";
 
@@ -272,6 +274,34 @@ describe("handleWriteArtifact — cycle_summary rollback (document_artifacts)", 
 });
 
 // ---------------------------------------------------------------------------
+// Tests: handleWriteArtifact — document_artifacts.content stores raw string
+// ---------------------------------------------------------------------------
+
+describe("handleWriteArtifact — document_artifacts.content is raw string (not JSON-wrapped)", () => {
+  it("stores the raw content string for cycle_summary, not JSON.stringify of the full object", async () => {
+    const artifactId = "CS-content-raw-001";
+    const rawContent = "## Summary\nAll pass";
+
+    await handleWriteArtifact(ctx, {
+      type: "cycle_summary",
+      id: artifactId,
+      content: { content: rawContent, cycle: 1 },
+      cycle: 1,
+    });
+
+    const row = db
+      .prepare("SELECT content FROM document_artifacts WHERE id = ?")
+      .get(artifactId) as { content: string } | undefined;
+
+    expect(row).toBeDefined();
+    // Must be the raw string, not JSON.stringify'd
+    expect(row!.content).toBe(rawContent);
+    // Confirm it is NOT the JSON-wrapped form
+    expect(row!.content).not.toBe(JSON.stringify({ content: rawContent, cycle: 1 }));
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Tests: successful writes (smoke test — no rollback expected)
 // ---------------------------------------------------------------------------
 
@@ -343,6 +373,16 @@ describe("handleUpdateWorkItems — transaction rollback", () => {
     // File content must be restored to original (not the modified version)
     const restoredContent = fs.readFileSync(filePath, "utf8");
     expect(restoredContent).toBe(originalContent);
+
+    // Verify the DB content_hash matches the restored file content (computed from
+    // content fields only, excluding metadata, consistent with computeArtifactHash).
+    const row = db.prepare("SELECT content_hash FROM nodes WHERE id = 'WI-002'").get() as { content_hash: string } | undefined;
+    if (row) {
+      const { parse: parseYaml } = await import("yaml");
+      const parsedRestored = parseYaml(restoredContent) as Record<string, unknown>;
+      const expectedHash = computeArtifactHash(parsedRestored);
+      expect(row.content_hash).toBe(expectedHash);
+    }
   });
 
   it("does not change node rows on transaction failure", async () => {

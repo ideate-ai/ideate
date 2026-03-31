@@ -1,7 +1,7 @@
 ---
 name: ideate:settings
-description: "Interactive settings menu for ideate configuration — agent budgets, model overrides, and PPR weights."
-argument-hint: "[agents|ppr]"
+description: "Interactive settings menu for ideate configuration — agent budgets, model overrides, PPR weights, and project settings."
+argument-hint: "[agents|ppr|spawn|appetite|circuit-breaker]"
 disable-model-invocation: true
 user-invocable: true
 ---
@@ -28,14 +28,22 @@ Agent defaults:
 - proxy-human: maxTurns=160, model=sonnet
 - researcher: maxTurns=80, model=sonnet
 - spec-reviewer: maxTurns=100, model=sonnet
-- worker: maxTurns=200, model=sonnet
 
 PPR defaults: alpha=0.15, max_iterations=50, convergence_threshold=0.000001, default_token_budget=50000.
 Edge weight defaults: depends_on=1.0, governed_by=0.8, informed_by=0.6, references=0.4, blocks=0.3.
 
+Spawn mode default: subagent
+- `subagent` — Standard Agent tool spawning. Each agent runs as an independent subprocess.
+- `teammate` — Agent teams mode. Agents share a task list and are visible in the Claude Code UI. Requires `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1` environment variable.
+
+Project settings defaults: default_appetite=6, circuit_breaker_threshold=5.
+
 If an argument was provided:
 - `agents` → skip to Phase 2a
 - `ppr` → skip to Phase 2b
+- `spawn` → skip to Phase 2c (spawn mode)
+- `appetite` → skip to Phase 2d (project settings)
+- `circuit-breaker` → skip to Phase 2d (project settings)
 
 Otherwise proceed to Phase 1.
 
@@ -48,9 +56,11 @@ Present:
 ```
 ideate settings
 
-1. Agent Settings   — maxTurns and model per agent
-2. PPR Weights      — algorithm parameters and edge type weights
-3. Exit
+1. Agent Settings    — maxTurns and model per agent
+2. PPR Weights       — algorithm parameters and edge type weights
+3. Spawn Mode        — subagent vs teammate
+4. Project Settings  — default_appetite and circuit_breaker_threshold
+5. Exit
 
 Enter a number:
 ```
@@ -58,7 +68,9 @@ Enter a number:
 Wait for the user's input.
 - `1` → Phase 2a (Agent Settings)
 - `2` → Phase 2b (PPR Weights)
-- `3` → Phase 3 (Exit)
+- `3` → Phase 2c (Spawn Mode)
+- `4` → Phase 2d (Project Settings)
+- `5` → Phase 3 (Exit)
 
 Any other input: say "Invalid option." and re-present the menu.
 
@@ -192,6 +204,80 @@ Call `ideate_update_config({ patch: {patch} })`.
 - Reload config. Return to the PPR menu with updated values.
 
 Do not accept arbitrary edge type key input. Only the 5 types listed above (depends_on, governed_by, informed_by, references, blocks) may be edited.
+
+---
+
+# Phase 2c: Spawn Mode
+
+Present:
+
+```
+Spawn Mode
+
+Current: {current spawn_mode from config, or "subagent" if absent}  (default: subagent)
+
+1. subagent  — Standard Agent tool spawning. Each agent runs as an independent subprocess.
+2. teammate  — Agent teams mode. Agents share a task list and are visible in the Claude Code UI.
+               Requires CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1 environment variable.
+B. Back to main menu
+
+Enter a number to select spawn mode:
+```
+
+The "current" value comes from `{config}.spawn_mode`. If absent, show `subagent`.
+
+Wait for input. `B` returns to Phase 1. Any other input that is not `1` or `2`: say "Invalid option." and re-present the spawn mode menu.
+
+**Option 1 — subagent**:
+- If current spawn_mode is already `subagent`: say `Spawn mode is already set to subagent.` Return to menu.
+- Call `ideate_update_config({ patch: { spawn_mode: "subagent" } })`.
+- If `status` is `"error"`: show error messages. Do not record a change.
+- If `status` is `"updated"`: record `spawn_mode: {old} → subagent` in `{changes}`. Confirm: `Spawn mode set to subagent.`
+- Reload config. Return to spawn mode menu with updated value.
+
+**Option 2 — teammate**:
+- If current spawn_mode is already `teammate`: say `Spawn mode is already set to teammate.` Return to menu.
+- Call `ideate_update_config({ patch: { spawn_mode: "teammate" } })`.
+- If `status` is `"error"`: show error messages. Do not record a change.
+- If `status` is `"updated"`: record `spawn_mode: {old} → teammate` in `{changes}`. Confirm: `Spawn mode set to teammate.`
+- Reload config. Return to spawn mode menu with updated value.
+
+---
+
+# Phase 2d: Project Settings
+
+Present:
+
+```
+Project Settings
+
+  1. default_appetite          : {current}  (default: 6)
+  2. circuit_breaker_threshold : {current}  (default: 5)
+
+B. Back to main menu
+
+Enter a number to edit:
+```
+
+The "current" values come from `{config}.default_appetite` and `{config}.circuit_breaker_threshold`. If a field is absent from config, show the default value.
+
+Wait for input. `B` returns to Phase 1. Any other input that is not `1` or `2`: say "Invalid option." and re-present the project settings menu.
+
+**For item 1 — default_appetite**:
+- Prompt: `New default_appetite (current: {current}, default: 6):`
+- Validate: must be a positive integer. If invalid, say so and re-prompt.
+- Call `ideate_update_config({ patch: { default_appetite: {newValue} } })`.
+- If `status` is `"error"`: show error messages. Do not record a change.
+- If `status` is `"updated"`: record `default_appetite: {old} → {new}` in `{changes}`. Confirm: `default_appetite updated to {new}.`
+- Reload config. Return to project settings menu with updated values.
+
+**For item 2 — circuit_breaker_threshold**:
+- Prompt: `New circuit_breaker_threshold (current: {current}, default: 5):`
+- Validate: must be a positive integer. If invalid, say so and re-prompt.
+- Call `ideate_update_config({ patch: { circuit_breaker_threshold: {newValue} } })`.
+- If `status` is `"error"`: show error messages. Do not record a change.
+- If `status` is `"updated"`: record `circuit_breaker_threshold: {old} → {new}` in `{changes}`. Confirm: `circuit_breaker_threshold updated to {new}.`
+- Reload config. Return to project settings menu with updated values.
 
 ---
 

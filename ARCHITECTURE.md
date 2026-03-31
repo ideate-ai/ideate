@@ -84,21 +84,21 @@ mcp/
 └────────────────┬──────────────────────┬──────────────────────────┘
                  │ reads/queries        │ watches for changes
                  ▼                      ▼
-┌───────────────────────┐   ┌───────────────────────────────────────┐
-│  .ideate/index.db     │   │  .ideate/                             │
-│  (SQLite runtime      │◄──│    work-items/*.yaml                  │
-│   index — derived)    │   │    principles/*.yaml                  │
-│                       │   │    constraints/*.yaml                 │
-│  nodes                │   │    policies/*.yaml                    │
-│  work_items           │   │    decisions/*.yaml                   │
-│  findings             │   │    questions/*.yaml                   │
-│  domain_policies      │   │    modules/*.yaml                     │
-│  domain_decisions     │   │    cycles/*/journal/*.yaml            │
-│  domain_questions     │   │    ...                                │
-│  edges                │   └───────────────────────────────────────┘
-│  node_file_refs       │              (YAML = source of truth)
-│  ...                  │
-└───────────────────────┘
+┌───────────────────────┐   ┌────────────────────────────────────────────────┐
+│  .ideate/index.db     │   │  .ideate/                                      │
+│  (SQLite runtime      │◄──│    work-items/*.yaml                           │
+│   index — derived)    │   │    principles/*.yaml                           │
+│                       │   │    constraints/*.yaml                          │
+│  nodes                │   │    policies/*.yaml                             │
+│  work_items           │   │    decisions/*.yaml                            │
+│  findings             │   │    questions/*.yaml                            │
+│  domain_policies      │   │    modules/*.yaml                              │
+│  domain_decisions     │   │    cycles/{NNN}/journal/*.yaml  (active)       │
+│  domain_questions     │   │    cycles/{NNN}/findings/       (active)       │
+│  edges                │   │    archive/cycles/{NNN}/work-items/  (archived)│
+│  node_file_refs       │   │    archive/cycles/{NNN}/incremental/ (archived)│
+│  ...                  │   └────────────────────────────────────────────────┘
+└───────────────────────┘              (YAML = source of truth)
 ```
 
 Skills access artifacts exclusively through MCP tools. Direct file reads for artifacts are not permitted (GP-8). The SQLite index is a derived cache, rebuilt from YAML on startup and kept current by the file watcher.
@@ -115,6 +115,7 @@ The artifact server is a Node.js process that speaks the MCP stdio protocol. It 
 
 ```
 resolveArtifactDir()       # Find .ideate/ via env var or directory walk
+  → runPendingMigrations() # Apply any pending YAML/config/directory migrations
   → open SQLite (WAL mode, foreign_keys = ON)
   → checkSchemaVersion()   # Delete and recreate DB if version mismatch
   → createSchema()         # CREATE TABLE IF NOT EXISTS (idempotent)
@@ -138,7 +139,7 @@ resolveArtifactDir()       # Find .ideate/ via env var or directory walk
 
 ## 3. Schema Design
 
-The schema uses class table inheritance: a single `nodes` base table holds the 8 common columns shared by all artifact types, and 14 extension tables each hold type-specific columns. Every extension table's `id` column is a foreign key referencing `nodes(id)` with `ON DELETE CASCADE`.
+The schema uses class table inheritance: a single `nodes` base table holds the 8 common columns shared by all artifact types, and 16 extension tables each hold type-specific columns. Every extension table's `id` column is a foreign key referencing `nodes(id)` with `ON DELETE CASCADE`.
 
 ### nodes base table (8 columns)
 
@@ -148,14 +149,14 @@ The schema uses class table inheritance: a single `nodes` base table holds the 8
 | `type` | TEXT | YAML artifact type string |
 | `cycle_created` | INTEGER | Cycle number when first created |
 | `cycle_modified` | INTEGER | Cycle number of last modification |
-| `content_hash` | TEXT | SHA-256 of raw YAML file content |
+| `content_hash` | TEXT | SHA-256 of YAML-serialized content fields (excludes `content_hash`, `token_count`, `file_path`) |
 | `token_count` | INTEGER | Estimated token count (chars / 4) |
 | `file_path` | TEXT | Absolute path to the source YAML file |
 | `status` | TEXT | Artifact status (e.g. `pending`, `done`, `active`) |
 
 Indexes: `idx_nodes_type` on `(type)`, `idx_nodes_file_path` on `(file_path)`.
 
-### Extension tables (14 tables)
+### Extension tables (16 tables)
 
 Each extension table has `id TEXT PRIMARY KEY REFERENCES nodes(id) ON DELETE CASCADE` as its only reference to the base table. Type-specific columns are NOT NULL only where required by business logic.
 
@@ -264,6 +265,9 @@ index.ts startup
   ├─ resolveArtifactDir()
   │   walks up the directory tree looking for .ideate/config.json
   │
+  ├─ runPendingMigrations()
+  │   apply any pending YAML/config/directory migrations
+  │
   ├─ new Database(dbPath)
   │   WAL mode, busy_timeout = 5000, foreign_keys = ON
   │
@@ -293,11 +297,11 @@ walkDir(.ideate/)
   → filter *.yaml / *.yml files
   → for each file:
       ├─ read content
-      ├─ sha256(content)
+      ├─ parseYaml(content)
+      ├─ computeArtifactHash(parsedDoc)
       ├─ SELECT id, content_hash FROM nodes WHERE file_path = ?
       │   if hash matches → skip (add id to keepIds, continue)
       │   if hash differs or missing → proceed
-      ├─ parseYaml(content)
       ├─ resolve extensionTable from TYPE_TO_EXTENSION_TABLE[doc.type]
       ├─ buildNodeRow()      → 8 common columns
       ├─ buildExtensionRow() → type-specific columns
@@ -332,7 +336,7 @@ transaction:
 
 ### Hash-based skip
 
-Before parsing, the indexer issues a single `SELECT id, content_hash FROM nodes WHERE file_path = ?`. If the stored hash matches the current SHA-256 of the file content, the file is skipped entirely and its ID is added to `keepIds`. This keeps incremental rebuilds fast when few files changed.
+For each file, the indexer parses the YAML and calls `computeArtifactHash` to produce a SHA-256 of the serialized content fields (excluding `content_hash`, `token_count`, and `file_path`). It then issues a `SELECT id, content_hash FROM nodes WHERE file_path = ?` and compares. If the stored hash matches, the file is skipped entirely and its ID is added to `keepIds`. This keeps incremental rebuilds fast when few files changed.
 
 ### Cycle detection
 
@@ -369,7 +373,7 @@ The raw `db` is used for recursive CTE queries and other SQL that Drizzle cannot
 
 ```
 Context tools (3)
-  ideate_get_work_item_context    — work item + notes + module spec + domain policies + research
+  ideate_get_artifact_context     — context for any artifact by ID: work item, phase, or generic
   ideate_get_context_package      — architecture + principles + constraints + source code index
   ideate_assemble_context         — PPR-scored, token-budgeted context assembly from seed nodes
 
@@ -413,7 +417,7 @@ State tools (1)
 
 ### Circuit breaker
 
-The autopilot loop includes a configurable circuit breaker to prevent runaway cycles within a phase. The threshold is stored in `config.json` under `ppr.circuit_breaker_cycles_per_phase` (default: `5`). After each cycle completes, autopilot checks whether the number of cycles completed in the current phase has reached the threshold. If it has, autopilot pulls the Andon cord — recording a `proxy_human_decision` artifact with trigger `circuit_breaker`, suspending execution, and surfacing the issue for human review. The circuit breaker resets when the phase advances or when the human resumes autopilot after acknowledging the decision.
+The autopilot loop includes a configurable circuit breaker to prevent runaway cycles within a phase. The threshold is stored in `config.json` under `circuit_breaker_threshold` (flat top-level key, default: `5`). After each cycle completes, autopilot checks whether the number of cycles completed in the current phase has reached the threshold. If it has, autopilot pulls the Andon cord — recording a `proxy_human_decision` artifact with trigger `circuit_breaker`, suspending execution, and surfacing the issue for human review. The circuit breaker resets when the phase advances or when the human resumes autopilot after acknowledging the decision.
 
 ### Testing requirements (P-36)
 
@@ -620,7 +624,7 @@ The MCP artifact server assembles context via deterministic graph traversal from
 
 Three tools handle context assembly:
 
-- **`ideate_get_work_item_context`** — per-item context for execution workers: the work item itself, implementation notes, module spec, domain policies, and relevant research.
+- **`ideate_get_artifact_context`** — context package for any artifact by ID. For work items: spec, notes, module spec, domain policies, research. For phases: metadata and linked work item summaries. For other types: YAML content and edges.
 - **`ideate_get_context_package`** — base context shared across all workers: architecture document, guiding principles, constraints, and source code index.
 - **`ideate_assemble_context`** — token-budgeted context assembly using Personalized PageRank (PPR) scoring from seed nodes.
 
@@ -628,11 +632,11 @@ Skills call these tools before spawning workers. The context package provides pr
 
 The current approach reflects the graph-traversal-first direction from the PPR research (see `context-assembly-strategies.yaml`): explicit, typed edge traversal produces precise, predictable context at low latency. PPR and spreading activation are identified as future enhancements once the query-log infrastructure accumulates sufficient usage signal to calibrate edge weights adaptively.
 
-### 9.2 ideate_get_work_item_context
+### 9.2 ideate_get_artifact_context
 
-Source: `mcp/artifact-server/src/tools/context.ts`, `handleGetWorkItemContext`.
+Source: `mcp/artifact-server/src/tools/context.ts`, `handleGetArtifactContext`.
 
-The function accepts `work_item_id` via the MCP tool's `ToolContext` (which includes `ctx.ideateDir`). IDs are normalized to handle both `WI-185` and `185` forms.
+The function accepts `artifact_id` via the MCP tool's `ToolContext` (which includes `ctx.ideateDir`). It queries the nodes table to determine artifact type, then dispatches to type-specific context assembly. Work item IDs are normalized to handle both `WI-185` and `185` forms.
 
 **Assembly order** (sections joined with `---` dividers):
 
@@ -682,7 +686,7 @@ The function uses `ctx.ideateDir` from the MCP tool's `ToolContext` and returns 
 
 **Edge types followed**: none. The context package is assembled entirely from type-based DB queries and filesystem walks.
 
-**What is not included**: work item specs, domain policies, research findings, module specs, findings from prior reviews. These are assembled per-item by `ideate_get_work_item_context`.
+**What is not included**: work item specs, domain policies, research findings, module specs, findings from prior reviews. These are assembled per-item by `ideate_get_artifact_context`.
 
 ### 9.4 Context digest (skill-side filtering)
 
@@ -709,9 +713,9 @@ Based on the context assembly research (`context-assembly-strategies.yaml`, Ques
 | Review completed work | Acceptance criteria + diff/changes + architecture constraints + domain policies | Recent findings (1-2 cycles) | All history, other work items, research notes |
 | Plan changes (refine) | Latest cycle summary + all domain policies + open questions | Research relevant to change direction | Incremental reviews, prior work items, old interview transcripts |
 
-**Note on research inclusion**: the current `handleGetWorkItemContext` includes research matching the work item's domain or module. The research paper identifies this as potentially over-inclusive for execution tasks — research should already be distilled into domain policies by the time execution begins. Research is most valuable during planning, not execution.
+**Note on research inclusion**: the current `handleGetArtifactContext` (work item path) includes research matching the work item's domain or module. The research paper identifies this as potentially over-inclusive for execution tasks — research should already be distilled into domain policies by the time execution begins. Research is most valuable during planning, not execution.
 
-**Ordering within context**: the work item spec is placed first and domain policies last within `ideate_get_work_item_context` output. Both positions benefit from the primacy/recency effect documented in "Lost in the Middle" (TACL 2024), which shows LLM performance degrades when relevant information is placed in the middle of a long context.
+**Ordering within context**: the work item spec is placed first and domain policies last within `ideate_get_artifact_context` output. Both positions benefit from the primacy/recency effect documented in "Lost in the Middle" (TACL 2024), which shows LLM performance degrades when relevant information is placed in the middle of a long context.
 
 ### 9.6 Future direction
 

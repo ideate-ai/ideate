@@ -68,6 +68,30 @@ export async function handleUpdateConfig(
     }
   }
 
+  // spawn_mode: direct overwrite
+  if (rawStored.spawn_mode !== undefined) {
+    merged.spawn_mode = rawStored.spawn_mode;
+  }
+  if ("spawn_mode" in patch) {
+    merged.spawn_mode = patch.spawn_mode;
+  }
+
+  // circuit_breaker_threshold: direct overwrite
+  if (rawStored.circuit_breaker_threshold !== undefined) {
+    merged.circuit_breaker_threshold = rawStored.circuit_breaker_threshold;
+  }
+  if ("circuit_breaker_threshold" in patch) {
+    merged.circuit_breaker_threshold = patch.circuit_breaker_threshold;
+  }
+
+  // default_appetite: direct overwrite
+  if (rawStored.default_appetite !== undefined) {
+    merged.default_appetite = rawStored.default_appetite;
+  }
+  if ("default_appetite" in patch) {
+    merged.default_appetite = patch.default_appetite;
+  }
+
   // ppr: field-level merge — only write if stored or patched; keep sparse
   const patchPpr = patch.ppr;
   const rawPpr = rawStored.ppr;
@@ -169,6 +193,17 @@ export async function handleUpdateConfig(
     );
   }
 
+  // spawn_mode: must be "subagent" or "teammate"
+  if (
+    merged.spawn_mode !== undefined &&
+    merged.spawn_mode !== "subagent" &&
+    merged.spawn_mode !== "teammate"
+  ) {
+    errors.push(
+      `spawn_mode: must be "subagent" or "teammate" (got ${JSON.stringify(merged.spawn_mode)})`
+    );
+  }
+
   if (errors.length > 0) {
     return JSON.stringify(
       { status: "error", errors },
@@ -185,6 +220,9 @@ export async function handleUpdateConfig(
     "agent_budgets",
     "model_overrides",
     "ppr",
+    "spawn_mode",
+    "circuit_breaker_threshold",
+    "default_appetite",
   ];
   for (const key of topLevelKeys) {
     // IdeateConfigJson lacks an index signature; cast through unknown for key-based access

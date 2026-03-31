@@ -1,20 +1,13 @@
 id: P-44
 type: domain_policy
 domain: artifact-structure
-title: Two-phase YAML-first write pattern for MCP handlers
-description: "All MCP write handlers must use a two-phase pattern: Phase 1 writes YAML files to disk; Phase 2 wraps all SQLite index upserts or deletes in a single exclusive transaction (ctx.db.transaction(...).exclusive()). This applies to every handler that modifies YAML then upserts or deletes SQLite rows, including but not limited to handleEmitMetric, handleAppendJournal, handleWriteWorkItems, handleWriteArtifact, handleUpdateWorkItems, and handleArchiveCycle."
-derived_from: D-135, D-145, D-147, D-154, GP-08
-established: cycle 1
+title: MCP write handler transaction patterns
 status: active
+description: "All MCP write handlers must use atomic write patterns. Default: Two-phase pattern — Phase 1 writes YAML files to disk (source of truth); Phase 2 wraps all SQLite index upserts or deletes in a single exclusive transaction (ctx.db.transaction(...).exclusive()). This applies when the YAML write and SQLite upsert are logically independent. Variant: Single-transaction pattern — when the handler requires serialization between a read and write (e.g., COUNT-based sequence number generation that must not race), both the YAML write and SQLite upsert may be placed inside a single .exclusive() transaction. This prevents concurrent handlers from producing duplicate sequence numbers or other race-dependent artifacts. Both patterns apply to every handler that modifies YAML then upserts or deletes SQLite rows, including but not limited to handleEmitMetric, handleAppendJournal, handleWriteWorkItems, handleWriteArtifact, handleUpdateWorkItems, and handleArchiveCycle."
+established: cycle 1
 amendment_history:
-  - cycle: 1
-    change: "Added exclusive transaction requirement: Phase 2 must use .exclusive() mode to prevent concurrent handlers from interleaving YAML+SQLite phases."
-  - cycle: 2
-    change: "Clarified scope: enumerated write.ts handlers (handleWriteWorkItems, handleWriteArtifact, handleUpdateWorkItems) alongside handleEmitMetric and handleAppendJournal."
-  - cycle: 4
-    change: "Deviation identified: handleAppendJournal wraps both YAML write and SQLite upsert inside a single .exclusive() transaction. Review passed the implementation. Q-119 filed for resolution."
-  - cycle: 5
-    change: "Scope extended to cover destructive operations: handleArchiveCycle DELETE loop must also run inside an exclusive transaction. Policy description changed from 'upserts SQLite' to 'upserts or deletes SQLite rows', and handleArchiveCycle added to the explicit handler list. See D-154."
-content_hash: 726e5fdd71894a06f7f97cfc8bc414916b4ab1f0ddb6e2fbbb07930c872da2dc
-token_count: 393
-file_path: .ideate/policies/P-44.yaml
+  - cycle: 6
+    date: 2026-03-31
+    reason: Amended per Q-111/Q-119 to document both the two-phase default and the single-transaction variant for handlers requiring serialization guarantees (e.g., handleAppendJournal journal sequence serialization).
+content_hash: e0b6a61cadbe111360b3c39aa3c00793a5ba82e919892e0716b96af2450edcce
+token_count: 347

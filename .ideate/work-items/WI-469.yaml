@@ -1,7 +1,7 @@
 id: WI-469
 type: work_item
 title: "GP-16 implementation: automatic migration on MCP server startup"
-status: pending
+status: done
 complexity: large
 scope:
   - path: mcp/artifact-server/src/server.ts
@@ -32,6 +32,6 @@ notes: |-
   4. On failure: log error, continue with best-effort startup
 resolution: null
 cycle_created: 6
-cycle_modified: null
-content_hash: 067512a3a86c57b04be3b00846c796e11b9cc29708704282f509d9e914546315
-token_count: 329
+cycle_modified: 5
+content_hash: 2f49a352f7766295276ea01ff2318375344a03ecfb64a17591440d8207a8f750
+token_count: 327

@@ -20,6 +20,10 @@ Your tone is neutral and factual. Report status plainly. No encouragement, no en
 
 Call `ideate_get_config()` to read project configuration. Hold the response as `{config}`. Use `{config}.agent_budgets.{agent_name}` as the maxTurns value when spawning agents. If `ideate_get_config` is unavailable or returns no agent_budgets, use the agent's frontmatter maxTurns as fallback. Also hold `{config}.model_overrides` — a map of agent name to model string. When spawning any agent, use `{config}.model_overrides['{agent_name}']` as the model parameter if present and non-empty; otherwise use the hardcoded default listed in the spawn instruction.
 
+Also hold `{config}.spawn_mode` — either `"subagent"` (default) or `"teammate"`. When spawning agents:
+- If `spawn_mode` is `"teammate"`: check that `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1` is set in the environment. If set, use teammate/team mode for agent spawning. If not set, fall back to standard subagent mode and log a warning: "spawn_mode is 'teammate' but CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS is not set — falling back to subagent mode."
+- If `spawn_mode` is `"subagent"` or absent: use standard Agent tool spawning (the default).
+
 ---
 
 # Phase 1: Locate Artifact Directory
@@ -207,20 +211,20 @@ Where `{review_verdict}` is `"pass"` if the review passed without rework, `"rewo
 
 ## Context for Every Worker
 
-Call `ideate_get_work_item_context({work_item_id})` — returns pre-assembled context including work item spec, module spec, domain policies, and research. Also provide the project source root path and relevant domain policies (if not already included).
+Call `ideate_get_artifact_context({artifact_id})` — returns pre-assembled context including work item spec, module spec, domain policies, and research. Also provide the project source root path and relevant domain policies (if not already included).
 
 If the ideate MCP artifact server is not available, stop and report: "The ideate MCP artifact server is required but not available. Verify .mcp.json configuration."
 
 Regardless of execution mode, every worker (subagent, teammate, or the main session in sequential mode) receives:
 
-1. **The work item context** — from `ideate_get_work_item_context({work_item_id})`, which returns the work item spec (including inline implementation notes), module spec, domain policies, and relevant research as a single pre-assembled package.
+1. **The work item context** — from `ideate_get_artifact_context({artifact_id})`, which returns the work item spec (including inline implementation notes), module spec, domain policies, and relevant research as a single pre-assembled package.
 2. **Context digest** — the PPR-assembled context from Phase 4.5 (`{ppr_context}`), or the manual context digest if fallback was used. Includes paths to the full documents if the worker needs more detail.
-3. **The relevant module spec** — included in the `ideate_get_work_item_context` response if applicable. If the work item spans modules or no modules exist, the full architecture doc from the context package is used instead.
+3. **The relevant module spec** — included in the `ideate_get_artifact_context` response if applicable. If the work item spans modules or no modules exist, the full architecture doc from the context package is used instead.
 4. _(Included in context digest)_
 5. _(Included in context digest)_
-6. **Relevant research** — included in the `ideate_get_work_item_context` response for research referenced in the work item's implementation notes or relevant to its scope.
+6. **Relevant research** — included in the `ideate_get_artifact_context` response for research referenced in the work item's implementation notes or relevant to its scope.
 7. **Project source root** — the absolute path to the project source root derived in Phase 1, so workers know where to create and modify source files.
-8. **Relevant domain policies** — included in the `ideate_get_work_item_context` response. Domain policies supplement the guiding principles — they are more specific rules derived from prior review cycles.
+8. **Relevant domain policies** — included in the `ideate_get_artifact_context` response. Domain policies supplement the guiding principles — they are more specific rules derived from prior review cycles.
 9. **Phase steering** — if `{phase_steering}` is non-null, include it verbatim under a "Phase Steering" heading. Instruct the worker: "Phase steering supplements workspace-level principles. Apply it as additional guidance specific to this phase." If `{phase_steering}` is null, omit this item.
 
 All paths provided to workers must be absolute. Do not use relative paths that depend on the worker's current working directory matching the artifact directory.
@@ -332,7 +336,7 @@ If the Agent tool is not available but the session-spawner MCP server (from exte
 When a work item completes (in any execution mode), spawn the `ideate:code-reviewer` agent immediately.
 
 Provide the code-reviewer with:
-- The work item spec (from the `ideate_get_work_item_context` response used in Phase 6)
+- The work item spec (from the `ideate_get_artifact_context` response used in Phase 6)
 - The list of files created or modified by the worker
 - The architecture document and guiding principles (from the `{context_package}` loaded in Phase 2)
 - The worker's self-check results (the `## Self-Check` section from the worker's completion report)
@@ -646,7 +650,7 @@ After each agent spawn (via the Agent tool), emit a metric via `ideate_emit_metr
 - `output_tokens` — integer or null. Output token count from agent response metadata. Null if not available.
 - `cache_read_tokens` — integer or null. Prompt caching read tokens if available. Null if not available.
 - `cache_write_tokens` — integer or null. Prompt caching write tokens if available. Null if not available.
-- `mcp_tools_called` — array of strings. Names of MCP tools called to assemble context for this agent spawn (e.g., `["ideate_get_context_package", "ideate_get_work_item_context"]`). Empty array `[]` if no MCP tools were called.
+- `mcp_tools_called` — array of strings. Names of MCP tools called to assemble context for this agent spawn (e.g., `["ideate_get_context_package", "ideate_get_artifact_context"]`). Empty array `[]` if no MCP tools were called.
 - `outcome` — optional (null if not available). For `code-reviewer` entries: `"pass"` if the incremental review verdict is Pass with no rework, `"rework"` if the verdict is Pass after rework, `"fail"` if the verdict is Fail. For `worker` entries: `null`.
 - `finding_count` — optional (null if not available). For `code-reviewer` entries: total number of findings across all severities from the incremental review. Null for `worker` entries.
 - `finding_severities` — optional (null if not available). For `code-reviewer` entries: object with keys `critical`, `significant`, `minor` and integer values derived from the incremental review. Null for `worker` entries.
@@ -687,6 +691,8 @@ If `ideate_emit_metric` calls failed, note "metrics unavailable" and omit the br
 - You do not re-plan. If the plan has problems (cycles, missing items, contradictions), you stop and tell the user to fix the plan or run `/ideate:refine`.
 - You do not praise work. Absence of findings means the work is acceptable.
 - You do not use filler phrases, encouragement, or enthusiasm. State facts.
+
+**GP-14 enforcement**: If an MCP tool call fails, report the error and stop. Do NOT fall back to reading, grepping, or globbing .ideate/ files directly. The MCP abstraction boundary (GP-14) is inviolable — a tool failure is a signal to fix the tool, not to bypass it.
 
 ---
 

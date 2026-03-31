@@ -20,6 +20,7 @@ import { artifactWatcher, BatchChangeEvent } from "./watcher.js";
 import { createIdeateDir, CONFIG_SCHEMA_VERSION, IDEATE_SUBDIRS, IdeateConfigJson, resolveArtifactDir, readIdeateConfig } from "./config.js";
 import { createSchema, checkSchemaVersion } from "./schema.js";
 import { rebuildIndex, indexFiles, removeFiles, RebuildStats } from "./indexer.js";
+import { runPendingMigrations } from "./migrations.js";
 import * as dbSchema from "./db.js";
 
 // ---------------------------------------------------------------------------
@@ -74,6 +75,17 @@ export function openDatabase(dir: string): InstanceType<typeof Database> {
 const watchedDirs = new Set<string>();
 
 export function initServer(dir: string, state: ServerState): void {
+  // Run pending migrations before opening the database.
+  // Migrations may transform YAML files, config.json, or directory structure.
+  // They run against the artifact directory (dir), not the SQLite index.
+  const migrationResult = runPendingMigrations(dir);
+  if (migrationResult.migrationsRun > 0) {
+    console.error(`[ideate-artifact-server] ${migrationResult.migrationsRun} migration(s) applied (v${migrationResult.fromVersion} → v${migrationResult.toVersion})`);
+  }
+  if (migrationResult.errors.length > 0) {
+    console.error(`[ideate-artifact-server] Migration errors: ${migrationResult.errors.join("; ")}`);
+  }
+
   // Use locals so server state is only committed after full success
   const newDb = openDatabase(dir);
   let newDrizzle;
@@ -101,6 +113,7 @@ export function initServer(dir: string, state: ServerState): void {
     artifactWatcher.on("change", (event: BatchChangeEvent) => {
       try {
         if (!state.ctx) return;
+        if (event.artifactDir !== dir) return;
         const yamlChanged = event.changed.filter(f => f.endsWith('.yaml') || f.endsWith('.yml'));
         const yamlDeleted = event.deleted.filter(f => f.endsWith('.yaml') || f.endsWith('.yml'));
         if (yamlChanged.length > 0) {

@@ -80,6 +80,10 @@ If the ideate MCP artifact server is not available, stop and report: "The ideate
 
 **Read project configuration** by calling `ideate_get_config()`. Hold the response as `{config}`. Use `{config}.agent_budgets.{agent_name}` as the maxTurns value when spawning agents. If `ideate_get_config` is unavailable or returns no agent_budgets, use the agent's frontmatter maxTurns as fallback. Also hold `{config}.model_overrides` — a map of agent name to model string. When spawning any agent, use `{config}.model_overrides['{agent_name}']` as the model parameter if present and non-empty; otherwise use the hardcoded default listed in the spawn instruction.
 
+Also hold `{config}.spawn_mode` — either `"subagent"` (default) or `"teammate"`. When spawning agents:
+- If `spawn_mode` is `"teammate"`: check that `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1` is set. If set, use teammate/team mode. If not set, fall back to subagent mode with a warning.
+- If `spawn_mode` is `"subagent"` or absent: use standard Agent tool spawning.
+
 **If INIT MODE**: proceed to Phase 4I.
 **If PLAN MODE**: proceed to Phase 4P.
 
@@ -937,6 +941,22 @@ After all phase artifacts are written, update the project artifact (from Phase 4
 - `horizon.current` — the first phase ID (PH-001 or equivalent)
 - `horizon.next` — IDs of subsequent phases
 - `horizon.later` — empty array (phases beyond the current plan are not yet defined)
+
+---
+
+## Auto-Phase Chunking (Init)
+
+After all work items are created and validated, if the total work item count exceeds 5, apply the same auto-phase chunking algorithm defined in the refine skill's Section 7h-auto:
+
+1. Build file-scope overlap graph between work items
+2. Cluster by dependency chains, file overlap, domain, and complexity
+3. Target 3–6 items per phase
+4. Present proposed grouping to user for confirmation
+5. Write phase artifacts for each accepted group
+
+If the project already has phases defined (from the project/phase setup above), the auto-chunking proposes how to distribute work items across those phases. If no phases are defined, it creates them.
+
+If work item count is 5 or fewer, skip auto-chunking — all items go into a single phase.
 
 ---
 

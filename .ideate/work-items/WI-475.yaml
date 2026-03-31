@@ -1,7 +1,7 @@
 id: WI-475
 type: work_item
 title: Integrate auto-chunking into init and refine skills
-status: pending
+status: done
 complexity: medium
 scope:
   - path: skills/refine/SKILL.md
@@ -25,6 +25,6 @@ notes: |-
   Run chunking after work items produced, present to user, write phase artifacts.
 resolution: null
 cycle_created: 6
-cycle_modified: null
-content_hash: a65c15be8e83c7b1b594c2c607eb2e7afac59db3e179c6257a11fa4102c62067
-token_count: 163
+cycle_modified: 5
+content_hash: 53e2e9d6dda91adbe029f5d442a6b46bc8507822099f09209cca287bd9aa0eba
+token_count: 161

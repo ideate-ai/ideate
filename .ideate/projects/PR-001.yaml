@@ -1,21 +1,12 @@
 id: PR-001
 type: project
-name: Ideate SDLC Plugin
+name: Ideate
 intent: Structured SDLC workflow plugin for Claude Code
 status: active
 appetite: 6
-current_phase_id: PH-007
+current_phase_id: PH-013
 horizon:
-  next:
-    - name: MCP Response Optimization
-      id: PH-008
-      description: Audit and trim MCP tool response payloads
-    - name: Intelligent Phase Chunking
-      id: PH-009
-      description: Auto-chunk work items into thin-slice phases
-    - name: Reporting Skill
-      id: PH-010
-      description: New /ideate:report with stats, diagrams, PDF output
+  next: []
   completed:
     - PH-001
     - PH-002
@@ -23,6 +14,12 @@ horizon:
     - PH-004
     - PH-005
     - PH-006
+    - PH-007
+    - PH-008
+    - PH-009
+    - PH-010
+    - PH-011
+    - PH-012
   later: []
-content_hash: 76cb8e9387a44fc8a006aabe067cb01ae3412672060a4273db1c194cfbbb0e0d
-token_count: 157
+content_hash: 8c19124664f77aa51f7f6ca566b38a72b6c137e97e1738ac45ceff5b41cc2d30
+token_count: 86

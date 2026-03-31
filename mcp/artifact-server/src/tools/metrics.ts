@@ -1,11 +1,12 @@
 import * as fs from "fs";
 import * as path from "path";
-import { createHash, randomUUID } from "crypto";
+import { randomUUID } from "crypto";
 import { stringify as stringifyYaml } from "yaml";
 import type { ToolContext } from "../types.js";
 import {
   upsertNode,
   upsertMetricsEvent,
+  computeArtifactHash,
   type NodeRow,
   type MetricsEventRow as DbMetricsEventRow,
 } from "../db-helpers.js";
@@ -13,10 +14,6 @@ import {
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
-
-function sha256(content: string): string {
-  return createHash("sha256").update(content, "utf8").digest("hex");
-}
 
 function tokenCount(content: string): number {
   return Math.floor(content.length / 4);
@@ -57,8 +54,8 @@ export async function handleEmitMetric(
     }
   }
 
+  const content_hash = computeArtifactHash(yamlDoc);
   const yamlContent = stringifyYaml(yamlDoc);
-  const content_hash = sha256(yamlContent);
   const token_count = tokenCount(yamlContent);
 
   const yamlPath = path.join(metricsDir, id + ".yaml");
