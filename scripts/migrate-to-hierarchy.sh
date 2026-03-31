@@ -121,9 +121,11 @@ say "Found $WI_COUNT non-obsolete work items for phase membership"
 
 # Build YAML list of work item IDs for the phase artifact
 WI_LIST_YAML=""
-for wi_id in "${NON_OBSOLETE_WIS[@]}"; do
-  WI_LIST_YAML+="  - ${wi_id}"$'\n'
-done
+if [[ "$WI_COUNT" -gt 0 ]]; then
+  for wi_id in "${NON_OBSOLETE_WIS[@]}"; do
+    WI_LIST_YAML+="  - ${wi_id}"$'\n'
+  done
+fi
 # Trim trailing newline
 WI_LIST_YAML="${WI_LIST_YAML%$'\n'}"
 

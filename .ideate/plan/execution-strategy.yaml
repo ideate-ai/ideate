@@ -1,19 +1,79 @@
 id: execution-strategy
 type: execution_strategy
-title: Execution Strategy — WI-449 through WI-450 (Second Correction Pass)
-mode: sequential
+title: Execution Strategy — WI-451 through WI-468 (Audit Triage)
+mode: batched_parallel
 parallelism:
-  max_concurrent: 1
-review_cadence: per_work_item
+  max_concurrent: 4
+  worktree_isolation: true
+review_cadence: per_item
 groups:
-  - name: Code fixes
+  - name: "Group 1: Independent quick wins"
     items:
-      - WI-449
-    notes: Schema + autopilot state whitelist fixes. Must complete before WI-450.
-  - name: Documentation + policy
+      - WI-451
+      - WI-452
+      - WI-462
+      - WI-463
+      - WI-464
+      - WI-468
+    parallel: true
+    rationale: No file overlaps, no dependencies. All can run concurrently.
+  - name: "Group 2: MCP server source (chain A)"
     items:
-      - WI-450
-    notes: Depends on WI-449 for correct schema to document.
-dependency_graph: WI-449 → WI-450
-content_hash: c758dff0a02298b4159be5877ea634b8a0450d5aa7a64e44f332e2c1d51db171
-token_count: 123
+      - WI-453
+      - WI-459
+    parallel: false
+    rationale: WI-459 depends on WI-453 (shared db-helpers.ts scope).
+  - name: "Group 3: MCP server source (chain B)"
+    items:
+      - WI-455
+      - WI-457
+      - WI-460
+    parallel: false
+    rationale: WI-457 depends on WI-455 (query.ts), WI-460 depends on WI-457 (query.ts, analysis.ts).
+  - name: "Group 4: MCP server source (chain C)"
+    items:
+      - WI-456
+      - WI-458
+      - WI-461
+    parallel: false
+    rationale: WI-458 depends on WI-456 (write.ts), WI-461 depends on WI-458 (context.ts).
+  - name: "Group 5: Server core (independent)"
+    items:
+      - WI-454
+    parallel: true
+    rationale: Touches server.ts and index.ts only. No overlap with other source items.
+  - name: "Group 6: Tests (after source)"
+    items:
+      - WI-465
+      - WI-466
+    parallel: false
+    rationale: WI-465 depends on WI-456/457/458/460. WI-466 depends on WI-454/465. Sequential to avoid test file collisions.
+  - name: "Group 7: Documentation (after scripts)"
+    items:
+      - WI-467
+    parallel: false
+    rationale: Depends on WI-452 for script deletion references.
+dependency_graph:
+  WI-457:
+    - WI-455
+  WI-458:
+    - WI-456
+  WI-459:
+    - WI-453
+  WI-460:
+    - WI-457
+  WI-461:
+    - WI-458
+  WI-465:
+    - WI-456
+    - WI-457
+    - WI-458
+    - WI-460
+  WI-466:
+    - WI-454
+    - WI-465
+  WI-467:
+    - WI-452
+notes: Groups 1-5 can all start concurrently (max 4 worktrees). Group 6 starts after source chains complete. Group 7 starts after WI-452.
+content_hash: fbf368c83c406a417720d4ccb800a53c67563ff620130f136067bc4ec1a21120
+token_count: 513

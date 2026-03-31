@@ -17,7 +17,7 @@ import * as path from "path";
 import type { ToolContext } from "./types.js";
 import { signalIndexReady } from "./tools/index.js";
 import { artifactWatcher, BatchChangeEvent } from "./watcher.js";
-import { createIdeateDir, CONFIG_SCHEMA_VERSION, IDEATE_SUBDIRS, IdeateConfigJson } from "./config.js";
+import { createIdeateDir, CONFIG_SCHEMA_VERSION, IDEATE_SUBDIRS, IdeateConfigJson, resolveArtifactDir, readIdeateConfig } from "./config.js";
 import { createSchema, checkSchemaVersion } from "./schema.js";
 import { rebuildIndex, indexFiles, removeFiles, RebuildStats } from "./indexer.js";
 import * as dbSchema from "./db.js";
@@ -124,13 +124,37 @@ export function handleBootstrapDormant(
   args: Record<string, unknown>
 ): string {
   const projectRoot = process.cwd();
+  const existingConfig = readIdeateConfig(projectRoot);
+
+  if (existingConfig) {
+    // .ideate/ exists — initialize server without overwriting config
+    if (!state.ctx) {
+      try {
+        initServer(existingConfig.artifactDir, state);
+      } catch (err) {
+        const msg = (err as Error).message;
+        console.error(`[ideate-artifact-server] Late initialization failed: ${msg}`);
+        return JSON.stringify(
+          { status: "initialized", subdirectories: [...IDEATE_SUBDIRS], warning: `DB initialization failed: ${msg}. Server is still dormant.` },
+          null,
+          2
+        );
+      }
+    }
+    return JSON.stringify(
+      { status: "initialized", subdirectories: [...IDEATE_SUBDIRS] },
+      null,
+      2
+    );
+  }
+
+  // No existing .ideate/ — create fresh
   const projectName = args.project_name as string | undefined;
   const config: IdeateConfigJson = { schema_version: CONFIG_SCHEMA_VERSION };
   if (projectName) config.project_name = projectName;
 
   const ideateDir = createIdeateDir(projectRoot, config);
 
-  // Lazy initialization: now that .ideate/ exists, spin up DB + index
   if (!state.ctx) {
     try {
       initServer(ideateDir, state);
@@ -197,22 +221,37 @@ export async function routeToolCall(
   }
 
   if (name === "ideate_get_workspace_status" && !state.ctx) {
-    const result = JSON.stringify({
-      status: "not_initialized",
-      message: "No .ideate/ directory found. Run /ideate:init to initialize the project.",
-    }, null, 2);
-    return { content: [{ type: "text", text: result }] };
+    // Lazy recovery: retry artifact dir resolution before reporting dormant
+    try {
+      const dir = resolveArtifactDir({});
+      initServer(dir, state);
+      console.error(`[ideate-artifact-server] Lazy initialization succeeded: ${dir}`);
+      // Fall through to normal handling now that ctx is set
+    } catch {
+      const result = JSON.stringify({
+        status: "not_initialized",
+        message: "No .ideate/ directory found. Run /ideate:init to initialize the project.",
+      }, null, 2);
+      return { content: [{ type: "text", text: result }] };
+    }
   }
 
   // --- All other tools require full initialization ---
 
   if (!state.ctx) {
-    return {
-      content: [{ type: "text", text: "Error: Project not initialized. Run /ideate:init to set up the .ideate/ directory." }],
-      isError: true,
-    };
+    // Lazy recovery: retry artifact dir resolution before giving up
+    try {
+      const dir = resolveArtifactDir({});
+      initServer(dir, state);
+      console.error(`[ideate-artifact-server] Lazy initialization succeeded: ${dir}`);
+    } catch {
+      return {
+        content: [{ type: "text", text: "Error: Project not initialized. Run /ideate:init to set up the .ideate/ directory." }],
+        isError: true,
+      };
+    }
   }
 
-  const result = await handleToolFn(state.ctx, name, args);
+  const result = await handleToolFn(state.ctx!, name, args);
   return { content: [{ type: "text", text: result }] };
 }

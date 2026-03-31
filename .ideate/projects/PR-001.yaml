@@ -1,0 +1,26 @@
+id: PR-001
+type: project
+name: Ideate SDLC Plugin
+intent: Structured SDLC workflow plugin for Claude Code
+status: active
+appetite: 6
+current_phase_id: PH-002
+horizon:
+  next:
+    - name: Correctness
+      id: PH-003
+      description: Fix bugs and wrong behavior from audit findings
+    - name: Structure & Coherence
+      id: PH-004
+      description: DRY refactors, server structure, agent accuracy
+    - name: Performance & Cleanup
+      id: PH-005
+      description: Context assembly performance, dead code removal
+    - name: Test Quality
+      id: PH-006
+      description: Behavioral test verification, infrastructure improvements
+  completed:
+    - PH-001
+  later: []
+content_hash: 1647a64476ae80015ec09ffe625275bdfa1d60a0cb327fb851643d33ec656ff1
+token_count: 169

@@ -1,19 +1,33 @@
 id: overview
 type: overview
-title: Cycle Change Plan — Second Correction Pass
+title: Cycle Change Plan — Comprehensive Code Quality Audit Triage
 body: |-
   ## What Is Changing
 
-  Addressing 1 critical and 4 significant findings from cycle review of WI-444–448.
+  All 88 findings from a full-codebase quality audit are being triaged into 18 work items covering: git hygiene, dead script cleanup, DRY refactors, server core structure, schema/type correctness, write handler correctness, query/analysis correctness, context assembly performance, error handling, dead code removal, skill/agent fixes, test quality improvements, documentation updates, and autopilot coherence.
 
-  1. Add workspace_label to autopilot state whitelist (critical — autopilot crashes on phase transition)
-  2. Add phase column to work_items SQL extension table (significant — phase filtering via SQL broken)
-  3. Fix handleGetWorkspaceStatus to query nodes.status instead of projects.status (significant)
-  4. Fix ARCHITECTURE.md residuals: appetite type, schema version, phase column (significant)
-  5. Update P-41 policy with all new state keys (significant)
-  6. Mark self-check boxes in autopilot/SKILL.md and refine/SKILL.md (minor)
+  ## Trigger
 
-  ## What Is NOT Changing
-  Everything else from the project/phase hierarchy and first correction cycle.
-content_hash: c73ba09660c512d67e08730cf9621ced33c18cced8b2edb128b9692de8d50445
-token_count: 209
+  User-requested comprehensive code review after many recent changes. Goal: take stock of the full codebase state.
+
+  ## Scope Boundary
+
+  **In scope**: All findings from the 5-agent audit (MCP server core, tool handlers, tests, skills/agents, scripts/config).
+  **Not in scope**: Guiding principles unchanged. No architectural changes. No new features. This is purely corrective/quality work.
+
+  ## Expected Impact
+
+  - ~500 LOC reduction from db-helpers.ts generic upsert refactor
+  - Multiple correctness fixes (archived WI file_path, DAG transactions, domain decisions in getDomainState)
+  - Performance improvements in context assembly (bounded queries, caching, dedup reads)
+  - 1 critical test gap fixed (fireEvent behavioral verification)
+  - 7 dead/obsolete scripts removed
+  - dist/ and metrics.jsonl untracked from git
+  - 5 agent definitions updated for accuracy
+  - Review skill tool references corrected
+
+  ## New Work Items
+
+  WI-451 through WI-468 (18 items)
+content_hash: 77596b49387eaa6b62387cb1130340a0ac73e00f7158ba397ef03d595a605a36
+token_count: 382

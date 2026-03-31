@@ -19,11 +19,10 @@ try {
     const dir = resolveArtifactDir({});
     initServer(dir, state);
 }
-catch {
-    // No .ideate/ found — start in dormant mode.
-    // The server stays alive and exposes bootstrap + get_workspace_status.
-    // Full initialization happens after ideate_bootstrap_workspace is called.
-    console.error("[ideate-artifact-server] No .ideate/ found — starting in dormant mode");
+catch (err) {
+    // Start in dormant mode — lazy recovery will retry on first tool call.
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error(`[ideate-artifact-server] Startup init failed (dormant mode): ${msg}`);
 }
 // ---------------------------------------------------------------------------
 // MCP server — connect transport BEFORE indexing so MCP is available immediately

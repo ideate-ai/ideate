@@ -174,29 +174,77 @@ describe("dormant mode", () => {
 // ---------------------------------------------------------------------------
 
 describe("dormant guards (routeToolCall)", () => {
-  it("get_workspace_status returns not_initialized when ctx is null", async () => {
+  it("get_workspace_status returns not_initialized when ctx is null and no .ideate/ exists", async () => {
     const state = createDormantState();
-    const response = await routeToolCall(state, "ideate_get_workspace_status", {}, stubHandleTool);
+    // Mock cwd to a dir without .ideate/ so lazy recovery fails
+    const origCwd = process.cwd;
+    process.cwd = () => tmpDir;
+    try {
+      const response = await routeToolCall(state, "ideate_get_workspace_status", {}, stubHandleTool);
 
-    expect(response.isError).toBeUndefined();
-    const parsed = JSON.parse(response.content[0].text);
-    expect(parsed.status).toBe("not_initialized");
-    expect(parsed.message).toContain("No .ideate/ directory found");
+      expect(response.isError).toBeUndefined();
+      const parsed = JSON.parse(response.content[0].text);
+      expect(parsed.status).toBe("not_initialized");
+      expect(parsed.message).toContain("No .ideate/ directory found");
+    } finally {
+      process.cwd = origCwd;
+    }
   });
 
-  it("non-dormant tools return isError when ctx is null", async () => {
+  it("get_workspace_status lazy-recovers when .ideate/ exists", async () => {
     const state = createDormantState();
+    // Create .ideate/ in tmpDir so lazy recovery succeeds
+    createIdeateDir(tmpDir);
+    const origCwd = process.cwd;
+    process.cwd = () => tmpDir;
+    try {
+      const response = await routeToolCall(state, "ideate_get_workspace_status", {}, stubHandleTool);
 
-    for (const tool of [
-      "ideate_artifact_query",
-      "ideate_write_work_items",
-      "ideate_get_execution_status",
-      "ideate_get_config",
-      "ideate_get_next_id",
-    ]) {
-      const response = await routeToolCall(state, tool, {}, stubHandleTool);
-      expect(response.isError).toBe(true);
-      expect(response.content[0].text).toContain("Project not initialized");
+      // Should fall through to normal handling after lazy init
+      expect(response.isError).toBeUndefined();
+      expect(response.content[0].text).toBe("handled:ideate_get_workspace_status");
+      expect(state.ctx).not.toBeNull();
+    } finally {
+      process.cwd = origCwd;
+      state.db?.close();
+    }
+  });
+
+  it("non-dormant tools return isError when ctx is null and no .ideate/ exists", async () => {
+    const state = createDormantState();
+    // Mock cwd to a dir without .ideate/ so lazy recovery fails
+    const origCwd = process.cwd;
+    process.cwd = () => tmpDir;
+    try {
+      for (const tool of [
+        "ideate_artifact_query",
+        "ideate_write_work_items",
+        "ideate_get_execution_status",
+        "ideate_get_config",
+        "ideate_get_next_id",
+      ]) {
+        const response = await routeToolCall(state, tool, {}, stubHandleTool);
+        expect(response.isError).toBe(true);
+        expect(response.content[0].text).toContain("Project not initialized");
+      }
+    } finally {
+      process.cwd = origCwd;
+    }
+  });
+
+  it("non-dormant tools lazy-recover when .ideate/ exists", async () => {
+    const state = createDormantState();
+    createIdeateDir(tmpDir);
+    const origCwd = process.cwd;
+    process.cwd = () => tmpDir;
+    try {
+      const response = await routeToolCall(state, "ideate_artifact_query", {}, stubHandleTool);
+      expect(response.isError).toBeUndefined();
+      expect(response.content[0].text).toBe("handled:ideate_artifact_query");
+      expect(state.ctx).not.toBeNull();
+    } finally {
+      process.cwd = origCwd;
+      state.db?.close();
     }
   });
 
