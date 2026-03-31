@@ -240,29 +240,32 @@ describe("dispatchHook — disabled hooks", () => {
 
 describe("fireEvent — filters by event name", () => {
   it("only dispatches hooks matching the event name", () => {
+    const markerPlan = path.join(tmpDir, "plan-marker.txt");
+    const markerWi = path.join(tmpDir, "wi-marker.txt");
     writeHooks([
-      { event: "plan.complete", type: "command", value: "echo plan", enabled: true },
-      { event: "work_item.started", type: "command", value: "echo wi", enabled: true },
+      { event: "plan.complete", type: "command", value: `touch ${markerPlan}`, enabled: true },
+      { event: "work_item.started", type: "command", value: `touch ${markerWi}`, enabled: true },
     ]);
 
-    // Should not throw and should only process plan.complete hooks
-    // We verify by ensuring no error is thrown and the function completes
-    expect(() => {
-      fireEvent(ideateDir(), "plan.complete", {});
-    }).not.toThrow();
+    fireEvent(ideateDir(), "plan.complete", {});
+
+    // Matching hook should have executed
+    expect(fs.existsSync(markerPlan)).toBe(true);
+    // Non-matching hook should NOT have executed
+    expect(fs.existsSync(markerWi)).toBe(false);
   });
 
   it("does nothing when no hooks match the event name", () => {
+    const marker = path.join(tmpDir, "no-match-marker.txt");
     writeHooks([
-      { event: "plan.complete", type: "command", value: "echo plan", enabled: true },
+      { event: "plan.complete", type: "command", value: `touch ${marker}`, enabled: true },
     ]);
-    expect(() => {
-      fireEvent(ideateDir(), "work_item.started", {});
-    }).not.toThrow();
+    fireEvent(ideateDir(), "work_item.started", {});
+    expect(fs.existsSync(marker)).toBe(false);
   });
 
   it("does nothing when hooks.json does not exist", () => {
-    // No hooks.json in ideateDir
+    // No hooks.json in ideateDir — should not throw
     expect(() => {
       fireEvent(ideateDir(), "plan.complete", {});
     }).not.toThrow();
@@ -271,40 +274,55 @@ describe("fireEvent — filters by event name", () => {
 
 describe("fireEvent — disabled hooks are skipped", () => {
   it("does not execute disabled hooks", () => {
+    const marker = path.join(tmpDir, "disabled-marker.txt");
     writeHooks([
-      { event: "plan.complete", type: "command", value: "exit 1", enabled: false },
+      { event: "plan.complete", type: "command", value: `touch ${marker}`, enabled: false },
     ]);
-    // If the disabled hook ran, it would throw due to exit code 1
-    expect(() => {
-      fireEvent(ideateDir(), "plan.complete", {});
-    }).not.toThrow();
+    fireEvent(ideateDir(), "plan.complete", {});
+    expect(fs.existsSync(marker)).toBe(false);
   });
 });
 
 describe("fireEvent — error handling", () => {
   it("catches errors from individual hooks without stopping remaining hooks", () => {
+    const marker = path.join(tmpDir, "second-hook-marker.txt");
     writeHooks([
       { event: "plan.complete", type: "command", value: "exit 1", enabled: true },
-      { event: "plan.complete", type: "command", value: "echo second", enabled: true },
+      { event: "plan.complete", type: "command", value: `touch ${marker}`, enabled: true },
     ]);
     // Should not throw even though the first hook fails
     expect(() => {
       fireEvent(ideateDir(), "plan.complete", {});
     }).not.toThrow();
+    // Second hook should still have executed
+    expect(fs.existsSync(marker)).toBe(true);
   });
 
   it("passes variables through to dispatched hooks", () => {
+    // Use a prompt hook to verify variable substitution — dispatchHook returns
+    // the substituted string for prompt hooks, and fireEvent calls dispatchHook.
+    // We verify substitution works by testing dispatchHook directly (fireEvent
+    // discards return values).
+    const hook: HookConfig = {
+      event: "work_item.completed",
+      type: "prompt",
+      value: "Item: ${WORK_ITEM}",
+      enabled: true,
+    };
+    const result = dispatchHook(hook, { WORK_ITEM: "WI-001" });
+    expect(result).toBe("Item: WI-001");
+
+    // Also verify fireEvent with a command hook that uses a variable in an arg
+    const marker = path.join(tmpDir, "var-marker.txt");
     writeHooks([
       {
         event: "work_item.completed",
         type: "command",
-        value: "echo ${WORK_ITEM}",
+        value: `touch ${marker}`,
         enabled: true,
       },
     ]);
-    // Should not throw
-    expect(() => {
-      fireEvent(ideateDir(), "work_item.completed", { WORK_ITEM: "WI-001" });
-    }).not.toThrow();
+    fireEvent(ideateDir(), "work_item.completed", { WORK_ITEM: "WI-001" });
+    expect(fs.existsSync(marker)).toBe(true);
   });
 });

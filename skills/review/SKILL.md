@@ -34,7 +34,7 @@ Call `ideate_get_config()` to read project configuration. Hold the response as `
 
 Parse the invocation for:
 
-1. **Project root** — Call `ideate_get_config()` to resolve the project root. If a positional argument is provided, pass it as a hint. If none found, ask: "Where is the project root?"
+1. **Project root** — Call `ideate_get_workspace_status()` to resolve the project root. If a positional argument is provided, pass it as a hint. If none found, ask: "Where is the project root?"
 
 2. **Review mode flags and arguments**:
    - No arguments (beyond project root): **cycle review** (default)
@@ -47,9 +47,7 @@ All MCP tool calls resolve paths internally from the project configuration — t
 
 Validate by calling `ideate_get_workspace_status` with the resolved path. If the MCP server cannot find artifacts, stop and report the error.
 
-3. **Active project and phase** — Call `ideate_get_workspace_status()`. Extract and hold:
-   - `{active_project}`: the active project name
-   - `{active_phase}`: the active phase name (e.g., `"alpha"`, `"beta"`, `"v1"`)
+3. **Active project and phase** — Call `ideate_artifact_query({type: "project", filters: {status: "active"}})` to retrieve the active project. Extract and hold `{active_project}`. Then call `ideate_artifact_query({type: "phase", filters: {status: "active"}})` to retrieve the active phase. Extract and hold `{active_phase}`.
 
    These are used in the Phase Convergence and circuit breaker logic below.
 
@@ -188,11 +186,7 @@ The manifest is ~2-3 lines per work item. For 50 items, this is ~150 lines vs re
 
 # Phase 3.6: Build Shared Context Package
 
-Before spawning reviewers, assemble a single context package document and hold it in memory. This replaces the pattern where each reviewer independently reads the same architecture, principles, and constraints.
-
-Call `ideate_get_context_package()`. It returns the pre-assembled context package. Hold the result as `{context_package}` — it is passed inline to all reviewer prompts.
-
-If this tool call fails, stop and report: "The ideate MCP artifact server is required but not available. Verify MCP configuration."
+Before spawning reviewers, use the `{context_package}` already loaded in Phase 2.1 (from `ideate_get_context_package()`). It is passed inline to all reviewer prompts.
 
 **Target size**: ~500-800 lines.
 
@@ -792,7 +786,7 @@ Before completing this skill, verify all of the following:
 7. **Domain check via MCP**: Domain existence and state are checked via `ideate_get_domain_state()`, not by checking filesystem existence.
 8. **Review orchestration preserved**: The phase structure, reviewer spawn order (4a parallel, 4b sequential), curator logic, archival, and user presentation remain unchanged from the original.
 9. **Zero occurrences of ideate_get_project_status**: The skill contains no references to `ideate_get_project_status`. All workspace status queries use `ideate_get_workspace_status`.
-10. **Active project and phase queried early**: Phase 1.1 calls `ideate_get_workspace_status()` and extracts `{active_project}` and `{active_phase}` before any other phase-dependent logic runs.
+10. **Active project and phase queried early**: Phase 1.1 calls `ideate_artifact_query` with type `project` and `phase` filters to extract `{active_project}` and `{active_phase}` before any other phase-dependent logic runs.
 11. **Phase Convergence section present**: The summary output template (Phase 6.7) includes a `## Phase Convergence` section showing phase name, cycle count vs threshold, convergence status, and trend.
 12. **Project Progress section present**: The summary output template includes a `## Project Progress` table listing each success criterion with its status (pass / partial / not-started).
 13. **Circuit breaker reads threshold from config**: Phase 1.3 reads `{config}.circuit_breaker_threshold` via `ideate_get_config` (loaded in Phase 0). Default is `5` if the key is absent. If `{phase_cycle_count}` >= threshold, Andon is triggered and the review halts.

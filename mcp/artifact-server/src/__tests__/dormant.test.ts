@@ -9,7 +9,7 @@
  *   imported from server.ts — the same code that runs in production.
  */
 
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import Database from "better-sqlite3";
 import fs from "fs";
 import os from "os";
@@ -108,64 +108,46 @@ describe("dormant mode", () => {
   it("handleBootstrapDormant creates .ideate/ and returns correct JSON", () => {
     const state = createDormantState();
 
-    const origCwd = process.cwd;
-    process.cwd = () => tmpDir;
-    try {
-      const result = handleBootstrapDormant(state, {});
-      const parsed = JSON.parse(result);
+    const result = handleBootstrapDormant(state, {}, tmpDir);
+    const parsed = JSON.parse(result);
 
-      expect(parsed.status).toBe("initialized");
-      expect(parsed.subdirectories).toEqual([...IDEATE_SUBDIRS]);
-      expect(parsed.warning).toBeUndefined();
+    expect(parsed.status).toBe("initialized");
+    expect(parsed.subdirectories).toEqual([...IDEATE_SUBDIRS]);
+    expect(parsed.warning).toBeUndefined();
 
-      expect(fs.existsSync(path.join(tmpDir, ".ideate"))).toBe(true);
-      expect(fs.existsSync(path.join(tmpDir, ".ideate", "config.json"))).toBe(true);
-    } finally {
-      process.cwd = origCwd;
-    }
+    expect(fs.existsSync(path.join(tmpDir, ".ideate"))).toBe(true);
+    expect(fs.existsSync(path.join(tmpDir, ".ideate", "config.json"))).toBe(true);
   });
 
   it("handleBootstrapDormant triggers initServer, populating ctx", () => {
     const state = createDormantState();
 
-    const origCwd = process.cwd;
-    process.cwd = () => tmpDir;
-    try {
-      handleBootstrapDormant(state, {});
+    handleBootstrapDormant(state, {}, tmpDir);
 
-      expect(state.ctx).not.toBeNull();
-      expect(state.ideateDir).toBe(path.join(tmpDir, ".ideate"));
-      expect(state.db).not.toBeNull();
-    } finally {
-      process.cwd = origCwd;
-    }
+    expect(state.ctx).not.toBeNull();
+    expect(state.ideateDir).toBe(path.join(tmpDir, ".ideate"));
+    expect(state.db).not.toBeNull();
   });
 
   it("after bootstrap, ctx is non-null and DB is functional", () => {
     const state = createDormantState();
 
-    const origCwd = process.cwd;
-    process.cwd = () => tmpDir;
-    try {
-      handleBootstrapDormant(state, { project_name: "test-proj" });
+    handleBootstrapDormant(state, { project_name: "test-proj" }, tmpDir);
 
-      expect(state.ctx).not.toBeNull();
-      expect(state.ctx!.ideateDir).toBe(path.join(tmpDir, ".ideate"));
+    expect(state.ctx).not.toBeNull();
+    expect(state.ctx!.ideateDir).toBe(path.join(tmpDir, ".ideate"));
 
-      const tables = state.ctx!.db
-        .prepare(
-          "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name"
-        )
-        .all() as { name: string }[];
-      expect(tables.length).toBeGreaterThan(0);
+    const tables = state.ctx!.db
+      .prepare(
+        "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name"
+      )
+      .all() as { name: string }[];
+    expect(tables.length).toBeGreaterThan(0);
 
-      const configPath = path.join(tmpDir, ".ideate", "config.json");
-      const config = JSON.parse(fs.readFileSync(configPath, "utf8"));
-      expect(config.project_name).toBe("test-proj");
-    } finally {
-      process.cwd = origCwd;
-      state.db?.close();
-    }
+    const configPath = path.join(tmpDir, ".ideate", "config.json");
+    const config = JSON.parse(fs.readFileSync(configPath, "utf8"));
+    expect(config.project_name).toBe("test-proj");
+    state.db?.close();
   });
 });
 

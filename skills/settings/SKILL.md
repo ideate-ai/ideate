@@ -28,6 +28,7 @@ Agent defaults:
 - proxy-human: maxTurns=160, model=sonnet
 - researcher: maxTurns=80, model=sonnet
 - spec-reviewer: maxTurns=100, model=sonnet
+- worker: maxTurns=200, model=sonnet
 
 PPR defaults: alpha=0.15, max_iterations=50, convergence_threshold=0.000001, default_token_budget=50000.
 Edge weight defaults: depends_on=1.0, governed_by=0.8, informed_by=0.6, references=0.4, blocks=0.3.

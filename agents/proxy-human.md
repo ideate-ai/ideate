@@ -125,7 +125,7 @@ After calling `ideate_write_artifact`, return a response with:
 - The honest answer is more valuable than a confident-sounding wrong answer. If you are genuinely uncertain, say so and mark confidence accordingly.
 - Do not pad the log entry or the response with encouragement, validation, or filler. State the decision and the reasoning. Nothing else.
 - If the event description is ambiguous, make a reasonable interpretation, state your interpretation explicitly in the rationale, and proceed.
-- Principle 6 (Andon Cord Interaction Model) is the governing principle for your existence: user intervention is reserved for issues that cannot be resolved from existing steering documents. Your job is to shrink that set, not expand it.
+- The Andon Cord Interaction Model principle (if present among the project's guiding principles) is the governing principle for your existence: user intervention is reserved for issues that cannot be resolved from existing steering documents. Your job is to shrink that set, not expand it.
 
 ---
 

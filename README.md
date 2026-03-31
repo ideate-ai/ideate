@@ -61,6 +61,7 @@ Or let it run autonomously until convergence:
 | `/ideate:review` | Capstone review: cycle (default), `--domain`, `--full`, or natural language scope |
 | `/ideate:refine` | Plan the next cycle of changes from review findings or new requirements |
 | `/ideate:autopilot` | Autonomous execute → review → refine loop until convergence |
+| `/ideate:settings` | Interactive configuration for agent budgets, model overrides, and PPR weights |
 
 ---
 
@@ -190,6 +191,8 @@ All artifacts live in `.ideate/` in the project root:
 ```
 .ideate/
 ├── config.json
+├── projects/
+├── phases/
 ├── plan/
 ├── work-items/
 ├── principles/
@@ -254,20 +257,14 @@ The ideate artifact server must be configured as an MCP server in your Claude Co
 {
   "mcpServers": {
     "ideate-artifact-server": {
-      "command": "node",
-      "args": ["/path/to/ideate/mcp/artifact-server/dist/index.js"]
+      "command": "sh",
+      "args": ["/path/to/ideate/mcp/artifact-server/start.sh"]
     }
   }
 }
 ```
 
-Build the server first:
-
-```bash
-cd mcp/artifact-server
-npm install
-npm run build
-```
+The `start.sh` wrapper handles auto-install and auto-build on first run. No manual build step is required.
 
 ### Agent budgets (`config.json`)
 

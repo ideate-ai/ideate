@@ -20,6 +20,7 @@ scripts/         # Utility scripts (validate-specs.sh, migrate-to-optimized.sh)
 | `/ideate:review` | Capstone review: cycle (default), `--domain`, `--full`, or natural language scope |
 | `/ideate:refine` | Plan the next cycle of changes |
 | `/ideate:autopilot` | Autonomous execute → review → refine loop until convergence |
+| `/ideate:settings` | Interactive configuration for agent budgets, model overrides, and PPR weights |
 
 ## Artifact structure
 

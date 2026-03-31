@@ -169,12 +169,13 @@ export async function handleGetConvergenceStatus(
   let criticalCount = 0;
   let significantCount = 0;
   let minorCount = 0;
-  const suggestionsCount = 0;
+  let suggestionsCount = 0;
 
   for (const row of severityRows) {
     if (row.severity === "critical") criticalCount = row.count;
     else if (row.severity === "significant") significantCount = row.count;
     else if (row.severity === "minor") minorCount = row.count;
+    else if (row.severity === "suggestion") suggestionsCount = row.count;
   }
 
   const conditionA = critSigCount === 0;
@@ -234,6 +235,20 @@ export async function handleGetDomainState(
     status: string | null;
   }>;
 
+  // Query domain_decisions
+  const decisionsStmt = ctx.db.prepare(`
+    SELECT dd.id, dd.domain, dd.description, n.status
+    FROM domain_decisions dd
+    JOIN nodes n ON n.id = dd.id
+    ORDER BY dd.domain, dd.id
+  `);
+  const allDecisions = decisionsStmt.all() as Array<{
+    id: string;
+    domain: string;
+    description: string | null;
+    status: string | null;
+  }>;
+
   // Query domain_questions (open: status = open)
   const questionsStmt = ctx.db.prepare(`
     SELECT dq.id, dq.domain, dq.description, n.status
@@ -252,6 +267,7 @@ export async function handleGetDomainState(
   // Collect unique domains
   const domainSet = new Set<string>([
     ...allPolicies.map((p) => p.domain),
+    ...allDecisions.map((d) => d.domain),
     ...allQuestions.map((q) => q.domain),
   ]);
   let domains = Array.from(domainSet).sort();
@@ -268,6 +284,7 @@ export async function handleGetDomainState(
 
   for (const domain of domains) {
     const policies = allPolicies.filter((p) => p.domain === domain);
+    const decisions = allDecisions.filter((d) => d.domain === domain);
     const questions = allQuestions.filter((q) => q.domain === domain);
 
     sections.push(`## ${domain}`);
@@ -278,6 +295,16 @@ export async function handleGetDomainState(
       for (const p of policies) {
         const desc = p.description ? ` — ${p.description}` : "";
         sections.push(`- **${p.id}**${desc}`);
+      }
+    }
+
+    sections.push(`\n### Decisions (${decisions.length})`);
+    if (decisions.length === 0) {
+      sections.push("None.");
+    } else {
+      for (const d of decisions) {
+        const desc = d.description ? ` — ${d.description}` : "";
+        sections.push(`- **${d.id}**${desc}`);
       }
     }
 

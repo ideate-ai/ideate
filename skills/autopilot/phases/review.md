@@ -314,9 +314,9 @@ Set `{project_complete}` = true if ALL criteria are satisfied. Set `{project_com
 
 **Step 2: Identify next horizon items**
 
-Call `ideate_artifact_query({type: "execution_strategy"})` to retrieve the execution strategy. Extract the `horizon.next` list (work item IDs planned for the next phase). If the execution strategy has no `horizon.next` field or it is empty, set `{next_horizon_items}` = [].
+Call `ideate_artifact_query({type: "project", id: "{current_project.id}"})` to retrieve the project record. Extract `horizon.next` from the project (the canonical location for phase horizon data). If the project has no `horizon.next` field or it is empty, set `{next_horizon_items}` = [].
 
-Otherwise, set `{next_horizon_items}` = the list of work item IDs from `horizon.next`.
+Otherwise, set `{next_horizon_items}` = the list of phase entries from `horizon.next`.
 
 **Step 3: Append project progress to journal**
 

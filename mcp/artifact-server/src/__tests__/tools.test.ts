@@ -246,6 +246,43 @@ describe("handleGetContextPackage", () => {
     expect(result).toContain("## Guiding Principles");
     expect(result).toContain("## Constraints");
   });
+
+  it("empty DB: returns section headers with no content", async () => {
+    const result = await handleGetContextPackage(ctx, {});
+    expect(result).toContain("## Guiding Principles");
+    expect(result).toContain("## Constraints");
+  });
+
+  it("architecture content appears in correct section", async () => {
+    insertNode("DOC-arch", "architecture", { file_path: path.join(artifactDir, "arch.md") });
+    db.prepare(`INSERT OR REPLACE INTO document_artifacts (id, title, content) VALUES ('DOC-arch', 'Architecture', 'unique-arch-marker-xyz')`).run();
+
+    const result = await handleGetContextPackage(ctx, {});
+    // The architecture content should appear after the Architecture header
+    const archIdx = result.indexOf("## Architecture");
+    const markerIdx = result.indexOf("unique-arch-marker-xyz");
+    expect(archIdx).toBeGreaterThanOrEqual(0);
+    expect(markerIdx).toBeGreaterThan(archIdx);
+  });
+
+  it("multiple guiding principles appear in output", async () => {
+    insertNode("GP-01", "guiding_principle", { file_path: path.join(artifactDir, "principles", "GP-01.yaml") });
+    db.prepare(`INSERT OR REPLACE INTO guiding_principles (id, name, description) VALUES ('GP-01', 'Spec Sufficiency', 'Plans must be complete')`).run();
+    insertNode("GP-02", "guiding_principle", { file_path: path.join(artifactDir, "principles", "GP-02.yaml") });
+    db.prepare(`INSERT OR REPLACE INTO guiding_principles (id, name, description) VALUES ('GP-02', 'Minimal Inference', 'Executor does not design')`).run();
+
+    const result = await handleGetContextPackage(ctx, {});
+    expect(result).toContain("Spec Sufficiency");
+    expect(result).toContain("Minimal Inference");
+  });
+
+  it("constraints appear in output", async () => {
+    insertNode("C-01", "constraint", { file_path: path.join(artifactDir, "constraints", "C-01.yaml") });
+    db.prepare(`INSERT OR REPLACE INTO constraints (id, category, description) VALUES ('C-01', 'technology', 'Claude Code plugin format')`).run();
+
+    const result = await handleGetContextPackage(ctx, {});
+    expect(result).toContain("Claude Code plugin format");
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -389,8 +426,8 @@ describe("handleGetExecutionStatus", () => {
 
     const result = await handleGetExecutionStatus(ctx, {});
     expect(result).toContain("Execution Status");
-    expect(result).toContain("Total");
-    expect(result).toContain("Completed");
+    expect(result).toMatch(/Total:\s*\d+/);
+    expect(result).toMatch(/Completed:\s*\d+/);
   });
 
   it("happy path: blocked items are listed with their unmet deps", async () => {

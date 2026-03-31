@@ -30,9 +30,7 @@ Produce a single markdown document containing all work items for the assigned mo
 
 ### Work Item Format
 
-Use `ideate_artifact_query({type: "work_item", limit: 1})` to see an example of the existing format and conventions. Match the format exactly.
-
-If no work items exist yet (first decomposition), use this template:
+Match the work item format provided in your prompt. If no example was provided, use this template:
 
 ```markdown
 # NNN: {Title}

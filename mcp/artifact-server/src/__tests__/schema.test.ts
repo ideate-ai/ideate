@@ -372,58 +372,43 @@ describe("createSchema — schema version", () => {
 // ---------------------------------------------------------------------------
 
 describe("createSchema — indexes", () => {
+  // Shared DB instance — createSchema is deterministic, index checks are read-only
+  const db = freshDb();
+
   it("creates idx_nodes_type on nodes", () => {
-    const db = freshDb();
-    const indexes = indexNames(db, "nodes");
-    expect(indexes).toContain("idx_nodes_type");
+    expect(indexNames(db, "nodes")).toContain("idx_nodes_type");
   });
 
   it("creates idx_nodes_file_path on nodes", () => {
-    const db = freshDb();
-    const indexes = indexNames(db, "nodes");
-    expect(indexes).toContain("idx_nodes_file_path");
+    expect(indexNames(db, "nodes")).toContain("idx_nodes_file_path");
   });
 
   it("creates idx_edges_source on edges", () => {
-    const db = freshDb();
-    const indexes = indexNames(db, "edges");
-    expect(indexes).toContain("idx_edges_source");
+    expect(indexNames(db, "edges")).toContain("idx_edges_source");
   });
 
   it("creates idx_edges_target on edges", () => {
-    const db = freshDb();
-    const indexes = indexNames(db, "edges");
-    expect(indexes).toContain("idx_edges_target");
+    expect(indexNames(db, "edges")).toContain("idx_edges_target");
   });
 
   it("creates idx_file_refs_path on node_file_refs", () => {
-    const db = freshDb();
-    const indexes = indexNames(db, "node_file_refs");
-    expect(indexes).toContain("idx_file_refs_path");
+    expect(indexNames(db, "node_file_refs")).toContain("idx_file_refs_path");
   });
 
   it("creates idx_work_items_domain on work_items", () => {
-    const db = freshDb();
-    const indexes = indexNames(db, "work_items");
-    expect(indexes).toContain("idx_work_items_domain");
+    expect(indexNames(db, "work_items")).toContain("idx_work_items_domain");
   });
 
   it("creates idx_findings_work_item on findings", () => {
-    const db = freshDb();
-    const indexes = indexNames(db, "findings");
-    expect(indexes).toContain("idx_findings_work_item");
+    expect(indexNames(db, "findings")).toContain("idx_findings_work_item");
   });
 
   it("creates idx_domain_policies_domain on domain_policies", () => {
-    const db = freshDb();
-    const indexes = indexNames(db, "domain_policies");
-    expect(indexes).toContain("idx_domain_policies_domain");
+    expect(indexNames(db, "domain_policies")).toContain("idx_domain_policies_domain");
   });
 
   it("creates idx_domain_questions_domain on domain_questions", () => {
-    const db = freshDb();
-    const indexes = indexNames(db, "domain_questions");
-    expect(indexes).toContain("idx_domain_questions_domain");
+    expect(indexNames(db, "domain_questions")).toContain("idx_domain_questions_domain");
   });
 });
 

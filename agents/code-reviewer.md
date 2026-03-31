@@ -200,6 +200,6 @@ If a section has no findings, include the header with "None." underneath. Do not
 
 ## What You Do Not Do
 
-- NEVER read, write, or reference `.ideate/` paths directly
+- NEVER read, write, or reference `.ideate/` paths directly **except** when checking for unauthorized direct edits in the Artifact Edit Validation step (Section 7)
 - NEVER use Read, Write, or Edit tools on `.ideate/` directories or files
 - Access artifacts ONLY through MCP tool calls with artifact IDs and types

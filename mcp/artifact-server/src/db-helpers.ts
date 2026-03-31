@@ -291,465 +291,111 @@ export function upsertNode(db: DrizzleDb, row: NodeRow): void {
 }
 
 // ---------------------------------------------------------------------------
-// Typed upsert helpers for extension tables
+// Generic upsert for extension tables
 // ---------------------------------------------------------------------------
 
 /**
- * Upsert a row into the work_items table.
+ * Generic upsert for any extension table. Takes a Drizzle table reference and
+ * a row object. Inserts all fields from the row, and on conflict updates all
+ * fields except `id`.
+ *
+ * This replaces 16 individual per-table upsert functions that all followed the
+ * identical pattern: insert(table).values(row).onConflictDoUpdate({target: table.id, set: row minus id}).
+ *
+ * The `as any` casts are safe here because:
+ * 1. The table reference determines which SQLite table is written to
+ * 2. The row object's fields are validated by the caller (assertRequiredFields or typed interfaces)
+ * 3. SQLite will reject columns that don't exist on the target table
  */
+function genericUpsert(db: DrizzleDb, table: any, row: Record<string, unknown>): void {
+  const { id, ...rest } = row;
+  db.insert(table)
+    .values(row as any)
+    .onConflictDoUpdate({
+      target: table.id,
+      set: rest as any,
+    })
+    .run();
+}
+
+/** Upsert a work item row. Delegates to genericUpsert. */
 export function upsertWorkItem(db: DrizzleDb, row: WorkItemRow): void {
-  db.insert(dbSchema.workItems)
-    .values({
-      id: row.id,
-      title: row.title,
-      complexity: row.complexity,
-      scope: row.scope,
-      depends: row.depends,
-      blocks: row.blocks,
-      criteria: row.criteria,
-      module: row.module,
-      domain: row.domain,
-      phase: row.phase,
-      notes: row.notes,
-    })
-    .onConflictDoUpdate({
-      target: dbSchema.workItems.id,
-      set: {
-        title: row.title,
-        complexity: row.complexity,
-        scope: row.scope,
-        depends: row.depends,
-        blocks: row.blocks,
-        criteria: row.criteria,
-        module: row.module,
-        domain: row.domain,
-        phase: row.phase,
-        notes: row.notes,
-      },
-    })
-    .run();
+  genericUpsert(db, dbSchema.workItems, row as unknown as Record<string, unknown>);
 }
 
-/**
- * Upsert a row into the findings table.
- */
+/** Upsert a finding row. */
 export function upsertFinding(db: DrizzleDb, row: FindingRow): void {
-  db.insert(dbSchema.findings)
-    .values({
-      id: row.id,
-      severity: row.severity,
-      work_item: row.work_item,
-      file_refs: row.file_refs,
-      verdict: row.verdict,
-      cycle: row.cycle,
-      reviewer: row.reviewer,
-      description: row.description,
-      suggestion: row.suggestion,
-      addressed_by: row.addressed_by,
-    })
-    .onConflictDoUpdate({
-      target: dbSchema.findings.id,
-      set: {
-        severity: row.severity,
-        work_item: row.work_item,
-        file_refs: row.file_refs,
-        verdict: row.verdict,
-        cycle: row.cycle,
-        reviewer: row.reviewer,
-        description: row.description,
-        suggestion: row.suggestion,
-        addressed_by: row.addressed_by,
-      },
-    })
-    .run();
+  genericUpsert(db, dbSchema.findings, row as unknown as Record<string, unknown>);
 }
 
-/**
- * Upsert a row into the domain_policies table.
- */
+/** Upsert a domain policy row. */
 export function upsertDomainPolicy(db: DrizzleDb, row: DomainPolicyRow): void {
-  db.insert(dbSchema.domainPolicies)
-    .values({
-      id: row.id,
-      domain: row.domain,
-      derived_from: row.derived_from,
-      established: row.established,
-      amended: row.amended,
-      amended_by: row.amended_by,
-      description: row.description,
-    })
-    .onConflictDoUpdate({
-      target: dbSchema.domainPolicies.id,
-      set: {
-        domain: row.domain,
-        derived_from: row.derived_from,
-        established: row.established,
-        amended: row.amended,
-        amended_by: row.amended_by,
-        description: row.description,
-      },
-    })
-    .run();
+  genericUpsert(db, dbSchema.domainPolicies, row as unknown as Record<string, unknown>);
 }
 
-/**
- * Upsert a row into the domain_decisions table.
- */
+/** Upsert a domain decision row. */
 export function upsertDomainDecision(db: DrizzleDb, row: DomainDecisionRow): void {
-  db.insert(dbSchema.domainDecisions)
-    .values({
-      id: row.id,
-      domain: row.domain,
-      cycle: row.cycle,
-      supersedes: row.supersedes,
-      description: row.description,
-      rationale: row.rationale,
-    })
-    .onConflictDoUpdate({
-      target: dbSchema.domainDecisions.id,
-      set: {
-        domain: row.domain,
-        cycle: row.cycle,
-        supersedes: row.supersedes,
-        description: row.description,
-        rationale: row.rationale,
-      },
-    })
-    .run();
+  genericUpsert(db, dbSchema.domainDecisions, row as unknown as Record<string, unknown>);
 }
 
-/**
- * Upsert a row into the domain_questions table.
- */
+/** Upsert a domain question row. */
 export function upsertDomainQuestion(db: DrizzleDb, row: DomainQuestionRow): void {
-  db.insert(dbSchema.domainQuestions)
-    .values({
-      id: row.id,
-      domain: row.domain,
-      impact: row.impact,
-      source: row.source,
-      resolution: row.resolution,
-      resolved_in: row.resolved_in,
-      description: row.description,
-      addressed_by: row.addressed_by,
-    })
-    .onConflictDoUpdate({
-      target: dbSchema.domainQuestions.id,
-      set: {
-        domain: row.domain,
-        impact: row.impact,
-        source: row.source,
-        resolution: row.resolution,
-        resolved_in: row.resolved_in,
-        description: row.description,
-        addressed_by: row.addressed_by,
-      },
-    })
-    .run();
+  genericUpsert(db, dbSchema.domainQuestions, row as unknown as Record<string, unknown>);
 }
 
-/**
- * Upsert a row into the guiding_principles table.
- */
+/** Upsert a guiding principle row. */
 export function upsertGuidingPrinciple(db: DrizzleDb, row: GuidingPrincipleRow): void {
-  db.insert(dbSchema.guidingPrinciples)
-    .values({
-      id: row.id,
-      name: row.name,
-      description: row.description,
-      amendment_history: row.amendment_history,
-    })
-    .onConflictDoUpdate({
-      target: dbSchema.guidingPrinciples.id,
-      set: {
-        name: row.name,
-        description: row.description,
-        amendment_history: row.amendment_history,
-      },
-    })
-    .run();
+  genericUpsert(db, dbSchema.guidingPrinciples, row as unknown as Record<string, unknown>);
 }
 
-/**
- * Upsert a row into the constraints table.
- */
+/** Upsert a constraint row. */
 export function upsertConstraint(db: DrizzleDb, row: ConstraintRow): void {
-  db.insert(dbSchema.constraints)
-    .values({
-      id: row.id,
-      category: row.category,
-      description: row.description,
-    })
-    .onConflictDoUpdate({
-      target: dbSchema.constraints.id,
-      set: {
-        category: row.category,
-        description: row.description,
-      },
-    })
-    .run();
+  genericUpsert(db, dbSchema.constraints, row as unknown as Record<string, unknown>);
 }
 
-/**
- * Upsert a row into the module_specs table.
- */
+/** Upsert a module spec row. */
 export function upsertModuleSpec(db: DrizzleDb, row: ModuleSpecRow): void {
-  db.insert(dbSchema.moduleSpecs)
-    .values({
-      id: row.id,
-      name: row.name,
-      scope: row.scope,
-      provides: row.provides,
-      requires: row.requires,
-      boundary_rules: row.boundary_rules,
-    })
-    .onConflictDoUpdate({
-      target: dbSchema.moduleSpecs.id,
-      set: {
-        name: row.name,
-        scope: row.scope,
-        provides: row.provides,
-        requires: row.requires,
-        boundary_rules: row.boundary_rules,
-      },
-    })
-    .run();
+  genericUpsert(db, dbSchema.moduleSpecs, row as unknown as Record<string, unknown>);
 }
 
-/**
- * Upsert a row into the research_findings table.
- */
+/** Upsert a research finding row. */
 export function upsertResearchFinding(db: DrizzleDb, row: ResearchFindingRow): void {
-  db.insert(dbSchema.researchFindings)
-    .values({
-      id: row.id,
-      topic: row.topic,
-      date: row.date,
-      content: row.content,
-      sources: row.sources,
-    })
-    .onConflictDoUpdate({
-      target: dbSchema.researchFindings.id,
-      set: {
-        topic: row.topic,
-        date: row.date,
-        content: row.content,
-        sources: row.sources,
-      },
-    })
-    .run();
+  genericUpsert(db, dbSchema.researchFindings, row as unknown as Record<string, unknown>);
 }
 
-/**
- * Upsert a row into the journal_entries table.
- */
+/** Upsert a journal entry row. */
 export function upsertJournalEntry(db: DrizzleDb, row: JournalEntryRow): void {
-  db.insert(dbSchema.journalEntries)
-    .values({
-      id: row.id,
-      phase: row.phase,
-      date: row.date,
-      title: row.title,
-      work_item: row.work_item,
-      content: row.content,
-    })
-    .onConflictDoUpdate({
-      target: dbSchema.journalEntries.id,
-      set: {
-        phase: row.phase,
-        date: row.date,
-        title: row.title,
-        work_item: row.work_item,
-        content: row.content,
-      },
-    })
-    .run();
+  genericUpsert(db, dbSchema.journalEntries, row as unknown as Record<string, unknown>);
 }
 
-/**
- * Upsert a row into the metrics_events table.
- */
+/** Upsert a metrics event row. */
 export function upsertMetricsEvent(db: DrizzleDb, row: MetricsEventRow): void {
-  db.insert(dbSchema.metricsEvents)
-    .values({
-      id: row.id,
-      event_name: row.event_name,
-      timestamp: row.timestamp,
-      payload: row.payload,
-      input_tokens: row.input_tokens,
-      output_tokens: row.output_tokens,
-      cache_read_tokens: row.cache_read_tokens,
-      cache_write_tokens: row.cache_write_tokens,
-      outcome: row.outcome,
-      finding_count: row.finding_count,
-      finding_severities: row.finding_severities,
-      first_pass_accepted: row.first_pass_accepted,
-      rework_count: row.rework_count,
-      work_item_total_tokens: row.work_item_total_tokens,
-      cycle_total_tokens: row.cycle_total_tokens,
-      cycle_total_cost_estimate: row.cycle_total_cost_estimate,
-      convergence_cycles: row.convergence_cycles,
-      context_artifact_ids: row.context_artifact_ids,
-    })
-    .onConflictDoUpdate({
-      target: dbSchema.metricsEvents.id,
-      set: {
-        event_name: row.event_name,
-        timestamp: row.timestamp,
-        payload: row.payload,
-        input_tokens: row.input_tokens,
-        output_tokens: row.output_tokens,
-        cache_read_tokens: row.cache_read_tokens,
-        cache_write_tokens: row.cache_write_tokens,
-        outcome: row.outcome,
-        finding_count: row.finding_count,
-        finding_severities: row.finding_severities,
-        first_pass_accepted: row.first_pass_accepted,
-        rework_count: row.rework_count,
-        work_item_total_tokens: row.work_item_total_tokens,
-        cycle_total_tokens: row.cycle_total_tokens,
-        cycle_total_cost_estimate: row.cycle_total_cost_estimate,
-        convergence_cycles: row.convergence_cycles,
-        context_artifact_ids: row.context_artifact_ids,
-      },
-    })
-    .run();
+  genericUpsert(db, dbSchema.metricsEvents, row as unknown as Record<string, unknown>);
 }
 
-/**
- * Upsert a row into the document_artifacts table.
- */
+/** Upsert a document artifact row. */
 export function upsertDocumentArtifact(db: DrizzleDb, row: DocumentArtifactRow): void {
-  db.insert(dbSchema.documentArtifacts)
-    .values({
-      id: row.id,
-      title: row.title,
-      cycle: row.cycle,
-      content: row.content,
-    })
-    .onConflictDoUpdate({
-      target: dbSchema.documentArtifacts.id,
-      set: {
-        title: row.title,
-        cycle: row.cycle,
-        content: row.content,
-      },
-    })
-    .run();
+  genericUpsert(db, dbSchema.documentArtifacts, row as unknown as Record<string, unknown>);
 }
 
-/**
- * Upsert a row into the interview_questions table.
- */
+/** Upsert an interview question row. */
 export function upsertInterviewQuestion(db: DrizzleDb, row: InterviewQuestionRow): void {
-  db.insert(dbSchema.interviewQuestions)
-    .values({
-      id: row.id,
-      interview_id: row.interview_id,
-      question: row.question,
-      answer: row.answer,
-      domain: row.domain,
-      seq: row.seq,
-    })
-    .onConflictDoUpdate({
-      target: dbSchema.interviewQuestions.id,
-      set: {
-        interview_id: row.interview_id,
-        question: row.question,
-        answer: row.answer,
-        domain: row.domain,
-        seq: row.seq,
-      },
-    })
-    .run();
+  genericUpsert(db, dbSchema.interviewQuestions, row as unknown as Record<string, unknown>);
 }
 
-/**
- * Upsert a row into the proxy_human_decisions table.
- */
+/** Upsert a proxy human decision row. */
 export function upsertProxyHumanDecision(db: DrizzleDb, row: ProxyHumanDecisionRow): void {
-  db.insert(dbSchema.proxyHumanDecisions)
-    .values({
-      id: row.id,
-      cycle: row.cycle,
-      trigger: row.trigger,
-      triggered_by: row.triggered_by,
-      decision: row.decision,
-      rationale: row.rationale,
-      timestamp: row.timestamp,
-      status: row.status,
-    })
-    .onConflictDoUpdate({
-      target: dbSchema.proxyHumanDecisions.id,
-      set: {
-        cycle: row.cycle,
-        trigger: row.trigger,
-        triggered_by: row.triggered_by,
-        decision: row.decision,
-        rationale: row.rationale,
-        timestamp: row.timestamp,
-        status: row.status,
-      },
-    })
-    .run();
+  genericUpsert(db, dbSchema.proxyHumanDecisions, row as unknown as Record<string, unknown>);
 }
 
-/**
- * Upsert a row into the projects table.
- */
+/** Upsert a project row. */
 export function upsertProject(db: DrizzleDb, row: ProjectRow): void {
-  db.insert(dbSchema.projects)
-    .values({
-      id: row.id,
-      intent: row.intent,
-      scope_boundary: row.scope_boundary,
-      success_criteria: row.success_criteria,
-      appetite: row.appetite,
-      steering: row.steering,
-      horizon: row.horizon,
-      status: row.status,
-    })
-    .onConflictDoUpdate({
-      target: dbSchema.projects.id,
-      set: {
-        intent: row.intent,
-        scope_boundary: row.scope_boundary,
-        success_criteria: row.success_criteria,
-        appetite: row.appetite,
-        steering: row.steering,
-        horizon: row.horizon,
-        status: row.status,
-      },
-    })
-    .run();
+  genericUpsert(db, dbSchema.projects, row as unknown as Record<string, unknown>);
 }
 
-/**
- * Upsert a row into the phases table.
- */
+/** Upsert a phase row. */
 export function upsertPhase(db: DrizzleDb, row: PhaseRow): void {
-  db.insert(dbSchema.phases)
-    .values({
-      id: row.id,
-      project: row.project,
-      phase_type: row.phase_type,
-      intent: row.intent,
-      steering: row.steering,
-      status: row.status,
-      work_items: row.work_items,
-    })
-    .onConflictDoUpdate({
-      target: dbSchema.phases.id,
-      set: {
-        project: row.project,
-        phase_type: row.phase_type,
-        intent: row.intent,
-        steering: row.steering,
-        status: row.status,
-        work_items: row.work_items,
-      },
-    })
-    .run();
+  genericUpsert(db, dbSchema.phases, row as unknown as Record<string, unknown>);
 }
 
 // ---------------------------------------------------------------------------
@@ -907,36 +553,45 @@ export function upsertExtensionRow(
       upsertFinding(db, { id, ...row } as FindingRow);
       break;
     case "domain_policies":
+      assertRequiredFields(tableName, row, "domain");
       upsertDomainPolicy(db, { id, ...row } as DomainPolicyRow);
       break;
     case "domain_decisions":
+      assertRequiredFields(tableName, row, "domain");
       upsertDomainDecision(db, { id, ...row } as DomainDecisionRow);
       break;
     case "domain_questions":
+      assertRequiredFields(tableName, row, "domain");
       upsertDomainQuestion(db, { id, ...row } as DomainQuestionRow);
       break;
     case "guiding_principles":
+      assertRequiredFields(tableName, row, "name");
       upsertGuidingPrinciple(db, { id, ...row } as GuidingPrincipleRow);
       break;
     case "constraints":
+      assertRequiredFields(tableName, row, "category");
       upsertConstraint(db, { id, ...row } as ConstraintRow);
       break;
     case "module_specs":
+      assertRequiredFields(tableName, row, "name");
       upsertModuleSpec(db, { id, ...row } as ModuleSpecRow);
       break;
     case "research_findings":
+      assertRequiredFields(tableName, row, "topic");
       upsertResearchFinding(db, { id, ...row } as ResearchFindingRow);
       break;
     case "journal_entries":
       upsertJournalEntry(db, { id, ...row } as JournalEntryRow);
       break;
     case "metrics_events":
+      assertRequiredFields(tableName, row, "event_name");
       upsertMetricsEvent(db, { id, ...row } as MetricsEventRow);
       break;
     case "document_artifacts":
       upsertDocumentArtifact(db, { id, ...row } as DocumentArtifactRow);
       break;
     case "interview_questions":
+      assertRequiredFields(tableName, row, "interview_id", "question", "answer", "seq");
       upsertInterviewQuestion(db, { id, ...row } as InterviewQuestionRow);
       break;
     case "proxy_human_decisions":

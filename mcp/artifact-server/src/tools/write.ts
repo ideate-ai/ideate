@@ -184,6 +184,9 @@ export async function handleArchiveCycle(
   if (cycleNumber === undefined || cycleNumber === null) {
     throw new Error("Missing required parameters: cycle_number");
   }
+  if (typeof cycleNumber !== "number" || !Number.isInteger(cycleNumber) || cycleNumber < 0) {
+    throw new Error(`Invalid cycle_number: expected a non-negative integer, got ${JSON.stringify(cycleNumber)}`);
+  }
 
   const cycleStr = String(cycleNumber).padStart(3, "0");
   const findingsDir = path.join(ctx.ideateDir, "cycles", cycleStr, "findings");
@@ -241,7 +244,6 @@ export async function handleArchiveCycle(
   interface CopyRecord {
     src: string;
     dst: string;
-    srcSize: number;
   }
   const copied: CopyRecord[] = [];
   const copyErrors: string[] = [];
@@ -252,8 +254,7 @@ export async function handleArchiveCycle(
     const dstPath = path.join(cycleIncrementalDir, name);
     try {
       fs.copyFileSync(srcPath, dstPath);
-      const srcSize = fs.statSync(srcPath).size;
-      copied.push({ src: srcPath, dst: dstPath, srcSize });
+      copied.push({ src: srcPath, dst: dstPath });
     } catch (err) {
       const code = (err as NodeJS.ErrnoException).code ?? "ERR_UNKNOWN";
       copyErrors.push(`Failed to copy ${path.basename(srcPath)}: ${code}`);
@@ -265,8 +266,7 @@ export async function handleArchiveCycle(
     const dstPath = path.join(cycleWorkItemsDir, name);
     try {
       fs.copyFileSync(srcPath, dstPath);
-      const srcSize = fs.statSync(srcPath).size;
-      copied.push({ src: srcPath, dst: dstPath, srcSize });
+      copied.push({ src: srcPath, dst: dstPath });
     } catch (err) {
       const code = (err as NodeJS.ErrnoException).code ?? "ERR_UNKNOWN";
       copyErrors.push(`Failed to copy ${path.basename(srcPath)}: ${code}`);
@@ -277,16 +277,17 @@ export async function handleArchiveCycle(
     return `Error during cycle archival — no originals deleted:\n${copyErrors.join("\n")}`;
   }
 
-  // Phase 2: Verify — confirm all copied files exist and match source size
+  // Phase 2: Verify — confirm all copied files exist and match source content hash
   const verifyErrors: string[] = [];
-  for (const { dst, srcSize } of copied) {
+  for (const { src, dst } of copied) {
     if (!fs.existsSync(dst)) {
       verifyErrors.push(`Verification failed — file missing after copy: ${path.basename(dst)}`);
       continue;
     }
-    const dstSize = fs.statSync(dst).size;
-    if (dstSize !== srcSize) {
-      verifyErrors.push(`Verification failed — size mismatch for ${path.basename(dst)} (expected ${srcSize} bytes, got ${dstSize})`);
+    const srcHash = sha256(fs.readFileSync(src, "utf8"));
+    const dstHash = sha256(fs.readFileSync(dst, "utf8"));
+    if (srcHash !== dstHash) {
+      verifyErrors.push(`Verification failed — content hash mismatch for ${path.basename(dst)}`);
     }
   }
 
@@ -302,14 +303,19 @@ export async function handleArchiveCycle(
     fs.unlinkSync(srcPath);
   }
 
-  // Phase 3b: Cleanup SQLite nodes whose file_path now points to deleted source locations.
-  // Findings are deleted from the index (archived artifacts are accessed via archive/ paths).
-  // Work item nodes are NOT deleted — they remain queryable after archival.
-  // All deletes are wrapped in an exclusive transaction to ensure atomicity.
+  // Phase 3b: Update SQLite nodes after file moves.
+  // Findings: deleted from the index (archived artifacts are accessed via archive/ paths).
+  // Work items: file_path updated to point to archive copy so readArtifactContent still works.
+  // All changes wrapped in an exclusive transaction for atomicity.
   const deleteStmt = ctx.db.prepare(`DELETE FROM nodes WHERE file_path = ?`);
+  const updatePathStmt = ctx.db.prepare(`UPDATE nodes SET file_path = ? WHERE file_path = ?`);
   ctx.db.transaction(() => {
     for (const srcPath of incrementalFiles) {
       deleteStmt.run(srcPath);
+    }
+    for (const { src: srcPath, name } of workItemFiles) {
+      const archivePath = path.join(cycleWorkItemsDir, name);
+      updatePathStmt.run(archivePath, srcPath);
     }
   }).exclusive();
 
@@ -383,59 +389,39 @@ export async function handleWriteWorkItems(
     }
   }
 
-  // Insert temp edges (FK is OFF or nodes may not exist yet — use raw SQL to avoid FK issues)
+  // DAG cycle detection: insert temp edges inside a SAVEPOINT, run detection,
+  // then always ROLLBACK the savepoint so temp edges never persist.
+  let cycles: string[][] = [];
   if (tempEdgesInserted.length > 0) {
     const fkWasOn = ctx.db.pragma("foreign_keys", { simple: true }) as number;
     if (fkWasOn) ctx.db.pragma("foreign_keys = OFF");
     try {
+      ctx.db.exec("SAVEPOINT dag_check");
       const insertEdgeStmt = ctx.db.prepare(
         `INSERT OR IGNORE INTO edges (source_id, target_id, edge_type) VALUES (?, ?, 'depends_on')`
       );
       for (const { source, target } of tempEdgesInserted) {
         insertEdgeStmt.run(source, target);
       }
+      try {
+        cycles = detectCycles(ctx.drizzleDb);
+      } catch (err) {
+        ctx.db.exec("ROLLBACK TO dag_check");
+        ctx.db.exec("RELEASE dag_check");
+        if (fkWasOn) ctx.db.pragma("foreign_keys = ON");
+        throw new Error(`DAG validation failed: ${(err as Error).message}`);
+      }
+      // Always rollback temp edges — they are re-added properly during upsert phase
+      ctx.db.exec("ROLLBACK TO dag_check");
+      ctx.db.exec("RELEASE dag_check");
     } finally {
       if (fkWasOn) ctx.db.pragma("foreign_keys = ON");
     }
   }
 
-  // Run cycle detection
-  let cycles: string[][];
-  try {
-    cycles = detectCycles(ctx.drizzleDb);
-  } catch (err) {
-    // Roll back temp edges
-    if (tempEdgesInserted.length > 0) {
-      const delStmt = ctx.db.prepare(
-        `DELETE FROM edges WHERE source_id = ? AND target_id = ? AND edge_type = 'depends_on'`
-      );
-      for (const { source, target } of tempEdgesInserted) {
-        delStmt.run(source, target);
-      }
-    }
-    throw new Error(`DAG validation failed: ${(err as Error).message}`);
-  }
-
   if (cycles.length > 0) {
-    // Roll back temp edges
-    const delStmt = ctx.db.prepare(
-      `DELETE FROM edges WHERE source_id = ? AND target_id = ? AND edge_type = 'depends_on'`
-    );
-    for (const { source, target } of tempEdgesInserted) {
-      delStmt.run(source, target);
-    }
     const cycleDesc = cycles.map((c) => c.join(" -> ")).join("; ");
     return `Error: DAG cycle detected — no items written. Cycles: ${cycleDesc}`;
-  }
-
-  // Remove temp edges (they'll be re-added properly during upsert phase)
-  if (tempEdgesInserted.length > 0) {
-    const delStmt = ctx.db.prepare(
-      `DELETE FROM edges WHERE source_id = ? AND target_id = ? AND edge_type = 'depends_on'`
-    );
-    for (const { source, target } of tempEdgesInserted) {
-      delStmt.run(source, target);
-    }
   }
 
   // Scope collision check: concurrent items must not share file paths

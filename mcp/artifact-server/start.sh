@@ -11,8 +11,7 @@ DIR="$(cd "$(dirname "$0")" && pwd)"
 # present but incomplete, causing silent failures on startup.
 if [ ! -f "$DIR/node_modules/.package-lock.json" ]; then
   echo "ideate-artifact-server: installing dependencies (first run)..." >&2
-  npm install --prefix "$DIR" --silent
-  if [ $? -ne 0 ]; then
+  if ! npm install --prefix "$DIR" --silent; then
     echo "ideate-artifact-server: npm install failed — check that node and npm are in PATH" >&2
     exit 1
   fi
@@ -25,8 +24,7 @@ BUILD_VERSION_FILE="$DIR/dist/.build-version"
 
 if [ ! -f "$BUILD_VERSION_FILE" ] || [ "$(cat "$BUILD_VERSION_FILE")" != "$PKG_VERSION" ]; then
   echo "ideate-artifact-server: building (version $PKG_VERSION)..." >&2
-  npm run build --prefix "$DIR"
-  if [ $? -ne 0 ]; then
+  if ! npm run build --prefix "$DIR"; then
     echo "ideate-artifact-server: npm run build failed" >&2
     exit 1
   fi
