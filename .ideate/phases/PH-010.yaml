@@ -1,12 +1,12 @@
 id: PH-010
 type: phase
 name: Reporting Skill
-description: New /ideate:report skill generating markdown and PDF reports with stats, mermaid diagrams, token usage, and change summaries.
+description: New /ideate:report skill.
 phase_type: implementation
-status: pending
+status: complete
+completed_date: 2026-03-30
 work_items:
   - WI-476
   - WI-477
-success_criteria: Report skill generates visually rich markdown with mermaid diagrams. Optional PDF output with rendered images.
-content_hash: 49d73e0769de1a61eb9161e3ce3d121478283432c2f198d9ca2e61c3ee05460d
-token_count: 97
+content_hash: 4e5406aa905fba836e733b7edc8aa73e286e40128f42bb4928df3848f57526dc
+token_count: 47

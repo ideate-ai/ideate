@@ -1,0 +1,12 @@
+id: spec-adherence
+type: cycle_summary
+reviewer: spec-reviewer
+verdict: Fail
+findings:
+  critical: 0
+  significant: 2
+  minor: 1
+content: "Verdict: Fail. P-35 violation: ARCHITECTURE.md not updated after tool rename (5 refs). README.md retains stale tool name (1 ref). M1: normalizeWorkItemId called for all types (harmless deviation). All guiding principles satisfied except P-35."
+cycle: 6
+content_hash: 7568e03cc32541a76ed78608292c9b61bbb805fd579d8e3bcf3e35d20247f07f
+token_count: 98

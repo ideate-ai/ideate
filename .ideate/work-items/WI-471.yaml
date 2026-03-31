@@ -1,7 +1,7 @@
 id: WI-471
 type: work_item
 title: Update skills to read spawn_mode when spawning agents
-status: pending
+status: done
 complexity: medium
 scope:
   - path: skills/execute/SKILL.md
@@ -31,6 +31,6 @@ notes: |-
   Update each skill's Phase 0 and agent-spawning sections.
 resolution: null
 cycle_created: 6
-cycle_modified: null
-content_hash: 7db98a60be2bdf0eb77c411fab2307b1f66f1e7db94d5322a3ed12a196b609ab
-token_count: 214
+cycle_modified: 5
+content_hash: c1fadf12379420a6f01b39d3caffb807663f4f4bbe5bd2d0a7f9fa9752eabc29
+token_count: 212

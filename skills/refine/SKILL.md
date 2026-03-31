@@ -14,11 +14,17 @@ Tone: neutral, direct. No encouragement, no validation, no hedging qualifiers, n
 - NEVER use Read, Write, or Edit tools on `.ideate/` directories or files
 - Access artifacts ONLY through MCP tool calls with artifact IDs and types
 
+**GP-14 enforcement**: If an MCP tool call fails, report the error and stop. Do NOT fall back to reading, grepping, or globbing .ideate/ files directly. The MCP abstraction boundary (GP-14) is inviolable — a tool failure is a signal to fix the tool, not to bypass it.
+
 ---
 
 # Phase 0: Read Project Configuration
 
 Call `ideate_get_config()` to read project configuration. Hold the response as `{config}`. Use `{config}.agent_budgets.{agent_name}` as the maxTurns value when spawning agents. If `ideate_get_config` is unavailable or returns no agent_budgets, use the agent's frontmatter maxTurns as fallback. Also hold `{config}.model_overrides` — a map of agent name to model string. When spawning any agent, use `{config}.model_overrides['{agent_name}']` as the model parameter if present and non-empty; otherwise use the hardcoded default listed in the spawn instruction.
+
+Also hold `{config}.spawn_mode` — either `"subagent"` (default) or `"teammate"`. When spawning agents:
+- If `spawn_mode` is `"teammate"`: check that `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1` is set in the environment. If set, use teammate/team mode for agent spawning. If not set, fall back to standard subagent mode and log a warning: "spawn_mode is 'teammate' but CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS is not set — falling back to subagent mode."
+- If `spawn_mode` is `"subagent"` or absent: use standard Agent tool spawning (the default).
 
 ---
 
@@ -330,6 +336,48 @@ Validate all new work items:
 - Acceptance criteria are machine-verifiable where possible
 - 100% coverage of the changes identified in the interview
 
+After validation passes, **run the auto-phase chunking algorithm** (Section 7h-auto below) if the new work item count exceeds the threshold. The algorithm proposes a phase grouping and presents it to the user before writing phase artifacts in Section 7i.
+
+### 7h-auto. Auto-Phase Chunking
+
+If the total new work item count exceeds a threshold (default: 5), automatically propose a phase grouping before writing phase artifacts. This maximizes shared context within each phase and delivers value incrementally.
+
+**Algorithm**:
+
+1. **Build a file-scope overlap graph**: For each pair of work items, compute the number of shared file paths in their `scope` arrays. Items that share files have high affinity.
+
+2. **Cluster by affinity**: Group items using these rules in priority order:
+   a. **Dependency clusters**: Items linked by `depends` stay in the same phase (or the dependency must flow forward to a later phase).
+   b. **File-scope overlap**: Items sharing 2+ file paths belong in the same phase (shared context maximizes worker efficiency).
+   c. **Domain grouping**: Items in the same `domain` have secondary affinity.
+   d. **Complexity balancing**: Avoid phases with more than 6 items or total complexity exceeding 2 large items.
+
+3. **Target phase size**: 3–6 work items per phase. If a cluster exceeds 6, split by sub-grouping (same algorithm, recursive).
+
+4. **Phase ordering**: Phases are ordered so that cross-phase dependencies flow forward only. The phase containing items with no dependencies on other phases comes first.
+
+5. **Phase naming**: Derive a name from the dominant theme — the most common domain, the most common file directory, or a summary of the items' titles. Keep names to 3-5 words.
+
+6. **Present to user**: Before writing phase artifacts, present the proposed grouping:
+   ```
+   Proposed phase structure ({N} phases, {M} work items):
+
+   Phase 1: {name} ({count} items)
+     - WI-NNN: {title}
+     - WI-NNN: {title}
+
+   Phase 2: {name} ({count} items)
+     ...
+
+   Accept this grouping, or adjust?
+   ```
+
+   The user can: accept as-is, merge phases, split differently, or opt out of auto-chunking (all items go into the current phase).
+
+7. **Threshold configuration**: The auto-chunking threshold is hardcoded at 5 work items. Future: make configurable via `config.json`.
+
+If the work item count is at or below the threshold, skip auto-chunking. All items go into the current phase (or a single new phase if transitioning).
+
 ## 7i. Phase Management — UPDATE if Active Project
 
 This section executes only if `{active_project}` is non-null.
@@ -437,7 +485,7 @@ After each agent spawn (via the Agent tool), emit one metric entry via `ideate_e
 - `output_tokens` — integer or null. Output token count from agent response metadata. Null if not available.
 - `cache_read_tokens` — integer or null. Prompt caching read tokens if available. Null if not available.
 - `cache_write_tokens` — integer or null. Prompt caching write tokens if available. Null if not available.
-- `mcp_tools_called` — array of strings. Names of MCP tools called to assemble context for this agent spawn (e.g., `["ideate_get_context_package", "ideate_get_work_item_context"]`). Empty array `[]` if no MCP tools were called.
+- `mcp_tools_called` — array of strings. Names of MCP tools called to assemble context for this agent spawn (e.g., `["ideate_get_context_package", "ideate_get_artifact_context"]`). Empty array `[]` if no MCP tools were called.
 
 Before each Agent tool call, record which MCP tool calls (if any) were made to assemble context for that spawn. Include the tool names in the `mcp_tools_called` array. If no MCP tools were called, use an empty array `[]`.
 
@@ -476,17 +524,17 @@ If metrics could not be emitted, note "metrics unavailable" and omit the breakdo
 
 Before completing, verify:
 
-- [ ] No `.ideate/` path references appear anywhere in this skill's output or internal logic
-- [ ] No `.yaml` filename references appear — artifacts are referenced by type and designation only
-- [ ] All artifact reads go through `ideate_artifact_query`, `ideate_get_context_package`, `ideate_get_domain_state`, or `ideate_get_workspace_status`
-- [ ] All artifact writes go through `ideate_write_artifact` or `ideate_write_work_items`
-- [ ] Next ID for work items, principles, constraints, and phases obtained via `ideate_get_next_id` — no glob patterns
-- [ ] Metrics emitted via `ideate_emit_metric` — no direct file appends
-- [ ] Journal entries appended via `ideate_append_journal` — no direct file writes
-- [ ] MCP query descriptions do not leak internal storage paths
-- [ ] Decomposer agent prompts pass artifact content, not file paths
-- [ ] Active project queried via `ideate_artifact_query({type: "project", filters: {status: "active"}})` — not via `ideate_get_workspace_status`
-- [ ] Phase transitions recommended to user and confirmed before executing — not forced
-- [ ] After creating work items, current phase `work_items` list updated (if active project exists)
-- [ ] After phase transition, project `current_phase_id` and `horizon` updated
+- [x] No `.ideate/` path references appear anywhere in this skill's output or internal logic — only in "What You Do Not Do" and self-check
+- [x] No `.yaml` filename references appear — artifacts are referenced by type and designation only
+- [x] All artifact reads go through `ideate_artifact_query`, `ideate_get_context_package`, `ideate_get_domain_state`, or `ideate_get_workspace_status`
+- [x] All artifact writes go through `ideate_write_artifact` or `ideate_write_work_items`
+- [x] Next ID for work items, principles, constraints, and phases obtained via `ideate_get_next_id` — no glob patterns
+- [x] Metrics emitted via `ideate_emit_metric` — no direct file appends
+- [x] Journal entries appended via `ideate_append_journal` — no direct file writes
+- [x] MCP query descriptions do not leak internal storage paths
+- [x] Decomposer agent prompts pass artifact content, not file paths — verified in Phase 7h prompt template
+- [x] Active project queried via `ideate_artifact_query({type: "project", filters: {status: "active"}})` — not via `ideate_get_workspace_status`
+- [x] Phase transitions recommended to user and confirmed before executing — not forced
+- [x] After creating work items, current phase `work_items` list updated (if active project exists)
+- [x] After phase transition, project `current_phase_id` and `horizon` updated
 - [x] Zero occurrences of `ideate_get_project_status` in this skill

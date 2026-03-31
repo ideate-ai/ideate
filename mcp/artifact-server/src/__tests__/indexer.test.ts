@@ -4,8 +4,11 @@ import { drizzle } from "drizzle-orm/better-sqlite3";
 import fs from "fs";
 import os from "os";
 import path from "path";
+import { createHash } from "crypto";
+import { stringify } from "yaml";
 import { createSchema } from "../schema.js";
 import { rebuildIndex, detectCycles, indexFiles, removeFiles, MAX_DEPENDENCY_NODES, MAX_DEPENDENCY_EDGES } from "../indexer.js";
+import { computeArtifactHash } from "../db-helpers.js";
 
 // ---------------------------------------------------------------------------
 // Setup helpers
@@ -1153,5 +1156,119 @@ describe("rebuildIndex — work item with phase field creates belongs_to_phase e
       )
       .get() as { source_id: string } | undefined;
     expect(edge).toBeUndefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// rebuildIndex — content_hash excludes metadata fields (WI-490)
+// ---------------------------------------------------------------------------
+
+describe("rebuildIndex — content_hash excludes metadata fields", () => {
+  it("stores the same content_hash as computeArtifactHash regardless of embedded metadata", () => {
+    const db = freshDb();
+    const ideateDir = makeIdeateDir(tmpDir);
+
+    // The content object that a write handler would produce (before adding metadata fields)
+    const contentObj: Record<string, unknown> = {
+      id: "WI-999",
+      type: "work_item",
+      title: "Hash consistency test",
+      status: "pending",
+      complexity: "small",
+      scope: [],
+      depends: [],
+      blocks: [],
+      criteria: [],
+      domain: null,
+      phase: null,
+      notes: "# WI-999",
+      resolution: null,
+      cycle_created: 1,
+      cycle_modified: null,
+    };
+
+    // Compute expected hash the same way write handlers do: over content fields only
+    const expectedHash = computeArtifactHash(contentObj);
+
+    // Write a YAML file that includes embedded metadata fields (as written by a write handler)
+    const yamlLines = [
+      `id: "WI-999"`,
+      `type: "work_item"`,
+      `title: "Hash consistency test"`,
+      `status: "pending"`,
+      `complexity: "small"`,
+      `scope: []`,
+      `depends: []`,
+      `blocks: []`,
+      `criteria: []`,
+      `domain: null`,
+      `phase: null`,
+      `notes: "# WI-999"`,
+      `resolution: null`,
+      `cycle_created: 1`,
+      `cycle_modified: null`,
+      // These metadata fields should be excluded from hash computation
+      `content_hash: "stale-or-placeholder-hash"`,
+      `token_count: 9999`,
+      `file_path: "/some/old/path.yaml"`,
+    ];
+
+    writeYaml(
+      path.join(ideateDir, "work-items"),
+      "WI-999.yaml",
+      yamlLines.join("\n") + "\n"
+    );
+
+    rebuildIndex(db, drizzle(db), ideateDir);
+
+    // The stored content_hash must match the hash computed from content fields only
+    const node = db
+      .prepare("SELECT content_hash FROM nodes WHERE id = 'WI-999'")
+      .get() as { content_hash: string } | undefined;
+
+    expect(node).toBeDefined();
+    expect(node!.content_hash).toBe(expectedHash);
+  });
+
+  it("content_hash is stable across rebuildIndex calls when content fields are unchanged", () => {
+    const db = freshDb();
+    const ideateDir = makeIdeateDir(tmpDir);
+
+    const filePath = writeYaml(
+      path.join(ideateDir, "work-items"),
+      "WI-998.yaml",
+      minimalWorkItem({ id: "WI-998", title: "Stable hash test" })
+    );
+
+    // First index
+    rebuildIndex(db, drizzle(db), ideateDir);
+
+    const nodeAfterFirst = db
+      .prepare("SELECT content_hash FROM nodes WHERE id = 'WI-998'")
+      .get() as { content_hash: string } | undefined;
+    expect(nodeAfterFirst).toBeDefined();
+    const hashAfterFirst = nodeAfterFirst!.content_hash;
+
+    // Second rebuild with same file on disk — hash must not change
+    rebuildIndex(db, drizzle(db), ideateDir);
+
+    const nodeAfterSecond = db
+      .prepare("SELECT content_hash FROM nodes WHERE id = 'WI-998'")
+      .get() as { content_hash: string } | undefined;
+    expect(nodeAfterSecond).toBeDefined();
+    expect(nodeAfterSecond!.content_hash).toBe(hashAfterFirst);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// computeArtifactHash — direct unit test (WI-501)
+// ---------------------------------------------------------------------------
+
+describe("computeArtifactHash — direct unit test", () => {
+  it("excludes content_hash, token_count, and file_path from hash computation", () => {
+    const obj = { id: "WI-001", title: "Test", content_hash: "stale", token_count: 99, file_path: "/fake/path" };
+    const clean = { id: "WI-001", title: "Test" };
+    const expected = createHash("sha256").update(stringify(clean, { lineWidth: 0 })).digest("hex");
+    expect(computeArtifactHash(obj)).toBe(expected);
   });
 });

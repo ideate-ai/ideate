@@ -1,7 +1,7 @@
 id: WI-476
 type: work_item
 title: Create /ideate:report skill definition
-status: pending
+status: done
 complexity: large
 scope:
   - path: skills/report/SKILL.md
@@ -24,6 +24,6 @@ notes: |-
   Create SKILL.md with phases: gather data, generate diagrams, compile markdown, write output.
 resolution: null
 cycle_created: 6
-cycle_modified: null
-content_hash: 2bdb40821308eeee1b112a26c59b31ac6d662c4ffe9d5e2742f1ca033250211d
-token_count: 191
+cycle_modified: 5
+content_hash: ffa0e974f3c984a862649f3e13e45e06db047bd68823fbee7018a67e92ad446e
+token_count: 189

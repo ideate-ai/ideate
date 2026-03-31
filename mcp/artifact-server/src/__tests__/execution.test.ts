@@ -133,8 +133,8 @@ describe("handleGetExecutionStatus — obsolete items", () => {
     // Blocked count should be 0
     expect(result).toContain("Blocked: 0");
 
-    // WI-001 should be listed under the obsolete section
-    expect(result).toContain("WI-001");
+    // Obsolete count includes WI-001 (count-only, no ID list)
+    expect(result).toContain("Obsolete: 1");
   });
 
   it("obsolete items satisfy dependencies for downstream items", async () => {
@@ -153,9 +153,8 @@ describe("handleGetExecutionStatus — obsolete items", () => {
     expect(result).toContain("WI-B");
     expect(result).toContain("Blocked: 0");
 
-    // WI-A should be reported as obsolete
+    // WI-A should be reported as obsolete (count-only, no ID list)
     expect(result).toContain("Obsolete: 1");
-    expect(result).toContain("WI-A");
 
     // WI-B should NOT appear in blocked
     expect(result).not.toMatch(/WI-B blocked by/);

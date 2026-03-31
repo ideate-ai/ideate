@@ -3,7 +3,6 @@ import { BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
 import { eq } from "drizzle-orm";
 import * as fs from "fs";
 import * as path from "path";
-import * as crypto from "crypto";
 import { parse as parseYaml } from "yaml";
 import { EDGE_TYPE_REGISTRY } from "./schema.js";
 import * as dbSchema from "./db.js";
@@ -23,6 +22,7 @@ import {
   deleteFileRefsByNodeId,
   selectAllEdges,
   getTableName,
+  computeArtifactHash,
 } from "./db-helpers.js";
 
 // ---------------------------------------------------------------------------
@@ -42,10 +42,6 @@ export interface RebuildStats {
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
-
-function sha256(content: string): string {
-  return crypto.createHash("sha256").update(content, "utf8").digest("hex");
-}
 
 function tokenCount(content: string): number {
   // Rough approximation: characters / 4. No tokenizer dependency; expect ±50% accuracy.
@@ -498,7 +494,20 @@ function indexSingleFile(
     return { nodeId: null, updated: false, failed: false, error: null, edgesCreated: 0 };
   }
 
-  const hash = sha256(content);
+  // Parse YAML first so we can compute a stable hash that excludes metadata fields
+  // (content_hash, token_count, file_path). This matches the exclusion pattern used
+  // by write handlers so that rebuildIndex and handleWriteArtifact produce identical
+  // content_hash values for the same logical content.
+  const parseResult = safeParseYaml(content, filePath, "indexSingleFile");
+  if (!parseResult.parsed || typeof parseResult.parsed !== "object") {
+    const errorMsg = parseResult.errorMessage ?? "unknown parse error";
+    return { nodeId: null, updated: false, failed: true, error: `${filePath}: YAML parse error - ${errorMsg}`, edgesCreated: 0 };
+  }
+
+  const doc = parseResult.parsed as Row;
+
+  // Compute hash from content fields only (excludes content_hash, token_count, file_path)
+  const hash = computeArtifactHash(doc);
 
   const existingRow = hashCheckStmt.get(filePath) as { id: string; content_hash: string } | undefined;
   const storedHash = existingRow?.content_hash ?? null;
@@ -509,14 +518,6 @@ function indexSingleFile(
     return { nodeId: storedId, updated: false, failed: false, error: null, edgesCreated: 0 };
   }
 
-
-  const parseResult = safeParseYaml(content, filePath, "indexSingleFile");
-  if (!parseResult.parsed || typeof parseResult.parsed !== "object") {
-    const errorMsg = parseResult.errorMessage ?? "unknown parse error";
-    return { nodeId: null, updated: false, failed: true, error: `${filePath}: YAML parse error - ${errorMsg}`, edgesCreated: 0 };
-  }
-
-  const doc = parseResult.parsed as Row;
   const typeField = toStrOrNull(doc.type);
   if (!typeField) {
     return { nodeId: null, updated: false, failed: true, error: `${filePath}: missing type field`, edgesCreated: 0 };

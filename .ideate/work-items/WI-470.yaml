@@ -1,7 +1,7 @@
 id: WI-470
 type: work_item
 title: Add spawn_mode to config schema and settings skill
-status: pending
+status: done
 complexity: medium
 scope:
   - path: mcp/artifact-server/src/config.ts
@@ -31,6 +31,6 @@ notes: |-
   3. Add to settings skill menu
 resolution: null
 cycle_created: 6
-cycle_modified: null
-content_hash: f5107df00a2f465c892dfb719510e9f2d2ccaf6a300a78e442289c33fb3339d3
-token_count: 236
+cycle_modified: 5
+content_hash: de9c466f5a62f7c12b06972b7e51ac27abfdafa7ac6f1a8647425fb379892e62
+token_count: 235

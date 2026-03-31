@@ -1,7 +1,7 @@
 id: WI-474
 type: work_item
 title: Design phase chunking heuristic
-status: pending
+status: done
 complexity: medium
 scope:
   - path: skills/refine/SKILL.md
@@ -23,6 +23,6 @@ notes: |-
   Define grouping algorithm, add as named section in refine Phase 7h.
 resolution: null
 cycle_created: 6
-cycle_modified: null
-content_hash: b7bbeb1f252e0305b45b5687b0ab18baf6be97b76b03401924c322a1a60bd645
-token_count: 154
+cycle_modified: 5
+content_hash: 89329784c4c56f5166678d5a5d3fedc98f34805b8c518de29c9d0405db992ea6
+token_count: 152

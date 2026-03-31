@@ -20,11 +20,17 @@ Tone: neutral, factual. No encouragement, no validation, no hedging qualifiers. 
 - NEVER use Read, Write, or Edit tools on `.ideate/` directories or files
 - Access artifacts ONLY through MCP tool calls with artifact IDs and types
 
+**GP-14 enforcement**: If an MCP tool call fails, report the error and stop. Do NOT fall back to reading, grepping, or globbing .ideate/ files directly. The MCP abstraction boundary (GP-14) is inviolable — a tool failure is a signal to fix the tool, not to bypass it.
+
 ---
 
 # Phase 0: Read Project Configuration
 
 Call `ideate_get_config()` to read project configuration. Hold the response as `{config}`. Use `{config}.agent_budgets.{agent_name}` as the maxTurns value when spawning agents. If `ideate_get_config` is unavailable or returns no agent_budgets, use the agent's frontmatter maxTurns as fallback. Also hold `{config}.model_overrides` — a map of agent name to model string. When spawning any agent, use `{config}.model_overrides['{agent_name}']` as the model parameter if present and non-empty; otherwise use the hardcoded default listed in the spawn instruction.
+
+Also hold `{config}.spawn_mode` — either `"subagent"` (default) or `"teammate"`. When spawning agents:
+- If `spawn_mode` is `"teammate"`: check that `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1` is set in the environment. If set, use teammate/team mode for agent spawning. If not set, fall back to standard subagent mode and log a warning: "spawn_mode is 'teammate' but CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS is not set — falling back to subagent mode."
+- If `spawn_mode` is `"subagent"` or absent: use standard Agent tool spawning (the default).
 
 ---
 
@@ -705,7 +711,7 @@ After each agent spawn (via the Agent tool), emit one metric entry via `ideate_e
 - `output_tokens` — integer or null. Output token count from agent response metadata. Null if not available.
 - `cache_read_tokens` — integer or null. Prompt caching read tokens if available. Null if not available.
 - `cache_write_tokens` — integer or null. Prompt caching write tokens if available. Null if not available.
-- `mcp_tools_called` — array of strings. Names of MCP tools called to assemble context for this agent spawn (e.g., `["ideate_get_context_package", "ideate_get_work_item_context"]`). Empty array `[]` if no MCP tools were called.
+- `mcp_tools_called` — array of strings. Names of MCP tools called to assemble context for this agent spawn (e.g., `["ideate_get_context_package", "ideate_get_artifact_context"]`). Empty array `[]` if no MCP tools were called.
 - `finding_count` — optional (null if not available). For reviewer spawns (`code-reviewer`, `spec-reviewer`, `gap-analyst`): total number of findings across all severities produced by that reviewer. Null for `journal-keeper` and `domain-curator` entries, and null if the reviewer output cannot be parsed.
 - `finding_severities` — optional (null if not available). For reviewer spawns: object with keys `critical`, `significant`, `minor` and integer values derived from parsing the reviewer's output. Null for `journal-keeper` and `domain-curator` entries, and null if the output cannot be parsed.
 

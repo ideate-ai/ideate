@@ -1,0 +1,8 @@
+id: decision-log
+type: cycle_summary
+title: Decision Log — Full Audit
+reviewer: journal-keeper
+content: "27 decisions and 9 open questions documented. See full decision log artifact for details. Key themes: hash normalization (D-027), content normalization (D-025/D-026), P-49 compliance gaps (OQ-3/OQ-4), ARCHITECTURE.md staleness (OQ-1/OQ-7), settings UI gaps (OQ-2), mcp/artifact-server README staleness (OQ-5)."
+cycle: 6
+content_hash: e5dbdf0e20428633e283d95093309d9b0bc940dc81b56772f30b62c9c3cf1021
+token_count: 106

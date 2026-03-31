@@ -1,7 +1,14 @@
+/**
+ * Error handling convention for MCP tool handlers:
+ * - throw Error for actual error conditions (invalid input, missing required data, internal failures)
+ * - return string for soft conditions (no results found, empty query results)
+ * MCP transport catches thrown errors and returns them as isError responses.
+ * Return-string "no results" are successful responses with informational content.
+ */
 import { Tool } from "@modelcontextprotocol/sdk/types.js";
 import type { ToolContext } from "../types.js";
 export type { ToolContext } from "../types.js";
-import { handleGetWorkItemContext, handleGetContextPackage, handleAssembleContext } from "./context.js";
+import { handleGetArtifactContext, handleGetContextPackage, handleAssembleContext } from "./context.js";
 import { handleArtifactQuery, handleGetNextId } from "./query.js";
 import { handleGetExecutionStatus, handleGetReviewManifest } from "./execution.js";
 import { handleGetConvergenceStatus, handleGetDomainState, handleGetWorkspaceStatus } from "./analysis.js";
@@ -19,18 +26,18 @@ import { getConfigWithDefaults } from "../config.js";
 
 export const TOOLS: Tool[] = [
   {
-    name: "ideate_get_work_item_context",
+    name: "ideate_get_artifact_context",
     description:
-      "Full context for one work item: definition, criteria, scope, dependencies, findings. Use before starting or reviewing work items. Returns JSON object.",
+      "Context package for any artifact by ID. Use before executing work items or reviewing phases. Returns markdown with metadata, dependencies, and related artifacts.",
     inputSchema: {
       type: "object",
       properties: {
-        work_item_id: {
+        artifact_id: {
           type: "string",
-          description: "Work item identifier (e.g. 'WI-184' or '184').",
+          description: "Artifact identifier (e.g. 'WI-184', 'PH-013', 'GP-01').",
         },
       },
-      required: ["work_item_id"],
+      required: ["artifact_id"],
     },
     annotations: {
       readOnlyHint: true,
@@ -495,7 +502,7 @@ export const TOOLS: Tool[] = [
         seed_ids: {
           type: "array",
           items: { type: "string" },
-          description: "PPR seed node IDs (e.g. ['WI-275', 'GP-01']).",
+          description: "PPR seed node IDs (e.g. ['WI-275', 'PH-013', 'GP-01']).",
         },
         token_budget: {
           type: "number",
@@ -692,8 +699,8 @@ export async function handleTool(
 ): Promise<string> {
   await indexReady; // block until index rebuild completes
   switch (name) {
-    case "ideate_get_work_item_context":
-      return handleGetWorkItemContext(ctx, _args);
+    case "ideate_get_artifact_context":
+      return handleGetArtifactContext(ctx, _args);
 
     case "ideate_get_context_package":
       return handleGetContextPackage(ctx, _args);

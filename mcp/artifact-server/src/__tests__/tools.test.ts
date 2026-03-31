@@ -19,11 +19,12 @@ import path from "path";
 import { createSchema } from "../schema.js";
 import * as dbSchema from "../db.js";
 import type { ToolContext } from "../types.js";
-import { handleGetWorkItemContext, handleGetContextPackage, handleAssembleContext } from "../tools/context.js";
+import { handleGetArtifactContext, handleGetContextPackage, handleAssembleContext } from "../tools/context.js";
 import { handleArtifactQuery, handleGetNextId } from "../tools/query.js";
 import { handleGetExecutionStatus, handleGetReviewManifest } from "../tools/execution.js";
 import { handleGetConvergenceStatus, handleGetDomainState, handleGetWorkspaceStatus } from "../tools/analysis.js";
 import { handleAppendJournal, handleArchiveCycle, handleWriteWorkItems, handleUpdateWorkItems, handleWriteArtifact } from "../tools/write.js";
+import { upsertExtensionRow } from "../db-helpers.js";
 import { indexFiles } from "../indexer.js";
 import { handleTool, signalIndexReady } from "../tools/index.js";
 import { handleEmitMetric } from "../tools/metrics.js";
@@ -182,10 +183,10 @@ function insertFinding(
 }
 
 // ---------------------------------------------------------------------------
-// 1. handleGetWorkItemContext
+// 1. handleGetArtifactContext
 // ---------------------------------------------------------------------------
 
-describe("handleGetWorkItemContext", () => {
+describe("handleGetArtifactContext — work item dispatch", () => {
   it("happy path: returns markdown with work item title and criteria", async () => {
     insertNode("WI-001", "work_item", { status: "pending" });
     insertWorkItem("WI-001", "Build schema", {
@@ -194,8 +195,8 @@ describe("handleGetWorkItemContext", () => {
       criteria: ["Test passes", "Docs updated"],
     });
 
-    const result = await handleGetWorkItemContext(ctx, {
-      work_item_id: "WI-001",
+    const result = await handleGetArtifactContext(ctx, {
+      artifact_id: "WI-001",
     });
 
     expect(result).toContain("WI-001");
@@ -204,30 +205,205 @@ describe("handleGetWorkItemContext", () => {
     expect(result).toContain("Docs updated");
   });
 
-  it("normalises ID: 'WI-002' and '2' are equivalent (WI- prefix stripped)", async () => {
+  it("normalises work item ID: 'WI-002' is found directly", async () => {
     insertNode("WI-002", "work_item");
     insertWorkItem("WI-002", "Numeric ID item");
 
-    // The handler tries both "WI-002" and "2" as candidates, so "WI-002" itself should work directly
-    const result = await handleGetWorkItemContext(ctx, {
-      work_item_id: "WI-002",
+    const result = await handleGetArtifactContext(ctx, {
+      artifact_id: "WI-002",
     });
     expect(result).toContain("WI-002");
     expect(result).toContain("Numeric ID item");
   });
 
-  it("error path: throws when work_item_id is missing", async () => {
-    await expect(
-      handleGetWorkItemContext(ctx, {})
-    ).rejects.toThrow(/work_item_id/i);
+  it("normalises numeric-only ID: '2' resolves to 'WI-002'", async () => {
+    insertNode("WI-002", "work_item");
+    insertWorkItem("WI-002", "Numeric only item");
+
+    const result = await handleGetArtifactContext(ctx, {
+      artifact_id: "2",
+    });
+    expect(result).toContain("WI-002");
+    expect(result).toContain("Numeric only item");
   });
 
-  it("error path: throws when work item not found", async () => {
+  it("error path: throws when artifact_id is missing", async () => {
     await expect(
-      handleGetWorkItemContext(ctx, {
-        work_item_id: "WI-999",
+      handleGetArtifactContext(ctx, {})
+    ).rejects.toThrow(/artifact_id/i);
+  });
+
+  it("error path: throws when artifact not found", async () => {
+    await expect(
+      handleGetArtifactContext(ctx, {
+        artifact_id: "WI-999",
       })
     ).rejects.toThrow(/not found/i);
+  });
+});
+
+describe("handleGetArtifactContext — phase dispatch", () => {
+  it("happy path: returns phase metadata and work item summaries", async () => {
+    // Insert a project node required by FK
+    db.prepare(`
+      INSERT OR REPLACE INTO nodes (id, type, cycle_created, content_hash, file_path, status)
+      VALUES ('PR-001', 'project', NULL, 'hash', '/tmp/PR-001.yaml', 'active')
+    `).run();
+    db.prepare(`
+      INSERT OR REPLACE INTO projects (id, intent, status)
+      VALUES ('PR-001', 'Test project', 'active')
+    `).run();
+
+    // Insert work items that belong to the phase
+    insertNode("WI-010", "work_item", { status: "done" });
+    insertWorkItem("WI-010", "Completed Feature", { complexity: "small" });
+    insertNode("WI-011", "work_item", { status: "pending" });
+    insertWorkItem("WI-011", "Pending Feature", { complexity: "medium" });
+
+    // Insert phase node and extension row
+    const phaseWorkItems = JSON.stringify(["WI-010", "WI-011"]);
+    insertNode("PH-001", "phase", { status: "active" });
+    db.prepare(`
+      INSERT OR REPLACE INTO phases (id, project, phase_type, intent, steering, status, work_items)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `).run("PH-001", "PR-001", "implementation", "Deliver core features", "Follow P-44", "active", phaseWorkItems);
+
+    const result = await handleGetArtifactContext(ctx, { artifact_id: "PH-001" });
+
+    // Phase metadata
+    expect(result).toContain("PH-001");
+    expect(result).toContain("implementation");
+    expect(result).toContain("Deliver core features");
+    expect(result).toContain("active");
+
+    // Work item summary table
+    expect(result).toContain("WI-010");
+    expect(result).toContain("Completed Feature");
+    expect(result).toContain("done");
+    expect(result).toContain("WI-011");
+    expect(result).toContain("Pending Feature");
+    expect(result).toContain("pending");
+  });
+
+  it("phase with success_criteria in YAML: includes success criteria section", async () => {
+    // Insert a project node
+    db.prepare(`
+      INSERT OR REPLACE INTO nodes (id, type, cycle_created, content_hash, file_path, status)
+      VALUES ('PR-002', 'project', NULL, 'hash', '/tmp/PR-002.yaml', 'active')
+    `).run();
+    db.prepare(`
+      INSERT OR REPLACE INTO projects (id, intent, status)
+      VALUES ('PR-002', 'Another project', 'active')
+    `).run();
+
+    // Write a phase YAML file with success_criteria
+    const phaseFilePath = path.join(artifactDir, "phases", "PH-002.yaml");
+    fs.mkdirSync(path.join(artifactDir, "phases"), { recursive: true });
+    fs.writeFileSync(phaseFilePath, [
+      "id: PH-002",
+      "type: phase",
+      "phase_type: review",
+      "intent: Validate deliverables",
+      "project: PR-002",
+      "status: active",
+      "work_items: []",
+      "success_criteria:",
+      "  - All findings addressed",
+      "  - Code review complete",
+    ].join("\n"), "utf8");
+
+    insertNode("PH-002", "phase", { status: "active", file_path: phaseFilePath });
+    db.prepare(`
+      INSERT OR REPLACE INTO phases (id, project, phase_type, intent, steering, status, work_items)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `).run("PH-002", "PR-002", "review", "Validate deliverables", null, "active", JSON.stringify([]));
+
+    const result = await handleGetArtifactContext(ctx, { artifact_id: "PH-002" });
+
+    expect(result).toContain("Phase Success Criteria");
+    expect(result).toContain("All findings addressed");
+    expect(result).toContain("Code review complete");
+  });
+
+  it("error path: throws when phase node exists but phases extension row is missing", async () => {
+    // Insert only the node — no phases extension row
+    insertNode("PH-BAD", "phase", { status: "active" });
+
+    await expect(
+      handleGetArtifactContext(ctx, { artifact_id: "PH-BAD" })
+    ).rejects.toThrow(/phase metadata not found/i);
+  });
+});
+
+describe("handleGetArtifactContext — generic artifact dispatch", () => {
+  it("happy path: returns YAML content for a guiding_principle", async () => {
+    // Write a GP YAML file
+    const gpFilePath = path.join(artifactDir, "principles", "GP-01.yaml");
+    fs.mkdirSync(path.join(artifactDir, "principles"), { recursive: true });
+    fs.writeFileSync(gpFilePath, [
+      "id: GP-01",
+      "type: guiding_principle",
+      "name: MCP Abstraction Boundary",
+      "description: Skills interact with artifacts exclusively through MCP tools.",
+    ].join("\n"), "utf8");
+
+    insertNode("GP-01", "guiding_principle", { file_path: gpFilePath, status: "active" });
+    db.prepare(`INSERT OR REPLACE INTO guiding_principles (id, name, description) VALUES (?, ?, ?)`)
+      .run("GP-01", "MCP Abstraction Boundary", "Skills interact with artifacts exclusively through MCP tools.");
+
+    const result = await handleGetArtifactContext(ctx, { artifact_id: "GP-01" });
+
+    // Node metadata
+    expect(result).toContain("GP-01");
+    expect(result).toContain("guiding_principle");
+
+    // YAML content
+    expect(result).toContain("MCP Abstraction Boundary");
+    expect(result).toContain("Skills interact with artifacts");
+  });
+
+  it("generic artifact with edges: includes related artifact IDs", async () => {
+    // Write a policy YAML file
+    const policyFilePath = path.join(artifactDir, "policies", "P-01.yaml");
+    fs.mkdirSync(path.join(artifactDir, "policies"), { recursive: true });
+    fs.writeFileSync(policyFilePath, [
+      "id: P-01",
+      "type: domain_policy",
+      "domain: workflow",
+      "description: Write YAML before SQLite.",
+    ].join("\n"), "utf8");
+
+    insertNode("P-01", "domain_policy", { file_path: policyFilePath, status: "active" });
+    db.prepare(`INSERT OR REPLACE INTO domain_policies (id, domain, description) VALUES (?, ?, ?)`)
+      .run("P-01", "workflow", "Write YAML before SQLite.");
+
+    // Insert a work item that is governed_by P-01
+    insertNode("WI-100", "work_item", { status: "pending" });
+    insertWorkItem("WI-100", "Policy-governed item");
+    db.prepare(`
+      INSERT OR IGNORE INTO edges (source_id, target_id, edge_type, props)
+      VALUES (?, ?, 'governed_by', '{}')
+    `).run("WI-100", "P-01");
+
+    const result = await handleGetArtifactContext(ctx, { artifact_id: "P-01" });
+
+    // Should show the related artifact edge
+    expect(result).toContain("Related Artifacts");
+    expect(result).toContain("WI-100");
+    expect(result).toContain("governed_by");
+  });
+
+  it("error path: returns 'Content not available' when file_path points to nonexistent file", async () => {
+    insertNode("P-MISSING", "domain_policy", {
+      file_path: path.join(artifactDir, "policies", "P-MISSING.yaml"),
+      status: "active",
+    });
+    db.prepare(`INSERT OR REPLACE INTO domain_policies (id, domain, description) VALUES (?, ?, ?)`)
+      .run("P-MISSING", "workflow", "Ghost policy");
+
+    const result = await handleGetArtifactContext(ctx, { artifact_id: "P-MISSING" });
+
+    expect(result).toContain("Content not available");
   });
 });
 
@@ -327,27 +503,17 @@ describe("handleArtifactQuery", () => {
     expect(result).not.toContain("WI-002");
   });
 
-  it("error path: returns error when no filter params given", async () => {
-    const result = await handleArtifactQuery(ctx, {});
-    expect(result).toContain("Error");
+  it("error path: throws when no filter params given", async () => {
+    await expect(handleArtifactQuery(ctx, {})).rejects.toThrow("At least one of");
   });
 
-  it("error path: returns error for unknown type", async () => {
-    const result = await handleArtifactQuery(ctx, { type: "not_a_real_type" });
-    expect(result).toContain("Error");
-    expect(result).toContain("not_a_real_type");
+  it("error path: throws for unknown type", async () => {
+    await expect(handleArtifactQuery(ctx, { type: "not_a_real_type" })).rejects.toThrow("not_a_real_type");
   });
 
   it("error path: lists valid types when type is unknown", async () => {
     // Q-94: refine skill used 'journal' instead of 'journal_entry' and got empty results silently
-    const result = await handleArtifactQuery(ctx, { type: "journal" });
-    expect(result).toContain("Error");
-    expect(result).toContain("journal");
-    // Should list valid types including 'journal_entry' (the correct type)
-    expect(result).toContain("Valid types:");
-    expect(result).toContain("journal_entry");
-    expect(result).toContain("work_item");
-    expect(result).toContain("finding");
+    await expect(handleArtifactQuery(ctx, { type: "journal" })).rejects.toThrow(/Valid types:/);
   });
 
   it("error path: returns error when related_to node not found", async () => {
@@ -1278,6 +1444,12 @@ describe("handleWriteWorkItems", () => {
         items: "not-an-array",
       })
     ).rejects.toThrow();
+  });
+
+  it("error path: throws with 'null' message when a required field is null", () => {
+    expect(() =>
+      upsertExtensionRow(ctx.drizzleDb, "work_items", "WI-NULL-1", { title: null })
+    ).toThrow(/required field 'title' is null/);
   });
 
   it("error path: returns cycle error when dependency graph creates a cycle", async () => {
@@ -2572,6 +2744,44 @@ describe("handleWriteArtifact routing", () => {
     const filePath = path.join(artifactDir, "domains", "index.yaml");
     expect(fs.existsSync(filePath)).toBe(true);
   });
+
+  it("work_item redirect: caller-supplied id wins over content.id", async () => {
+    // content contains a conflicting id (WI-999); the top-level id param (WI-001) must win
+    await handleWriteArtifact(ctx, {
+      type: "work_item",
+      id: "WI-001",
+      content: { id: "WI-999", title: "id override test" },
+    });
+
+    // The written YAML file should be at work-items/WI-001.yaml, not WI-999.yaml
+    const correctPath = path.join(artifactDir, "work-items", "WI-001.yaml");
+    const wrongPath = path.join(artifactDir, "work-items", "WI-999.yaml");
+    expect(fs.existsSync(correctPath), "WI-001.yaml must exist").toBe(true);
+    expect(fs.existsSync(wrongPath), "WI-999.yaml must not exist").toBe(false);
+
+    // The DB node must record WI-001, not WI-999
+    const row = ctx.db.prepare("SELECT id FROM nodes WHERE id = 'WI-001'").get() as { id: string } | undefined;
+    expect(row, "DB row for WI-001 must exist").toBeDefined();
+    expect(row!.id).toBe("WI-001");
+    const wrongRow = ctx.db.prepare("SELECT id FROM nodes WHERE id = 'WI-999'").get();
+    expect(wrongRow, "DB row for WI-999 must not exist").toBeUndefined();
+  });
+
+  it('redirects journal_entry to handleAppendJournal', async () => {
+    await handleWriteArtifact(ctx, {
+      type: 'journal_entry',
+      id: 'J-001-001',
+      content: {
+        skill: 'execute',
+        date: '2026-03-31',
+        entry_type: 'test',
+        body: 'body text',
+        cycle_number: 1,
+      },
+    });
+    const row = db.prepare("SELECT type FROM nodes WHERE type = 'journal_entry'").get();
+    expect(row).toBeDefined();
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -2690,5 +2900,173 @@ describe("P-46: TYPE_TO_EXTENSION_TABLE completeness", () => {
     const row = ctx.db.prepare(`SELECT * FROM ${tableName} WHERE id = ?`).get(id) as Record<string, unknown>;
     expect(row).toBeTruthy();
     if (checkFields) checkFields(row);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// WI-491: metrics_event and interview_question dispatch branches
+// ---------------------------------------------------------------------------
+describe("handleWriteArtifact — metrics_event dispatch branch", () => {
+  it("populates both nodes and metrics_events extension table", async () => {
+    await handleWriteArtifact(ctx, {
+      type: "metrics_event",
+      id: "ME-491-001",
+      content: {
+        event_name: "wi_complete",
+        payload: { work_item: "WI-001", duration_ms: 5000 },
+      },
+    });
+
+    const nodeRow = ctx.db.prepare("SELECT * FROM nodes WHERE id = ?").get("ME-491-001") as Record<string, unknown>;
+    expect(nodeRow).toBeTruthy();
+    expect(nodeRow.type).toBe("metrics_event");
+
+    const extRow = ctx.db.prepare("SELECT event_name, payload FROM metrics_events WHERE id = ?").get("ME-491-001") as Record<string, unknown>;
+    expect(extRow).toBeTruthy();
+    expect(extRow.event_name).toBe("wi_complete");
+    expect(JSON.parse(extRow.payload as string)).toEqual({ work_item: "WI-001", duration_ms: 5000 });
+  });
+});
+
+describe("handleWriteArtifact — interview_question dispatch branch", () => {
+  it("populates both nodes and interview_questions extension table", async () => {
+    await handleWriteArtifact(ctx, {
+      type: "interview_question",
+      id: "IQ-491-001",
+      content: {
+        interview_id: "refine-491",
+        question: "What is the target audience?",
+        answer: "Developers using Claude Code.",
+        seq: 1,
+      },
+    });
+
+    const nodeRow = ctx.db.prepare("SELECT * FROM nodes WHERE id = ?").get("IQ-491-001") as Record<string, unknown>;
+    expect(nodeRow).toBeTruthy();
+    expect(nodeRow.type).toBe("interview_question");
+
+    const extRow = ctx.db.prepare("SELECT interview_id, question, answer, seq FROM interview_questions WHERE id = ?").get("IQ-491-001") as Record<string, unknown>;
+    expect(extRow).toBeTruthy();
+    expect(extRow.interview_id).toBe("refine-491");
+    expect(extRow.question).toBe("What is the target audience?");
+    expect(extRow.answer).toBe("Developers using Claude Code.");
+    expect(extRow.seq).toBe(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Write-to-convergence roundtrip
+// ---------------------------------------------------------------------------
+
+describe("write-to-convergence roundtrip", () => {
+  it("Pass verdict: writing cycle_summary with Pass verdict yields condition_b=true and principle_verdict=pass", async () => {
+    // Write a spec-adherence cycle_summary with a Pass verdict via handleWriteArtifact
+    await handleWriteArtifact(ctx, {
+      type: "cycle_summary",
+      id: "SA-001",
+      cycle: 1,
+      content: {
+        title: "Spec adherence cycle 1",
+        content: "## Spec Adherence\n\n**Principle Violation Verdict**: Pass\n\n## Principle Violations\n\nNone.",
+      },
+    });
+
+    // No critical/significant findings for cycle 1 → condition_a: true
+    const result = await handleGetConvergenceStatus(ctx, { cycle_number: 1 });
+
+    expect(result).toContain("condition_b: true");
+    expect(result).toContain("principle_verdict: pass");
+    expect(result).toContain("condition_a: true");
+    expect(result).toContain("converged: true");
+  });
+
+  it("Fail verdict: writing cycle_summary with Fail verdict yields condition_b=false and principle_verdict=fail", async () => {
+    // Write a spec-adherence cycle_summary with a Fail verdict via handleWriteArtifact
+    await handleWriteArtifact(ctx, {
+      type: "cycle_summary",
+      id: "SA-002",
+      cycle: 2,
+      content: {
+        title: "Spec adherence cycle 2",
+        content: "## Spec Adherence\n\n**Principle Violation Verdict**: Fail\n\n## Principle Violations\n\n### GP-01: Spec Sufficiency\n- Executor made design decisions not present in spec.",
+      },
+    });
+
+    // No critical/significant findings for cycle 2 (condition_a independent of verdict)
+    const result = await handleGetConvergenceStatus(ctx, { cycle_number: 2 });
+
+    expect(result).toContain("condition_b: false");
+    expect(result).toContain("principle_verdict: fail");
+    expect(result).toContain("condition_a: true");
+    expect(result).toContain("converged: false");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// P-33 compliance: tool responses must not leak absolute .ideate/ paths
+// ---------------------------------------------------------------------------
+
+describe("P-33 compliance: no absolute .ideate/ paths in tool responses", () => {
+  // Matches any absolute path containing .ideate/ (e.g. /Users/foo/.ideate/work-items/...)
+  const PATH_LEAK_RE = /\/[\w/.-]*\.ideate\//;
+
+  it("handleWriteWorkItems response contains no .ideate/ path", async () => {
+    const result = await handleWriteWorkItems(ctx, {
+      items: [{ id: "WI-P33-01", title: "P-33 write work item test" }],
+    });
+    expect(result).not.toMatch(PATH_LEAK_RE);
+  });
+
+  it("handleUpdateWorkItems response contains no .ideate/ path", async () => {
+    // Seed the work item first
+    await handleWriteWorkItems(ctx, {
+      items: [{ id: "WI-P33-02", title: "P-33 update work item test" }],
+    });
+    const result = await handleUpdateWorkItems(ctx, {
+      updates: [{ id: "WI-P33-02", status: "done" }],
+    });
+    expect(result).not.toMatch(PATH_LEAK_RE);
+  });
+
+  it("handleWriteArtifact response contains no .ideate/ path", async () => {
+    fs.mkdirSync(path.join(artifactDir, "policies"), { recursive: true });
+    const result = await handleWriteArtifact(ctx, {
+      type: "domain_policy",
+      id: "P-P33-01",
+      content: { domain: "workflow", description: "P-33 compliance policy" },
+    });
+    expect(result).not.toMatch(PATH_LEAK_RE);
+  });
+
+  it("handleAppendJournal response contains no .ideate/ path", async () => {
+    const result = await handleAppendJournal(ctx, {
+      skill: "execute",
+      date: "2026-03-31",
+      entry_type: "work-item-complete",
+      body: "P-33 compliance test entry.",
+      cycle_number: 5,
+    });
+    expect(result).not.toMatch(PATH_LEAK_RE);
+  });
+
+  it("handleArtifactQuery response contains no .ideate/ path", async () => {
+    insertNode("WI-P33-03", "work_item", { status: "pending" });
+    insertWorkItem("WI-P33-03", "P-33 query test item");
+    const result = await handleArtifactQuery(ctx, { type: "work_item" });
+    expect(result).not.toMatch(PATH_LEAK_RE);
+  });
+
+  it("handleGetExecutionStatus response contains no .ideate/ path", async () => {
+    insertNode("WI-P33-04", "work_item", { status: "pending" });
+    insertWorkItem("WI-P33-04", "P-33 execution status item");
+    const result = await handleGetExecutionStatus(ctx, {});
+    expect(result).not.toMatch(PATH_LEAK_RE);
+  });
+
+  it("handleGetWorkspaceStatus response contains no .ideate/ path", async () => {
+    insertNode("WI-P33-05", "work_item", { status: "done" });
+    insertWorkItem("WI-P33-05", "P-33 workspace status item");
+    const result = await handleGetWorkspaceStatus(ctx, {});
+    expect(result).not.toMatch(PATH_LEAK_RE);
   });
 });

@@ -1,0 +1,21 @@
+id: PH-013
+type: phase
+name: Capstone — Release 3.8.0
+phase_type: implementation
+status: active
+project: PR-001
+started_date: 2026-03-31
+intent: Clear all deferred carry-forward items, resolve documentation inconsistencies, sync version numbers, and cut a clean 3.8.0 release.
+work_items:
+  - WI-500
+  - WI-501
+  - WI-502
+  - WI-503
+  - WI-504
+  - WI-505
+  - WI-506
+  - WI-507
+  - WI-508
+success_criteria: All carry-forward items resolved. Version 3.8.0 in all three manifests. Zero open findings. Test suite passes. Context retrieval generalized to all artifact types.
+content_hash: 0f6f9476371bafbcedf7fb0c595a0d4994a9164ac52bfc34ce81d14fd80b8ed3
+token_count: 142

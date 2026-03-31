@@ -115,9 +115,13 @@ function truncateLines(text: string, maxLines: number): { text: string; truncate
 function normalizeWorkItemId(raw: string): string[] {
   const trimmed = raw.trim();
   const candidates: string[] = [trimmed];
-  // "185" → also try "WI-185"
+  // "185" → also try "WI-185" and zero-padded "WI-185"
   if (/^\d+$/.test(trimmed)) {
     candidates.push(`WI-${trimmed}`);
+    const padded = trimmed.padStart(3, "0");
+    if (padded !== trimmed) {
+      candidates.push(`WI-${padded}`);
+    }
   }
   // "WI-185" → also try "185"
   const prefixMatch = trimmed.match(/^WI-(\d+)$/i);
@@ -215,10 +219,284 @@ function extToLanguage(ext: string): string {
 }
 
 // ---------------------------------------------------------------------------
-// handleGetWorkItemContext
+// handleGetArtifactContext — generalized dispatcher
 // ---------------------------------------------------------------------------
 
-export async function handleGetWorkItemContext(
+interface NodeMetaRow {
+  id: string;
+  type: string;
+  status: string | null;
+  file_path: string | null;
+  token_count: number | null;
+  cycle_created: number | null;
+  cycle_modified: number | null;
+}
+
+export async function handleGetArtifactContext(
+  ctx: ToolContext,
+  args: Record<string, unknown>
+): Promise<string> {
+  const artifactIdRaw = args.artifact_id;
+
+  if (typeof artifactIdRaw !== "string" || artifactIdRaw.trim() === "") {
+    throw new Error('Required argument "artifact_id" is missing or empty.');
+  }
+
+  const artifactId = artifactIdRaw.trim();
+
+  // -------------------------------------------------------------------------
+  // 1. Look up node to determine type
+  // -------------------------------------------------------------------------
+
+  // Try exact match first, then normalize for work item IDs (e.g., "185" → "WI-185")
+  const idCandidates = normalizeWorkItemId(artifactId);
+  const placeholders = idCandidates.map(() => "?").join(", ");
+  const nodeMeta = ctx.db
+    .prepare(
+      `SELECT id, type, status, file_path, token_count, cycle_created, cycle_modified
+       FROM nodes WHERE id IN (${placeholders})
+       LIMIT 1`
+    )
+    .get(...idCandidates) as NodeMetaRow | undefined;
+
+  if (!nodeMeta) {
+    throw new Error(`Artifact not found: "${artifactId}"`);
+  }
+
+  // -------------------------------------------------------------------------
+  // 2. Dispatch by type
+  // -------------------------------------------------------------------------
+
+  if (nodeMeta.type === "work_item") {
+    return handleWorkItemContextById(ctx, nodeMeta.id);
+  }
+
+  if (nodeMeta.type === "phase") {
+    return handlePhaseContext(ctx, nodeMeta);
+  }
+
+  // Default: return node metadata + YAML content + edges
+  return handleGenericArtifactContext(ctx, nodeMeta);
+}
+
+/** Assemble context for a work item by its resolved canonical ID. */
+async function handleWorkItemContextById(
+  ctx: ToolContext,
+  workItemId: string
+): Promise<string> {
+  // Reuse existing work item context logic via the original handler
+  return handleGetWorkItemContext(ctx, { work_item_id: workItemId });
+}
+
+/** Assemble context for a phase artifact. */
+async function handlePhaseContext(
+  ctx: ToolContext,
+  nodeMeta: NodeMetaRow
+): Promise<string> {
+  interface PhaseExtRow {
+    id: string;
+    project: string;
+    phase_type: string;
+    intent: string;
+    steering: string | null;
+    status: string;
+    work_items: string | null;
+  }
+
+  const phaseRow = ctx.db
+    .prepare(
+      `SELECT p.id, p.project, p.phase_type, p.intent, p.steering, p.status, p.work_items
+       FROM phases p
+       WHERE p.id = ?`
+    )
+    .get(nodeMeta.id) as PhaseExtRow | undefined;
+
+  if (!phaseRow) {
+    throw new Error(`Phase metadata not found for: "${nodeMeta.id}"`);
+  }
+
+  const sections: string[] = [];
+
+  // Phase header
+  const phaseSection: string[] = [
+    `## Phase: ${phaseRow.id}`,
+    "",
+    `**Type**: ${phaseRow.phase_type}`,
+    `**Project**: ${phaseRow.project}`,
+    `**Status**: ${phaseRow.status}`,
+    `**Intent**: ${phaseRow.intent}`,
+  ];
+
+  if (phaseRow.steering) {
+    phaseSection.push(`**Steering**: ${phaseRow.steering}`);
+  }
+
+  if (nodeMeta.cycle_created != null) {
+    phaseSection.push(`**Cycle Created**: ${nodeMeta.cycle_created}`);
+  }
+
+  sections.push(phaseSection.join("\n"));
+
+  // Load work item summaries
+  const workItemIds = parseJsonArray(phaseRow.work_items);
+  if (workItemIds.length > 0) {
+    interface WISummaryRow {
+      id: string;
+      title: string;
+      status: string | null;
+      complexity: string | null;
+    }
+
+    const placeholders = workItemIds.map(() => "?").join(", ");
+    const wiRows = ctx.db
+      .prepare(
+        `SELECT n.id, w.title, n.status, w.complexity
+         FROM nodes n
+         JOIN work_items w ON w.id = n.id
+         WHERE n.id IN (${placeholders})
+         ORDER BY n.id`
+      )
+      .all(...workItemIds) as WISummaryRow[];
+
+    if (wiRows.length > 0) {
+      const wiSection: string[] = [
+        `## Work Items`,
+        "",
+        `| ID | Title | Status | Complexity |`,
+        `|----|-------|--------|------------|`,
+      ];
+
+      for (const wi of wiRows) {
+        wiSection.push(
+          `| ${wi.id} | ${wi.title} | ${wi.status ?? "pending"} | ${wi.complexity ?? "unknown"} |`
+        );
+      }
+
+      // List any IDs not found in DB
+      const foundIds = new Set(wiRows.map((r) => r.id));
+      const missingIds = workItemIds.filter((id) => !foundIds.has(id));
+      if (missingIds.length > 0) {
+        wiSection.push("", `*Work items not indexed: ${missingIds.join(", ")}*`);
+      }
+
+      sections.push(wiSection.join("\n"));
+    } else {
+      sections.push(`## Work Items\n\n*Work items listed in phase not found in index: ${workItemIds.join(", ")}*`);
+    }
+  }
+
+  // Read phase YAML for success criteria if available
+  if (nodeMeta.file_path) {
+    try {
+      const yamlContent = fs.readFileSync(nodeMeta.file_path, "utf8");
+      const parsed = parseYaml(yamlContent) as Record<string, unknown>;
+      const successCriteria = parsed.success_criteria;
+
+      if (Array.isArray(successCriteria) && successCriteria.length > 0) {
+        const criteriaSection: string[] = [`## Phase Success Criteria`, ""];
+        for (const c of successCriteria as unknown[]) {
+          criteriaSection.push(`- ${c}`);
+        }
+        sections.push(criteriaSection.join("\n"));
+      }
+    } catch {
+      // If we can't read the file, skip success criteria
+    }
+  }
+
+  return sections.join("\n\n---\n\n");
+}
+
+/** Assemble context for a generic artifact (non-work-item, non-phase). */
+async function handleGenericArtifactContext(
+  ctx: ToolContext,
+  nodeMeta: NodeMetaRow
+): Promise<string> {
+  const sections: string[] = [];
+
+  // Node metadata header
+  const metaSection: string[] = [
+    `## Artifact: ${nodeMeta.id}`,
+    "",
+    `**Type**: ${nodeMeta.type}`,
+    `**Status**: ${nodeMeta.status ?? "unknown"}`,
+  ];
+
+  if (nodeMeta.cycle_created != null) {
+    metaSection.push(`**Cycle Created**: ${nodeMeta.cycle_created}`);
+  }
+  if (nodeMeta.cycle_modified != null) {
+    metaSection.push(`**Cycle Modified**: ${nodeMeta.cycle_modified}`);
+  }
+
+  sections.push(metaSection.join("\n"));
+
+  // Full YAML content
+  if (nodeMeta.file_path) {
+    try {
+      const yamlContent = fs.readFileSync(nodeMeta.file_path, "utf8");
+      if (yamlContent.trim()) {
+        sections.push(`## Content\n\n\`\`\`yaml\n${yamlContent.trim()}\n\`\`\``);
+      }
+    } catch {
+      sections.push(`## Content\n\n*Content not available*`);
+    }
+  }
+
+  // Edges (both directions)
+  interface EdgeRow {
+    source_id: string;
+    target_id: string;
+    edge_type: string;
+  }
+
+  const outgoingEdges = ctx.db
+    .prepare(
+      `SELECT source_id, target_id, edge_type
+       FROM edges
+       WHERE source_id = ?
+       ORDER BY edge_type, target_id`
+    )
+    .all(nodeMeta.id) as EdgeRow[];
+
+  const incomingEdges = ctx.db
+    .prepare(
+      `SELECT source_id, target_id, edge_type
+       FROM edges
+       WHERE target_id = ?
+       ORDER BY edge_type, source_id`
+    )
+    .all(nodeMeta.id) as EdgeRow[];
+
+  if (outgoingEdges.length > 0 || incomingEdges.length > 0) {
+    const edgeSection: string[] = [`## Related Artifacts`, ""];
+
+    if (outgoingEdges.length > 0) {
+      edgeSection.push("**Outgoing edges** (this artifact → other):");
+      for (const e of outgoingEdges) {
+        edgeSection.push(`- ${e.edge_type} → ${e.target_id}`);
+      }
+    }
+
+    if (incomingEdges.length > 0) {
+      if (outgoingEdges.length > 0) edgeSection.push("");
+      edgeSection.push("**Incoming edges** (other → this artifact):");
+      for (const e of incomingEdges) {
+        edgeSection.push(`- ${e.source_id} → ${e.edge_type}`);
+      }
+    }
+
+    sections.push(edgeSection.join("\n"));
+  }
+
+  return sections.join("\n\n---\n\n");
+}
+
+// ---------------------------------------------------------------------------
+// handleGetWorkItemContext (legacy name — delegates to work-item path)
+// ---------------------------------------------------------------------------
+
+async function handleGetWorkItemContext(
   ctx: ToolContext,
   args: Record<string, unknown>
 ): Promise<string> {

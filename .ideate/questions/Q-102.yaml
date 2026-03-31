@@ -5,8 +5,8 @@ title: handleArchiveCycle work item filename matching broken for F-{cycle}-{seq}
 question: Numeric prefix extracted from F-058-001.yaml is 058 (cycle number), not work item ID. Work items are never archived; they accumulate indefinitely in work-items/.
 source: cycle 1 gap-analysis Gap 7; decision-log Q4
 impact: work-items/ directory grows unbounded across cycles, degrading query performance and context assembly quality.
-status: open
-reexamination_trigger: Next cycle targeting archive handler.
-content_hash: f49c09d9e39e6547cc47dcfc8d89b16b6f9222c0190506b11dc35234710263dc
-token_count: 141
-file_path: .ideate/questions/Q-102.yaml
+status: resolved
+resolution: Fixed in current codebase. write.ts:219-238 now parses YAML content to extract the work_item field from each finding, then looks up the work item file by ID. No more numeric prefix extraction.
+resolved_date: 2026-03-31
+content_hash: 5cf7c5ae82766acd400270cb6929a7d886928a4f97b15a9c1d65e558b3bd96cc
+token_count: 184

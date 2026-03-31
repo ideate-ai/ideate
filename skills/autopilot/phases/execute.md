@@ -44,19 +44,21 @@ Store as `{work_item_context_digest[item_id]}`. Pass to the worker instead of th
 
 ### Context for Every Worker
 
-Call `ideate_get_work_item_context({work_item_id})` — returns pre-assembled context including work item spec, module spec, domain policies, and research. Also provide the project source root path and relevant domain policies (if not already included). Skip the manual file reads in steps 1–8 below.
+Call `ideate_get_artifact_context({artifact_id})` — returns pre-assembled context including work item spec, module spec, domain policies, and research. Also provide the project source root path and relevant domain policies (if not already included). Skip the manual file reads in steps 1–8 below.
 
 If the ideate MCP artifact server is not available, stop and report: "The ideate MCP artifact server is required but not available. Verify .mcp.json configuration."
 
+**GP-14 enforcement**: If an MCP tool call fails, report the error and stop. Do NOT fall back to reading, grepping, or globbing .ideate/ files directly. The MCP abstraction boundary (GP-14) is inviolable — a tool failure is a signal to fix the tool, not to bypass it.
+
 Every worker subagent receives:
 
-1. The work item context — from `ideate_get_work_item_context({work_item_id})`, which returns the work item spec (including inline implementation notes), module spec, domain policies, and relevant research as a single pre-assembled package.
+1. The work item context — from `ideate_get_artifact_context({artifact_id})`, which returns the work item spec (including inline implementation notes), module spec, domain policies, and relevant research as a single pre-assembled package.
 2. _(Implementation notes are inline in the work item YAML `notes` field, included in the response above.)_
 3. The context digest — `{ppr_context[item_id]}` from the PPR-based context assembly in the "Prepare Context Digest" step above, or `{work_item_context_digest[item_id]}` if fallback was used. Includes a note that full documents are available via MCP tools if more detail is needed.
-4. The relevant module spec — included in the `ideate_get_work_item_context` response if applicable; otherwise the full architecture doc from `{context_package}`.
+4. The relevant module spec — included in the `ideate_get_artifact_context` response if applicable; otherwise the full architecture doc from `{context_package}`.
 5. _(Included in context digest)_
 6. _(Included in context digest)_
-7. Relevant research — included in the `ideate_get_work_item_context` response.
+7. Relevant research — included in the `ideate_get_artifact_context` response.
 8. Project source root — the absolute path `{project_source_root}`.
 
 All paths provided to workers must be absolute.

@@ -86,7 +86,7 @@
       "mcp__plugin_ideate_ideate-artifact-server__ideate_get_context_package",
       "mcp__plugin_hamlet_hamlet-config__hamlet_init",
       "Bash(git:*)",
-      "mcp__plugin_ideate_ideate-artifact-server__ideate_get_work_item_context",
+      "mcp__plugin_ideate_ideate-artifact-server__ideate_get_artifact_context",
       "Bash(/Users/dan/code/ideate/specs/archive/incremental/089-claudemd-manifest.md:*)",
       "Bash(/Users/dan/code/ideate/specs/archive/incremental/088-readme-manifest.md:*)",
       "Bash(/Users/dan/code/ideate/specs/archive/incremental/091-migration-cleanup.md:*)",

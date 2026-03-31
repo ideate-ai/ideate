@@ -278,6 +278,10 @@ function runFilterMode(
   if (filters.status) {
     whereClauses.push("n.status = ?");
     params.push(filters.status);
+  } else if (type === "work_item") {
+    // Default: exclude done and obsolete work items to reduce response size.
+    // Callers that need done items should pass filters.status explicitly.
+    whereClauses.push("(n.status IS NULL OR (n.status != 'done' AND n.status != 'obsolete'))");
   }
 
   // Build the summary expression and optional extension JOIN
@@ -683,21 +687,21 @@ export async function handleArtifactQuery(
     Object.values(filters).some((v) => v !== undefined && v !== null);
 
   if (!type && !relatedTo && !hasFilters) {
-    return "Error: At least one of 'type', 'related_to', or 'filters' is required";
+    throw new Error("At least one of 'type', 'related_to', or 'filters' is required");
   }
 
   // Validate type
   if (type && !VALID_TYPES.includes(type)) {
-    return `Error: Unknown type '${type}'. Valid types: ${VALID_TYPES.join(", ")}`;
+    throw new Error(`Unknown type '${type}'. Valid types: ${VALID_TYPES.join(", ")}`);
   }
 
   // Validate depth
   if (depthRaw !== undefined && !relatedTo) {
-    return "Error: 'depth' requires 'related_to' parameter";
+    throw new Error("'depth' requires 'related_to' parameter");
   }
   const depth = depthRaw ?? 1;
   if (depth > 10) {
-    return "Error: Maximum depth is 10";
+    throw new Error("Maximum depth is 10");
   }
 
   // Cap limit

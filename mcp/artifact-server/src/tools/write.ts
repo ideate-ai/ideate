@@ -43,6 +43,7 @@ import {
   insertEdge,
   upsertProject,
   upsertPhase as upsertPhaseRow,
+  computeArtifactHash,
 } from "../db-helpers.js";
 
 // ---------------------------------------------------------------------------
@@ -130,7 +131,7 @@ export async function handleAppendJournal(
       writtenYamlPath = filePath;
 
       // 3d. Upsert SQLite rows (Phase 2 of P-44, same exclusive lock)
-      const contentHash = sha256(yamlContent);
+      const contentHash = computeArtifactHash(entryObj as Record<string, unknown>);
       const nodeRow: NodeRow = {
         id,
         type: "journal_entry",
@@ -300,7 +301,7 @@ export async function handleArchiveCycle(
     fs.unlinkSync(srcPath);
   }
   for (const { src: srcPath } of workItemFiles) {
-    fs.unlinkSync(srcPath);
+    if (fs.existsSync(srcPath)) fs.unlinkSync(srcPath);
   }
 
   // Phase 3b: Update SQLite nodes after file moves.
@@ -543,11 +544,11 @@ export async function handleWriteWorkItems(
       cycle_modified: null,
     };
 
-    // Serialize to YAML string (before adding hash/token fields so hash is stable)
-    // We compute hash over the content excluding hash/token fields themselves
-    const yamlForHash = stringifyYaml(yamlObj, { lineWidth: 0 });
-    const contentHash = sha256(yamlForHash);
-    const tokens = tokenCount(yamlForHash);
+    // Compute hash over content fields only (excludes content_hash, token_count, file_path)
+    // using the shared helper so indexer and write handlers produce identical hashes.
+    const contentHash = computeArtifactHash(yamlObj);
+    const yamlForTokens = stringifyYaml(yamlObj, { lineWidth: 0 });
+    const tokens = tokenCount(yamlForTokens);
 
     // Now add the computed fields (no file_path in YAML — storage detail per P-33)
     yamlObj.content_hash = contentHash;
@@ -575,9 +576,11 @@ export async function handleWriteWorkItems(
         const notesContent = item.notes_content ?? `# ${id}: ${item.title ?? ""}`;
         const absoluteFilePath = path.join(workItemsDir, `${id}.yaml`);
 
-        // Read the written YAML file content for hashing (consistent with what was written)
+        // Read the written YAML file content and parse it; compute hash from content
+        // fields only (consistent with indexer and handleWriteArtifact).
         const writtenContent = fs.readFileSync(absoluteFilePath, "utf8");
-        const contentHash = sha256(writtenContent);
+        const parsedWritten = parseYaml(writtenContent) as Record<string, unknown>;
+        const contentHash = computeArtifactHash(parsedWritten);
 
         const nodeRow: NodeRow = {
           id,
@@ -746,7 +749,7 @@ export async function handleWriteArtifact(
 
   // Redirect specialized types to existing handlers
   if (type === "work_item") {
-    return handleWriteWorkItems(ctx, { items: [{ id, ...content }] });
+    return handleWriteWorkItems(ctx, { items: [{ ...content, id }] });
   }
   if (type === "journal_entry") {
     return handleAppendJournal(ctx, content);
@@ -774,17 +777,11 @@ export async function handleWriteArtifact(
     yamlObj.cycle = cycle;
   }
 
-  // Remove computed fields before hashing so hash is stable
-  const forHash: Record<string, unknown> = {};
-  for (const [k, v] of Object.entries(yamlObj)) {
-    if (k !== "content_hash" && k !== "token_count" && k !== "file_path") {
-      forHash[k] = v;
-    }
-  }
-
-  const yamlForHash = stringifyYaml(forHash, { lineWidth: 0 });
-  const contentHash = sha256(yamlForHash);
-  const tokens = tokenCount(yamlForHash);
+  // Compute hash over content fields only (excludes content_hash, token_count, file_path)
+  // using the shared helper so indexer and write handlers produce identical hashes.
+  const contentHash = computeArtifactHash(yamlObj);
+  const yamlForTokens = stringifyYaml(yamlObj, { lineWidth: 0 });
+  const tokens = tokenCount(yamlForTokens);
 
   // Add computed fields (no file_path in YAML — storage detail per P-33)
   yamlObj.content_hash = contentHash;
@@ -924,7 +921,7 @@ export async function handleWriteArtifact(
           id,
           title: (content.title as string | null) ?? null,
           cycle: (content.cycle as number | null) ?? cycleForNode,
-          content: JSON.stringify(content),
+          content: typeof content.content === 'string' ? content.content : JSON.stringify(content),
         };
         upsertDocumentArtifact(ctx.drizzleDb, docRow);
       } else if (type === "research_finding") {
@@ -1145,16 +1142,11 @@ export async function handleUpdateWorkItems(
       // Update cycle_modified
       merged.cycle_modified = cycleNumber;
 
-      // Recompute hash and token count (over content without hash/token/file_path fields)
-      const forHash: Record<string, unknown> = {};
-      for (const [k, v] of Object.entries(merged)) {
-        if (k !== "content_hash" && k !== "token_count" && k !== "file_path") {
-          forHash[k] = v;
-        }
-      }
-      const yamlForHash = stringifyYaml(forHash, { lineWidth: 0 });
-      const contentHash = sha256(yamlForHash);
-      const tokens = tokenCount(yamlForHash);
+      // Recompute hash and token count using shared helper (excludes content_hash,
+      // token_count, file_path) so hash is consistent with indexer and other write handlers.
+      const contentHash = computeArtifactHash(merged);
+      const yamlForTokens = stringifyYaml(merged, { lineWidth: 0 });
+      const tokens = tokenCount(yamlForTokens);
 
       merged.content_hash = contentHash;
       merged.token_count = tokens;
@@ -1198,7 +1190,7 @@ export async function handleUpdateWorkItems(
           const filePath = path.join(workItemsDir, `${id}.yaml`);
           const writtenContent = fs.readFileSync(filePath, "utf8");
           const parsedObj = parseYaml(writtenContent) as Record<string, unknown>;
-          const contentHash = sha256(writtenContent);
+          const contentHash = computeArtifactHash(parsedObj);
 
           const nodeRow = {
             id,
