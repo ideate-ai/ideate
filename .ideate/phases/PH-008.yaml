@@ -1,0 +1,12 @@
+id: PH-008
+type: phase
+name: MCP Response Optimization
+description: Audit and trim MCP tool response payloads to reduce token waste.
+phase_type: implementation
+status: pending
+work_items:
+  - WI-472
+  - WI-473
+success_criteria: Default queries exclude done/obsolete items. Response sizes reduced by 50%+ for typical calls.
+content_hash: 65384aad470a36fb2680c363275b7a04e0feb9d1481d5b88609b9dddca921b29
+token_count: 80

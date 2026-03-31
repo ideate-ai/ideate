@@ -1,0 +1,33 @@
+id: WI-472
+type: work_item
+title: MCP response payload audit
+status: pending
+complexity: medium
+scope:
+  - path: mcp/artifact-server/src/tools/query.ts
+    op: modify
+  - path: mcp/artifact-server/src/tools/analysis.ts
+    op: modify
+  - path: mcp/artifact-server/src/tools/context.ts
+    op: modify
+  - path: mcp/artifact-server/src/tools/execution.ts
+    op: modify
+depends: []
+blocks: []
+criteria:
+  - Each handler's response size documented
+  - Excessive responses identified with inline comments
+  - Audit findings ready for WI-473
+domain: artifact-structure
+phase: null
+notes: |-
+  ## Context
+  MCP responses return hundreds of irrelevant nodes.
+
+  ## Implementation
+  Instrument and measure each handler, document findings.
+resolution: null
+cycle_created: 6
+cycle_modified: null
+content_hash: d3a8628bc799b3f2db66f797c90ac37a05ad3bd2fbfe4e499ba0c726b03c7cf7
+token_count: 196

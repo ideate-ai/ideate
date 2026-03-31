@@ -1,0 +1,29 @@
+id: WI-477
+type: work_item
+title: "Report skill: PDF output option"
+status: pending
+complexity: medium
+scope:
+  - path: skills/report/SKILL.md
+    op: modify
+depends:
+  - WI-476
+blocks: []
+criteria:
+  - Accepts --pdf flag
+  - Uses mermaid-cli + markdown-pdf for rendering
+  - Graceful fallback if tools not installed
+  - PDF has title page with project name and date
+domain: workflow
+phase: null
+notes: |-
+  ## Context
+  Optional PDF format with rendered diagrams.
+
+  ## Implementation
+  Add --pdf flag, render mermaid to PNG, compile to PDF, fallback to markdown.
+resolution: null
+cycle_created: 6
+cycle_modified: null
+content_hash: d8f7e887ae341ecc47ecca8c6cb26aaa044f99d66dc237d1b8c41d918729c2aa
+token_count: 155

@@ -1,0 +1,35 @@
+id: WI-473
+type: work_item
+title: Implement MCP response trimming
+status: pending
+complexity: large
+scope:
+  - path: mcp/artifact-server/src/tools/query.ts
+    op: modify
+  - path: mcp/artifact-server/src/tools/analysis.ts
+    op: modify
+  - path: mcp/artifact-server/src/tools/context.ts
+    op: modify
+  - path: mcp/artifact-server/src/tools/execution.ts
+    op: modify
+depends:
+  - WI-472
+blocks: []
+criteria:
+  - artifact_query excludes done/obsolete by default (add include_done param)
+  - get_execution_status returns counts not full ID lists for completed
+  - get_domain_state truncates long descriptions
+  - All tests updated, npm run test passes
+domain: artifact-structure
+phase: null
+notes: |-
+  ## Context
+  Based on WI-472 findings, trim responses.
+
+  ## Implementation
+  Default filtering, count-only summaries, truncation with markers, verbose flags.
+resolution: null
+cycle_created: 6
+cycle_modified: null
+content_hash: 5cf83cd58e7cec3858bfcf5b4fc4606316ffcddbe6a2dd5db53d23f996a0fe9e
+token_count: 230

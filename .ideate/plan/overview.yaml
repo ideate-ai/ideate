@@ -1,19 +1,23 @@
 id: overview
 type: overview
-title: Cycle Change Plan — Structure & Coherence Phase
+title: Cycle Change Plan — Frictionless Updates, Spawn Config, Response Optimization, Phase Chunking, Reporting
 body: |-
   ## What Is Changing
 
-  Structural quality improvements: DRY refactors, duplication elimination, agent definition accuracy.
+  Five initiatives spanning infrastructure, developer experience, and new capabilities:
+  1. GP-16 (Frictionless Install): automatic migration on MCP server startup when data model changes
+  2. Spawn mode configuration: choose subagent vs teammate mode for all agent spawns
+  3. MCP response optimization: trim excessive payloads to reduce token waste
+  4. Intelligent phase chunking: auto-group work items into thin-slice phases by shared context
+  5. Reporting skill: /ideate:report generating markdown/PDF reports with mermaid diagrams
 
-  ## Scope
+  ## Scope Boundary
 
-  **In scope**: Generic upsert for db-helpers.ts (~500 LOC reduction), server core helper extraction (pragma, watcher, bootstrap, shutdown), agent definition fixes (5 agents), worker agent creation.
-
-  **Not in scope**: Performance (PH-005), test quality (PH-006). Principles and architecture unchanged.
+  In scope: migration infrastructure, config schema, all skills spawn logic, MCP tool handlers, refine/init phase chunking, new report skill.
+  Not in scope: existing guiding principles (unchanged except GP-16 addition), architecture document, existing test infrastructure.
 
   ## Work Items
 
-  WI-453, WI-454, WI-463, WI-464
-content_hash: 9fd72d14c4da1e90578464ab9aaf15f43a632c4458f787627ac86dc6d697d200
-token_count: 146
+  WI-469 through WI-477 (9 items across 4 phases)
+content_hash: 5ed3e8194a4341d49b6a672c726c812fa05748b8273f1b7c2bc35ac5a30ebce2
+token_count: 268

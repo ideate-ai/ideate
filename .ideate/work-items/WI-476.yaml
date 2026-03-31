@@ -1,0 +1,29 @@
+id: WI-476
+type: work_item
+title: Create /ideate:report skill definition
+status: pending
+complexity: large
+scope:
+  - path: skills/report/SKILL.md
+    op: create
+depends: []
+blocks: []
+criteria:
+  - Skill prompts for output directory
+  - Generates markdown with mermaid diagrams (phase timeline, status breakdown, finding trends)
+  - "Stats section: work items per phase, completion rates, cycle counts"
+  - Token usage from ideate_get_metrics
+  - Change summary from git diff stats
+domain: workflow
+phase: null
+notes: |-
+  ## Context
+  New reporting skill replacing deprecated shell scripts.
+
+  ## Implementation
+  Create SKILL.md with phases: gather data, generate diagrams, compile markdown, write output.
+resolution: null
+cycle_created: 6
+cycle_modified: null
+content_hash: 2bdb40821308eeee1b112a26c59b31ac6d662c4ffe9d5e2742f1ca033250211d
+token_count: 191

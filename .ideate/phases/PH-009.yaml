@@ -1,0 +1,12 @@
+id: PH-009
+type: phase
+name: Intelligent Phase Chunking
+description: Auto-chunk work items into thin-slice phases based on shared context and dependency clusters.
+phase_type: implementation
+status: pending
+work_items:
+  - WI-474
+  - WI-475
+success_criteria: Refine and init skills auto-propose phase groupings when work item count exceeds threshold.
+content_hash: 1025717ad2f9de2d1a7eaa7523e6ef0a94ba91c85b3e4b5380f67f13b63b3adf
+token_count: 87

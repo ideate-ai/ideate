@@ -1,0 +1,30 @@
+id: WI-475
+type: work_item
+title: Integrate auto-chunking into init and refine skills
+status: pending
+complexity: medium
+scope:
+  - path: skills/refine/SKILL.md
+    op: modify
+  - path: skills/init/SKILL.md
+    op: modify
+depends:
+  - WI-474
+blocks: []
+criteria:
+  - Refine and init auto-chunk when item count exceeds threshold
+  - User shown proposed phases before writing
+  - User can override
+domain: workflow
+phase: null
+notes: |-
+  ## Context
+  Integrate WI-474 heuristic into both skills.
+
+  ## Implementation
+  Run chunking after work items produced, present to user, write phase artifacts.
+resolution: null
+cycle_created: 6
+cycle_modified: null
+content_hash: a65c15be8e83c7b1b594c2c607eb2e7afac59db3e179c6257a11fa4102c62067
+token_count: 163

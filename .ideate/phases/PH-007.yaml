@@ -1,0 +1,14 @@
+id: PH-007
+type: phase
+name: Foundation & Configuration
+description: Automatic migration infrastructure (GP-16), spawn mode configuration for subagent vs teammate mode.
+phase_type: implementation
+status: active
+started_date: 2026-03-30
+work_items:
+  - WI-469
+  - WI-470
+  - WI-471
+success_criteria: MCP server auto-migrates on version mismatch. Spawn mode configurable and respected by all skills.
+content_hash: 3f3d8cb67adabca4a98b963080f01f396be96f47f386c2eb2e73ea5bba4b2b4a
+token_count: 99

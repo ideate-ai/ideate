@@ -1,21 +1,52 @@
 id: execution-strategy
 type: execution_strategy
-title: Execution Strategy — PH-004 Structure & Coherence
+title: Execution Strategy — WI-469 through WI-477
 mode: batched_parallel
 parallelism:
   max_concurrent: 4
   worktree_isolation: false
 review_cadence: per_item
 groups:
-  - name: "Group 1: All items (parallel)"
+  - name: "PH-007 Group 1: Migration infrastructure"
     items:
-      - WI-453
-      - WI-454
-      - WI-463
-      - WI-464
-    parallel: true
-    rationale: No file overlaps between any items. WI-453 touches db-helpers.ts, WI-454 touches server.ts/index.ts, WI-463 touches agent markdown files, WI-464 creates new agent file + modifies settings skill.
-dependency_graph: {}
-notes: All 4 items are independent with non-overlapping scope. Single group, full parallel.
-content_hash: 94b93936f2f184db4c2bdeed3173a1b6b858d29b8c4a3bf2bf16b9abbdbe4777
-token_count: 169
+      - WI-469
+    parallel: false
+    rationale: WI-469 modifies config.ts which WI-470 also needs. Sequential.
+  - name: "PH-007 Group 2: Spawn mode config + skills"
+    items:
+      - WI-470
+      - WI-471
+    parallel: false
+    rationale: WI-471 depends on WI-470.
+  - name: "PH-008: MCP response optimization"
+    items:
+      - WI-472
+      - WI-473
+    parallel: false
+    rationale: WI-473 depends on WI-472 audit findings.
+  - name: "PH-009: Phase chunking"
+    items:
+      - WI-474
+      - WI-475
+    parallel: false
+    rationale: WI-475 depends on WI-474 heuristic design.
+  - name: "PH-010: Reporting skill"
+    items:
+      - WI-476
+      - WI-477
+    parallel: false
+    rationale: WI-477 extends WI-476.
+dependency_graph:
+  WI-470:
+    - WI-469
+  WI-471:
+    - WI-470
+  WI-473:
+    - WI-472
+  WI-475:
+    - WI-474
+  WI-477:
+    - WI-476
+notes: PH-007 is active. PH-008 through PH-010 are independent of each other but each is internally sequential.
+content_hash: 03d97480d2519341e6843cebee18d62b8218579e070f19c04e57f03997957bbc
+token_count: 311

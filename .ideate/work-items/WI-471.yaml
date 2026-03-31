@@ -1,0 +1,36 @@
+id: WI-471
+type: work_item
+title: Update skills to read spawn_mode when spawning agents
+status: pending
+complexity: medium
+scope:
+  - path: skills/execute/SKILL.md
+    op: modify
+  - path: skills/review/SKILL.md
+    op: modify
+  - path: skills/autopilot/SKILL.md
+    op: modify
+  - path: skills/autopilot/phases/execute.md
+    op: modify
+  - path: skills/autopilot/phases/review.md
+    op: modify
+depends:
+  - WI-470
+blocks: []
+criteria:
+  - All skills read {config}.spawn_mode in Phase 0
+  - Teammate mode checks CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1
+  - Fallback to subagent with warning if env var not set
+domain: workflow
+phase: null
+notes: |-
+  ## Context
+  After WI-470 adds spawn_mode, skills need to respect it.
+
+  ## Implementation
+  Update each skill's Phase 0 and agent-spawning sections.
+resolution: null
+cycle_created: 6
+cycle_modified: null
+content_hash: 7db98a60be2bdf0eb77c411fab2307b1f66f1e7db94d5322a3ed12a196b609ab
+token_count: 214
