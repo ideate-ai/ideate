@@ -80,8 +80,8 @@ write_file() {
 # ── Step 1: Extract project intent from overview.yaml ────────────────────────
 
 OVERVIEW_FILE="$ARTIFACT_DIR/plan/overview.yaml"
-PROJECT_TITLE="Ideate structured SDLC workflow"
-PROJECT_INTENT="A Claude Code plugin providing a structured SDLC workflow — taking rough ideas through planning, execution, review, and refinement."
+PROJECT_TITLE="Untitled project"
+PROJECT_INTENT="Project description not set — update via /ideate:project"
 
 if [[ -f "$OVERVIEW_FILE" ]]; then
   # Extract title line (field: title: ...)
@@ -90,14 +90,26 @@ if [[ -f "$OVERVIEW_FILE" ]]; then
     PROJECT_TITLE="$RAW_TITLE"
   fi
 
-  # Extract first line of body for a short intent blurb (strip leading "## ..." headers)
-  RAW_BODY_FIRST="$(grep -A1 '^body:' "$OVERVIEW_FILE" | tail -1 | sed 's/^[[:space:]]*//' || true)"
-  if [[ -n "$RAW_BODY_FIRST" && "$RAW_BODY_FIRST" != "|-" && "$RAW_BODY_FIRST" != "|" ]]; then
-    PROJECT_INTENT="$RAW_BODY_FIRST"
+  # Extract body content for intent — handles block scalars (|-, |, >-, >) and inline values
+  RAW_BODY=""
+  BODY_LINE="$(grep -m1 '^body:' "$OVERVIEW_FILE" || true)"
+  if [[ -n "$BODY_LINE" ]]; then
+    # Check if body is inline (body: some text) vs block scalar (body: |-, body: |, body: >-, body: >)
+    INLINE_VALUE="$(echo "$BODY_LINE" | sed 's/^body:[[:space:]]*//')"
+    if [[ "$INLINE_VALUE" == "|-" || "$INLINE_VALUE" == "|" || "$INLINE_VALUE" == ">-" || "$INLINE_VALUE" == ">" || -z "$INLINE_VALUE" ]]; then
+      # Block scalar — read the first non-empty indented line after the body: key
+      RAW_BODY="$(sed -n '/^body:/,/^[^ ]/{/^body:/d;/^[^ ]/d;/^$/d;s/^[[:space:]]*//;p;q;}' "$OVERVIEW_FILE" || true)"
+    else
+      # Inline value
+      RAW_BODY="$INLINE_VALUE"
+    fi
+  fi
+  if [[ -n "$RAW_BODY" ]]; then
+    PROJECT_INTENT="$RAW_BODY"
   fi
   say "Extracted intent from: $OVERVIEW_FILE"
 else
-  say "WARNING: $OVERVIEW_FILE not found — using defaults for project intent"
+  say "WARNING: $OVERVIEW_FILE not found — using generic defaults for project intent"
 fi
 
 # ── Step 2: Build non-obsolete work item list ─────────────────────────────────
@@ -264,11 +276,12 @@ PYEOF
         # Minimal sed fallback — replaces schema_version value in place,
         # then appends missing fields before the closing brace.
         sed -i.bak "s/\"schema_version\"[[:space:]]*:[[:space:]]*[0-9]*/\"schema_version\": 3/" "$CONFIG_FILE"
+        NL=$'\n'
         if ! grep -q '"circuit_breaker_threshold"' "$CONFIG_FILE"; then
-          sed -i.bak 's/}[[:space:]]*$/,\n  "circuit_breaker_threshold": 5\n}/' "$CONFIG_FILE"
+          sed -i.bak "s/}[[:space:]]*$/,${NL}  \"circuit_breaker_threshold\": 5${NL}}/" "$CONFIG_FILE"
         fi
         if ! grep -q '"default_appetite"' "$CONFIG_FILE"; then
-          sed -i.bak 's/}[[:space:]]*$/,\n  "default_appetite": 6\n}/' "$CONFIG_FILE"
+          sed -i.bak "s/}[[:space:]]*$/,${NL}  \"default_appetite\": 6${NL}}/" "$CONFIG_FILE"
         fi
         rm -f "${CONFIG_FILE}.bak"
       fi

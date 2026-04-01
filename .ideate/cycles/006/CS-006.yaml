@@ -1,70 +1,40 @@
 id: CS-006
 type: cycle_summary
 cycle: 6
-content: |
-  # Review Summary — Cycle 006
-  
+content: |-
+  # Review Summary — Cycle 6
+
   ## Overview
-  
-  Cycle 006 is the capstone review covering WI-088 through WI-097 (manifest.json documentation propagation, metrics schema extension, quality_summary event specification, report.sh creation and bug fixes, and stale path cleanup). All ten work items satisfy their acceptance criteria. The code-quality and spec-adherence reviewers both issued Pass verdicts. The gap-analyst issued a Fail verdict due to a significant architectural gap: the autopilot review phase was excluded from WI-093's scope and never emits quality_summary events, making the Quality Trends feature non-functional for autopilot-driven projects. The domain curator was skipped during both preceding autopilot cycles and will run this cycle.
-  
+  PH-016 delivered 3 new skills, MCP view extension, proportional review routing, and a migration bug fix. The implementation is structurally complete but has 6 significant findings — 2 silent data loss bugs in the triage skill, a broken horizon display in the project view, a schema mismatch in the project skill, missing documentation updates, and a missing filter declaration.
+
+  ## Phase Convergence
+  Phase: PH-016
+  Cycles completed in this phase: 1 / 5 (threshold)
+  Convergence status: Not converged — significant findings remain
+  Trend: First cycle — no prior data
+
   ## Critical Findings
-  
   None.
-  
+
   ## Significant Findings
-  
-  - [gap-analyst] `skills/autopilot/phases/review.md` has no quality_summary emission block — any review cycle driven by `/ideate:autopilot` produces no `quality_summary` event, so the Quality Trends section of `scripts/report.sh` is permanently empty for autopilot-driven projects. The `last_cycle_findings` dict is already in scope at the insertion point; no design decision is needed. — relates to: WI-093, cross-cutting (autopilot/review architecture boundary)
-  
-  - [gap-analyst] Three agent definitions (`agents/spec-reviewer.md:26`, `agents/gap-analyst.md:24`, `agents/journal-keeper.md:20`) still reference stale `reviews/incremental/` path. Agents following these definitions look in a non-existent directory, silently omit prior incremental review context, and degrade deduplication and synthesis on every review cycle. Three mechanical one-line fixes. — relates to: cross-cutting (agent system)
-  
+  - [code-reviewer] S1: buildProjectView horizon regex never matches actual YAML structure (phase IDs, not objects). Horizon always shows 'No phases planned.' — analysis.ts:408
+  - [code-reviewer] S2 / [gap-analyst] EC1+EC2: Triage skill Phase 5 uses wrong field names (acceptance_criteria→criteria, phase_id→phase). Work items created via triage lose acceptance criteria and phase assignment — triage/SKILL.md:174-176
+  - [gap-analyst] EC3: Project skill writes horizon.completed but schema defines horizon.current. Projects created via skill have wrong horizon structure — project/SKILL.md:57
+  - [gap-analyst] MI1+MI2 / [spec-reviewer]: New skills absent from ARCHITECTURE.md, README.md, CLAUDE.md. P-35 violation — documentation not updated for new components
+  - [gap-analyst] II3: work_item_type filter implemented in query.ts but not declared in ideate_artifact_query inputSchema — index.ts
+  - [spec-reviewer]: Phase view missing status field display — analysis.ts:428
+
   ## Minor Findings
-  
-  - [code-quality, spec-adherence, gap-analyst] `specs/artifact-conventions.md:710` uses `####` heading level for the `metrics.jsonl` section while all peer artifact entries use `###`. Carry-forward from autopilot cycle 005 OQ1. — relates to: WI-096
-  
-  - [code-quality, spec-adherence, gap-analyst] Three agent definitions (`agents/spec-reviewer.md:26`, `agents/gap-analyst.md:24`, `agents/journal-keeper.md:20`) reference stale `reviews/incremental/` path. (Same as significant finding above — minor from code-quality and spec-adherence; elevated to significant by gap-analyst.) — relates to: cross-cutting
-  
-  - [code-quality, spec-adherence, gap-analyst] `specs/artifact-conventions.md:720-732` uses literal `null` and `0` in the agent-spawn entry schema example instead of `<placeholder>` notation used elsewhere in the document. Carry-forward from autopilot cycle 005 OQ3. — relates to: WI-096
-  
-  - [code-quality, spec-adherence] `findings.by_reviewer.{reviewer}.suggestion` is present in the quality_summary schema (SKILL.md and artifact-conventions.md) but `scripts/report.sh` does not parse `by_reviewer` at all. The field has no current consumer. — relates to: WI-093, WI-094
-  
-  - [code-quality] `skills/refine/SKILL.md` inline metrics schema example omits the `cycle` field, unlike every other skill's inline schema and the canonical schema in `specs/artifact-conventions.md:719`. Entries without the field are bucketed as `(none)` by report.sh — distinct from `null`. — relates to: WI-092 (schema extension)
-  
-  - [gap-analyst] `scripts/report.sh` is absent from `README.md` and both plugin manifests. The only reference to its existence is an internal citation in `specs/artifact-conventions.md`. — relates to: WI-094
-  
-  ## Suggestions
-  
-  None.
-  
+  - [code-reviewer] M1: work_item_type template variable undefined in review skills → FIXED
+  - [code-reviewer] M2: sed fallback in migrate-to-hierarchy.sh broken on macOS (literal \n)
+  - [spec-reviewer] N1: triage name missing ideate: prefix → FIXED
+  - [gap-analyst] II1: Journal skill enum missing 'project' value
+  - [gap-analyst] IR1: Status skill missing model declaration in frontmatter
+
   ## Findings Requiring User Input
-  
   None — all findings can be resolved from existing context.
-  
+
   ## Proposed Refinement Plan
-  
-  The review identified 2 significant findings. A refinement cycle is recommended to address them along with the accumulated minor items.
-  
-  **Scope for next refinement:**
-  
-  1. **WI-NEW-1: Add quality_summary emission to skills/autopilot/phases/review.md** (significant — SG1)
-     - Insert a Phase 7.6-equivalent block after the journal-keeper step in `skills/autopilot/phases/review.md`
-     - Mirror the logic of `skills/review/SKILL.md` Phase 7.6
-     - The `last_cycle_findings` dict is already in scope; count derivation does not require re-parsing `summary.md`
-     - File scope: `skills/autopilot/phases/review.md` only
-  
-  2. **WI-NEW-2: Fix stale reviews/incremental/ path in three agent definitions** (significant — SG2)
-     - Update `agents/spec-reviewer.md:26`, `agents/gap-analyst.md:24`, `agents/journal-keeper.md:20`
-     - Replace `reviews/incremental/` with `archive/incremental/`
-     - Three mechanical one-line fixes; no design decision required
-     - File scope: `agents/spec-reviewer.md`, `agents/gap-analyst.md`, `agents/journal-keeper.md`
-  
-  3. **WI-NEW-3: Fix documentation cluster and discoverability** (minor items — can bundle)
-     - Fix `####` → `###` at `specs/artifact-conventions.md:710`
-     - Fix literal `null`/`0` → `<N or null>`/`<N>` at `specs/artifact-conventions.md:720,724`
-     - Fix `skills/refine/SKILL.md` inline metrics schema to include `"cycle": null`
-     - Add report.sh to `README.md` (section analogous to existing Validation and Migration Tools)
-     - File scope: `specs/artifact-conventions.md`, `skills/refine/SKILL.md`, `README.md`
-  
-  Items 1 and 2 have non-overlapping file scopes and can execute in parallel. Item 3 can also run in parallel with both. All three items are documentation or specification changes — no source code behavior changes.
-content_hash: "2cc446fdcc167c7a74be530b0d87943204f7e2291566e7e1e5f0e3cf02d3d5db"
-token_count: 1356
+  6 significant findings require a refinement cycle. Estimated scope: 4-5 work items covering triage field fix, horizon logic rewrite, project skill schema alignment, documentation updates, and inputSchema fix. All are small complexity.
+content_hash: 9b9b047fac8d723b9cd95e34dd8c579a2888e6dd0976fcd0ccf4ae535b1d98e0
+token_count: 622

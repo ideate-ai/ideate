@@ -959,6 +959,152 @@ describe("handleGetWorkspaceStatus", () => {
     expect(result).not.toContain("## Active Project");
     expect(result).not.toContain("## Current Phase");
   });
+
+  it("view=workspace returns same format as default (backward compatible)", async () => {
+    insertNode("WI-V01", "work_item", { status: "done" });
+    insertWorkItem("WI-V01", "View test item");
+
+    const defaultResult = await handleGetWorkspaceStatus(ctx, {});
+    const workspaceResult = await handleGetWorkspaceStatus(ctx, { view: "workspace" });
+    expect(workspaceResult).toBe(defaultResult);
+  });
+
+  it("view=project returns project view with phase progress", async () => {
+    // Insert active project
+    insertNode("PR-001", "project", { status: "active" });
+    ctx.db.prepare(`
+      INSERT INTO projects (id, name, intent, appetite, status)
+      VALUES (?, ?, ?, ?, ?)
+    `).run("PR-001", "Test Project", "Build something", 6, "active");
+
+    // Insert active phase
+    insertNode("PH-001", "phase", { status: "active" });
+    ctx.db.prepare(`
+      INSERT INTO phases (id, name, phase_type, project, intent, status)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `).run("PH-001", "Phase One", "implementation", "PR-001", "Do work", "active");
+
+    // Insert work items in phase
+    insertNode("WI-P01", "work_item", { status: "done" });
+    insertWorkItem("WI-P01", "Done item");
+    ctx.db.prepare(`UPDATE work_items SET phase = ? WHERE id = ?`).run("PH-001", "WI-P01");
+    insertNode("WI-P02", "work_item", { status: "pending" });
+    insertWorkItem("WI-P02", "Pending item");
+    ctx.db.prepare(`UPDATE work_items SET phase = ? WHERE id = ?`).run("PH-001", "WI-P02");
+
+    const result = await handleGetWorkspaceStatus(ctx, { view: "project" });
+    expect(result).toContain("# Project View");
+    expect(result).toContain("PR-001");
+    expect(result).toContain("Test Project");
+    expect(result).toContain("Build something");
+    expect(result).toContain("Phase One");
+    expect(result).toContain("1/2 work items done");
+  });
+
+  it("view=project with no active project returns message", async () => {
+    const result = await handleGetWorkspaceStatus(ctx, { view: "project" });
+    expect(result).toContain("No active project");
+  });
+
+  it("view=phase returns phase view with work items table", async () => {
+    // Insert active phase
+    insertNode("PH-001", "phase", { status: "active" });
+    ctx.db.prepare(`
+      INSERT INTO phases (id, name, phase_type, project, intent, status)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `).run("PH-001", "Phase One", "implementation", "PR-001", "Do work", "active");
+
+    // Insert work items
+    insertNode("WI-T01", "work_item", { status: "done" });
+    insertWorkItem("WI-T01", "Table test done", { complexity: "small" });
+    ctx.db.prepare(`UPDATE work_items SET phase = ?, work_item_type = ? WHERE id = ?`).run("PH-001", "feature", "WI-T01");
+    insertNode("WI-T02", "work_item", { status: "pending" });
+    insertWorkItem("WI-T02", "Table test pending", { complexity: "medium" });
+    ctx.db.prepare(`UPDATE work_items SET phase = ?, work_item_type = ? WHERE id = ?`).run("PH-001", "bug", "WI-T02");
+
+    const result = await handleGetWorkspaceStatus(ctx, { view: "phase" });
+    expect(result).toContain("# Phase View");
+    expect(result).toContain("Phase One");
+    expect(result).toContain("implementation");
+    expect(result).toContain("WI-T01");
+    expect(result).toContain("WI-T02");
+    expect(result).toContain("| ID |");
+  });
+
+  it("view=phase with no active phase returns message", async () => {
+    const result = await handleGetWorkspaceStatus(ctx, { view: "phase" });
+    expect(result).toContain("No active phase");
+  });
+
+  it("view=project shows horizon phase names from JSON column", async () => {
+    // Insert active project with horizon
+    insertNode("PR-002", "project", { status: "active" });
+    ctx.db.prepare(`
+      INSERT INTO projects (id, name, intent, appetite, status, horizon)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `).run("PR-002", "Horizon Test", "Test horizon", 6, "active", JSON.stringify({ next: ["PH-H01"], later: [] }));
+
+    // Insert the horizon phase so name lookup works
+    insertNode("PH-H01", "phase", { status: "pending" });
+    ctx.db.prepare(`
+      INSERT INTO phases (id, name, phase_type, project, intent, status)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `).run("PH-H01", "Next Phase", "design", "PR-002", "Design work", "pending");
+
+    const result = await handleGetWorkspaceStatus(ctx, { view: "project" });
+    expect(result).toContain("## Horizon");
+    expect(result).toContain("PH-H01");
+    expect(result).toContain("Next Phase");
+  });
+
+  it("view=project shows 'No phases planned' when horizon is null", async () => {
+    insertNode("PR-003", "project", { status: "active" });
+    ctx.db.prepare(`
+      INSERT INTO projects (id, name, intent, appetite, status)
+      VALUES (?, ?, ?, ?, ?)
+    `).run("PR-003", "No Horizon", "Test null horizon", 6, "active");
+
+    const result = await handleGetWorkspaceStatus(ctx, { view: "project" });
+    expect(result).toContain("## Horizon");
+    expect(result).toContain("No phases planned");
+  });
+
+  it("view=phase shows status field", async () => {
+    insertNode("PH-002", "phase", { status: "active" });
+    ctx.db.prepare(`
+      INSERT INTO phases (id, name, phase_type, project, intent, status)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `).run("PH-002", "Status Test", "implementation", "PR-001", "Test", "active");
+
+    const result = await handleGetWorkspaceStatus(ctx, { view: "phase" });
+    expect(result).toContain("**Status**: active");
+  });
+
+  it("view=phase shows dependency edges between phase items", async () => {
+    insertNode("PH-003", "phase", { status: "active" });
+    ctx.db.prepare(`
+      INSERT INTO phases (id, name, phase_type, project, intent, status)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `).run("PH-003", "Dep Test", "implementation", "PR-001", "Test", "active");
+
+    insertNode("WI-D01", "work_item", { status: "pending" });
+    insertWorkItem("WI-D01", "First item");
+    ctx.db.prepare(`UPDATE work_items SET phase = ? WHERE id = ?`).run("PH-003", "WI-D01");
+
+    insertNode("WI-D02", "work_item", { status: "pending" });
+    insertWorkItem("WI-D02", "Second item", { depends: ["WI-D01"] });
+    ctx.db.prepare(`UPDATE work_items SET phase = ? WHERE id = ?`).run("PH-003", "WI-D02");
+
+    // Insert the dependency edge
+    ctx.db.prepare(`
+      INSERT OR IGNORE INTO edges (source_id, target_id, edge_type)
+      VALUES (?, ?, ?)
+    `).run("WI-D02", "WI-D01", "depends_on");
+
+    const result = await handleGetWorkspaceStatus(ctx, { view: "phase" });
+    expect(result).toContain("## Dependencies");
+    expect(result).toContain("WI-D02 depends on WI-D01");
+  });
 });
 
 // ---------------------------------------------------------------------------

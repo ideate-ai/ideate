@@ -97,6 +97,7 @@ export const TOOLS: Tool[] = [
             severity: { type: "string" },
             phase: { type: "string" },
             work_item: { type: "string" },
+            work_item_type: { type: "string" },
           },
           additionalProperties: false,
         },
@@ -225,7 +226,13 @@ export const TOOLS: Tool[] = [
       "Workspace status: current cycle, work item counts, journal entries, open questions. Use for overview. Returns ~800 chars.",
     inputSchema: {
       type: "object",
-      properties: {},
+      properties: {
+        view: {
+          type: "string",
+          enum: ["workspace", "project", "phase"],
+          description: "View perspective. Default: workspace.",
+        },
+      },
       required: [],
     },
     annotations: {
@@ -243,7 +250,7 @@ export const TOOLS: Tool[] = [
       properties: {
         skill: {
           type: "string",
-          enum: ["plan", "execute", "review", "refine", "autopilot"],
+          enum: ["plan", "execute", "review", "refine", "autopilot", "project", "triage"],
           description: "The skill phase that produced this journal entry.",
         },
         date: {
@@ -360,6 +367,14 @@ export const TOOLS: Tool[] = [
               cycle_created: {
                 type: ["integer", "null"],
                 description: "Cycle number when this work item was created.",
+              },
+              work_item_type: {
+                type: "string",
+                description: "Work item type (feature, bug, spike, maintenance, chore).",
+              },
+              phase: {
+                type: "string",
+                description: "Phase ID this work item belongs to.",
               },
             },
           },

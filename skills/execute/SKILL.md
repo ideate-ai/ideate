@@ -177,6 +177,18 @@ The digest is ephemeral — it is not written to a file. It is passed directly t
 
 Workers receive the digest plus instructions to retrieve full documents via MCP tools: "Full architecture, principles, and constraints are accessible via `ideate_get_context_package()` — call it if you need detail beyond what the digest provides."
 
+## Work Item Type Context Adjustment
+
+After loading the work item spec (from `ideate_get_artifact_context({artifact_id})`), read `work_item_type` from the artifact. Adjust the context loading depth for that work item's worker as follows:
+
+- **feature, spike**: Full context — architecture, principles, module spec, dependencies. (This is the default path; no change from existing behavior.)
+- **bug**: Focused context — related findings (from `ideate_artifact_query({type: "finding"})` filtered to the affected file paths), affected file history if available, and reproduction information from the work item notes. Omit module specs for unrelated modules.
+- **chore, maintenance**: Minimal context — work item spec and direct dependencies only. Skip architecture sections not referenced in the work item's file scope. Skip unrelated module specs.
+
+If `work_item_type` is absent or unrecognized, default to **feature** (full context). This preserves existing behavior for all work items that predate this field.
+
+Pass only the adjusted context subset to the worker. The worker still receives the note that full documents are available via `ideate_get_context_package()` if more detail is needed.
+
 ---
 
 # Phase 5: Confirm Before Starting

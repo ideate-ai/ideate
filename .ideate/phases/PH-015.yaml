@@ -1,17 +1,16 @@
 id: PH-015
 type: phase
 name: Infrastructure — Schema & Metrics
+description: Add name/description to projects and phases, fix metrics pipeline bugs, add work_item_type field, update status display. Foundational schema and pipeline changes required before new skills.
 phase_type: implementation
-status: active
-project: PR-001
-started_date: 2026-03-31
-intent: Add name/description to projects and phases, fix metrics pipeline bugs, add work_item_type field, update status display. Foundational schema and pipeline changes required before new skills.
+project_id: PR-001
+status: complete
+completed_date: 2026-03-31
 work_items:
   - WI-513
   - WI-514
   - WI-515
   - WI-516
   - WI-517
-success_criteria: Schema version 4 with name, description, and work_item_type columns. Metrics pipeline correctly stores agent_type and payload. Status dashboard shows names. Skill docs no longer instruct broken token extraction. npm test passes.
-content_hash: b824b1364ac6fc4291e43b2beef52d20513aa0192310d2d967dd48f45591f224
-token_count: 164
+content_hash: 41512988cb92c4c7f358a3d5b564ade09203ac9fd7649fa38132a3eef5160fa7
+token_count: 105

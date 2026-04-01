@@ -1,7 +1,7 @@
 id: WI-521
 type: work_item
 title: Add work item type routing to execute and review skills
-status: pending
+status: obsolete
 complexity: medium
 scope:
   - path: skills/execute/SKILL.md
@@ -27,8 +27,8 @@ criteria:
 domain: workflow
 phase: null
 notes: See research-multi-level-interaction Section 2.4 routing table. Depends on WI-515 (shared skill files) and WI-519 (triage must exist to create typed items).
-resolution: null
+resolution: Replaced by WI-526 in PH-016 with proportional review framework instead of hardcoded type routing.
 cycle_created: null
-cycle_modified: null
-content_hash: b7e73fe82ba89438bf149f2a405773ebf85ebde73a5fcc5addf1502b11aad658
-token_count: 237
+cycle_modified: 5
+content_hash: 92f5294a5c24dab02e7eebe4155fbd5c3151b20322f68b9d0853fd21f78ca316
+token_count: 284

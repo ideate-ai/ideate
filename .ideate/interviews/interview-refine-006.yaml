@@ -1,22 +1,33 @@
 id: interview-refine-006
 type: interview
-cycle: 6
-date: 2026-03-31
+title: "Refinement Interview — Cycle 006: New Skills Phase"
 entries:
-  - question: What changes do you want to make?
-    answer: "Three areas: (1) QUICKSTART.md Agile/Scrum mapping table has forced analogies for guiding principles and domain policies — remove those rows, add a DDD blurb. (2) Triage all concrete work from domain question resolutions — include all items. (3) README must document all config.json options (appetite, circuit_breaker_threshold, spawn_mode, model_overrides are missing)."
+  - question: "Phase transition: PH-015 complete, proceed to next horizon phase?"
+    answer: Yes, transition to New Skills phase.
     domain: null
-  - question: For the QUICKSTART fix — should all Scrum analogies be removed?
-    answer: No. The hierarchy mappings (Project->Epic, Phase->Sprint, etc.) are great. But guiding principles and domain policies are not Scrum concepts. Remove those rows. Add a short blurb about borrowing DDD concepts and using guiding principles to enforce alignment to high-level requirements.
+  - question: Evaluate guiding principles and policies against the expanded scope (project management, triage, status, work item types).
+    answer: "Four principles need amendment: GP-01 (spec sufficiency applies to completed specs, not creation), GP-02 (minimize inference with framework for when it's permitted), GP-05 (proportional review based on priority/severity), GP-10 (full lifecycle ownership, not just idea-to-output)."
     domain: workflow
-  - question: Triage of domain question work — include, defer, or dismiss each?
-    answer: "Include all: Q-120 (content normalization), Q-117 (roundtrip test), Q-111/Q-119 (P-44 amendment), Q-106 (null check), Q-107 (hash normalization), Q-112 (dispatch branches), Q-109 (P-33 test)."
+  - question: Are WI-518 through WI-521 still the right scope?
+    answer: Yes, but restructure for parallel execution. Remove artificial dependency chain — only shared resource is plugin.json.
+    domain: workflow
+  - question: WI-518 is large with 14 subcommands. Keep as single item or decompose?
+    answer: "Single skill file. Research whether user-invocable-only skills use less context. Should use disable-model-invocation: true."
+    domain: workflow
+  - question: Skill context cost research findings.
+    answer: Full SKILL.md injected at invocation. Before invocation, only 250-char description in context. disable-model-invocation removes even that. Documentation recommends <500 lines. Supporting files are lazy-loaded. Autopilot already uses this pattern.
+    domain: agent-system
+  - question: "Triage interaction model: one-shot, multi-turn, or auto-detect?"
+    answer: Auto-detect. Inference is okay if the description is obvious; follow-up questions if ambiguous (reproduction steps, symptoms, etc.).
+    domain: workflow
+  - question: "Status skill: LLM formatting or MCP-side formatting?"
+    answer: "MCP does the formatting. Extend ideate_get_workspace_status with view parameter. Views: workspace, project, phase. Skill is a thin routing layer. Add MCP server work to this phase."
     domain: artifact-structure
-  - question: Do guiding principles still hold?
-    answer: They hold.
-    domain: null
-  - question: Any architecture changes needed?
-    answer: No. Documentation fixes + MCP server correctness fixes + policy amendment. No architecture changes, no new features.
-    domain: null
-content_hash: 16e7295c98e664fc199f20c2a1ff3e3cba2c38b8892a1c26e11b41d82217bfc8
-token_count: 380
+  - question: "Status view naming: IC/portfolio/project/phase or workspace/project/phase?"
+    answer: workspace/project/phase. No need for cycle stats. Iterate later if needed.
+    domain: artifact-structure
+  - question: "Type routing: hardcoded type-to-reviewer mapping or proportional framework?"
+    answer: Default to detailed/full review. Reduce only when both severity and priority are low. Must be transparent with decision and confirm before cutting corners.
+    domain: workflow
+content_hash: e030e56dc838be320a8ee184243ce59cfc0de77f8c772bf1305cca67a2f448f0
+token_count: 634

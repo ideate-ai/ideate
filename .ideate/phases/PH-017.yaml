@@ -1,0 +1,15 @@
+id: PH-017
+type: phase
+name: Documentation & Cleanup
+description: Fix deferred minor items from reviews, update ARCHITECTURE.md for new skills, create comprehensive GUIDE.md user guide.
+phase_type: implementation
+project_id: PR-001
+status: active
+started_date: 2026-03-31
+work_items:
+  - WI-533
+  - WI-534
+  - WI-535
+success_criteria: All deferred minor fixes resolved. ARCHITECTURE.md reflects current skill surface. GUIDE.md provides complete user-facing documentation for all 10 skills, project/phase management, work item types, and the SDLC loop.
+content_hash: 84eb484d67905efc22ee8745c4e0b82ef1db4d7ec67d8ca355484c300ca69bfd
+token_count: 138

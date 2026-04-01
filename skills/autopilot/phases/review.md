@@ -66,6 +66,27 @@ Call `ideate_write_artifact({type: "cycle_summary", id: "review-manifest", conte
 
 If `{diff_mode}` = `"differential"`: filter the manifest to work items whose scope includes at least one file in `{changed_files}`. Include a note: "Differential review — scope: {N} changed files + {M} boundary files."
 
+### Proportional Review Depth
+
+Before spawning reviewers, assess severity and priority for each work item in the review manifest.
+
+For each work item:
+
+1. Read `severity`, `priority`, and `work_item_type` from work item metadata (from `ideate_artifact_query({type: "work_item"})`). If either severity or priority is absent, default to `medium`.
+
+2. **Default**: Spawn all three reviewers (code-reviewer, spec-reviewer, gap-analyst).
+
+3. **If BOTH `severity` AND `priority` are `low`**:
+   a. Route to the proxy-human agent:
+      > Andon: Work item {WI-NNN} is low severity / low priority ({work_item_type}). Proposing code-reviewer only for this item. Approve reduced review?
+   b. If the proxy-human approves: spawn code-reviewer only for this item. Log via `ideate_append_journal`: "Reduced review for {WI-NNN}: low severity + low priority. Spawned code-reviewer only. Proxy-human approved."
+   c. If the proxy-human rejects or defers: spawn all three reviewers for this item.
+   d. If no proxy-human is available: default to full review (spawn all three reviewers). Do not silently reduce review without confirmation.
+
+4. **Capstone review always uses all reviewers regardless of per-item decisions.** The three-reviewer parallel spawn below covers cross-cutting concerns.
+
+The default behavior (full reviewer set) is unchanged for all work items where severity or priority is not `low`, or where only one of the two is `low`.
+
 ### Spawn Three Reviewers in Parallel
 
 Spawn all three simultaneously. Do not wait for one before starting another.

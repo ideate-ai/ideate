@@ -334,6 +334,181 @@ export async function handleGetDomainState(
 }
 
 // ---------------------------------------------------------------------------
+// View helpers for ideate_get_workspace_status
+// ---------------------------------------------------------------------------
+
+async function buildProjectView(ctx: ToolContext): Promise<string> {
+  const activeProject = ctx.db.prepare(`
+    SELECT p.id, p.name, p.intent, p.appetite
+    FROM projects p
+    JOIN nodes n ON n.id = p.id
+    WHERE n.status = 'active'
+    ORDER BY n.id
+    LIMIT 1
+  `).get() as { id: string; name: string | null; intent: string; appetite: number | null } | undefined;
+
+  if (!activeProject) {
+    return "# Project View\n\nNo active project.";
+  }
+
+  const lines: string[] = [];
+  lines.push("# Project View");
+  lines.push("");
+  lines.push(`**Project**: ${activeProject.id}${activeProject.name ? ` — ${activeProject.name}` : ""}`);
+  lines.push(`**Intent**: ${activeProject.intent}`);
+  lines.push(`**Appetite**: ${activeProject.appetite ?? "unset"}`);
+  lines.push("");
+
+  // Current phase
+  const activePhase = ctx.db.prepare(`
+    SELECT p.id, p.name, p.phase_type
+    FROM phases p
+    JOIN nodes n ON n.id = p.id
+    WHERE n.status = 'active'
+    ORDER BY n.id
+    LIMIT 1
+  `).get() as { id: string; name: string | null; phase_type: string } | undefined;
+
+  if (activePhase) {
+    // Work item progress for this phase
+    const phaseWiRows = ctx.db.prepare(`
+      SELECT n.status, COUNT(*) as count
+      FROM work_items wi
+      JOIN nodes n ON n.id = wi.id
+      WHERE wi.phase = ?
+      GROUP BY n.status
+    `).all(activePhase.id) as Array<{ status: string | null; count: number }>;
+
+    let total = 0;
+    let done = 0;
+    for (const row of phaseWiRows) {
+      total += row.count;
+      if (row.status === "done") done = row.count;
+    }
+
+    lines.push("## Current Phase");
+    lines.push(`**Phase**: ${activePhase.id}${activePhase.name ? ` — ${activePhase.name}` : ""}`);
+    lines.push(`**Type**: ${activePhase.phase_type}`);
+    lines.push(`**Progress**: ${done}/${total} work items done`);
+    lines.push("");
+  } else {
+    lines.push("## Current Phase");
+    lines.push("No active phase.");
+    lines.push("");
+  }
+
+  // Horizon — read from SQLite projects table
+  const horizonRow = ctx.db.prepare(
+    `SELECT p.horizon FROM projects p JOIN nodes n ON n.id = p.id WHERE n.status = 'active' LIMIT 1`
+  ).get() as { horizon: string | null } | undefined;
+
+  if (horizonRow?.horizon) {
+    try {
+      const horizon = JSON.parse(horizonRow.horizon) as { next?: string[]; later?: string[] };
+      const nextIds = horizon.next ?? [];
+      if (nextIds.length > 0) {
+        lines.push("## Horizon");
+        for (const phaseId of nextIds) {
+          const phaseRow = ctx.db.prepare(
+            `SELECT name FROM phases WHERE id = ?`
+          ).get(phaseId) as { name: string | null } | undefined;
+          const label = phaseRow?.name ? `${phaseId} — ${phaseRow.name}` : phaseId;
+          lines.push(`- ${label}`);
+        }
+      } else {
+        lines.push("## Horizon");
+        lines.push("No phases planned.");
+      }
+    } catch {
+      lines.push("## Horizon");
+      lines.push("No phases planned.");
+    }
+  } else {
+    lines.push("## Horizon");
+    lines.push("No phases planned.");
+  }
+
+  return lines.join("\n");
+}
+
+async function buildPhaseView(ctx: ToolContext): Promise<string> {
+  const activePhase = ctx.db.prepare(`
+    SELECT p.id, p.name, p.phase_type, n.status
+    FROM phases p
+    JOIN nodes n ON n.id = p.id
+    WHERE n.status = 'active'
+    ORDER BY n.id
+    LIMIT 1
+  `).get() as { id: string; name: string | null; phase_type: string; status: string } | undefined;
+
+  if (!activePhase) {
+    return "# Phase View\n\nNo active phase.";
+  }
+
+  const lines: string[] = [];
+  lines.push("# Phase View");
+  lines.push("");
+  lines.push(`**Phase**: ${activePhase.id}${activePhase.name ? ` — ${activePhase.name}` : ""}`);
+  lines.push(`**Type**: ${activePhase.phase_type}`);
+  lines.push(`**Status**: ${activePhase.status}`);
+  lines.push("");
+
+  // Work items in this phase
+  const phaseItems = ctx.db.prepare(`
+    SELECT wi.id, wi.title, wi.complexity, wi.work_item_type, n.status
+    FROM work_items wi
+    JOIN nodes n ON n.id = wi.id
+    WHERE wi.phase = ?
+    ORDER BY wi.id
+  `).all(activePhase.id) as Array<{
+    id: string;
+    title: string;
+    complexity: string | null;
+    work_item_type: string | null;
+    status: string | null;
+  }>;
+
+  if (phaseItems.length > 0) {
+    lines.push("## Work Items");
+    lines.push("");
+    lines.push("| ID | Title | Status | Complexity | Type |");
+    lines.push("|----|-------|--------|------------|------|");
+    for (const item of phaseItems) {
+      lines.push(
+        `| ${item.id} | ${truncateDesc(item.title)} | ${item.status ?? "unknown"} | ${item.complexity ?? "-"} | ${item.work_item_type ?? "-"} |`
+      );
+    }
+    lines.push("");
+  } else {
+    lines.push("## Work Items");
+    lines.push("No work items assigned to this phase.");
+    lines.push("");
+  }
+
+  // Dependencies between phase items
+  if (phaseItems.length > 1) {
+    const phaseItemIds = phaseItems.map((i) => i.id);
+    const placeholders = phaseItemIds.map(() => "?").join(",");
+    const deps = ctx.db.prepare(`
+      SELECT source_id, target_id
+      FROM edges
+      WHERE edge_type = 'depends_on'
+        AND source_id IN (${placeholders})
+        AND target_id IN (${placeholders})
+    `).all(...phaseItemIds, ...phaseItemIds) as Array<{ source_id: string; target_id: string }>;
+
+    if (deps.length > 0) {
+      lines.push("## Dependencies");
+      for (const dep of deps) {
+        lines.push(`- ${dep.source_id} depends on ${dep.target_id}`);
+      }
+    }
+  }
+
+  return lines.join("\n");
+}
+
+// ---------------------------------------------------------------------------
 // ideate_get_workspace_status
 // ---------------------------------------------------------------------------
 
@@ -341,8 +516,13 @@ export async function handleGetWorkspaceStatus(
   ctx: ToolContext,
   args: Record<string, unknown>
 ): Promise<string> {
-  // artifact_dir is now always ctx.ideateDir — resolved at server startup
-  void args; // args unused now
+  const view = (typeof args.view === "string" ? args.view : "workspace") as
+    | "workspace"
+    | "project"
+    | "phase";
+
+  if (view === "project") return buildProjectView(ctx);
+  if (view === "phase") return buildPhaseView(ctx);
 
   // Read cycle number from domains/index.yaml (fall back to index.md for backward compatibility)
   const indexYamlPath = path.join(ctx.ideateDir, "domains", "index.yaml");

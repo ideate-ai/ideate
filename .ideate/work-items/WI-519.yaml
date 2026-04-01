@@ -1,7 +1,7 @@
 id: WI-519
 type: work_item
 title: Create /ideate:triage skill for lightweight work item intake
-status: pending
+status: obsolete
 complexity: medium
 scope:
   - path: skills/triage/SKILL.md
@@ -20,8 +20,8 @@ criteria:
 domain: workflow
 phase: null
 notes: See research-multi-level-interaction Sections 4.2 and 5.2. Plugin.json updated by WI-518; WI-519 appends to same file hence dependency.
-resolution: null
+resolution: Replaced by WI-524 in PH-016 with execution-ready spec. Restructured for parallel execution.
 cycle_created: null
-cycle_modified: null
-content_hash: 27f7a14b9d729ae264b3f4a68bcc857af5749c8f163da0d4ae2ee8397b7411f1
-token_count: 196
+cycle_modified: 5
+content_hash: b9963463ec2238f568c59f98ef8880046f43eae27f7043ace72cdf4e5594150d
+token_count: 242

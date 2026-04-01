@@ -1,28 +1,20 @@
 id: overview
 type: overview
-title: "Implementation: Infrastructure for PM Evolution"
+title: "Change Plan — PH-017: Documentation & Cleanup"
 body: |-
-  ## What is changing
+  ## What Is Changing
 
-  ### Phase A (PH-015 — current): Infrastructure
-  1. Schema v4: name + description on projects and phases (WI-513)
-  2. Metrics pipeline fix: payload storage bug, agent_type aggregation (WI-514)
-  3. Skill docs: remove broken token extraction instructions (WI-515)
-  4. Status display: COALESCE name fallbacks in query/analysis tools (WI-516)
-  5. Work item type field: feature|bug|spike|maintenance|chore taxonomy (WI-517)
+  1. Fix 3 deferred minor items from cycle 6-7 reviews (sed fallback, journal enum, status model)
+  2. Update ARCHITECTURE.md to reflect the 3 new skills added in PH-016
+  3. Create GUIDE.md — comprehensive user guide covering all 10 skills, project/phase management, work item types, and the SDLC loop
 
-  ### Phase B (horizon): New Skills
-  6. /ideate:project skill — project + phase CRUD and lifecycle (WI-518)
-  7. /ideate:triage skill — lightweight work item intake (WI-519)
-  8. /ideate:status skill — stakeholder views (WI-520)
-  9. Type routing in execute/review skills (WI-521)
+  ## Why
 
-  ## What is NOT changing
-  - Core SDLC loop (plan→execute→review→refine)
-  - PPR context assembly, watcher, hooks
-  - Existing guiding principles and constraints
+  PH-016 delivered functional skills but left documentation and minor fixes incomplete. The user guide fills a gap — ideate has README (overview + installation) and QUICKSTART (5-minute walkthrough) but no comprehensive reference for users managing real projects.
 
-  ## Trigger
-  Research phase PH-014 produced 4 design documents. This phase implements the infrastructure changes. Phase B implements new skills after infrastructure ships.
-content_hash: 0bfd4f855245acc95e17eafe0814f2626616473f927bdb68f6f8c470bdb40513
-token_count: 291
+  ## Scope Boundary
+
+  **In scope**: 3 deferred fixes, ARCHITECTURE.md update, GUIDE.md creation
+  **Not in scope**: New features, MCP server changes, skill behavior changes
+content_hash: 1c0f26bda8752d887724f2b5b89590598af63a2a3d3aa85aad8475dae76b90c4
+token_count: 217

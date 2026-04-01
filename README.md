@@ -61,6 +61,9 @@ Or let it run autonomously until convergence:
 | `/ideate:review` | Capstone review: cycle (default), `--domain`, `--full`, or natural language scope |
 | `/ideate:refine` | Plan the next cycle of changes from review findings or new requirements |
 | `/ideate:autopilot` | Autonomous execute → review → refine loop until convergence |
+| `/ideate:project` | Manage projects and phases — create, view, switch, complete, archive |
+| `/ideate:triage` | Quick work item intake — bug reports, feature requests, chores |
+| `/ideate:status` | Project status views — workspace, project, or phase perspective |
 | `/ideate:settings` | Interactive configuration for agent budgets, model overrides, and PPR weights |
 
 ---

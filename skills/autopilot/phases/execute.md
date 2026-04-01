@@ -63,6 +63,18 @@ Every worker subagent receives:
 
 All paths provided to workers must be absolute.
 
+### Work Item Type Context Adjustment
+
+After loading the work item spec (from `ideate_get_artifact_context({artifact_id})`), read `work_item_type` from the artifact. Adjust the context loading depth for that work item's worker as follows:
+
+- **feature, spike**: Full context — architecture, principles, module spec, dependencies. (This is the default path; no change from existing behavior.)
+- **bug**: Focused context — related findings (from `ideate_artifact_query({type: "finding"})` filtered to the affected file paths), affected file history if available, and reproduction information from the work item notes. Omit module specs for unrelated modules.
+- **chore, maintenance**: Minimal context — work item spec and direct dependencies only. Skip architecture sections not referenced in the work item's file scope. Skip unrelated module specs.
+
+If `work_item_type` is absent or unrecognized, default to **feature** (full context). This preserves existing behavior for all work items that predate this field.
+
+Pass only the adjusted context subset to the worker. The worker still receives the note that full documents are available via `ideate_get_context_package()` if more detail is needed.
+
 The worker prompt must instruct the agent to:
 - Build exactly what the work item specifies
 - Write source files under `{project_source_root}`

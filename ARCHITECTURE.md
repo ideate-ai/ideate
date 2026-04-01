@@ -62,6 +62,9 @@ mcp/
                    for each active project:
                      execute → review → refine (cycle loop until convergence)
                    circuit breaker: if cycles-per-phase exceeds threshold → Andon cord
+/ideate:project   = project and phase entity management (create, view, switch, complete, archive)
+/ideate:triage    = lightweight work item intake — bug reports, features, chores
+/ideate:status    = read-only status views (workspace, project, phase) via MCP-formatted output
 /ideate:settings  = interactive configuration for agent budgets, model overrides, and PPR weights
 ```
 
@@ -746,7 +749,7 @@ Based on the context assembly research (`context-assembly-strategies.yaml`, Ques
 | `mcp/artifact-server/src/tools/context.ts` | `handleGetWorkItemContext`, `handleGetContextPackage`, `handleAssembleContext` |
 | `mcp/artifact-server/src/tools/query.ts` | `ideate_artifact_query` (filter mode + recursive CTE traversal), `ideate_get_next_id` (cycle-scoped ID generation) |
 | `mcp/artifact-server/src/tools/execution.ts` | `ideate_get_execution_status`, `ideate_get_review_manifest` |
-| `mcp/artifact-server/src/tools/analysis.ts` | `ideate_get_convergence_status`, `ideate_get_domain_state`, `ideate_get_workspace_status` |
+| `mcp/artifact-server/src/tools/analysis.ts` | `ideate_get_convergence_status`, `ideate_get_domain_state`, `ideate_get_workspace_status` (with `view` param: workspace/project/phase), `buildProjectView`, `buildPhaseView` |
 | `mcp/artifact-server/src/tools/write.ts` | `ideate_append_journal`, `ideate_archive_cycle`, `ideate_write_work_items`, `ideate_update_work_items`, `ideate_write_artifact` |
 | `mcp/artifact-server/src/tools/events.ts` | `ideate_emit_event` (hook dispatch) |
 | `mcp/artifact-server/src/tools/metrics.ts` | `ideate_get_metrics` (agent/work_item/cycle aggregations) |

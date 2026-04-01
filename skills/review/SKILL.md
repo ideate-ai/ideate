@@ -200,6 +200,29 @@ Before spawning reviewers, use the `{context_package}` already loaded in Phase 2
 
 ---
 
+# Phase 3.7: Proportional Review Depth
+
+Before spawning reviewers, assess severity and priority for each work item in scope. This applies to **cycle reviews only** — ad-hoc, domain, and full-audit reviews always use the full reviewer set.
+
+For each work item in the review manifest:
+
+1. Read `severity`, `priority`, and `work_item_type` from work item metadata (from `ideate_artifact_query({type: "work_item"})`). If either severity or priority is absent, default to `medium`.
+
+2. **Default**: Spawn all three reviewers (code-reviewer, spec-reviewer, gap-analyst).
+
+3. **If BOTH `severity` AND `priority` are `low`**:
+   a. Present to the user:
+      > Work item {WI-NNN} is low severity / low priority ({work_item_type}). Proposing code-reviewer only for this item. Proceed with reduced review?
+   b. Wait for confirmation.
+   c. If confirmed: spawn code-reviewer only for this item. Log the decision via `ideate_append_journal` with reasoning: "Reduced review for {WI-NNN}: low severity + low priority. Spawned code-reviewer only. User confirmed."
+   d. If rejected: spawn all three reviewers for this item.
+
+4. **Capstone review always uses all reviewers regardless of per-item decisions.** The Phase 4a spawning of three simultaneous reviewers is unaffected — it covers cross-cutting concerns that per-item reduced reviews cannot see.
+
+The default behavior (full reviewer set) is unchanged for all work items where severity or priority is not `low`, or where only one of the two is `low`.
+
+---
+
 # Phase 4a: Spawn Three Reviewers in Parallel
 
 Spawn three review agents simultaneously. Each receives the relevant subset of context and has access to the project source code. Use the Agent tool to spawn subagents. If external MCP servers are configured, `spawn_session` may be used as an alternative.

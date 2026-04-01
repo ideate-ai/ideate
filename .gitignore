@@ -42,3 +42,5 @@ scripts/migrate-to-v3.js.map
 .ideate/index.db
 .ideate/index.db-wal
 .ideate/index.db-shm
+
+reports/

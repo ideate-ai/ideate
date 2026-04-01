@@ -1,25 +1,21 @@
 id: execution-strategy
 type: execution_strategy
-title: "Execution Strategy — PH-015: Infrastructure"
-mode: sequential
-groups:
-  - name: Schema foundation
-    items:
-      - WI-513
-    notes: Schema changes (name/description columns, version bump 3→4). Must complete before anything else touches shared files.
-  - name: Metrics + display
-    items:
-      - WI-514
-      - WI-516
-    notes: WI-514 fixes metrics pipeline. WI-516 updates display expressions. Both depend on WI-513. Can run in parallel if scope collision on indexer.ts/write.ts is resolved — but WI-514 was scoped to only metrics.ts and metrics tests to avoid collision.
-  - name: Schema extension + docs
-    items:
-      - WI-517
-      - WI-515
-    notes: WI-517 adds work_item_type (depends on WI-514 + WI-516). WI-515 updates skill docs (depends on WI-514). Sequential within group.
-review_cadence: incremental per work item
-agent_config:
-  worker: sonnet
-  code-reviewer: sonnet
-content_hash: e00a542e0383dae09ec1bf8c06202bb62421bb384041d29951180aecb870ba00
-token_count: 236
+title: "Execution Strategy — PH-017: Documentation & Cleanup"
+body: |-
+  ## Mode
+
+  Batched parallel — all 3 items have non-overlapping file scopes.
+
+  ## Work Items
+
+  | Group | Items | Mode |
+  |-------|-------|------|
+  | 1 | WI-533, WI-534, WI-535 | parallel |
+
+  No dependencies between items.
+
+  ## Review Cadence
+
+  Incremental review after each item. Capstone after all 3 complete.
+content_hash: dcd7b67d6a0dde81609560a72862a0c457ece0ed632f1487f4ee242d689c6862
+token_count: 109
