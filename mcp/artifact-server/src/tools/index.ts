@@ -223,7 +223,7 @@ export const TOOLS: Tool[] = [
   {
     name: "ideate_get_workspace_status",
     description:
-      "Workspace status: current cycle, work item counts, journal entries, open questions. Use for overview. Returns ~800 chars.",
+      "Workspace status: current cycle, work item counts, findings, open questions, active project/phase. Use for overview. Returns ~800 chars.",
     inputSchema: {
       type: "object",
       properties: {

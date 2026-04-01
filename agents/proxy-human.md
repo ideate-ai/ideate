@@ -79,7 +79,7 @@ Call `ideate_write_artifact` with the following parameters to record the decisio
 
 ```yaml
 type: proxy_human_decision
-id: PH-{cycle}-{seq}
+id: PHD-{cycle}-{seq}
 cycle: {cycle_number}
 content:
   cycle: {cycle_number}

@@ -307,7 +307,7 @@ function runFilterMode(
       whereClauses.push("e.severity = ?");
       params.push(filters.severity);
     }
-    if (filters.phase && type === "journal_entry") {
+    if (filters.phase && (type === "journal_entry" || type === "work_item")) {
       whereClauses.push("e.phase = ?");
       params.push(filters.phase);
     }
@@ -653,7 +653,7 @@ function hasColumn(type: string, column: string): boolean {
   ];
   const cycleTypes = ["finding", "domain_decision", "proxy_human_decision"];
   const workItemRefTypes = ["finding"];
-  const phaseTypes = ["journal_entry"];
+  const phaseTypes = ["journal_entry", "work_item"];
   const workItemTypeTypes = ["work_item"];
 
   switch (column) {

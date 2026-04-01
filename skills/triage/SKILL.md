@@ -56,7 +56,7 @@ Store the inferred type as `{detected_type}`.
 Call the following MCP tools in parallel:
 
 1. `ideate_artifact_query({type: "phase", filters: {status: "active"}})` — store result as `{active_phases}`.
-2. `ideate_artifact_query({type: "work_item", limit: 20, filters: {status: "pending"}})` — store result as `{recent_items}` for optional dedup check.
+2. `ideate_artifact_query({type: "work_item", limit: 50})` — store result as `{recent_items}` for optional dedup check (includes pending, in_progress, and blocked items).
 
 If `ideate_artifact_query` is unavailable, stop and report: "The ideate MCP artifact server is required but not available. Verify .mcp.json configuration."
 

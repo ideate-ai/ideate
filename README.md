@@ -65,6 +65,7 @@ Or let it run autonomously until convergence:
 | `/ideate:triage` | Quick work item intake — bug reports, feature requests, chores |
 | `/ideate:status` | Project status views — workspace, project, or phase perspective |
 | `/ideate:settings` | Interactive configuration for agent budgets, model overrides, and PPR weights |
+| `/ideate:report` | Generate project reports with statistics, diagrams, and change summaries |
 
 ---
 
@@ -177,11 +178,16 @@ What each skill reads and writes through MCP tools:
 
 | Skill | MCP Tools Read | MCP Tools Written | Key Artifacts |
 |-------|---------------|-------------------|---------------|
-| `plan` | `ideate_get_context_package`, `ideate_get_config` | `ideate_write_work_items`, `ideate_append_journal` | overview, architecture, work items |
+| `init` | `ideate_get_config`, `ideate_bootstrap_workspace` | `ideate_write_work_items`, `ideate_write_artifact`, `ideate_append_journal` | overview, architecture, work items, principles, constraints |
 | `execute` | `ideate_get_artifact_context`, `ideate_get_execution_status`, `ideate_assemble_context` | `ideate_append_journal`, `ideate_emit_event`, `ideate_write_artifact` | findings, journal entries |
 | `review` | `ideate_get_review_manifest`, `ideate_get_context_package` | `ideate_archive_cycle`, `ideate_append_journal`, `ideate_write_artifact` | cycle summary, findings |
 | `refine` | `ideate_get_context_package`, `ideate_get_domain_state` | `ideate_write_work_items`, `ideate_append_journal` | new work items |
 | `autopilot` | all of the above | all of the above | autonomous loop |
+| `project` | `ideate_artifact_query`, `ideate_get_workspace_status`, `ideate_get_artifact_context` | `ideate_write_artifact` (project, phase), `ideate_append_journal` | project/phase management |
+| `triage` | `ideate_artifact_query` (phase, work_items) | `ideate_write_work_items` | work item intake |
+| `status` | `ideate_get_workspace_status` | none | read-only views |
+| `settings` | `ideate_get_config` | `ideate_update_config` | runtime configuration |
+| `report` | `ideate_get_workspace_status`, `ideate_artifact_query`, `ideate_get_metrics`, `ideate_get_domain_state` | none | project reports |
 
 Skills access artifacts exclusively through MCP tools. Direct file reads by skills are not permitted.
 
@@ -521,6 +527,8 @@ Previously generated a high-level executive summary. Now exits 1 with a deprecat
 ## Design Notes
 
 The rationale for the cycles/domain separation, interview structure, and the GP → domain policy derivation pattern is documented in `.ideate/steering/`.
+
+For comprehensive usage documentation covering all 10 skills, project/phase management, work item types, and the full SDLC loop, see [GUIDE.md](GUIDE.md).
 
 For deep technical documentation covering the MCP artifact server schema, indexer pipeline, tool architecture, and graph model, see [ARCHITECTURE.md](ARCHITECTURE.md).
 

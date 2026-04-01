@@ -123,6 +123,9 @@ Runs the full loop autonomously: execute → review → refine → repeat until 
 | `/ideate:review` | Multi-perspective capstone review |
 | `/ideate:refine` | Plan the next cycle of changes |
 | `/ideate:autopilot` | Autonomous execute → review → refine loop |
+| `/ideate:project` | Manage projects and phases — create, view, switch, pause, complete, archive |
+| `/ideate:triage` | Quick work item intake — bugs, features, chores |
+| `/ideate:status` | Project status views — workspace, project, or phase |
 | `/ideate:settings` | Configure agent budgets, models, spawn mode |
 | `/ideate:report` | Generate project report with stats and diagrams |
 
@@ -159,6 +162,7 @@ All artifacts live in `.ideate/` in your project root:
 
 ## Next Steps
 
+- [GUIDE.md](GUIDE.md) — Complete reference for all 10 skills, projects, phases, and the SDLC loop
 - [README.md](README.md) — Full documentation with worked examples
 - [ARCHITECTURE.md](ARCHITECTURE.md) — Technical reference for the MCP server and agent system
 - `/ideate:settings` — Configure agent budgets and spawn mode

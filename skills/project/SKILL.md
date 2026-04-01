@@ -1,6 +1,6 @@
 ---
 name: ideate:project
-description: "Manage projects and phases — create, view, switch, complete"
+description: "Manage projects and phases — create, view, switch, pause, complete, archive, and phase lifecycle"
 argument-hint: "[show|create|list|view|switch|pause|complete|archive|phase ...]"
 disable-model-invocation: true
 user-invocable: true
@@ -78,27 +78,30 @@ Call `ideate_get_artifact_context({artifact_id: id})`. Display the result.
 Requires argument: `switch <id>`.
 
 1. Call `ideate_artifact_query({type: "project", filters: {status: "active"}})` to find current active project.
-2. If found, call `ideate_write_artifact({type: "project", id: {current_id}, content: {status: "paused"}})`.
-3. Call `ideate_write_artifact({type: "project", id: {target_id}, content: {status: "active"}})`.
+2. If found, read the full current project via `ideate_get_artifact_context({artifact_id: {current_id}})`. Merge `{status: "paused"}` into the existing content. Call `ideate_write_artifact({type: "project", id: {current_id}, content: {merged object}})`.
+3. Read the target project via `ideate_get_artifact_context({artifact_id: {target_id}})`. Merge `{status: "active"}` into the existing content. Call `ideate_write_artifact({type: "project", id: {target_id}, content: {merged object}})`.
 4. Report: "Switched from {current} to {target}."
 
 ## pause
 
 1. Find active project via `ideate_artifact_query({type: "project", filters: {status: "active"}})`.
-2. Call `ideate_write_artifact({type: "project", id: {id}, content: {status: "paused"}})`.
-3. Report: "Paused project {id}."
+2. Read the full project via `ideate_get_artifact_context({artifact_id: {id}})`. Merge `{status: "paused"}` into the existing content.
+3. Call `ideate_write_artifact({type: "project", id: {id}, content: {merged object}})`.
+4. Report: "Paused project {id}."
 
 ## complete
 
 1. Find active project.
-2. Call `ideate_write_artifact({type: "project", id: {id}, content: {status: "complete", completed_date: {today}}})`.
-3. Report: "Completed project {id}."
+2. Read the full project via `ideate_get_artifact_context({artifact_id: {id}})`. Merge `{status: "complete", completed_date: {today}}` into the existing content.
+3. Call `ideate_write_artifact({type: "project", id: {id}, content: {merged object}})`.
+4. Report: "Completed project {id}."
 
 ## archive
 
 1. Find active project (or accept an ID argument).
-2. Call `ideate_write_artifact({type: "project", id: {id}, content: {status: "archived"}})`.
-3. Report: "Archived project {id}."
+2. Read the full project via `ideate_get_artifact_context({artifact_id: {id}})`. Merge `{status: "archived"}` into the existing content.
+3. Call `ideate_write_artifact({type: "project", id: {id}, content: {merged object}})`.
+4. Report: "Archived project {id}."
 
 ---
 
@@ -117,7 +120,7 @@ Find the active project via `ideate_artifact_query({type: "project", filters: {s
 
 Call `ideate_write_artifact({type: "phase", id: {next_id}, content: {name, description, phase_type: {type}, project: {project_id}, status: "pending", work_items: []}})`.
 
-Update the project's horizon.next array to include the new phase.
+Read the active project via `ideate_get_artifact_context({artifact_id: {project_id}})`. Push the new phase ID into the existing `horizon.next` array. Call `ideate_write_artifact({type: "project", id: {project_id}, content: {merged object}})`.
 
 Report: "Created phase {id}: {name} ({type})"
 
@@ -138,9 +141,10 @@ This is a **phase transition**. Read the supporting file for the full protocol:
 
 1. Find the current active phase via `ideate_artifact_query({type: "phase", filters: {status: "active"}})`.
 2. If an active phase exists, check for incomplete work — see Phase Transition Protocol below.
-3. Call `ideate_write_artifact({type: "phase", id: {current_id}, content: {status: "complete", completed_date: {today}}})`.
-4. Call `ideate_write_artifact({type: "phase", id: {target_id}, content: {status: "active", started_date: {today}}})`.
-5. Update the project: set `current_phase_id` to the new phase, set `horizon.current` to the new phase ID.
+3. Read the current active phase via `ideate_get_artifact_context({artifact_id: {current_id}})`. Merge `{status: "complete", completed_date: {today}}` into the existing content. Call `ideate_write_artifact({type: "phase", id: {current_id}, content: {merged object}})`.
+4. Read the target phase via `ideate_get_artifact_context({artifact_id: {target_id}})`. Merge `{status: "active", started_date: {today}}` into the existing content. Call `ideate_write_artifact({type: "phase", id: {target_id}, content: {merged object}})`.
+5. Read the active project via `ideate_get_artifact_context({artifact_id: {project_id}})`. Merge `{current_phase_id: {target_id}, horizon: {existing horizon with current set to target_id}}` into the existing content. Call `ideate_write_artifact({type: "project", id: {project_id}, content: {merged object}})`.
+
 6. Log via `ideate_append_journal("refine", {today}, "phase-transition", "Phase transition: {old_phase} → {new_phase}")`.
 
 ### Phase Transition Protocol
@@ -163,30 +167,33 @@ When the current phase has incomplete work items (status != done):
 3. On selection:
    - **Carry forward**: Update each item's phase assignment via `ideate_update_work_items`. Add item IDs to the new phase's work_items array.
    - **Cancel**: Set status to "obsolete" with resolution noting the phase transition.
+   - **Abort** (option d): Report "Phase transition aborted." and stop. No artifacts are modified.
 4. Confirm before executing.
 
 ## phase complete
 
 1. Find active phase.
-2. Mark complete: `ideate_write_artifact({type: "phase", id: {id}, content: {status: "complete", completed_date: {today}}})`.
-3. Check project horizon for next phase. If exists, suggest: "Next phase on horizon: {name}. Start it with `/ideate:project phase start {id}`."
-4. Update project: set `horizon.current` to null if no auto-start, remove completed phase from `horizon.next` if present.
+2. Read the full phase via `ideate_get_artifact_context({artifact_id: {id}})`. Merge `{status: "complete", completed_date: {today}}` into the existing content.
+3. Call `ideate_write_artifact({type: "phase", id: {id}, content: {merged object}})`.
+4. Check project horizon for next phase. If exists, suggest: "Next phase on horizon: {name}. Start it with `/ideate:project phase start {id}`."
+5. Read the full project via `ideate_get_artifact_context({artifact_id: {project_id}})`. Merge: set `horizon.current` to null if no auto-start, remove completed phase from `horizon.next` if present. Write via `ideate_write_artifact`.
 
 ## phase abandon
 
 Requires reason: `phase abandon <reason>`.
 
 1. Find active phase.
-2. Call `ideate_write_artifact({type: "phase", id: {id}, content: {status: "abandoned", abandoned_reason: {reason}}})`.
-3. Log via `ideate_append_journal`.
-4. Report: "Abandoned phase {id}: {reason}"
+2. Read the full phase via `ideate_get_artifact_context({artifact_id: {id}})`. Merge `{status: "abandoned", abandoned_reason: {reason}}` into the existing content.
+3. Call `ideate_write_artifact({type: "phase", id: {id}, content: {merged object}})`.
+4. Log via `ideate_append_journal`.
+5. Report: "Abandoned phase {id}: {reason}"
 
 ## phase reorder
 
 1. Find active project.
-2. Display current horizon.next array with indices.
+2. Read the full project via `ideate_get_artifact_context({artifact_id: {project_id}})`. Display the `horizon.next` array with indices.
 3. Ask user for new ordering (e.g., "2, 1, 3" to swap first two).
-4. Update project's horizon.next array via `ideate_write_artifact`.
+4. Merge the reordered `horizon.next` into the existing project content. Call `ideate_write_artifact({type: "project", id: {project_id}, content: {merged object}})`.
 5. Report new ordering.
 
 ---

@@ -226,7 +226,7 @@ When an Andon event occurs (scope-changing finding, merge conflict, spec ambigui
 
 3. Wait for the proxy-human agent to respond.
 
-4. The proxy-human agent writes its decision via `ideate_write_artifact({type: "proxy_human_decision", id: "PH-{cycle}-{seq}", content: {...}})`. No separate recording step needed.
+4. The proxy-human agent writes its decision via `ideate_write_artifact({type: "proxy_human_decision", id: "PHD-{cycle}-{seq}", content: {...}})`. No separate recording step needed.
 
 5. Apply the decision. If the decision is `"deferred"`, add it to the cycle's deferred items list and continue with other work items where possible. Immediately print to running output:
    ```
@@ -234,7 +234,7 @@ When an Andon event occurs (scope-changing finding, merge conflict, spec ambigui
    ```
    Do NOT interrupt the loop or ask the user. This is logging only.
 
-**If the Agent tool is not available**: Handle the event yourself — use the guiding principles and constraints from `{context_package}` (loaded via `ideate_get_context_package()` in the Prepare Context Digest step), apply them to the event, make the best decision, and record it via `ideate_write_artifact({type: "proxy_human_decision", id: "PH-{cycle}-{seq}", content: {cycle: {cycle_number}, trigger: "fallback", triggered_by: [], decision: "{decision}", rationale: "{rationale}", timestamp: "{ISO timestamp}", status: "resolved"}})`.
+**If the Agent tool is not available**: Handle the event yourself — use the guiding principles and constraints from `{context_package}` (loaded via `ideate_get_context_package()` in the Prepare Context Digest step), apply them to the event, make the best decision, and record it via `ideate_write_artifact({type: "proxy_human_decision", id: "PHD-{cycle}-{seq}", content: {cycle: {cycle_number}, trigger: "fallback", triggered_by: [], decision: "{decision}", rationale: "{rationale}", timestamp: "{ISO timestamp}", status: "resolved"}})`.
 
 ### Worker Agent Failure
 
@@ -285,7 +285,7 @@ Return to the controller. The controller will proceed to Phase 6b (review.md).
 - Journal entries — appended per work item and per Andon event, via `ideate_append_journal`
 - Work item status — updated to 'done' for each completed item, via `ideate_update_work_items`
 - Autopilot session state — `total_items_executed` and `workspace_label` updated via `ideate_manage_autopilot_state`
-- Proxy-human decisions (PH-{cycle}-{seq}) — if Andon events occurred, via `ideate_write_artifact` with type `proxy_human_decision`
+- Proxy-human decisions (PHD-{cycle}-{seq}) — if Andon events occurred, via `ideate_write_artifact` with type `proxy_human_decision`
 - Metrics — one entry per agent spawned, via `ideate_emit_metric`
 
 ## Self-Check

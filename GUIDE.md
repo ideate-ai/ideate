@@ -30,11 +30,14 @@ The cycle repeats until the review finds no critical or significant issues — t
 A **project** is the top-level container for all work. It has a name, intent (what you're building and why), and an appetite (effort budget as an integer, default 6).
 
 ```
+/ideate:project show          # View the active project (default)
 /ideate:project create        # Create a new project
-/ideate:project show          # View the active project
 /ideate:project list          # List all projects
+/ideate:project view PR-001   # Detailed view of a specific project
 /ideate:project switch PR-002 # Switch active project
+/ideate:project pause         # Pause the active project
 /ideate:project complete      # Mark project done
+/ideate:project archive       # Archive a project
 ```
 
 ### Phases
@@ -49,10 +52,12 @@ A **phase** groups related work items within a project. Each phase has a type th
 | `spike` | Time-boxed exploration with a specific question |
 
 ```
-/ideate:project phase create   # Create a new phase
-/ideate:project phase list     # List phases in current project
-/ideate:project phase start PH-003  # Activate a phase
-/ideate:project phase complete # Mark current phase done
+/ideate:project phase create          # Create a new phase
+/ideate:project phase list            # List phases in current project
+/ideate:project phase start PH-003   # Activate a phase
+/ideate:project phase complete        # Mark current phase done
+/ideate:project phase abandon "reason" # Abandon phase with reason
+/ideate:project phase reorder         # Reorder horizon phases
 ```
 
 When you start a new phase while the current one has incomplete work, ideate asks what to do — carry items forward to the new phase or cancel them.
@@ -95,6 +100,8 @@ Not everything needs full planning. `/ideate:triage` creates work items from a s
 ```
 /ideate:triage bug: login fails on Safari after OAuth redirect
 /ideate:triage feature: add CSV export to reports page
+/ideate:triage spike: investigate whether WebSockets can replace polling for real-time updates
+/ideate:triage maintenance: upgrade TypeScript to 5.5 and fix type errors
 /ideate:triage chore: update dependencies to latest versions
 ```
 
@@ -190,9 +197,10 @@ Refine interviews you about what changed, checks whether guiding principles stil
 
 ```
 /ideate:autopilot
+/ideate:autopilot --max-cycles 10   # Override the default cycle limit
 ```
 
-Autopilot runs the full execute → review → refine loop without interruption until convergence or the cycle limit (default: 20). You step back after confirming the initial plan.
+Autopilot runs the full execute → review → refine loop without interruption until convergence or the cycle limit (default: 20, override with `--max-cycles N`). You step back after confirming the initial plan.
 
 During autopilot:
 - Routine decisions are handled automatically
@@ -229,7 +237,12 @@ Status is read-only. The MCP server formats the output — the skill just passes
 ## Configuration
 
 ```
-/ideate:settings
+/ideate:settings                    # Interactive menu
+/ideate:settings agents             # Jump to agent budgets
+/ideate:settings ppr                # Jump to PPR weights
+/ideate:settings spawn              # Jump to spawn mode
+/ideate:settings appetite           # Jump to appetite setting
+/ideate:settings circuit-breaker    # Jump to circuit breaker threshold
 ```
 
 Interactive menu for adjusting:
@@ -282,6 +295,7 @@ A **cycle** is one pass through execute → review → (refine if needed). Each 
 ```
 /ideate:report ./reports/    # Generate markdown report
 /ideate:report ./reports/ --pdf  # Generate markdown + PDF
+/ideate:report ./reports/ --cycles 3-7  # Scope to cycles 3 through 7
 ```
 
 Generates project reports with statistics, diagrams, and change summaries. Output is markdown with embedded mermaid diagrams.
