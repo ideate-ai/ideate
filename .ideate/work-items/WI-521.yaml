@@ -1,0 +1,34 @@
+id: WI-521
+type: work_item
+title: Add work item type routing to execute and review skills
+status: pending
+complexity: medium
+scope:
+  - path: skills/execute/SKILL.md
+    op: modify
+  - path: skills/review/SKILL.md
+    op: modify
+  - path: skills/autopilot/SKILL.md
+    op: modify
+  - path: skills/autopilot/phases/execute.md
+    op: modify
+  - path: skills/autopilot/phases/review.md
+    op: modify
+depends:
+  - WI-515
+  - WI-519
+blocks: []
+criteria:
+  - Execute skill checks work_item_type for context level
+  - Review skill checks work_item_type for reviewer set
+  - Chore items skip incremental review
+  - Bug items skip spec-reviewer and gap-analyst
+  - Spike items use research quality review
+domain: workflow
+phase: null
+notes: See research-multi-level-interaction Section 2.4 routing table. Depends on WI-515 (shared skill files) and WI-519 (triage must exist to create typed items).
+resolution: null
+cycle_created: null
+cycle_modified: null
+content_hash: b7e73fe82ba89438bf149f2a405773ebf85ebde73a5fcc5addf1502b11aad658
+token_count: 237

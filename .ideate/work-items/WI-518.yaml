@@ -1,0 +1,29 @@
+id: WI-518
+type: work_item
+title: Create /ideate:project skill for project and phase management
+status: pending
+complexity: large
+scope:
+  - path: skills/project/SKILL.md
+    op: create
+  - path: .claude-plugin/plugin.json
+    op: modify
+depends:
+  - WI-517
+blocks: []
+criteria:
+  - Skill file created at skills/project/SKILL.md
+  - "Supports: show active, create, list, view, switch, pause, complete, archive"
+  - "Phase subcommands: create, list, start, complete, abandon, reorder"
+  - Phase creation auto-suggests name from work item themes
+  - Phase transition handles incomplete work (carry-forward/cancel)
+  - Skill registered in plugin.json
+  - GP-14 guardrail present
+domain: workflow
+phase: null
+notes: See research-multi-level-interaction Section 4.2. Largest work item. Centralizes phase transition logic.
+resolution: null
+cycle_created: null
+cycle_modified: null
+content_hash: 20736a81f0e64bea1219c99b90f42d8054da37a4867f4cebaa112527f2721666
+token_count: 218

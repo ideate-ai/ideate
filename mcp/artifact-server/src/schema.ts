@@ -6,7 +6,7 @@ import * as fs from "fs";
 // ---------------------------------------------------------------------------
 
 // SQLite user_version for the artifact index schema. Note: CONFIG_SCHEMA_VERSION in config.ts is a separate version for the .ideate/config.json format (D-79).
-export const CURRENT_SCHEMA_VERSION = 3;
+export const CURRENT_SCHEMA_VERSION = 4;
 
 // ---------------------------------------------------------------------------
 // Edge type enumeration
@@ -172,6 +172,7 @@ export interface WorkItem extends ArtifactCommon {
   domain: string | null;
   notes?: string;
   phase?: string | null;
+  work_item_type: "feature" | "bug" | "spike" | "maintenance" | "chore";
 }
 
 export interface FileRef {
@@ -330,6 +331,8 @@ export interface ProxyHumanDecision extends ArtifactCommon {
 
 export interface Project extends ArtifactCommon {
   type: "project";
+  name: string | null;
+  description: string | null;
   intent: string;
   scope_boundary: { in: string[]; out: string[] };
   success_criteria: string[];
@@ -341,6 +344,8 @@ export interface Project extends ArtifactCommon {
 
 export interface Phase extends ArtifactCommon {
   type: "phase";
+  name: string | null;
+  description: string | null;
   project: string;
   phase_type: string;
   intent: string;
@@ -420,17 +425,18 @@ export function createSchema(db: Database.Database): void {
     // -- work_items --
     db.exec(`
       CREATE TABLE IF NOT EXISTS work_items (
-        id         TEXT PRIMARY KEY REFERENCES nodes(id) ON DELETE CASCADE,
-        title      TEXT NOT NULL,
-        complexity TEXT,
-        scope      TEXT,
-        depends    TEXT,
-        blocks     TEXT,
-        criteria   TEXT,
-        module     TEXT,
-        domain     TEXT,
-        phase      TEXT,
-        notes      TEXT
+        id             TEXT PRIMARY KEY REFERENCES nodes(id) ON DELETE CASCADE,
+        title          TEXT NOT NULL,
+        complexity     TEXT,
+        scope          TEXT,
+        depends        TEXT,
+        blocks         TEXT,
+        criteria       TEXT,
+        module         TEXT,
+        domain         TEXT,
+        phase          TEXT,
+        notes          TEXT,
+        work_item_type TEXT DEFAULT 'feature'
       )
     `);
 
@@ -609,6 +615,8 @@ export function createSchema(db: Database.Database): void {
     db.exec(`
       CREATE TABLE IF NOT EXISTS projects (
         id                TEXT PRIMARY KEY REFERENCES nodes(id) ON DELETE CASCADE,
+        name              TEXT,
+        description       TEXT,
         intent            TEXT NOT NULL,
         scope_boundary    TEXT,
         success_criteria  TEXT,
@@ -623,6 +631,8 @@ export function createSchema(db: Database.Database): void {
     db.exec(`
       CREATE TABLE IF NOT EXISTS phases (
         id         TEXT PRIMARY KEY REFERENCES nodes(id) ON DELETE CASCADE,
+        name       TEXT,
+        description TEXT,
         project    TEXT NOT NULL,
         phase_type TEXT NOT NULL,
         intent     TEXT NOT NULL,

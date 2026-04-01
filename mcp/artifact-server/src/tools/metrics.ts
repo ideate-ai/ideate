@@ -44,7 +44,7 @@ export async function handleEmitMetric(
   const yamlDoc: Record<string, unknown> = {
     id,
     type: "metrics_event",
-    event_name: payload.event_name ?? "unknown",
+    event_name: payload.agent_type ?? payload.event_name ?? "unknown",
     timestamp: payload.timestamp ?? null,
   };
   // Include all other payload fields
@@ -102,15 +102,28 @@ export async function handleEmitMetric(
         first_pass_accepted = payload.first_pass_accepted;
       }
 
-      // Nested payload sub-object
-      const nestedPayload =
-        payload.payload != null ? JSON.stringify(payload.payload) : null;
+      // Compute payload JSON from queryable top-level fields (skills send flat payloads)
+      const computedPayload: Record<string, unknown> = {};
+      const payloadFields = [
+        "agent_type", "skill", "phase", "work_item", "model",
+        "wall_clock_ms", "turns_used", "cycle",
+      ] as const;
+      for (const field of payloadFields) {
+        if (payload[field] !== undefined && payload[field] !== null) {
+          computedPayload[field] = payload[field];
+        }
+      }
+      const storedPayload = Object.keys(computedPayload).length > 0
+        ? JSON.stringify(computedPayload)
+        : null;
 
       const metricsRow: DbMetricsEventRow = {
         id,
-        event_name: typeof payload.event_name === "string" ? payload.event_name : "unknown",
+        event_name: typeof payload.agent_type === "string"
+          ? payload.agent_type
+          : typeof payload.event_name === "string" ? payload.event_name : "unknown",
         timestamp: typeof payload.timestamp === "string" ? payload.timestamp : null,
-        payload: nestedPayload,
+        payload: storedPayload,
         input_tokens: typeof payload.input_tokens === "number" ? payload.input_tokens : null,
         output_tokens: typeof payload.output_tokens === "number" ? payload.output_tokens : null,
         cache_read_tokens: typeof payload.cache_read_tokens === "number" ? payload.cache_read_tokens : null,
@@ -285,7 +298,15 @@ function aggregateByAgent(rows: LocalMetricsEventRow[]): AgentAggregate[] {
   }>();
 
   for (const row of rows) {
-    const key = row.event_name;
+    let agentType = "unknown";
+    if (row.payload) {
+      try {
+        const p = JSON.parse(row.payload);
+        if (typeof p.agent_type === "string") agentType = p.agent_type;
+      } catch { /* ignore */ }
+    }
+    if (agentType === "unknown") agentType = row.event_name;
+    const key = agentType;
     if (!map.has(key)) {
       map.set(key, {
         event_count: 0,

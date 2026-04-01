@@ -102,6 +102,7 @@ export interface WorkItemRow {
   domain: string | null;
   phase: string | null;
   notes: string | null;
+  work_item_type: string | null;
 }
 
 /** Row type for findings table */
@@ -250,6 +251,8 @@ export interface ProxyHumanDecisionRow {
 /** Row type for projects table */
 export interface ProjectRow {
   id: string;
+  name: string | null;
+  description: string | null;
   intent: string;
   scope_boundary: string | null;
   success_criteria: string | null;
@@ -262,6 +265,8 @@ export interface ProjectRow {
 /** Row type for phases table */
 export interface PhaseRow {
   id: string;
+  name: string | null;
+  description: string | null;
   project: string;
   phase_type: string;
   intent: string;

@@ -234,6 +234,69 @@ describe("handleEmitMetric", () => {
       const jsonlPath = path.join(artifactDir, "metrics.jsonl");
       expect(fs.existsSync(jsonlPath)).toBe(false);
     });
+
+    it("stores agent_type in payload JSON and event_name column", async () => {
+      const payload = {
+        agent_type: "code-reviewer",
+        skill: "execute",
+        phase: "execute",
+        work_item: "WI-123",
+        input_tokens: 800,
+        output_tokens: 400,
+        cycle: 7,
+      };
+
+      await handleEmitMetric(ctx, { payload });
+
+      const row = db.prepare(
+        "SELECT event_name, payload FROM metrics_events"
+      ).get() as { event_name: string; payload: string };
+
+      // event_name should be agent_type
+      expect(row.event_name).toBe("code-reviewer");
+
+      // payload column should contain agent_type and other queryable fields
+      const parsed = JSON.parse(row.payload);
+      expect(parsed.agent_type).toBe("code-reviewer");
+      expect(parsed.skill).toBe("execute");
+      expect(parsed.work_item).toBe("WI-123");
+    });
+
+    it("groups by agent_type in aggregation after handleEmitMetric", async () => {
+      await handleEmitMetric(ctx, {
+        payload: {
+          agent_type: "code-reviewer",
+          input_tokens: 1000,
+          output_tokens: 500,
+          cycle: 1,
+        },
+      });
+      await handleEmitMetric(ctx, {
+        payload: {
+          agent_type: "code-reviewer",
+          input_tokens: 2000,
+          output_tokens: 800,
+          cycle: 1,
+        },
+      });
+      await handleEmitMetric(ctx, {
+        payload: {
+          agent_type: "architect",
+          input_tokens: 5000,
+          output_tokens: 2000,
+          cycle: 1,
+        },
+      });
+
+      const result = await handleGetMetrics(ctx, { scope: "agent" });
+
+      expect(result).not.toContain("No agent metrics data found");
+      expect(result).toContain("code-reviewer");
+      expect(result).toContain("architect");
+      expect(result).toContain("**Total events**: 3");
+      // code-reviewer: 2 events, total input 3000
+      expect(result).toContain("3000");
+    });
   });
 
   describe("cleanup on failure", () => {

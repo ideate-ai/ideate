@@ -31,6 +31,7 @@ export const workItems = sqliteTable("work_items", {
   domain: text("domain"),
   phase: text("phase"),
   notes: text("notes"),
+  work_item_type: text("work_item_type").default("feature"),
 });
 
 export const findings = sqliteTable("findings", {
@@ -169,6 +170,8 @@ export const proxyHumanDecisions = sqliteTable("proxy_human_decisions", {
 
 export const projects = sqliteTable("projects", {
   id: text("id").primaryKey().references(() => nodes.id, { onDelete: "cascade" }),
+  name: text("name"),
+  description: text("description"),
   intent: text("intent").notNull(),
   scope_boundary: text("scope_boundary"),
   success_criteria: text("success_criteria"),
@@ -180,6 +183,8 @@ export const projects = sqliteTable("projects", {
 
 export const phases = sqliteTable("phases", {
   id: text("id").primaryKey().references(() => nodes.id, { onDelete: "cascade" }),
+  name: text("name"),
+  description: text("description"),
   project: text("project").notNull(),
   phase_type: text("phase_type").notNull(),
   intent: text("intent").notNull(),

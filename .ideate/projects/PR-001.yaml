@@ -1,12 +1,18 @@
 id: PR-001
 type: project
-name: Ideate
-intent: Structured SDLC workflow plugin for Claude Code
+intent: Structured SDLC workflow plugin for Claude Code, evolving toward standalone project management platform
 status: active
 appetite: 6
-current_phase_id: PH-013
+current_phase_id: PH-015
 horizon:
-  next: []
+  next:
+    - name: New Skills — Project, Triage, Status
+      description: Create /ideate:project, /ideate:triage, /ideate:status skills and add work item type routing to execute/review
+      work_items:
+        - WI-518
+        - WI-519
+        - WI-520
+        - WI-521
   completed:
     - PH-001
     - PH-002
@@ -20,6 +26,8 @@ horizon:
     - PH-010
     - PH-011
     - PH-012
+    - PH-013
+    - PH-014
   later: []
-content_hash: 8c19124664f77aa51f7f6ca566b38a72b6c137e97e1738ac45ceff5b41cc2d30
-token_count: 86
+content_hash: 22856898e705edcb93566a548951033f49b4283b0cfaba478a77221fbde6f982
+token_count: 169

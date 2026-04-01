@@ -1,24 +1,28 @@
 id: overview
 type: overview
-title: "Refinement: Generalize context retrieval and enforce GP-14"
+title: "Implementation: Infrastructure for PM Evolution"
 body: |-
   ## What is changing
 
-  1. **ideate_get_work_item_context → ideate_get_artifact_context**: The work-item-specific context tool is generalized to accept any artifact ID. It queries the nodes table for type, then dispatches to type-specific context assembly (work item details, phase + linked work items, or generic YAML + edges).
+  ### Phase A (PH-015 — current): Infrastructure
+  1. Schema v4: name + description on projects and phases (WI-513)
+  2. Metrics pipeline fix: payload storage bug, agent_type aggregation (WI-514)
+  3. Skill docs: remove broken token extraction instructions (WI-515)
+  4. Status display: COALESCE name fallbacks in query/analysis tools (WI-516)
+  5. Work item type field: feature|bug|spike|maintenance|chore taxonomy (WI-517)
 
-  2. **ideate_assemble_context description**: Tool description and parameter examples updated to make clear that any artifact ID (phases, policies, principles) works as a PPR seed, not just work items.
-
-  3. **GP-14 guardrail in skills**: All skill files that use MCP tools gain an explicit guardrail: MCP tool failures must be reported and halt execution — never trigger fallback to direct .ideate/ file access.
-
-  4. **Domain policy P-52**: Formalizes the GP-14 enforcement rule as a reviewable domain policy.
+  ### Phase B (horizon): New Skills
+  6. /ideate:project skill — project + phase CRUD and lifecycle (WI-518)
+  7. /ideate:triage skill — lightweight work item intake (WI-519)
+  8. /ideate:status skill — stakeholder views (WI-520)
+  9. Type routing in execute/review skills (WI-521)
 
   ## What is NOT changing
-  - PPR algorithm (ppr.ts) — already type-agnostic
-  - ideate_assemble_context function logic — already works for any node ID
-  - ideate_get_context_package — unchanged
-  - Schema, indexer, watcher — unchanged
+  - Core SDLC loop (plan→execute→review→refine)
+  - PPR context assembly, watcher, hooks
+  - Existing guiding principles and constraints
 
   ## Trigger
-  Attempted ideate_assemble_context with artifact_id parameter (wrong name) for PH-013. Tool failed. Fallback was direct .ideate/ file reads, violating GP-14.
-content_hash: 0367bcd02e946f80c8633c5e98e2098d2092e5741640ba7ebd59cd472bc01ab9
-token_count: 339
+  Research phase PH-014 produced 4 design documents. This phase implements the infrastructure changes. Phase B implements new skills after infrastructure ships.
+content_hash: 0bfd4f855245acc95e17eafe0814f2626616473f927bdb68f6f8c470bdb40513
+token_count: 291

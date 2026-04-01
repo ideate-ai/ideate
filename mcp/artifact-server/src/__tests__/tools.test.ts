@@ -1571,6 +1571,97 @@ describe("handleWriteWorkItems", () => {
     expect(edge).toBeDefined();
     expect(edge!.edge_type).toBe("belongs_to_phase");
   });
+
+  it("work_item_type roundtrip: write with 'bug', YAML and SQLite both reflect 'bug'", async () => {
+    await handleWriteWorkItems(ctx, {
+      items: [
+        {
+          id: "WI-WIT01",
+          title: "Bug fix item",
+          complexity: "small",
+          work_item_type: "bug",
+        },
+      ],
+    });
+
+    // YAML file must contain work_item_type: bug
+    const yamlPath = path.join(artifactDir, "work-items", "WI-WIT01.yaml");
+    expect(fs.existsSync(yamlPath)).toBe(true);
+    const content = fs.readFileSync(yamlPath, "utf8");
+    expect(content).toContain("work_item_type:");
+    expect(content).toContain("bug");
+
+    // SQLite extension row must have work_item_type = 'bug'
+    const wiRow = db
+      .prepare(`SELECT work_item_type FROM work_items WHERE id = 'WI-WIT01'`)
+      .get() as { work_item_type: string | null } | undefined;
+    expect(wiRow).toBeDefined();
+    expect(wiRow!.work_item_type).toBe("bug");
+  });
+
+  it("work_item_type defaults to 'feature' when not provided", async () => {
+    await handleWriteWorkItems(ctx, {
+      items: [
+        {
+          id: "WI-WIT02",
+          title: "Feature item without explicit type",
+          complexity: "small",
+        },
+      ],
+    });
+
+    // YAML file must contain work_item_type: feature
+    const yamlPath = path.join(artifactDir, "work-items", "WI-WIT02.yaml");
+    expect(fs.existsSync(yamlPath)).toBe(true);
+    const content = fs.readFileSync(yamlPath, "utf8");
+    expect(content).toContain("work_item_type:");
+    expect(content).toContain("feature");
+
+    // SQLite extension row must default to 'feature'
+    const wiRow = db
+      .prepare(`SELECT work_item_type FROM work_items WHERE id = 'WI-WIT02'`)
+      .get() as { work_item_type: string | null } | undefined;
+    expect(wiRow).toBeDefined();
+    expect(wiRow!.work_item_type).toBe("feature");
+  });
+
+  it("work_item_type filter: handleArtifactQuery filters by work_item_type", async () => {
+    await handleWriteWorkItems(ctx, {
+      items: [
+        { id: "WI-WIT03", title: "Bug A", complexity: "small", work_item_type: "bug" },
+        { id: "WI-WIT04", title: "Spike B", complexity: "small", work_item_type: "spike" },
+        { id: "WI-WIT05", title: "Feature C", complexity: "small", work_item_type: "feature" },
+      ],
+    });
+
+    const result = await handleArtifactQuery(ctx, {
+      type: "work_item",
+      filters: { work_item_type: "bug", status: "pending" },
+    });
+
+    expect(result).toContain("WI-WIT03");
+    expect(result).not.toContain("WI-WIT04");
+    expect(result).not.toContain("WI-WIT05");
+  });
+
+  it("work_item_type indexer roundtrip: indexer defaults missing field to 'feature'", async () => {
+    // Write a YAML file without work_item_type field
+    const workItemsDir = path.join(artifactDir, "work-items");
+    fs.mkdirSync(workItemsDir, { recursive: true });
+    const yamlContent = `id: WI-WIT06\ntype: work_item\ntitle: Legacy item\nstatus: pending\ncomplexity: small\nscope: []\ndepends: []\nblocks: []\ncriteria: []\ndomain: null\nphase: null\nnotes: '# WI-WIT06'\nresolution: null\ncycle_created: null\ncycle_modified: null\ncontent_hash: placeholder\ntoken_count: 0\n`;
+    const filePath = path.join(workItemsDir, "WI-WIT06.yaml");
+    fs.writeFileSync(filePath, yamlContent, "utf8");
+
+    // Index the file
+    indexFiles(db, ctx.drizzleDb, [filePath]);
+
+    // work_item_type must default to 'feature'
+    const wiRow = db
+      .prepare(`SELECT work_item_type FROM work_items WHERE id = 'WI-WIT06'`)
+      .get() as { work_item_type: string | null } | undefined;
+    expect(wiRow).toBeDefined();
+    expect(wiRow!.work_item_type).toBe("feature");
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -1986,6 +2077,135 @@ describe("handleWriteArtifact", () => {
     const row = db.prepare(`SELECT id, category, description FROM constraints WHERE id = 'C-01'`).get() as { id: string; category: string; description: string | null } | undefined;
     expect(row).toBeDefined();
     expect(row!.category).toBe("technology");
+  });
+
+  it("project: name and description roundtrip via write + index rebuild + query", async () => {
+    // Create projects directory
+    fs.mkdirSync(path.join(artifactDir, "projects"), { recursive: true });
+
+    await handleWriteArtifact(ctx, {
+      type: "project",
+      id: "PR-NAME-01",
+      content: {
+        name: "My Test Project",
+        description: "A project to test name/description roundtrip.",
+        intent: "Validate the new name column.",
+        status: "active",
+      },
+    });
+
+    // Verify write stored name in the extension table
+    const rowAfterWrite = db
+      .prepare(`SELECT id, name, description FROM projects WHERE id = 'PR-NAME-01'`)
+      .get() as { id: string; name: string | null; description: string | null } | undefined;
+    expect(rowAfterWrite).toBeDefined();
+    expect(rowAfterWrite!.name).toBe("My Test Project");
+    expect(rowAfterWrite!.description).toBe("A project to test name/description roundtrip.");
+
+    // Invalidate stored hash to force re-index
+    db.prepare(`UPDATE nodes SET content_hash = 'stale' WHERE id = 'PR-NAME-01'`).run();
+
+    // Rebuild index
+    const { rebuildIndex } = await import("../indexer.js");
+    rebuildIndex(db, drizzle(db, { schema: dbSchema }), artifactDir);
+
+    // Verify name persists after re-index
+    const rowAfterRebuild = db
+      .prepare(`SELECT id, name, description FROM projects WHERE id = 'PR-NAME-01'`)
+      .get() as { id: string; name: string | null; description: string | null } | undefined;
+    expect(rowAfterRebuild).toBeDefined();
+    expect(rowAfterRebuild!.name).toBe("My Test Project");
+    expect(rowAfterRebuild!.description).toBe("A project to test name/description roundtrip.");
+  });
+
+  it("phase: name and description roundtrip via write + index rebuild + query", async () => {
+    // Create required directories
+    fs.mkdirSync(path.join(artifactDir, "projects"), { recursive: true });
+    fs.mkdirSync(path.join(artifactDir, "phases"), { recursive: true });
+
+    // Write a parent project first (needed for FK)
+    await handleWriteArtifact(ctx, {
+      type: "project",
+      id: "PR-PH-PARENT",
+      content: {
+        intent: "Parent project for phase name test.",
+        status: "active",
+      },
+    });
+
+    await handleWriteArtifact(ctx, {
+      type: "phase",
+      id: "PH-NAME-01",
+      content: {
+        name: "My Test Phase",
+        description: "A phase to test name/description roundtrip.",
+        project: "PR-PH-PARENT",
+        phase_type: "implementation",
+        intent: "Validate the new name column on phases.",
+        status: "active",
+      },
+    });
+
+    // Verify write stored name in the extension table
+    const rowAfterWrite = db
+      .prepare(`SELECT id, name, description FROM phases WHERE id = 'PH-NAME-01'`)
+      .get() as { id: string; name: string | null; description: string | null } | undefined;
+    expect(rowAfterWrite).toBeDefined();
+    expect(rowAfterWrite!.name).toBe("My Test Phase");
+    expect(rowAfterWrite!.description).toBe("A phase to test name/description roundtrip.");
+
+    // Invalidate stored hashes to force re-index
+    db.prepare(`UPDATE nodes SET content_hash = 'stale' WHERE id IN ('PR-PH-PARENT', 'PH-NAME-01')`).run();
+
+    // Rebuild index
+    const { rebuildIndex } = await import("../indexer.js");
+    rebuildIndex(db, drizzle(db, { schema: dbSchema }), artifactDir);
+
+    // Verify name persists after re-index
+    const rowAfterRebuild = db
+      .prepare(`SELECT id, name, description FROM phases WHERE id = 'PH-NAME-01'`)
+      .get() as { id: string; name: string | null; description: string | null } | undefined;
+    expect(rowAfterRebuild).toBeDefined();
+    expect(rowAfterRebuild!.name).toBe("My Test Phase");
+    expect(rowAfterRebuild!.description).toBe("A phase to test name/description roundtrip.");
+  });
+
+  it("phase: title field in YAML maps to name column via indexer (title→name fallback)", async () => {
+    // Create required directories
+    fs.mkdirSync(path.join(artifactDir, "projects"), { recursive: true });
+    fs.mkdirSync(path.join(artifactDir, "phases"), { recursive: true });
+
+    // Write a legacy-style phase YAML using `title` instead of `name`
+    const phaseFilePath = path.join(artifactDir, "phases", "PH-TITLE-01.yaml");
+    fs.writeFileSync(phaseFilePath, [
+      "id: PH-TITLE-01",
+      "type: phase",
+      "title: Legacy Phase Title",
+      "project: PR-LEGACY-PARENT",
+      "phase_type: implementation",
+      "intent: Test title-to-name fallback.",
+      "status: active",
+    ].join("\n"), "utf8");
+
+    // Also write the parent project file so rebuildIndex can index it
+    const projectFilePath = path.join(artifactDir, "projects", "PR-LEGACY-PARENT.yaml");
+    fs.writeFileSync(projectFilePath, [
+      "id: PR-LEGACY-PARENT",
+      "type: project",
+      "intent: Legacy parent project.",
+      "status: active",
+    ].join("\n"), "utf8");
+
+    // Rebuild index from scratch
+    const { rebuildIndex } = await import("../indexer.js");
+    rebuildIndex(db, drizzle(db, { schema: dbSchema }), artifactDir);
+
+    // The indexer should have mapped title → name
+    const row = db
+      .prepare(`SELECT id, name FROM phases WHERE id = 'PH-TITLE-01'`)
+      .get() as { id: string; name: string | null } | undefined;
+    expect(row).toBeDefined();
+    expect(row!.name).toBe("Legacy Phase Title");
   });
 });
 
@@ -2908,12 +3128,15 @@ describe("P-46: TYPE_TO_EXTENSION_TABLE completeness", () => {
 // ---------------------------------------------------------------------------
 describe("handleWriteArtifact — metrics_event dispatch branch", () => {
   it("populates both nodes and metrics_events extension table", async () => {
+    // Skills send flat payloads; queryable fields (agent_type, work_item, etc.)
+    // are at the top level of content, not nested in a sub-object.
     await handleWriteArtifact(ctx, {
       type: "metrics_event",
       id: "ME-491-001",
       content: {
-        event_name: "wi_complete",
-        payload: { work_item: "WI-001", duration_ms: 5000 },
+        agent_type: "wi_complete",
+        work_item: "WI-001",
+        skill: "execute",
       },
     });
 
@@ -2924,7 +3147,9 @@ describe("handleWriteArtifact — metrics_event dispatch branch", () => {
     const extRow = ctx.db.prepare("SELECT event_name, payload FROM metrics_events WHERE id = ?").get("ME-491-001") as Record<string, unknown>;
     expect(extRow).toBeTruthy();
     expect(extRow.event_name).toBe("wi_complete");
-    expect(JSON.parse(extRow.payload as string)).toEqual({ work_item: "WI-001", duration_ms: 5000 });
+    const parsed = JSON.parse(extRow.payload as string);
+    expect(parsed.work_item).toBe("WI-001");
+    expect(parsed.agent_type).toBe("wi_complete");
   });
 });
 

@@ -181,11 +181,11 @@ const TYPE_EXTENSION_INFO: Record<
   },
   project: {
     table: "projects",
-    summaryExpr: "e.intent",
+    summaryExpr: "COALESCE(e.name, SUBSTR(e.intent, 1, 40))",
   },
   phase: {
     table: "phases",
-    summaryExpr: "e.phase_type || ': ' || e.intent",
+    summaryExpr: "COALESCE(e.name, e.phase_type || ': ' || SUBSTR(e.intent, 1, 40))",
   },
 };
 
@@ -200,6 +200,7 @@ interface ParsedFilters {
   severity?: string;
   phase?: string;
   work_item?: string;
+  work_item_type?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -313,6 +314,10 @@ function runFilterMode(
     if (filters.work_item && hasColumn(type, "work_item")) {
       whereClauses.push("e.work_item = ?");
       params.push(filters.work_item);
+    }
+    if (filters.work_item_type && hasColumn(type, "work_item_type")) {
+      whereClauses.push("e.work_item_type = ?");
+      params.push(filters.work_item_type);
     }
   } else if (!type) {
     // No specific type — we can only filter on nodes columns
@@ -649,6 +654,7 @@ function hasColumn(type: string, column: string): boolean {
   const cycleTypes = ["finding", "domain_decision", "proxy_human_decision"];
   const workItemRefTypes = ["finding"];
   const phaseTypes = ["journal_entry"];
+  const workItemTypeTypes = ["work_item"];
 
   switch (column) {
     case "domain":
@@ -659,6 +665,8 @@ function hasColumn(type: string, column: string): boolean {
       return workItemRefTypes.includes(type);
     case "phase":
       return phaseTypes.includes(type);
+    case "work_item_type":
+      return workItemTypeTypes.includes(type);
     default:
       return false;
   }

@@ -695,7 +695,7 @@ After each agent spawn (via the Agent tool), emit one metric entry via `ideate_e
 **Payload schema (one call per agent spawn):**
 
 ```json
-{"timestamp":"<ISO8601>","skill":"review","phase":"<id>","cycle":null,"agent_type":"<type>","model":"<model>","work_item":null,"wall_clock_ms":<ms>,"turns_used":<N or null>,"context_files_read":["<path>",...],"input_tokens":<N or null>,"output_tokens":<N or null>,"cache_read_tokens":<N or null>,"cache_write_tokens":<N or null>,"mcp_tools_called":["<tool_name>",...],"finding_count":<N or null>,"finding_severities":{"critical":<N>,"significant":<N>,"minor":<N>} or null}
+{"timestamp":"<ISO8601>","skill":"review","phase":"<id>","cycle":null,"agent_type":"<type>","model":"<model>","work_item":null,"wall_clock_ms":<ms>,"turns_used":null,"context_files_read":["<path>",...],"input_tokens":null,"output_tokens":null,"cache_read_tokens":null,"cache_write_tokens":null,"mcp_tools_called":["<tool_name>",...],"finding_count":<N or null>,"finding_severities":{"critical":<N>,"significant":<N>,"minor":<N>} or null}
 ```
 
 - `timestamp` — ISO 8601 when the agent was spawned.
@@ -705,23 +705,18 @@ After each agent spawn (via the Agent tool), emit one metric entry via `ideate_e
 - `model` — model string passed to Agent tool (e.g., `"sonnet"`, `"opus"`).
 - `work_item` — `null` (review skill agents are not tied to individual work items).
 - `wall_clock_ms` — elapsed ms between Agent tool invocation and return.
-- `turns_used` — integer extracted from `tool_uses` in the Agent response `<usage>` block. This is the proxy for turns used. Extract it after each Agent tool call returns. If not available, set to `null`. Do NOT leave as `null` if the usage block is present — extract the integer value.
 - `context_files_read` — absolute file paths explicitly provided in the agent's prompt.
-- `input_tokens` — integer or null. Input token count from agent response metadata. Null if not available.
-- `output_tokens` — integer or null. Output token count from agent response metadata. Null if not available.
-- `cache_read_tokens` — integer or null. Prompt caching read tokens if available. Null if not available.
-- `cache_write_tokens` — integer or null. Prompt caching write tokens if available. Null if not available.
 - `mcp_tools_called` — array of strings. Names of MCP tools called to assemble context for this agent spawn (e.g., `["ideate_get_context_package", "ideate_get_artifact_context"]`). Empty array `[]` if no MCP tools were called.
 - `finding_count` — optional (null if not available). For reviewer spawns (`code-reviewer`, `spec-reviewer`, `gap-analyst`): total number of findings across all severities produced by that reviewer. Null for `journal-keeper` and `domain-curator` entries, and null if the reviewer output cannot be parsed.
 - `finding_severities` — optional (null if not available). For reviewer spawns: object with keys `critical`, `significant`, `minor` and integer values derived from parsing the reviewer's output. Null for `journal-keeper` and `domain-curator` entries, and null if the output cannot be parsed.
 
-Before each Agent tool call, record which MCP tool calls (if any) were made to assemble context for that spawn. Include the tool names in the `mcp_tools_called` array. If no MCP tools were called, use an empty array `[]`.
+**Token and turn count fields**: Set `turns_used`, `input_tokens`, `output_tokens`, `cache_read_tokens`, `cache_write_tokens` to `null`. These fields are not extractable from Agent tool responses — the Agent tool returns only the subagent's final text, not its token usage. When hook-based extraction is implemented (via SubagentStop hooks), these instructions will be updated.
 
-Extract from agent response metadata if available. Set to null if token counts are not available in the response.
+Before each Agent tool call, record which MCP tool calls (if any) were made to assemble context for that spawn. Include the tool names in the `mcp_tools_called` array. If no MCP tools were called, use an empty array `[]`.
 
 Record timestamp immediately before the Agent tool call; compute `wall_clock_ms` after it returns.
 
-**Turns tracking and budget warning**: After each Agent tool call returns, extract `tool_uses` from the response `<usage>` block as `turns_used`. Use the maxTurns value from `{config}.agent_budgets` for each agent type (`code-reviewer`, `spec-reviewer`, `gap-analyst`, `journal-keeper`, `domain-curator`). If config was not loaded or the agent type is not present in `agent_budgets`, use the agent's frontmatter default. After recording the metric, if `turns_used` is non-null and the agent's maxTurns is known, compute the utilization: `turns_used / maxTurns`. If utilization > 0.80, append a warning to the Phase 8 journal entry (via `ideate_append_journal`):
+**Turns tracking and budget warning**: Use the maxTurns value from `{config}.agent_budgets` for each agent type (`code-reviewer`, `spec-reviewer`, `gap-analyst`, `journal-keeper`, `domain-curator`). If config was not loaded or the agent type is not present in `agent_budgets`, use the agent's frontmatter default. This warning is currently inactive because `turns_used` is null. It will activate when hook-based turn extraction is implemented. If `turns_used` is non-null and the agent's maxTurns is known, compute the utilization: `turns_used / maxTurns`. If utilization > 0.80, append a warning to the Phase 8 journal entry (via `ideate_append_journal`):
 
 > Agent {agent_type} used {turns_used}/{maxTurns} turns ({pct}%) — near budget limit
 

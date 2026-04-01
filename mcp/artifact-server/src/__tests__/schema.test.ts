@@ -352,18 +352,18 @@ describe("createSchema — node_file_refs table", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Schema version — CURRENT_SCHEMA_VERSION is 3
+// Schema version — CURRENT_SCHEMA_VERSION is 4
 // ---------------------------------------------------------------------------
 
 describe("createSchema — schema version", () => {
-  it("CURRENT_SCHEMA_VERSION is 3", () => {
-    expect(CURRENT_SCHEMA_VERSION).toBe(3);
+  it("CURRENT_SCHEMA_VERSION is 4", () => {
+    expect(CURRENT_SCHEMA_VERSION).toBe(4);
   });
 
-  it("sets user_version = 3 after createSchema", () => {
+  it("sets user_version = 4 after createSchema", () => {
     const db = freshDb();
     const version = db.pragma("user_version", { simple: true }) as number;
-    expect(version).toBe(3);
+    expect(version).toBe(4);
   });
 });
 
@@ -677,10 +677,10 @@ describe("createSchema — projects table", () => {
     expect(tables).toContain("projects");
   });
 
-  it("has expected columns: id, intent, scope_boundary, success_criteria, appetite, steering, horizon, status", () => {
+  it("has expected columns: id, name, description, intent, scope_boundary, success_criteria, appetite, steering, horizon, status", () => {
     const db = freshDb();
     const cols = columnNames(db, "projects");
-    for (const col of ["id", "intent", "scope_boundary", "success_criteria", "appetite", "steering", "horizon", "status"]) {
+    for (const col of ["id", "name", "description", "intent", "scope_boundary", "success_criteria", "appetite", "steering", "horizon", "status"]) {
       expect(cols, `expected projects to have column '${col}'`).toContain(col);
     }
   });
@@ -713,10 +713,10 @@ describe("createSchema — phases table", () => {
     expect(tables).toContain("phases");
   });
 
-  it("has expected columns: id, project, phase_type, intent, steering, status, work_items", () => {
+  it("has expected columns: id, name, description, project, phase_type, intent, steering, status, work_items", () => {
     const db = freshDb();
     const cols = columnNames(db, "phases");
-    for (const col of ["id", "project", "phase_type", "intent", "steering", "status", "work_items"]) {
+    for (const col of ["id", "name", "description", "project", "phase_type", "intent", "steering", "status", "work_items"]) {
       expect(cols, `expected phases to have column '${col}'`).toContain(col);
     }
   });

@@ -344,6 +344,7 @@ interface WorkItemInput {
   resolution?: string | null;
   cycle_created?: number | null;
   phase?: string | null;
+  work_item_type?: string;
 }
 
 export async function handleWriteWorkItems(
@@ -538,6 +539,7 @@ export async function handleWriteWorkItems(
       criteria: item.criteria ?? [],
       domain: item.domain ?? null,
       phase: item.phase ?? null,
+      work_item_type: item.work_item_type ?? "feature",
       notes: notesContent,
       resolution: item.resolution !== undefined ? item.resolution : null,
       cycle_created: itemCycleCreated,
@@ -605,6 +607,7 @@ export async function handleWriteWorkItems(
           domain: item.domain ?? null,
           phase: item.phase ?? null,
           notes: notesContent,
+          work_item_type: item.work_item_type ?? "feature",
         };
 
         // Upsert node
@@ -958,11 +961,23 @@ export async function handleWriteArtifact(
         };
         upsertFinding(ctx.drizzleDb, findingRow);
       } else if (type === "metrics_event") {
+        // Compute payload JSON from queryable top-level fields (same logic as handleEmitMetric)
+        const writePayloadFields = ["agent_type", "skill", "phase", "work_item", "model", "wall_clock_ms", "turns_used", "cycle"] as const;
+        const writeComputedPayload: Record<string, unknown> = {};
+        for (const field of writePayloadFields) {
+          const v = content[field];
+          if (v !== undefined && v !== null) writeComputedPayload[field] = v;
+        }
+        const writeStoredPayload = Object.keys(writeComputedPayload).length > 0
+          ? JSON.stringify(writeComputedPayload)
+          : null;
         const meRow: MetricsEventRow = {
           id,
-          event_name: (content.event_name as string) ?? "",
+          event_name: typeof content.agent_type === "string"
+            ? (content.agent_type as string)
+            : (content.event_name as string) ?? "",
           timestamp: (content.timestamp as string | null) ?? null,
-          payload: content.payload ? JSON.stringify(content.payload) : null,
+          payload: writeStoredPayload,
           input_tokens: (content.input_tokens as number | null) ?? null,
           output_tokens: (content.output_tokens as number | null) ?? null,
           cache_read_tokens: (content.cache_read_tokens as number | null) ?? null,
@@ -996,6 +1011,8 @@ export async function handleWriteArtifact(
       } else if (type === "project") {
         const row: ProjectRow = {
           id,
+          name: (content.name as string | null) ?? null,
+          description: (content.description as string | null) ?? null,
           intent: (content.intent as string) ?? "",
           scope_boundary: content.scope_boundary ? JSON.stringify(content.scope_boundary) : null,
           success_criteria: content.success_criteria ? JSON.stringify(content.success_criteria) : null,
@@ -1008,6 +1025,8 @@ export async function handleWriteArtifact(
       } else if (type === "phase") {
         const row: PhaseRow = {
           id,
+          name: (content.name as string | null) ?? null,
+          description: (content.description as string | null) ?? null,
           project: (content.project as string) ?? "",
           phase_type: (content.phase_type as string) ?? "implementation",
           intent: (content.intent as string) ?? "",
@@ -1051,6 +1070,7 @@ interface WorkItemUpdate {
   notes?: string;
   scope?: Array<{ path: string; op: string }>;
   phase?: string | null;
+  work_item_type?: string;
 }
 
 // Fields that must not be overwritten
@@ -1131,6 +1151,7 @@ export async function handleUpdateWorkItems(
         "notes",
         "scope",
         "phase",
+        "work_item_type",
       ];
 
       for (const field of updatableFields) {
@@ -1215,6 +1236,7 @@ export async function handleUpdateWorkItems(
             domain: (parsedObj.domain as string | null) ?? null,
             phase: (parsedObj.phase as string | null) ?? null,
             notes: (parsedObj.notes as string | null) ?? null,
+            work_item_type: (parsedObj.work_item_type as string | null) ?? "feature",
           };
 
           upsertNode(ctx.drizzleDb, nodeRow);

@@ -1,20 +1,25 @@
 id: execution-strategy
 type: execution_strategy
-title: Execution Strategy — Context Retrieval Generalization
-mode: batched_parallel
+title: "Execution Strategy — PH-015: Infrastructure"
+mode: sequential
 groups:
-  - name: Parallel batch
+  - name: Schema foundation
     items:
-      - WI-506
-      - WI-507
-    notes: No file scope overlap. WI-506 modifies MCP server code. WI-507 modifies skill docs. Execute in parallel.
-  - name: Sequential follow-up
+      - WI-513
+    notes: Schema changes (name/description columns, version bump 3→4). Must complete before anything else touches shared files.
+  - name: Metrics + display
     items:
-      - WI-508
-    notes: Depends on WI-507. Write domain policy after skill guardrails are in place.
+      - WI-514
+      - WI-516
+    notes: WI-514 fixes metrics pipeline. WI-516 updates display expressions. Both depend on WI-513. Can run in parallel if scope collision on indexer.ts/write.ts is resolved — but WI-514 was scoped to only metrics.ts and metrics tests to avoid collision.
+  - name: Schema extension + docs
+    items:
+      - WI-517
+      - WI-515
+    notes: WI-517 adds work_item_type (depends on WI-514 + WI-516). WI-515 updates skill docs (depends on WI-514). Sequential within group.
 review_cadence: incremental per work item
 agent_config:
   worker: sonnet
   code-reviewer: sonnet
-content_hash: e8f224fdee7d9b0838aa167b484fc31c62c9fcd653b078a8e40aaa1e153f6161
-token_count: 140
+content_hash: e00a542e0383dae09ec1bf8c06202bb62421bb384041d29951180aecb870ba00
+token_count: 236

@@ -277,12 +277,7 @@ After each agent spawn (via the Agent tool), emit a metric via `ideate_emit_metr
 - `model` — model string passed to Agent tool
 - `work_item` — work item slug for workers and their paired code-reviewer; `null` for reviewers
 - `wall_clock_ms` — elapsed ms between Agent tool invocation and return
-- `turns_used` — integer extracted from `tool_uses` in the Agent response `<usage>` block. This is the proxy for turns used. Extract it after each Agent tool call returns. If not available, set to `null`. Do NOT leave as `null` if the usage block is present — extract the integer value.
 - `context_files_read` — absolute file paths explicitly provided in the agent's prompt
-- `input_tokens` — integer or null. Input token count from agent response metadata. Null if not available.
-- `output_tokens` — integer or null. Output token count from agent response metadata. Null if not available.
-- `cache_read_tokens` — integer or null. Prompt caching read tokens if available. Null if not available.
-- `cache_write_tokens` — integer or null. Prompt caching write tokens if available. Null if not available.
 - `mcp_tools_called` — array of strings. Names of MCP tools called to assemble context for this agent spawn (e.g., `["ideate_get_context_package", "ideate_get_artifact_context"]`). Empty array `[]` if no MCP tools were called.
 - `outcome` — optional (null if not available). For `code-reviewer` entries (phase `"6a"`): `"pass"` if the incremental review verdict is Pass with no rework, `"rework"` if the verdict is Pass after rework, `"fail"` if the verdict is Fail. For all other agent types: `null`.
 - `finding_count` — optional (null if not available). For `code-reviewer` entries (phase `"6a"`): total findings from the incremental review. For reviewer entries (phase `"6b"`, agent types `"code-reviewer"`, `"spec-reviewer"`, `"gap-analyst"`): total findings from that reviewer's output. Null for `worker`, `journal-keeper`, `domain-curator`, and `proxy-human` entries, and null if output cannot be parsed.
@@ -290,13 +285,13 @@ After each agent spawn (via the Agent tool), emit a metric via `ideate_emit_metr
 - `first_pass_accepted` — optional (null if not available). For `code-reviewer` entries (phase `"6a"`): `true` if the incremental review passes with no rework required, `false` otherwise. Null for all other agent types.
 - `rework_count` — optional (null if not available). For `worker` entries: the number of fix-and-re-review cycles completed for this work item (0 if the first review passed without rework). Null for all other agent types.
 
-Before each Agent tool call, record which MCP tool calls (if any) were made to assemble context for that spawn. Include the tool names in the `mcp_tools_called` array. If no MCP tools were called, use an empty array `[]`.
+**Token and turn count fields**: Set `turns_used`, `input_tokens`, `output_tokens`, `cache_read_tokens`, `cache_write_tokens` to `null`. These fields are not extractable from Agent tool responses — the Agent tool returns only the subagent's final text, not its token usage. When hook-based extraction is implemented (via SubagentStop hooks), these instructions will be updated.
 
-Extract from agent response metadata if available. Set to null if token counts are not available in the response.
+Before each Agent tool call, record which MCP tool calls (if any) were made to assemble context for that spawn. Include the tool names in the `mcp_tools_called` array. If no MCP tools were called, use an empty array `[]`.
 
 Record timestamp immediately before the Agent tool call; compute `wall_clock_ms` after it returns.
 
-**Turns tracking and budget warning**: After each Agent tool call returns, extract `tool_uses` from the response `<usage>` block as `turns_used`. Use the maxTurns value from `{config}.agent_budgets` for each agent type (`code-reviewer`, `spec-reviewer`, `gap-analyst`, `journal-keeper`, `domain-curator`, `architect`, `researcher`, `proxy-human`). If config was not loaded or the agent type is not present in `agent_budgets`, use the agent's frontmatter default. After recording the metrics entry, if `turns_used` is non-null and the agent's maxTurns is known, compute the utilization: `turns_used / maxTurns`. If utilization > 0.80, append a warning to the current journal entry (via `ideate_append_journal`):
+**Turns tracking and budget warning**: Use the maxTurns value from `{config}.agent_budgets` for each agent type (`code-reviewer`, `spec-reviewer`, `gap-analyst`, `journal-keeper`, `domain-curator`, `architect`, `researcher`, `proxy-human`). If config was not loaded or the agent type is not present in `agent_budgets`, use the agent's frontmatter default. This warning is currently inactive because `turns_used` is null. It will activate when hook-based turn extraction is implemented. If `turns_used` is non-null and the agent's maxTurns is known, compute the utilization: `turns_used / maxTurns`. If utilization > 0.80, append a warning to the current journal entry (via `ideate_append_journal`):
 
 > Agent {agent_type} used {turns_used}/{maxTurns} turns ({pct}%) — near budget limit
 

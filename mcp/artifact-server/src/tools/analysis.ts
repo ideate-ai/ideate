@@ -448,36 +448,42 @@ export async function handleGetWorkspaceStatus(
 
   // Active project
   const activeProject = ctx.db.prepare(`
-    SELECT p.id, p.intent, p.appetite
+    SELECT p.id, p.name, p.intent, p.appetite
     FROM projects p
     JOIN nodes n ON n.id = p.id
     WHERE n.status = 'active'
     ORDER BY n.id
     LIMIT 1
-  `).get() as { id: string; intent: string; appetite: number | null } | undefined;
+  `).get() as { id: string; name: string | null; intent: string; appetite: number | null } | undefined;
 
   if (activeProject) {
     lines.push("");
     lines.push("## Active Project");
     lines.push(`- ID: ${activeProject.id}`);
+    if (activeProject.name !== null && activeProject.name !== undefined) {
+      lines.push(`- Name: ${activeProject.name}`);
+    }
     lines.push(`- Intent: ${activeProject.intent}`);
     lines.push(`- Appetite: ${activeProject.appetite ?? "unset"}`);
   }
 
   // Active phase
   const activePhase = ctx.db.prepare(`
-    SELECT p.id, p.phase_type, p.intent
+    SELECT p.id, p.name, p.phase_type, p.intent
     FROM phases p
     JOIN nodes n ON n.id = p.id
     WHERE n.status = 'active'
     ORDER BY n.id
     LIMIT 1
-  `).get() as { id: string; phase_type: string; intent: string } | undefined;
+  `).get() as { id: string; name: string | null; phase_type: string; intent: string } | undefined;
 
   if (activePhase) {
     lines.push("");
     lines.push("## Current Phase");
     lines.push(`- ID: ${activePhase.id}`);
+    if (activePhase.name !== null && activePhase.name !== undefined) {
+      lines.push(`- Name: ${activePhase.name}`);
+    }
     lines.push(`- Type: ${activePhase.phase_type}`);
     lines.push(`- Intent: ${activePhase.intent}`);
   }

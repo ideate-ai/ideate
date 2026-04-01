@@ -1,0 +1,24 @@
+id: WI-520
+type: work_item
+title: Create /ideate:status skill for stakeholder views
+status: pending
+complexity: medium
+scope:
+  - path: skills/status/SKILL.md
+    op: create
+depends:
+  - WI-519
+blocks: []
+criteria:
+  - Skill file created at skills/status/SKILL.md
+  - "Supports: default IC view, --portfolio, --project, --phase"
+  - Read-only, no artifact writes except journal
+  - Skill registered in plugin.json
+domain: workflow
+phase: null
+notes: "See research-multi-level-interaction Section 4.2. Plugin.json dependency chain: WI-518 -> WI-519 -> WI-520."
+resolution: null
+cycle_created: null
+cycle_modified: null
+content_hash: b0438b2dbb039c1b853e2c82186ca7b600d88f237f3f7c21da0431304018eed1
+token_count: 154

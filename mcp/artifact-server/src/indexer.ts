@@ -148,6 +148,7 @@ function buildExtensionRow(table: string, doc: Row): Row {
         domain: toStrOrNull(doc.domain),
         phase: toStrOrNull(doc.phase),
         notes: toStrOrNull(doc.notes),
+        work_item_type: toStrOrNull(doc.work_item_type) ?? "feature",
       };
 
     case "findings":
@@ -232,11 +233,21 @@ function buildExtensionRow(table: string, doc: Row): Row {
         content: toStrOrNull(doc.content),
       };
 
-    case "metrics_events":
+    case "metrics_events": {
+      // Compute payload JSON from queryable top-level fields (same logic as handleEmitMetric)
+      const mePayloadFields = ["agent_type", "skill", "phase", "work_item", "model", "wall_clock_ms", "turns_used", "cycle"] as const;
+      const meComputedPayload: Record<string, unknown> = {};
+      for (const field of mePayloadFields) {
+        const v = (doc as Record<string, unknown>)[field];
+        if (v !== undefined && v !== null) meComputedPayload[field] = v;
+      }
+      const meStoredPayload = Object.keys(meComputedPayload).length > 0
+        ? JSON.stringify(meComputedPayload)
+        : null;
       return {
-        event_name: toStrOrNull(doc.event_name) ?? "",
+        event_name: toStrOrNull(doc.agent_type ?? doc.event_name) ?? "",
         timestamp: toStrOrNull(doc.timestamp),
-        payload: toJsonOrNull(doc.payload),
+        payload: meStoredPayload,
         // Token accounting
         input_tokens: toNumOrNull(doc.input_tokens),
         output_tokens: toNumOrNull(doc.output_tokens),
@@ -256,6 +267,7 @@ function buildExtensionRow(table: string, doc: Row): Row {
         // Context composition
         context_artifact_ids: toStrOrNull(doc.context_artifact_ids),
       };
+    }
 
     case "document_artifacts":
       return {
@@ -286,6 +298,8 @@ function buildExtensionRow(table: string, doc: Row): Row {
 
     case "projects":
       return {
+        name:             toStrOrNull(doc.name),
+        description:      toStrOrNull(doc.description),
         intent:           toStrOrNull(doc.intent) ?? "",
         scope_boundary:   toJsonOrNull(doc.scope_boundary),
         success_criteria: toJsonOrNull(doc.success_criteria),
@@ -297,6 +311,8 @@ function buildExtensionRow(table: string, doc: Row): Row {
 
     case "phases":
       return {
+        name:       toStrOrNull(doc.name) ?? toStrOrNull(doc.title),
+        description: toStrOrNull(doc.description),
         project:    toStrOrNull(doc.project) ?? "",
         phase_type: toStrOrNull(doc.phase_type) ?? "",
         intent:     toStrOrNull(doc.intent) ?? "",

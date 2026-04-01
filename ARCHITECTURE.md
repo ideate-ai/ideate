@@ -249,7 +249,7 @@ Artifact IDs include a type prefix to prevent cross-type collisions and aid read
 
 ### Schema versioning
 
-`PRAGMA user_version` stores `CURRENT_SCHEMA_VERSION` (currently `3`). On startup, `checkSchemaVersion()` reads the pragma and deletes the database file if the version does not match, triggering a clean rebuild. A version of `0` means a fresh (empty) database and is treated as compatible.
+`PRAGMA user_version` stores `CURRENT_SCHEMA_VERSION` (currently `4`). On startup, `checkSchemaVersion()` reads the pragma and deletes the database file if the version does not match, triggering a clean rebuild. A version of `0` means a fresh (empty) database and is treated as compatible.
 
 ---
 

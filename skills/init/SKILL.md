@@ -1208,19 +1208,16 @@ After each agent spawn (via the Agent tool), call `ideate_emit_metric` with the 
 - `model` — model string passed to Agent tool (e.g., `"sonnet"`, `"opus"`).
 - `work_item` — `null` (init skill agents are not tied to individual work items).
 - `wall_clock_ms` — elapsed ms between Agent tool invocation and return.
-- `turns_used` — from Agent response metadata if available; `null` otherwise.
 - `context_files_read` — absolute paths of files explicitly provided in the agent's prompt, or artifact designations.
-- `input_tokens` — integer or null.
-- `output_tokens` — integer or null.
-- `cache_read_tokens` — integer or null.
-- `cache_write_tokens` — integer or null.
 - `mcp_tools_called` — array of MCP tool names called to assemble context for this agent spawn. Empty array `[]` if no MCP tools were called.
+
+**Token and turn count fields**: Set `turns_used`, `input_tokens`, `output_tokens`, `cache_read_tokens`, `cache_write_tokens` to `null`. These fields are not extractable from Agent tool responses — the Agent tool returns only the subagent's final text, not its token usage. When hook-based extraction is implemented (via SubagentStop hooks), these instructions will be updated.
 
 Before each Agent tool call, record which MCP tool calls (if any) were made to assemble context for that spawn. Include the tool names in the `mcp_tools_called` array.
 
 Record timestamp immediately before the Agent tool call; compute `wall_clock_ms` after it returns.
 
-**Turns tracking and budget warning**: After each Agent tool call returns, extract `tool_uses` from the response `<usage>` block as `turns_used`. Use the maxTurns value from `{config}.agent_budgets` for each agent type (`researcher`, `architect`, `decomposer`). If config was not loaded or the agent type is not present in `agent_budgets`, use the agent's frontmatter default. After emitting the metric, if `turns_used` is non-null and the agent's maxTurns is known, compute the utilization: `turns_used / maxTurns`. If utilization > 0.80, append a warning journal entry (via `ideate_append_journal`):
+**Turns tracking and budget warning**: This warning is currently inactive because `turns_used` is null. It will activate when hook-based turn extraction is implemented. If `turns_used` is non-null and the agent's maxTurns is known, compute the utilization: `turns_used / maxTurns`. If utilization > 0.80, append a warning journal entry (via `ideate_append_journal`):
 
 > Agent {agent_type} used {turns_used}/{maxTurns} turns ({pct}%) — near budget limit
 

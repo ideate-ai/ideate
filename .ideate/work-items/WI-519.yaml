@@ -1,0 +1,27 @@
+id: WI-519
+type: work_item
+title: Create /ideate:triage skill for lightweight work item intake
+status: pending
+complexity: medium
+scope:
+  - path: skills/triage/SKILL.md
+    op: create
+depends:
+  - WI-518
+blocks: []
+criteria:
+  - Skill file created at skills/triage/SKILL.md
+  - Interactive and typed shortcut modes
+  - Minimal context loading, no architect survey
+  - Auto-detects type, generates title/scope/criteria
+  - Assigns to active phase, writes via ideate_write_work_items with type
+  - Skill registered in plugin.json
+  - GP-14 guardrail present
+domain: workflow
+phase: null
+notes: See research-multi-level-interaction Sections 4.2 and 5.2. Plugin.json updated by WI-518; WI-519 appends to same file hence dependency.
+resolution: null
+cycle_created: null
+cycle_modified: null
+content_hash: 27f7a14b9d729ae264b3f4a68bcc857af5749c8f163da0d4ae2ee8397b7411f1
+token_count: 196
