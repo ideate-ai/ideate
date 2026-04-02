@@ -1,0 +1,10 @@
+id: Q-124
+type: domain_question
+domain: artifact-structure
+title: Should archiveCycle be on the StorageAdapter interface?
+description: GraphQL schema defines archiveCycle mutation. Adapter interface lacks the method. Either add to interface with per-adapter semantics or mark GraphQL mutation as not-yet-implemented.
+source: cycle 6 II2
+impact: GraphQL layer promises operation adapter cannot fulfill
+status: open
+content_hash: 6aa9f7bad9fb4c058e869e0a73ddc1aa6704aca395ffc5656c5e3b8e151405ef
+token_count: 103

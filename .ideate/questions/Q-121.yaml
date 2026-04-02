@@ -1,0 +1,10 @@
+id: Q-121
+type: domain_question
+domain: artifact-structure
+title: Is BELONGS_TO_DOMAIN an active relationship type or deprecated?
+description: neo4j-schema.md Section 4.2 lists it as active. Section 9 deprecates it. Resolution determines whether to remove from Sections 4.2/5.2/8.2, GraphQL EdgeType, and adapter-interface EdgeType.
+source: cycle 6 C1/D1/II3
+impact: Migration tool behavior, GraphQL SDL correctness, adapter interface completeness
+status: open
+content_hash: 5eead4ca2d906a61014d783aa22976aaa18cd396276a2f32c0c860b696752566
+token_count: 115

@@ -1,0 +1,32 @@
+id: WI-553
+type: work_item
+title: Implement LocalAdapter — read and query operations
+status: pending
+complexity: large
+scope:
+  - path: mcp/artifact-server/src/adapters/local/reader.ts
+    op: create
+  - path: mcp/artifact-server/src/tools/query.ts
+    op: modify
+  - path: mcp/artifact-server/src/tools/analysis.ts
+    op: modify
+depends:
+  - WI-551
+blocks: []
+criteria:
+  - LocalAdapter implements all read/query operations from StorageAdapter interface
+  - Wraps existing Drizzle queries + YAML content reads from tools/query.ts and tools/analysis.ts
+  - Both tool handlers refactored to call adapter
+  - All existing query and analysis tests pass without modification
+domain: artifact-structure
+phase: PH-019
+work_item_type: feature
+notes: |-
+  tools/query.ts (789 lines) reads from SQLite via Drizzle, then reads YAML from disk for full content. tools/analysis.ts (696 lines) runs SQLite aggregation queries.
+
+  The LocalAdapter read operations should return structured data. The tool handlers format it for MCP responses.
+resolution: null
+cycle_created: 6
+cycle_modified: null
+content_hash: 9b2e15bcfc84b274f7a5cf603976dd1c1c5ea3f5cbf99a2b2b50c52c655dba11
+token_count: 270
