@@ -1,0 +1,10 @@
+id: Q-123
+type: domain_question
+domain: artifact-structure
+title: WorkItemComplexity enum — 3-value or 5-value scale?
+description: GraphQL SDL has LOW|SMALL|MEDIUM|LARGE|HIGH. Codebase and neo4j schema use SMALL|MEDIUM|LARGE only. Remove LOW/HIGH or add to schema.
+source: cycle 6 S1/D2
+impact: Enum mismatch causes validation failures during migration
+status: open
+content_hash: 500b55d24622ca422b3a3850a4497f9d5f8cfd8353c319cc461e1dfae8a10a50
+token_count: 91

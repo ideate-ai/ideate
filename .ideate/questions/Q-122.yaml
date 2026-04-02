@@ -1,0 +1,10 @@
+id: Q-122
+type: domain_question
+domain: artifact-structure
+title: Is Cycle a first-class Neo4j node or a phantom diagram artifact?
+description: neo4j-schema.md Section 2.1 diagram shows Cycle node. No definition exists. Either define it or remove from diagram.
+source: cycle 6 C2/EC3
+impact: Diagram misleads implementors
+status: open
+content_hash: cc63fb8d95e1de034c7e4d8133aa69fca364a12f48df8f86e4a8886dc081395d
+token_count: 83

@@ -1,33 +1,76 @@
 id: interview-refine-006
 type: interview
-title: "Refinement Interview — Cycle 006: New Skills Phase"
+title: Refinement Interview — Platform Pivot & Product Evolution
+cycle: 6
 entries:
-  - question: "Phase transition: PH-015 complete, proceed to next horizon phase?"
-    answer: Yes, transition to New Skills phase.
+  - question: Is the project complete, or do you want to define a new phase?
+    answer: Not complete — evolving into a product. Full vision discussion needed.
     domain: null
-  - question: Evaluate guiding principles and policies against the expanded scope (project management, triage, status, work item types).
-    answer: "Four principles need amendment: GP-01 (spec sufficiency applies to completed specs, not creation), GP-02 (minimize inference with framework for when it's permitted), GP-05 (proportional review based on priority/severity), GP-10 (full lifecycle ownership, not just idea-to-output)."
+  - question: What brings you to refinement?
+    answer: Strategic pivot from plugin to SaaS platform. Want to brainstorm taxonomy, discuss factoring challenges, create long-term roadmap.
+    domain: null
+  - question: Vision and evolution arc?
+    answer: "Started as context management tool (reverse prompting interviews as quality gates). Evolved through: context explosion → time-horizon review (failed) → DDD domains/policies → graph traversal with PPR → YAML/MCP abstraction → project management as the bottleneck → phases/projects/workspaces from Lean/Agile/Shape Up. Now considering company-scale agent orchestration and SaaS product."
     domain: workflow
-  - question: Are WI-518 through WI-521 still the right scope?
-    answer: Yes, but restructure for parallel execution. Remove artificial dependency chain — only shared resource is plugin.json.
-    domain: workflow
-  - question: WI-518 is large with 14 subcommands. Keep as single item or decompose?
-    answer: "Single skill file. Research whether user-invocable-only skills use less context. Should use disable-model-invocation: true."
-    domain: workflow
-  - question: Skill context cost research findings.
-    answer: Full SKILL.md injected at invocation. Before invocation, only 250-char description in context. disable-model-invocation removes even that. Documentation recommends <500 lines. Supporting files are lazy-loaded. Autopilot already uses this pattern.
-    domain: agent-system
-  - question: "Triage interaction model: one-shot, multi-turn, or auto-detect?"
-    answer: Auto-detect. Inference is okay if the description is obvious; follow-up questions if ambiguous (reproduction steps, symptoms, etc.).
-    domain: workflow
-  - question: "Status skill: LLM formatting or MCP-side formatting?"
-    answer: "MCP does the formatting. Extend ideate_get_workspace_status with view parameter. Views: workspace, project, phase. Skill is a thin routing layer. Add MCP server work to this phase."
+  - question: Product vision?
+    answer: "Free Claude Code plugin + paid SaaS knowledge graph backend. Three pillars: (1) pre-populated knowledge graphs, (2) multi-instance/multi-project scaling via PPR, (3) graph-based insights (timelines, contributor impact). Per-seat pricing with add-on tiers (SSO, etc.)."
+    domain: project-boundaries
+  - question: Does 'workspace' still mean something in the remote world?
+    answer: Option C — workspace disappears. But codebases (repos) need a logical grouping concept. Projects span codebases. Team is access control, not a semantic concept — handle at schema level.
     domain: artifact-structure
-  - question: "Status view naming: IC/portfolio/project/phase or workspace/project/phase?"
-    answer: workspace/project/phase. No need for cycle stats. Iterate later if needed.
+  - question: How does shared knowledge work across projects?
+    answer: Org-level shared knowledge (company vision, team boundaries, institutional knowledge). Cross-cutting edges with different weights. Similar to Jira/Confluence model.
     domain: artifact-structure
-  - question: "Type routing: hardcoded type-to-reviewer mapping or proportional framework?"
-    answer: Default to detailed/full review. Reduce only when both severity and priority are low. Must be transparent with decision and confirm before cutting corners.
+  - question: Where does non-institutional knowledge live?
+    answer: Raw artifacts (interviews, findings, cycle summaries) stay project-scoped. Distilled knowledge (policies, decisions) promotable to org level via edges, not by moving nodes. PPR relevance threshold prevents context bloat.
+    domain: artifact-structure
+  - question: Local backend orthogonality?
+    answer: Adapter pattern. Interface must be storage-agnostic — no YAML/SQLite idioms. Adapter boundary sits right below MCP tool handlers, not deep in storage layer.
+    domain: artifact-structure
+  - question: First sellable unit?
+    answer: Multi-user graph backend. Per-seat pricing. Local remains freemium per-repo. Cross-repo is paid value prop.
+    domain: project-boundaries
+  - question: Build vs buy?
+    answer: Buy whenever possible. Avoid vendor lock-in. AWS-familiar. Shoestring budget — revenue before seed funding.
+    domain: project-boundaries
+  - question: Target users?
+    answer: PMs and decision makers at small companies where engineers wear many hats. Engineers are thought leaders in these shops.
+    domain: project-boundaries
+  - question: Transition strategy?
+    answer: Clean cutover with migration tool. Config switch for backend selection. Migration imports YAML into graph.
     domain: workflow
-content_hash: e030e56dc838be320a8ee184243ce59cfc0de77f8c772bf1305cca67a2f448f0
-token_count: 634
+  - question: Graph database?
+    answer: Neo4j. Community edition free, AWS/GCP managed options after validation.
+    domain: artifact-structure
+  - question: API layer?
+    answer: GraphQL. Federation-ready for future multi-service split.
+    domain: artifact-structure
+  - question: Auth?
+    answer: Auth0. Design for it but don't gate productivity on it initially.
+    domain: project-boundaries
+  - question: Billing?
+    answer: Shopify. Per-seat with add-on tiers.
+    domain: project-boundaries
+  - question: Server language?
+    answer: TypeScript for now. Revisit for ML-specific tuning tools later.
+    domain: project-boundaries
+  - question: "PPR: client-side vs server-side?"
+    answer: Server-side for remote. Avoid overfetching and multiple round trips. Local adapter runs PPR in-process. Server-side PPR lives in the server that queries the graph.
+    domain: artifact-structure
+  - question: "IaC: dedicated repo or co-located?"
+    answer: Hybrid. Shared foundations in ideate-infra repo. Service-specific infra co-located in each service repo.
+    domain: project-boundaries
+  - question: Non-code concerns timing?
+    answer: Domain name and LLC now. Product decisions during portal phase. GTM during corporate site phase. Track non-code work in ideate itself.
+    domain: project-boundaries
+  - question: Single project or multiple?
+    answer: Multiple projects. Platform Strategy (cross-cutting) + per-repo implementation projects. Platform Strategy produces specs and bootstrap docs consumed by implementation projects.
+    domain: workflow
+  - question: Bootstrapping scope?
+    answer: Platform Strategy project includes bootstrap work items for other repos. Deliverables are docs and todo lists guiding human-in-the-loop activities. Actual implementation work lives in each repo's own project.
+    domain: workflow
+  - question: Repo visibility?
+    answer: "ideate: public. ideate-server, ideate-portal, ideate-corporate, ideate-infra: all private."
+    domain: project-boundaries
+content_hash: 7ce942a9a121bab731906a04cc3de94bfd550d1e2b863530d35a202f2ab33d2c
+token_count: 1297

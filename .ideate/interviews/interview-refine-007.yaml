@@ -1,19 +1,22 @@
 id: interview-refine-007
 type: interview
+title: "Refinement Interview — Cycle 7: Post-Review Corrections"
 cycle: 7
-date: 2026-03-31
 entries:
-  - question: How do you want to handle the review findings?
-    answer: Handle it all in refinement.
+  - question: Review findings exist from Cycle 6. Are you here to address those findings?
+    answer: Yes, addressing review findings.
     domain: null
-  - question: The current phase PH-011 is complete and the horizon is empty. Continue adding to PH-011 or define a new phase?
-    answer: Do a cleanup phase.
-    domain: null
-  - question: Should default_appetite and circuit_breaker_threshold be added to /ideate:settings interactive menu, or remain config-file-only?
-    answer: We should add those values to settings.
-    domain: workflow
-  - question: Do guiding principles still hold?
-    answer: Yes, confirmed earlier in this session.
-    domain: null
-content_hash: ee6b04adc4bff4c9a93b1a4efd631c20e7aa98e63a7724c8494b86db09357e91
-token_count: 175
+  - question: "Q-121: Is BELONGS_TO_DOMAIN an active relationship or deprecated? Option A (node with relationships) or Option B (property)?"
+    answer: "Option B — domain as a property. Remove BELONGS_TO_DOMAIN. Reasoning: hub distortion in PPR from high fan-in, and cross-cutting edges already handle cross-domain discovery."
+    domain: artifact-structure
+  - question: "Q-122: Is Cycle a first-class node?"
+    answer: No. Cycles are individual runs in a phase. Remove from diagram.
+    domain: artifact-structure
+  - question: "Q-123: WorkItemComplexity — 3 or 5 values?"
+    answer: 3 values (small/medium/large).
+    domain: artifact-structure
+  - question: "Q-124: Should archiveCycle be on the StorageAdapter interface?"
+    answer: Yes, add it with per-adapter semantics.
+    domain: artifact-structure
+content_hash: 6ca2f76b7c6496ea7a2e0a427c275b37684451c7a047508058c9a9cf988668cc
+token_count: 272

@@ -1,0 +1,20 @@
+id: review-manifest
+type: cycle_summary
+content: |-
+  ## Review Manifest (Cycle 6 — PH-018 Foundation & Architecture)
+
+  | # | WI | Title | Type | File Scope | Incremental | Findings |
+  |---|-----|-------|------|------------|-------------|----------|
+  | 1 | WI-543 | Design StorageAdapter interface | spike | docs/platform/adapter-interface.md (create), docs/platform/architecture-overview.md (create) | None (design phase) | — |
+  | 2 | WI-544 | Design Neo4j schema | spike | docs/platform/neo4j-schema.md (create) | None (design phase) | — |
+  | 3 | WI-545 | Design GraphQL schema | spike | docs/platform/graphql-schema.md (create), docs/platform/graphql-schema.graphql (create) | None (design phase) | — |
+  | 4 | WI-546 | Business setup checklist | chore | docs/platform/business-setup-checklist.md (create) | None (design phase) | — |
+  | 5 | WI-547 | Server bootstrap guide | chore | docs/platform/bootstrap-ideate-server.md (create) | None (design phase) | — |
+  | 6 | WI-548 | Infra bootstrap guide | chore | docs/platform/bootstrap-ideate-infra.md (create) | None (design phase) | — |
+  | 7 | WI-549 | Migration tool spec | spike | docs/platform/migration-tool-spec.md (create) | None (design phase) | — |
+  | 8 | WI-550 | Fix stale agent paths | maintenance | agents/spec-reviewer.md, agents/gap-analyst.md, agents/journal-keeper.md (modify) | None (no changes needed) | — |
+
+  All deliverables are specification documents and checklists in docs/platform/. No source code was written. No incremental code reviews were run. Additionally, docs/platform/steering.md was created during the refinement interview as the comprehensive vision document.
+cycle: 6
+content_hash: 0cbfa0fe71ad46362b9a35575159073c0854e2daf5b4550b84d9a02d22602c15
+token_count: 416

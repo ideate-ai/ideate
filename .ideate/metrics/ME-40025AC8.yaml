@@ -1,0 +1,23 @@
+id: ME-40025AC8
+type: metrics_event
+event_name: domain-curator
+timestamp: 2026-04-01T02:25:00Z
+skill: review
+phase: "7.2"
+cycle: null
+agent_type: domain-curator
+model: opus
+work_item: null
+wall_clock_ms: 357236
+turns_used: null
+context_files_read: []
+input_tokens: null
+output_tokens: null
+cache_read_tokens: null
+cache_write_tokens: null
+mcp_tools_called:
+  - ideate_get_domain_state
+  - ideate_get_next_id
+  - ideate_artifact_query
+finding_count: null
+finding_severities: null

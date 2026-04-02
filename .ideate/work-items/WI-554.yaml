@@ -1,0 +1,31 @@
+id: WI-554
+type: work_item
+title: Implement LocalAdapter — context assembly and PPR
+status: pending
+complexity: large
+scope:
+  - path: mcp/artifact-server/src/adapters/local/context.ts
+    op: create
+  - path: mcp/artifact-server/src/tools/context.ts
+    op: modify
+depends:
+  - WI-551
+blocks: []
+criteria:
+  - LocalAdapter implements traverse() wrapping existing PPR logic from ppr.ts
+  - LocalAdapter implements context assembly operations from tools/context.ts
+  - tools/context.ts refactored to call adapter for all storage and traversal operations
+  - PPR computation (ppr.ts) becomes a local adapter internal, not imported by tool handlers
+  - All existing context and PPR tests pass without modification
+domain: artifact-structure
+phase: PH-019
+work_item_type: feature
+notes: |-
+  tools/context.ts is 1405 lines — the largest module. It mixes PPR computation, YAML content reads, SQLite queries, and response assembly.
+
+  The adapter's traverse() operation encapsulates PPR: it takes seed IDs and options, returns ranked nodes with scores. The local adapter runs ppr.ts in-process. A future remote adapter would delegate to the server's PPR endpoint.
+resolution: null
+cycle_created: 6
+cycle_modified: null
+content_hash: 4c21e6fbef221c7b7673bb628c79929988fe30d33beff83137cfd9f6cc3e8ddd
+token_count: 303

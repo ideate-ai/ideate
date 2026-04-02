@@ -1,0 +1,27 @@
+id: PH-018
+type: phase
+name: Foundation & Architecture
+phase_type: design
+status: active
+started_date: 2026-04-01
+work_items:
+  - WI-543
+  - WI-544
+  - WI-545
+  - WI-546
+  - WI-547
+  - WI-548
+  - WI-549
+  - WI-550
+  - WI-557
+  - WI-558
+  - WI-559
+  - WI-560
+  - WI-561
+  - WI-562
+  - WI-563
+  - WI-564
+  - WI-565
+success_criteria: StorageAdapter interface, Neo4j schema, and GraphQL schema specs complete and internally consistent. Business entity filed. ideate-server and ideate-infra repos created and bootstrapped with ideate.
+content_hash: 4f8dba97b1fd3f1a32ce60ea6d81ea3aae70283eae7eac79575f106c7a3a1178
+token_count: 132

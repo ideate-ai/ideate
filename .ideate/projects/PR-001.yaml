@@ -1,13 +1,12 @@
 id: PR-001
 type: project
-name: Ideate
-intent: Structured SDLC workflow plugin for Claude Code, evolving toward standalone project management platform
-appetite: 6
+name: Ideate Platform Strategy
+intent: Strategic planning and bootstrapping for the ideate product platform — from Claude Code plugin to multi-user SaaS product with Neo4j knowledge graph backend, GraphQL API, web portal, and billing. Produces architecture specs, bootstrap guides, business setup checklists, and product decisions that feed into per-repo implementation projects.
 status: active
-current_phase_id: PH-017
+appetite: 6
+current_phase_id: PH-018
 horizon:
-  current: PH-017
-  next: []
+  current: PH-018
   completed:
     - PH-001
     - PH-002
@@ -25,6 +24,14 @@ horizon:
     - PH-014
     - PH-015
     - PH-016
+    - PH-017
+  next:
+    - name: Server & Migration Planning
+      description: Detailed implementation specs for ideate-server, migration tool design, adapter refactor project bootstrap
+    - name: Product & Portal Planning
+      description: PM user personas, pricing model finalization, portal architecture, portal project bootstrap
+    - name: Go-to-Market
+      description: Branding, corporate site specs, launch strategy, sales materials, corporate project bootstrap
   later: []
-content_hash: 2765bcd2f05b1785b0b0bc68925c6f76c9bfc4c54e00ba281b3844e1c40529f8
-token_count: 118
+content_hash: 41c7585c54562610e3bb6c03011ae2ccc2e25f616f3436ce2bfc011322bd4237
+token_count: 297
