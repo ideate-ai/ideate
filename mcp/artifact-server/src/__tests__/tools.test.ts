@@ -2706,7 +2706,7 @@ describe("handleBootstrapWorkspace", () => {
     const configPath = path.join(bootstrapIdeateDir, "config.json");
     expect(fs.existsSync(configPath)).toBe(true);
     const config = JSON.parse(fs.readFileSync(configPath, "utf8"));
-    expect(config.schema_version).toBe(3);
+    expect(config.schema_version).toBe(4);
     expect(config.project_name).toBe("test-project");
 
     // Verify subdirectories exist

@@ -1,12 +1,14 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
 import path from "path";
 
-export const CONFIG_SCHEMA_VERSION = 3;
+export const CONFIG_SCHEMA_VERSION = 4;
 
 /**
  * Schema for .ideate/config.json
  */
 export type SpawnMode = "subagent" | "teammate";
+
+export type BackendType = "local" | "remote";
 
 export interface IdeateConfigJson {
   schema_version: number;
@@ -22,6 +24,17 @@ export interface IdeateConfigJson {
     convergence_threshold?: number;
     edge_type_weights?: Record<string, number>;
     default_token_budget?: number;
+  };
+  /** Storage backend selection. Default: "local". */
+  backend?: BackendType;
+  /** Remote backend configuration. Required when backend is "remote". */
+  remote?: {
+    /** GraphQL endpoint URL for the ideate-server. */
+    url: string;
+    /** Organization ID for multi-tenant isolation. */
+    org_id: string;
+    /** Auth fields reserved for future use. */
+    auth_token?: string | null;
   };
 }
 
@@ -40,6 +53,11 @@ export const DEFAULT_APPETITE = 6;
  * "subagent" = standard Agent tool spawning; "teammate" = agent teams mode.
  */
 export const DEFAULT_SPAWN_MODE: SpawnMode = "subagent";
+
+/**
+ * Default backend used when the field is absent from config.json.
+ */
+export const DEFAULT_BACKEND: BackendType = "local";
 
 /**
  * Default agent_budgets used when the field is absent from config.json.
@@ -219,15 +237,15 @@ export function readRawConfig(ideateDir: string): IdeateConfigJson {
 
 /**
  * Read config.json from the given .ideate/ directory and deep-merge with
- * defaults for any missing optional fields (agent_budgets, ppr).
+ * defaults for any missing optional fields (agent_budgets, ppr, backend).
  *
  * @param ideateDir - Path to the .ideate/ directory
  * @returns Config object with defaults applied for missing fields
  */
 export function getConfigWithDefaults(ideateDir: string): Required<
-  Pick<IdeateConfigJson, "schema_version" | "agent_budgets" | "model_overrides" | "ppr" | "circuit_breaker_threshold" | "default_appetite" | "spawn_mode">
+  Pick<IdeateConfigJson, "schema_version" | "agent_budgets" | "model_overrides" | "ppr" | "circuit_breaker_threshold" | "default_appetite" | "spawn_mode" | "backend">
 > &
-  Omit<IdeateConfigJson, "agent_budgets" | "model_overrides" | "ppr" | "circuit_breaker_threshold" | "default_appetite" | "spawn_mode"> {
+  Omit<IdeateConfigJson, "agent_budgets" | "model_overrides" | "ppr" | "circuit_breaker_threshold" | "default_appetite" | "spawn_mode" | "backend"> {
   const configPath = path.join(ideateDir, "config.json");
   let raw: IdeateConfigJson = { schema_version: CONFIG_SCHEMA_VERSION };
 
@@ -267,6 +285,7 @@ export function getConfigWithDefaults(ideateDir: string): Required<
 
   const default_appetite = raw.default_appetite ?? DEFAULT_APPETITE;
   const spawn_mode = raw.spawn_mode ?? DEFAULT_SPAWN_MODE;
+  const backend = raw.backend ?? DEFAULT_BACKEND;
 
   return {
     ...raw,
@@ -276,5 +295,6 @@ export function getConfigWithDefaults(ideateDir: string): Required<
     circuit_breaker_threshold,
     default_appetite,
     spawn_mode,
+    backend,
   };
 }

@@ -1,7 +1,7 @@
 id: WI-555
 type: work_item
 title: Adapter-level contract tests
-status: pending
+status: done
 complexity: medium
 scope:
   - path: mcp/artifact-server/src/__tests__/adapter-contract.test.ts
@@ -25,6 +25,6 @@ notes: |-
   Use a test factory pattern: export a function that takes an adapter instance and runs the full contract suite against it. The LocalAdapter test file calls the factory with a LocalAdapter. The future RemoteAdapter test file calls it with a RemoteAdapter.
 resolution: null
 cycle_created: 6
-cycle_modified: null
-content_hash: 9c08a6b28e68c9a746dea98c686184361791de10905c218e54252eb51352a60c
-token_count: 293
+cycle_modified: 5
+content_hash: bb9cd4330b532172f7db9c90652c9f98d4225a85d4abc773e883414cd88c0042
+token_count: 315

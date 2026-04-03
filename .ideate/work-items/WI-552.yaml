@@ -1,7 +1,7 @@
 id: WI-552
 type: work_item
 title: Implement LocalAdapter — write operations
-status: pending
+status: done
 complexity: large
 scope:
   - path: mcp/artifact-server/src/adapters/local/index.ts
@@ -27,6 +27,6 @@ notes: |-
   The two-phase write pattern (YAML file first, then SQLite upsert) is preserved inside the LocalAdapter — it is invisible to the tool handler.
 resolution: null
 cycle_created: 6
-cycle_modified: null
-content_hash: 12c6b13dff31abcfeb3372ba44acfba15a2931cfa0c0afa7e516b38895821948
-token_count: 290
+cycle_modified: 5
+content_hash: 5dc319ff2606d779220c98e8d83f9607aefcfc650a30465085a90dae7e702d7f
+token_count: 313

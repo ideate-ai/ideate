@@ -17,7 +17,7 @@ import * as path from "path";
 import type { ToolContext } from "./types.js";
 import { signalIndexReady } from "./tools/index.js";
 import { artifactWatcher, BatchChangeEvent } from "./watcher.js";
-import { createIdeateDir, CONFIG_SCHEMA_VERSION, IDEATE_SUBDIRS, IdeateConfigJson, resolveArtifactDir, readIdeateConfig } from "./config.js";
+import { createIdeateDir, CONFIG_SCHEMA_VERSION, IDEATE_SUBDIRS, IdeateConfigJson, resolveArtifactDir, readIdeateConfig, readRawConfig } from "./config.js";
 import { createSchema, checkSchemaVersion } from "./schema.js";
 import { rebuildIndex, indexFiles, removeFiles, RebuildStats } from "./indexer.js";
 import { runPendingMigrations } from "./migrations.js";
@@ -38,6 +38,37 @@ export interface ServerState {
  */
 export function createDormantState(): ServerState {
   return { ctx: null, ideateDir: null, db: null };
+}
+
+// ---------------------------------------------------------------------------
+// selectAdapter — choose backend based on config.backend
+// ---------------------------------------------------------------------------
+
+/**
+ * Validate the backend field from config and throw a clear error if the
+ * selected backend is not yet implemented or is invalid.
+ *
+ * @param dir - Path to the .ideate/ directory (used to read config)
+ * @throws {Error} when backend is "remote" (not yet implemented) or unknown
+ */
+export function selectAdapter(dir: string): void {
+  const config = readRawConfig(dir);
+  const backend = config.backend ?? "local";
+
+  if (backend === "local" || backend === undefined) {
+    // Local is the only functional backend; nothing additional required.
+    return;
+  }
+
+  if (backend === "remote") {
+    throw new Error(
+      "Remote backend not yet implemented. Set backend to local or omit the field."
+    );
+  }
+
+  throw new Error(
+    `Unknown backend "${backend}". Valid values are "local" or "remote".`
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -85,6 +116,9 @@ export function initServer(dir: string, state: ServerState): void {
   if (migrationResult.errors.length > 0) {
     console.error(`[ideate-artifact-server] Migration errors: ${migrationResult.errors.join("; ")}`);
   }
+
+  // Select adapter based on config.backend. Throws if backend is unsupported.
+  selectAdapter(dir);
 
   // Use locals so server state is only committed after full success
   const newDb = openDatabase(dir);

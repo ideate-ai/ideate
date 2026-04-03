@@ -1,7 +1,7 @@
 id: WI-554
 type: work_item
 title: Implement LocalAdapter — context assembly and PPR
-status: pending
+status: done
 complexity: large
 scope:
   - path: mcp/artifact-server/src/adapters/local/context.ts
@@ -26,6 +26,6 @@ notes: |-
   The adapter's traverse() operation encapsulates PPR: it takes seed IDs and options, returns ranked nodes with scores. The local adapter runs ppr.ts in-process. A future remote adapter would delegate to the server's PPR endpoint.
 resolution: null
 cycle_created: 6
-cycle_modified: null
-content_hash: 4c21e6fbef221c7b7673bb628c79929988fe30d33beff83137cfd9f6cc3e8ddd
-token_count: 303
+cycle_modified: 5
+content_hash: d2758620cfafb64068db9943264a3bdcf98581d73c019cba496910baecbe4653
+token_count: 325

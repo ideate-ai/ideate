@@ -101,88 +101,81 @@ export async function handleGetConvergenceStatus(
     throw new Error("Missing or invalid required parameter: cycle_number");
   }
 
-  // Query cycle_summary rows from SQLite for this cycle using LEFT JOIN so we
-  // can fall back to file_path matching when document_artifacts row is absent.
-  const paddedCycle = String(cycleNumber).padStart(3, "0");
-  type RawRow = { id: string; file_path: string; da_content: string | null };
-  const likePattern = `%/cycles/${paddedCycle}/%`;
-  const rawRows = ctx.db.prepare(`
-    SELECT n.id, n.file_path, da.content AS da_content
-    FROM nodes n
-    LEFT JOIN document_artifacts da ON n.id = da.id
-    WHERE n.type = 'cycle_summary'
-      AND (
-        da.cycle = ?
-        OR (da.id IS NULL AND n.file_path LIKE ?)
-        OR (da.id IS NOT NULL AND da.cycle IS NULL AND n.file_path LIKE ?)
-      )
-  `).all(cycleNumber, likePattern, likePattern) as RawRow[];
+  let findingsBySeverity: Record<string, number>;
+  let cycleSummaryContent: string | null;
 
-  // Find spec-adherence and summary rows by node id pattern.
-  // In the current structure, spec-adherence content is embedded in the cycle summary (CS-* nodes).
-  // SA-* nodes contain spec-adherence if written separately; fall back to CS-* content for both.
-  const adherenceRow =
-    rawRows.find((r) => r.id.toUpperCase().startsWith("SA-")) ??
-    rawRows.find((r) => r.id.toLowerCase().includes("adherence"));
-  const summaryRow = rawRows.find((r) =>
-    r.id.toUpperCase().startsWith("CS-") ||
-    r.id.toLowerCase().includes("summary")
-  ) ?? rawRows[0];
+  if (ctx.adapter) {
+    // Delegate storage operations to adapter
+    const convergenceData = await ctx.adapter.getConvergenceData(cycleNumber);
+    findingsBySeverity = convergenceData.findings_by_severity;
+    cycleSummaryContent = convergenceData.cycle_summary_content;
+  } else {
+    // Fallback: direct SQLite path
+    const paddedCycle = String(cycleNumber).padStart(3, "0");
+    type RawRow = { id: string; file_path: string; da_content: string | null };
+    const likePattern = `%/cycles/${paddedCycle}/%`;
+    const rawRows = ctx.db.prepare(`
+      SELECT n.id, n.file_path, da.content AS da_content
+      FROM nodes n
+      LEFT JOIN document_artifacts da ON n.id = da.id
+      WHERE n.type = 'cycle_summary'
+        AND (
+          da.cycle = ?
+          OR (da.id IS NULL AND n.file_path LIKE ?)
+          OR (da.id IS NOT NULL AND da.cycle IS NULL AND n.file_path LIKE ?)
+        )
+    `).all(cycleNumber, likePattern, likePattern) as RawRow[];
 
-  // Resolve content: use document_artifacts.content if available, otherwise read from file_path.
-  // handleWriteArtifact stores content.content as a raw string when it is a string, or JSON.stringify(content) otherwise, in document_artifacts.content,
-  // so attempt to unwrap the `.content` field from the parsed JSON before returning the raw string.
-  function resolveContent(row: RawRow | undefined): string | null {
-    if (!row) return null;
-    if (row.da_content !== null && row.da_content !== undefined) {
-      try {
-        const parsed = JSON.parse(row.da_content) as Record<string, unknown>;
-        if (parsed && typeof parsed.content === "string") {
-          return parsed.content;
+    const adherenceRow =
+      rawRows.find((r) => r.id.toUpperCase().startsWith("SA-")) ??
+      rawRows.find((r) => r.id.toLowerCase().includes("adherence"));
+    const summaryRow = rawRows.find((r) =>
+      r.id.toUpperCase().startsWith("CS-") ||
+      r.id.toLowerCase().includes("summary")
+    ) ?? rawRows[0];
+
+    function resolveContent(row: RawRow | undefined): string | null {
+      if (!row) return null;
+      if (row.da_content !== null && row.da_content !== undefined) {
+        try {
+          const parsed = JSON.parse(row.da_content) as Record<string, unknown>;
+          if (parsed && typeof parsed.content === "string") {
+            return parsed.content;
+          }
+          console.warn("resolveContent: da_content parsed successfully but .content is not a string for id:", row.id);
+          return null;
+        } catch {
+          // not JSON
         }
-        // JSON parsed but .content is not a string — return null rather than raw JSON
-        console.warn("resolveContent: da_content parsed successfully but .content is not a string for id:", row.id);
-        return null;
-      } catch {
-        // not JSON — fall through to raw string
+        return row.da_content;
       }
-      return row.da_content;
+      return readFileSafe(row.file_path);
     }
-    return readFileSafe(row.file_path);
-  }
 
-  // Use adherence-specific row if found, else fall back to summary row (which embeds verdict)
-  const adherenceContent = resolveContent(adherenceRow ?? summaryRow);
+    cycleSummaryContent = resolveContent(adherenceRow ?? summaryRow);
+
+    const severityRows = ctx.db.prepare(
+      `SELECT severity, COUNT(*) as count FROM findings WHERE cycle = ? GROUP BY severity`
+    ).all(cycleNumber) as Array<{ severity: string; count: number }>;
+
+    findingsBySeverity = {};
+    for (const row of severityRows) {
+      findingsBySeverity[row.severity] = row.count;
+    }
+  }
 
   let principleResult: PrincipleResult;
-  if (adherenceContent === null) {
+  if (cycleSummaryContent === null) {
     principleResult = { verdict: "unknown", source: "step3", warning: `no cycle_summary found for cycle ${cycleNumber}` };
   } else {
-    principleResult = parsePrincipleVerdict(adherenceContent);
+    principleResult = parsePrincipleVerdict(cycleSummaryContent);
   }
 
-  // Query finding counts directly from the findings table
-  const countResult = ctx.db.prepare(
-    `SELECT COUNT(*) as cnt FROM findings WHERE cycle = ? AND severity IN ('critical', 'significant')`
-  ).get(cycleNumber) as { cnt: number };
-  const critSigCount = countResult.cnt;
-
-  // Also get per-severity counts for the output
-  const severityRows = ctx.db.prepare(
-    `SELECT severity, COUNT(*) as count FROM findings WHERE cycle = ? GROUP BY severity`
-  ).all(cycleNumber) as Array<{ severity: string; count: number }>;
-
-  let criticalCount = 0;
-  let significantCount = 0;
-  let minorCount = 0;
-  let suggestionsCount = 0;
-
-  for (const row of severityRows) {
-    if (row.severity === "critical") criticalCount = row.count;
-    else if (row.severity === "significant") significantCount = row.count;
-    else if (row.severity === "minor") minorCount = row.count;
-    else if (row.severity === "suggestion") suggestionsCount = row.count;
-  }
+  const critSigCount = (findingsBySeverity["critical"] ?? 0) + (findingsBySeverity["significant"] ?? 0);
+  const criticalCount = findingsBySeverity["critical"] ?? 0;
+  const significantCount = findingsBySeverity["significant"] ?? 0;
+  const minorCount = findingsBySeverity["minor"] ?? 0;
+  const suggestionsCount = findingsBySeverity["suggestion"] ?? 0;
 
   const conditionA = critSigCount === 0;
   const conditionB = principleResult.verdict === "pass";
@@ -226,61 +219,82 @@ export async function handleGetDomainState(
   const indexContent = readFileSafe(indexYamlPath) ?? readFileSafe(indexMdPath);
   const cycleNumber = indexContent !== null ? parseCycleFromIndex(indexContent) : null;
 
-  // Query domain_policies (active: status not deprecated/superseded)
-  const policiesStmt = ctx.db.prepare(`
-    SELECT dp.id, dp.domain, dp.description, n.status
-    FROM domain_policies dp
-    JOIN nodes n ON n.id = dp.id
-    WHERE (n.status IS NULL OR (n.status != 'deprecated' AND n.status != 'superseded'))
-    ORDER BY dp.domain, dp.id
-  `);
-  const allPolicies = policiesStmt.all() as Array<{
-    id: string;
-    domain: string;
-    description: string | null;
-    status: string | null;
-  }>;
+  type DomainEntry = {
+    policies: Array<{ id: string; description: string | null; status: string | null }>;
+    decisions: Array<{ id: string; description: string | null; status: string | null }>;
+    questions: Array<{ id: string; description: string | null; status: string | null }>;
+  };
 
-  // Query domain_decisions
-  const decisionsStmt = ctx.db.prepare(`
-    SELECT dd.id, dd.domain, dd.description, n.status
-    FROM domain_decisions dd
-    JOIN nodes n ON n.id = dd.id
-    ORDER BY dd.domain, dd.id
-  `);
-  const allDecisions = decisionsStmt.all() as Array<{
-    id: string;
-    domain: string;
-    description: string | null;
-    status: string | null;
-  }>;
+  let domainMap: Map<string, DomainEntry>;
 
-  // Query domain_questions (open: status = open)
-  const questionsStmt = ctx.db.prepare(`
-    SELECT dq.id, dq.domain, dq.description, n.status
-    FROM domain_questions dq
-    JOIN nodes n ON n.id = dq.id
-    WHERE n.status = 'open'
-    ORDER BY dq.domain, dq.id
-  `);
-  const allQuestions = questionsStmt.all() as Array<{
-    id: string;
-    domain: string;
-    description: string | null;
-    status: string | null;
-  }>;
+  if (ctx.adapter) {
+    // Delegate to adapter
+    domainMap = await ctx.adapter.getDomainState(domainsFilter ?? undefined);
+  } else {
+    // Fallback: direct SQLite path
+    const allPolicies = ctx.db.prepare(`
+      SELECT dp.id, dp.domain, dp.description, n.status
+      FROM domain_policies dp
+      JOIN nodes n ON n.id = dp.id
+      WHERE (n.status IS NULL OR (n.status != 'deprecated' AND n.status != 'superseded'))
+      ORDER BY dp.domain, dp.id
+    `).all() as Array<{
+      id: string;
+      domain: string;
+      description: string | null;
+      status: string | null;
+    }>;
 
-  // Collect unique domains
-  const domainSet = new Set<string>([
-    ...allPolicies.map((p) => p.domain),
-    ...allDecisions.map((d) => d.domain),
-    ...allQuestions.map((q) => q.domain),
-  ]);
-  let domains = Array.from(domainSet).sort();
+    const allDecisions = ctx.db.prepare(`
+      SELECT dd.id, dd.domain, dd.description, n.status
+      FROM domain_decisions dd
+      JOIN nodes n ON n.id = dd.id
+      ORDER BY dd.domain, dd.id
+    `).all() as Array<{
+      id: string;
+      domain: string;
+      description: string | null;
+      status: string | null;
+    }>;
 
-  // Apply optional filter
-  if (domainsFilter && domainsFilter.length > 0) {
-    domains = domains.filter((d) => domainsFilter.includes(d));
+    const allQuestions = ctx.db.prepare(`
+      SELECT dq.id, dq.domain, dq.description, n.status
+      FROM domain_questions dq
+      JOIN nodes n ON n.id = dq.id
+      WHERE n.status = 'open'
+      ORDER BY dq.domain, dq.id
+    `).all() as Array<{
+      id: string;
+      domain: string;
+      description: string | null;
+      status: string | null;
+    }>;
+
+    const domainSet = new Set<string>([
+      ...allPolicies.map((p) => p.domain),
+      ...allDecisions.map((d) => d.domain),
+      ...allQuestions.map((q) => q.domain),
+    ]);
+    let domainList = Array.from(domainSet).sort();
+
+    if (domainsFilter && domainsFilter.length > 0) {
+      domainList = domainList.filter((d) => domainsFilter.includes(d));
+    }
+
+    domainMap = new Map<string, DomainEntry>();
+    for (const domain of domainList) {
+      domainMap.set(domain, {
+        policies: allPolicies
+          .filter((p) => p.domain === domain)
+          .map(({ id, description, status }) => ({ id, description, status })),
+        decisions: allDecisions
+          .filter((d) => d.domain === domain)
+          .map(({ id, description, status }) => ({ id, description, status })),
+        questions: allQuestions
+          .filter((q) => q.domain === domain)
+          .map(({ id, description, status }) => ({ id, description, status })),
+      });
+    }
   }
 
   const sections: string[] = [];
@@ -288,10 +302,11 @@ export async function handleGetDomainState(
     sections.push(`Current cycle: ${cycleNumber}\n`);
   }
 
+  const domains = Array.from(domainMap.keys());
+
   for (const domain of domains) {
-    const policies = allPolicies.filter((p) => p.domain === domain);
-    const decisions = allDecisions.filter((d) => d.domain === domain);
-    const questions = allQuestions.filter((q) => q.domain === domain);
+    const entry = domainMap.get(domain)!;
+    const { policies, decisions, questions } = entry;
 
     sections.push(`## ${domain}`);
     sections.push(`\n### Policies (${policies.length} active)`);
@@ -530,58 +545,151 @@ export async function handleGetWorkspaceStatus(
   const indexContent = readFileSafe(indexYamlPath) ?? readFileSafe(indexMdPath);
   const cycleNumber = indexContent !== null ? parseCycleFromIndex(indexContent) : null;
 
-  // Work item counts by status
-  const wiCountsStmt = ctx.db.prepare(`
-    SELECT n.status, COUNT(*) as count
-    FROM nodes n
-    WHERE n.type = 'work_item'
-    GROUP BY n.status
-  `);
-  const wiCounts = wiCountsStmt.all() as Array<{ status: string | null; count: number }>;
+  let wiByStatus: Record<string, number>;
+  let criticalCount = 0;
+  let significantCount = 0;
+  let minorCount = 0;
+  let openQRows: Array<{ domain: string; count: number }>;
+  let activeProject: { id: string; name: string | null; intent: string; appetite: number | null } | undefined;
+  let activePhase: { id: string; name: string | null; phase_type: string; intent: string } | undefined;
 
-  let wiTotal = 0;
-  const wiByStatus: Record<string, number> = {};
-  for (const row of wiCounts) {
-    const s = row.status ?? "unknown";
-    wiByStatus[s] = row.count;
-    wiTotal += row.count;
+  if (ctx.adapter) {
+    // Delegate aggregation queries to adapter
+    const wiCounts = await ctx.adapter.countNodes({ type: "work_item" }, "status");
+    wiByStatus = {};
+    for (const entry of wiCounts) {
+      wiByStatus[entry.key] = entry.count;
+    }
+
+    if (cycleNumber !== null) {
+      const findingCounts = await ctx.adapter.countNodes(
+        { type: "finding", cycle: cycleNumber },
+        "severity"
+      );
+      for (const entry of findingCounts) {
+        if (entry.key === "critical") criticalCount = entry.count;
+        else if (entry.key === "significant") significantCount = entry.count;
+        else if (entry.key === "minor") minorCount = entry.count;
+      }
+    }
+
+    // Get open questions per domain via getDomainState
+    const domainState = await ctx.adapter.getDomainState();
+    const openQMap: Record<string, number> = {};
+    for (const [domain, entry] of domainState) {
+      if (entry.questions.length > 0) {
+        openQMap[domain] = entry.questions.length;
+      }
+    }
+    openQRows = Object.entries(openQMap)
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([domain, count]) => ({ domain, count }));
+
+    // Active project
+    activeProject = undefined;
+    const projectResult = await ctx.adapter.queryNodes(
+      { type: "project", status: "active" },
+      1,
+      0
+    );
+    if (projectResult.nodes.length > 0) {
+      const projectNode = await ctx.adapter.getNode(projectResult.nodes[0].node.id);
+      if (projectNode) {
+        activeProject = {
+          id: projectNode.id,
+          name: (projectNode.properties.name as string | null) ?? null,
+          intent: (projectNode.properties.intent as string) ?? "",
+          appetite: (projectNode.properties.appetite as number | null) ?? null,
+        };
+      }
+    }
+
+    // Active phase
+    activePhase = undefined;
+    const phaseResult = await ctx.adapter.queryNodes(
+      { type: "phase", status: "active" },
+      1,
+      0
+    );
+    if (phaseResult.nodes.length > 0) {
+      const phaseNode = await ctx.adapter.getNode(phaseResult.nodes[0].node.id);
+      if (phaseNode) {
+        activePhase = {
+          id: phaseNode.id,
+          name: (phaseNode.properties.name as string | null) ?? null,
+          phase_type: (phaseNode.properties.phase_type as string) ?? "",
+          intent: (phaseNode.properties.intent as string) ?? "",
+        };
+      }
+    }
+  } else {
+    // Fallback: direct SQLite path
+    const wiCounts = ctx.db.prepare(`
+      SELECT n.status, COUNT(*) as count
+      FROM nodes n
+      WHERE n.type = 'work_item'
+      GROUP BY n.status
+    `).all() as Array<{ status: string | null; count: number }>;
+
+    wiByStatus = {};
+    for (const row of wiCounts) {
+      const s = row.status ?? "unknown";
+      wiByStatus[s] = row.count;
+    }
+
+    if (cycleNumber !== null) {
+      const countRows = ctx.db.prepare(`
+        SELECT severity, COUNT(*) as count
+        FROM findings WHERE cycle = ?
+        GROUP BY severity
+      `).all(cycleNumber) as Array<{ severity: string; count: number }>;
+      for (const r of countRows) {
+        if (r.severity === "critical") criticalCount = r.count;
+        else if (r.severity === "significant") significantCount = r.count;
+        else if (r.severity === "minor") minorCount = r.count;
+      }
+    }
+
+    openQRows = ctx.db.prepare(`
+      SELECT dq.domain, COUNT(*) as count
+      FROM domain_questions dq
+      JOIN nodes n ON n.id = dq.id
+      WHERE n.status = 'open'
+      GROUP BY dq.domain
+      ORDER BY dq.domain
+    `).all() as Array<{ domain: string; count: number }>;
+
+    activeProject = ctx.db.prepare(`
+      SELECT p.id, p.name, p.intent, p.appetite
+      FROM projects p
+      JOIN nodes n ON n.id = p.id
+      WHERE n.status = 'active'
+      ORDER BY n.id
+      LIMIT 1
+    `).get() as { id: string; name: string | null; intent: string; appetite: number | null } | undefined;
+
+    activePhase = ctx.db.prepare(`
+      SELECT p.id, p.name, p.phase_type, p.intent
+      FROM phases p
+      JOIN nodes n ON n.id = p.id
+      WHERE n.status = 'active'
+      ORDER BY n.id
+      LIMIT 1
+    `).get() as { id: string; name: string | null; phase_type: string; intent: string } | undefined;
   }
 
-  // Derive named buckets
+  // Compute aggregate totals
+  let wiTotal = 0;
+  for (const count of Object.values(wiByStatus)) {
+    wiTotal += count;
+  }
+
   const wiDone = wiByStatus["done"] ?? 0;
   const wiPending = (wiByStatus["pending"] ?? 0) + (wiByStatus["not_started"] ?? 0);
   const wiBlocked = wiByStatus["blocked"] ?? 0;
   const wiInProgress = wiByStatus["in_progress"] ?? 0;
   const wiObsolete = wiByStatus["obsolete"] ?? 0;
 
-  // Finding counts from the findings table for the current cycle
-  let criticalCount = 0;
-  let significantCount = 0;
-  let minorCount = 0;
-
-  if (cycleNumber !== null) {
-    const countRows = ctx.db.prepare(`
-      SELECT severity, COUNT(*) as count
-      FROM findings WHERE cycle = ?
-      GROUP BY severity
-    `).all(cycleNumber) as Array<{ severity: string; count: number }>;
-    for (const r of countRows) {
-      if (r.severity === "critical") criticalCount = r.count;
-      else if (r.severity === "significant") significantCount = r.count;
-      else if (r.severity === "minor") minorCount = r.count;
-    }
-  }
-
-  // Open questions per domain
-  const openQStmt = ctx.db.prepare(`
-    SELECT dq.domain, COUNT(*) as count
-    FROM domain_questions dq
-    JOIN nodes n ON n.id = dq.id
-    WHERE n.status = 'open'
-    GROUP BY dq.domain
-    ORDER BY dq.domain
-  `);
-  const openQRows = openQStmt.all() as Array<{ domain: string; count: number }>;
   const totalOpenQ = openQRows.reduce((sum, r) => sum + r.count, 0);
 
   // Build dashboard
@@ -626,16 +734,6 @@ export async function handleGetWorkspaceStatus(
     lines.push("None.");
   }
 
-  // Active project
-  const activeProject = ctx.db.prepare(`
-    SELECT p.id, p.name, p.intent, p.appetite
-    FROM projects p
-    JOIN nodes n ON n.id = p.id
-    WHERE n.status = 'active'
-    ORDER BY n.id
-    LIMIT 1
-  `).get() as { id: string; name: string | null; intent: string; appetite: number | null } | undefined;
-
   if (activeProject) {
     lines.push("");
     lines.push("## Active Project");
@@ -646,16 +744,6 @@ export async function handleGetWorkspaceStatus(
     lines.push(`- Intent: ${activeProject.intent}`);
     lines.push(`- Appetite: ${activeProject.appetite ?? "unset"}`);
   }
-
-  // Active phase
-  const activePhase = ctx.db.prepare(`
-    SELECT p.id, p.name, p.phase_type, p.intent
-    FROM phases p
-    JOIN nodes n ON n.id = p.id
-    WHERE n.status = 'active'
-    ORDER BY n.id
-    LIMIT 1
-  `).get() as { id: string; name: string | null; phase_type: string; intent: string } | undefined;
 
   if (activePhase) {
     lines.push("");

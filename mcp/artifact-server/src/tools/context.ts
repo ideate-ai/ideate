@@ -2,8 +2,8 @@ import * as fs from "fs";
 import * as path from "path";
 import { parse as parseYaml } from "yaml";
 import type { ToolContext } from "../types.js";
-import { computePPR } from "../ppr.js";
 import { getConfigWithDefaults } from "../config.js";
+import { LocalContextAdapter } from "../adapters/local/index.js";
 
 // ---------------------------------------------------------------------------
 // Module-level caches
@@ -64,25 +64,6 @@ interface ResearchFindingRow {
   date: string | null;
   content: string | null;
   sources: string | null;
-}
-
-interface DocumentArtifactRow {
-  id: string;
-  title: string | null;
-  cycle: number | null;
-  content: string | null;
-}
-
-interface GuidingPrincipleRow {
-  id: string;
-  name: string;
-  description: string | null;
-}
-
-interface ConstraintRow {
-  id: string;
-  category: string;
-  description: string | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -821,20 +802,14 @@ export async function handleGetContextPackage(
 
   const sections: string[] = [];
 
+  // Create adapter instance for all storage queries
+  const contextAdapter = new LocalContextAdapter(ctx.drizzleDb, ctx.db);
+
   // -------------------------------------------------------------------------
   // 1. Architecture document
   // -------------------------------------------------------------------------
 
-  const archRow = ctx.db
-    .prepare(
-      `SELECT da.id, da.title, da.cycle, da.content
-       FROM document_artifacts da
-       JOIN nodes n ON n.id = da.id
-       WHERE n.type = 'architecture'
-       ORDER BY n.id
-       LIMIT 1`
-    )
-    .get() as DocumentArtifactRow | undefined;
+  const archRow = contextAdapter.queryArchitectureDocument();
 
   if (archRow) {
     if (archRow.content) {
@@ -882,14 +857,7 @@ export async function handleGetContextPackage(
   // 2. Guiding Principles
   // -------------------------------------------------------------------------
 
-  const principleRows = ctx.db
-    .prepare(
-      `SELECT gp.id, gp.name, gp.description
-       FROM guiding_principles gp
-       JOIN nodes n ON n.id = gp.id
-       ORDER BY n.id`
-    )
-    .all() as GuidingPrincipleRow[];
+  const principleRows = contextAdapter.queryGuidingPrinciples();
 
   if (principleRows.length > 0) {
     const principleSection: string[] = [`## Guiding Principles`, ""];
@@ -916,14 +884,7 @@ export async function handleGetContextPackage(
   // 3. Constraints
   // -------------------------------------------------------------------------
 
-  const constraintRows = ctx.db
-    .prepare(
-      `SELECT c.id, c.category, c.description
-       FROM constraints c
-       JOIN nodes n ON n.id = c.id
-       ORDER BY c.category, n.id`
-    )
-    .all() as ConstraintRow[];
+  const constraintRows = contextAdapter.queryConstraints();
 
   if (constraintRows.length > 0) {
     const constraintSection: string[] = [`## Constraints`, ""];
@@ -955,24 +916,7 @@ export async function handleGetContextPackage(
   // 4. Active Project
   // -------------------------------------------------------------------------
 
-  interface ProjectRow {
-    id: string;
-    intent: string;
-    success_criteria: string | null;
-    appetite: number | null;
-    horizon: string | null;
-    status: string | null;
-  }
-
-  const activeProject = ctx.db
-    .prepare(
-      `SELECT p.id, p.intent, p.success_criteria, p.appetite, p.horizon, n.status
-       FROM projects p
-       JOIN nodes n ON n.id = p.id
-       WHERE n.status = 'active'
-       LIMIT 1`
-    )
-    .get() as ProjectRow | undefined;
+  const activeProject = contextAdapter.queryActiveProject();
 
   if (activeProject) {
     const projectSection: string[] = [`## Active Project`, ""];
@@ -1013,25 +957,7 @@ export async function handleGetContextPackage(
   // 5. Current Phase
   // -------------------------------------------------------------------------
 
-  interface PhaseRow {
-    id: string;
-    project: string;
-    phase_type: string;
-    intent: string;
-    steering: string | null;
-    status: string | null;
-    work_items: string | null;
-  }
-
-  const activePhase = ctx.db
-    .prepare(
-      `SELECT p.id, p.project, p.phase_type, p.intent, p.steering, p.work_items, n.status
-       FROM phases p
-       JOIN nodes n ON n.id = p.id
-       WHERE n.status = 'active'
-       LIMIT 1`
-    )
-    .get() as PhaseRow | undefined;
+  const activePhase = contextAdapter.queryActivePhase();
 
   if (activePhase) {
     const phaseSection: string[] = [`## Current Phase`, ""];
@@ -1152,32 +1078,6 @@ export async function handleGetContextPackage(
 // handleAssembleContext — PPR-based context assembly with token budgeting
 // ---------------------------------------------------------------------------
 
-interface NodeRow {
-  id: string;
-  type: string;
-  file_path: string; // Kept for reading artifact content, not exposed in responses
-  token_count: number | null;
-  status: string | null;
-}
-
-/**
- * Estimate token count for a string using ~4 chars/token heuristic.
- */
-function estimateTokens(text: string): number {
-  return Math.ceil(text.length / 4);
-}
-
-/**
- * Read YAML file and return its raw text content. Returns empty string on error.
- */
-function readArtifactContent(filePath: string): string {
-  try {
-    return fs.readFileSync(filePath, "utf8");
-  } catch {
-    return "";
-  }
-}
-
 /**
  * Extract a human-readable label for an artifact based on its YAML content.
  */
@@ -1240,140 +1140,54 @@ export async function handleAssembleContext(
     : pprConfig.edge_type_weights;
 
   // -------------------------------------------------------------------------
-  // 3. Run PPR
+  // 3. Run PPR and assemble context via LocalContextAdapter
+  //
+  // The adapter wraps computePPR internally — tool handlers do not import
+  // ppr.ts directly. All PPR logic flows through the adapter's traverse().
   // -------------------------------------------------------------------------
 
-  const pprResults = computePPR(ctx.drizzleDb, seedNodeIds, {
+  const contextAdapter = new LocalContextAdapter(ctx.drizzleDb, ctx.db);
+
+  const traversalResult = await contextAdapter.traverse({
+    seed_ids: seedNodeIds,
     alpha: pprConfig.alpha,
-    maxIterations: pprConfig.max_iterations,
-    convergenceThreshold: pprConfig.convergence_threshold,
-    edgeTypeWeights,
+    max_iterations: pprConfig.max_iterations,
+    convergence_threshold: pprConfig.convergence_threshold,
+    edge_type_weights: edgeTypeWeights,
+    token_budget: tokenBudget,
+    always_include_types: includeTypes as import("../adapter.js").NodeType[],
   });
 
-  // Build a map of nodeId → PPR score
-  const scoreMap = new Map<string, number>();
-  for (const r of pprResults) {
-    scoreMap.set(r.nodeId, r.score);
-  }
-
   // -------------------------------------------------------------------------
-  // 4. Query node metadata for all PPR results + always-include types
+  // 4. Assemble markdown context grouped by artifact type
   // -------------------------------------------------------------------------
 
-  // Get all node IDs from PPR + seed IDs (seeds may not appear in PPR if graph is empty)
-  const pprNodeIds = new Set<string>([...pprResults.map((r) => r.nodeId), ...seedNodeIds]);
-
-  const pprNodeRows: NodeRow[] = [];
-  for (const id of pprNodeIds) {
-    const row = ctx.db
-      .prepare(`SELECT id, type, file_path, token_count, status FROM nodes WHERE id = ?`)
-      .get(id) as NodeRow | undefined;
-    if (row) {
-      pprNodeRows.push(row);
-    }
-  }
-
-  // -------------------------------------------------------------------------
-  // 5. Partition into always-include and ranked
-  // -------------------------------------------------------------------------
-
-  const includeTypeSet = new Set(includeTypes);
-  const seenIds = new Set<string>();
-
-  // Seed nodes are always included
-  const alwaysInclude: NodeRow[] = [];
-  const ranked: NodeRow[] = [];
-
-  // First, fetch ALL nodes of always-include types directly from the DB
-  // (they may not appear in PPR results if they have no edges to seeds)
-  if (includeTypeSet.size > 0) {
-    const typePlaceholders = Array.from(includeTypeSet).map(() => "?").join(", ");
-    const alwaysTypeRows = ctx.db
-      .prepare(`SELECT id, type, file_path, token_count, status FROM nodes WHERE type IN (${typePlaceholders})`)
-      .all(...Array.from(includeTypeSet)) as NodeRow[];
-    for (const row of alwaysTypeRows) {
-      if (!seenIds.has(row.id)) {
-        alwaysInclude.push(row);
-        seenIds.add(row.id);
-      }
-    }
-  }
-
-  // Then process PPR nodes: seeds go to alwaysInclude, others go to ranked
-  for (const row of pprNodeRows) {
-    if (seenIds.has(row.id)) continue; // already in always-include
-    if (seedNodeIds.includes(row.id)) {
-      alwaysInclude.push(row);
-      seenIds.add(row.id);
-    } else {
-      ranked.push(row);
-      seenIds.add(row.id);
-    }
-  }
-
-  // Sort ranked by PPR score descending
-  ranked.sort((a, b) => (scoreMap.get(b.id) ?? 0) - (scoreMap.get(a.id) ?? 0));
-
-  // -------------------------------------------------------------------------
-  // 6. Greedily assemble artifacts within token budget
-  // -------------------------------------------------------------------------
-
-  const includedIds: string[] = [];
-  const includedRows: NodeRow[] = [];
-  const contentCache = new Map<string, string>(); // file_path -> content
-  let usedTokens = 0;
-
-  // Always-include first (seeds + include_types)
-  for (const row of alwaysInclude) {
-    const content = readArtifactContent(row.file_path);
-    contentCache.set(row.file_path, content);
-    const tokenCount = row.token_count ?? estimateTokens(content);
-    usedTokens += tokenCount;
-    includedIds.push(row.id);
-    includedRows.push(row);
-  }
-
-  // Then add ranked artifacts by score until budget exhausted
-  for (const row of ranked) {
-    if (usedTokens >= tokenBudget) break;
-    const content = readArtifactContent(row.file_path);
-    contentCache.set(row.file_path, content);
-    const tokenCount = row.token_count ?? estimateTokens(content);
-    if (usedTokens + tokenCount > tokenBudget) continue; // skip if would bust budget
-    usedTokens += tokenCount;
-    includedIds.push(row.id);
-    includedRows.push(row);
-  }
-
-  // -------------------------------------------------------------------------
-  // 7. Assemble markdown context grouped by artifact type
-  // -------------------------------------------------------------------------
-
-  // Group included rows by type
-  const byType = new Map<string, NodeRow[]>();
-  for (const row of includedRows) {
-    const existing = byType.get(row.type) ?? [];
-    existing.push(row);
-    byType.set(row.type, existing);
+  // Group included nodes by type
+  const byType = new Map<string, typeof traversalResult.ranked_nodes>();
+  for (const entry of traversalResult.ranked_nodes) {
+    const type = entry.node.type;
+    const existing = byType.get(type) ?? [];
+    existing.push(entry);
+    byType.set(type, existing);
   }
 
   const sections: string[] = [];
 
-  for (const [type, rows] of byType) {
+  for (const [type, entries] of byType) {
     const typeHeader = type
       .replace(/_/g, " ")
       .replace(/\b\w/g, (c) => c.toUpperCase());
 
     const typeSection: string[] = [`## ${typeHeader}`];
 
-    for (const row of rows) {
-      const content = contentCache.get(row.file_path) ?? readArtifactContent(row.file_path);
-      const label = extractArtifactLabel(row.id, row.type, content);
+    for (const entry of entries) {
+      const { node, content } = entry;
+      const label = extractArtifactLabel(node.id, node.type, content);
       typeSection.push("", `### ${label}`);
       if (content) {
         typeSection.push("", "```yaml", content.trim(), "```");
       } else {
-        typeSection.push("", `*Content not available for ${row.id} (${row.type})*`);
+        typeSection.push("", `*Content not available for ${node.id} (${node.type})*`);
       }
     }
 
@@ -1383,21 +1197,13 @@ export async function handleAssembleContext(
   const assembledContext = sections.join("\n\n---\n\n");
 
   // -------------------------------------------------------------------------
-  // 8. Build top-20 PPR scores metadata
-  // -------------------------------------------------------------------------
-
-  const top20PprScores: Array<{ id: string; score: number }> = pprResults
-    .slice(0, 20)
-    .map((r) => ({ id: r.nodeId, score: r.score }));
-
-  // -------------------------------------------------------------------------
-  // 9. Return assembled context + metadata as JSON string
+  // 5. Return assembled context + metadata as JSON string
   // -------------------------------------------------------------------------
 
   const metadata = {
-    artifact_ids: includedIds,
-    total_tokens: usedTokens,
-    ppr_scores: top20PprScores,
+    artifact_ids: traversalResult.ranked_nodes.map((e) => e.node.id),
+    total_tokens: traversalResult.total_tokens,
+    ppr_scores: traversalResult.ppr_scores,
     context: assembledContext,
   };
 

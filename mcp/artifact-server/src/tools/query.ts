@@ -40,6 +40,11 @@ export async function handleGetNextId(
     throw new Error(`Unknown type '${type}'. Valid types: ${validTypes}`);
   }
 
+  // If adapter is available, delegate to it
+  if (ctx.adapter) {
+    return ctx.adapter.nextId(type as import("../adapter.js").NodeType, cycle);
+  }
+
   const { prefix, padWidth } = mapping;
 
   // For cycle-scoped types, require cycle parameter and generate {prefix}{cycle}-{seq} format
@@ -716,6 +721,105 @@ export async function handleArtifactQuery(
   let limit = limitRaw ?? 50;
   if (limit > 200) limit = 200;
 
+  // If adapter is available, delegate storage operations to it
+  if (ctx.adapter) {
+    if (relatedTo) {
+      let result;
+      try {
+        const { NotFoundError } = await import("../adapter.js");
+        result = await ctx.adapter.queryGraph(
+          {
+            origin_id: relatedTo,
+            depth,
+            direction: direction as "outgoing" | "incoming" | "both",
+            edge_types: edgeTypes as import("../adapter.js").EdgeType[] | undefined,
+            type_filter: type as import("../adapter.js").NodeType | undefined,
+            filters: {
+              status: filters.status,
+              domain: filters.domain,
+              cycle: filters.cycle,
+              severity: filters.severity,
+              phase: filters.phase,
+              work_item: filters.work_item,
+              work_item_type: filters.work_item_type,
+            },
+          },
+          limit,
+          offset
+        );
+      } catch (err) {
+        const { NotFoundError } = await import("../adapter.js");
+        if (err instanceof NotFoundError) {
+          return `Error: Node '${relatedTo}' not found`;
+        }
+        throw err;
+      }
+
+      if (result.nodes.length === 0) {
+        if (result.total_count === 0) {
+          return "No results found.";
+        }
+        return `No results on this page. **Total**: ${result.total_count} — use lower offset.`;
+      }
+
+      const tableRows = result.nodes.map((n) => [
+        n.node.id,
+        n.node.type,
+        n.edge_type ?? "",
+        n.direction ?? "",
+        n.depth !== undefined ? String(n.depth) : "",
+        n.node.status ?? "",
+        truncate(n.summary),
+      ]);
+
+      const table = markdownTable(
+        ["ID", "Type", "Edge", "Dir", "Depth", "Status", "Summary"],
+        tableRows
+      );
+
+      return `${table}\n\n**Total**: ${result.total_count}`;
+    } else {
+      const result = await ctx.adapter.queryNodes(
+        {
+          type: type as import("../adapter.js").NodeType | undefined,
+          status: filters.status,
+          domain: filters.domain,
+          cycle: filters.cycle,
+          severity: filters.severity,
+          phase: filters.phase,
+          work_item: filters.work_item,
+          work_item_type: filters.work_item_type,
+        },
+        limit,
+        offset
+      );
+
+      if (result.nodes.length === 0) {
+        if (result.total_count === 0) {
+          return "No results found.";
+        }
+        return `No results on this page. **Total**: ${result.total_count} — use lower offset.`;
+      }
+
+      const tableRows = result.nodes.map((n) => [
+        n.node.id,
+        n.node.type,
+        n.node.status ?? "",
+        truncate(n.summary),
+        "",
+        "",
+      ]);
+
+      const table = markdownTable(
+        ["ID", "Type", "Status", "Summary", "Domain", "Cycle"],
+        tableRows
+      );
+
+      return `${table}\n\n**Total**: ${result.total_count}`;
+    }
+  }
+
+  // Fallback: direct SQLite path (used when no adapter is configured)
   // Route to appropriate mode
   if (relatedTo) {
     const result = runGraphMode(

@@ -1,7 +1,7 @@
 id: WI-553
 type: work_item
 title: Implement LocalAdapter — read and query operations
-status: pending
+status: done
 complexity: large
 scope:
   - path: mcp/artifact-server/src/adapters/local/reader.ts
@@ -27,6 +27,6 @@ notes: |-
   The LocalAdapter read operations should return structured data. The tool handlers format it for MCP responses.
 resolution: null
 cycle_created: 6
-cycle_modified: null
-content_hash: 9b2e15bcfc84b274f7a5cf603976dd1c1c5ea3f5cbf99a2b2b50c52c655dba11
-token_count: 270
+cycle_modified: 5
+content_hash: e870d91063513df4e118f0b12023fb34ffce694290ff04aed87cde5d6a4dab4b
+token_count: 293

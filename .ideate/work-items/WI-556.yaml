@@ -1,7 +1,7 @@
 id: WI-556
 type: work_item
 title: Config extension for backend selection
-status: pending
+status: done
 complexity: small
 scope:
   - path: mcp/artifact-server/src/config.ts
@@ -26,6 +26,6 @@ notes: |-
   The server.ts initialization sequence: read config → select adapter → initialize adapter → pass to tool handlers via ToolContext.
 resolution: null
 cycle_created: 6
-cycle_modified: null
-content_hash: bde68075b0ff740e9c99ef179f6ee1f2767b1de55a0bdc9698652ab0afaaae49
-token_count: 292
+cycle_modified: 5
+content_hash: 309a90c961b7e34801a773f0814885d1b6bf6d81b155ef77c23a1bff791ea840
+token_count: 314

@@ -1,7 +1,7 @@
 id: WI-551
 type: work_item
 title: Define StorageAdapter TypeScript interface
-status: pending
+status: done
 complexity: medium
 scope:
   - path: mcp/artifact-server/src/adapter.ts
@@ -24,6 +24,6 @@ notes: |-
   The interface must cover: artifact CRUD, edge operations, graph traversal (including PPR), batch operations, and lifecycle (initialize, migrate).
 resolution: null
 cycle_created: 6
-cycle_modified: null
-content_hash: 2ace81ce5111e371233799cc86ba82aeea51b8526f0c8955397d710cf6ffb66b
-token_count: 257
+cycle_modified: 5
+content_hash: 7e0d56d19a1cfc0f9ebe2c21d7d8c05788add028b0e9f0ebb9f1c4e6fd05db67
+token_count: 280

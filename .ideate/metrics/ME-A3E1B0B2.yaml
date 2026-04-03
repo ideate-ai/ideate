@@ -1,0 +1,23 @@
+id: ME-A3E1B0B2
+type: metrics_event
+event_name: worker
+timestamp: 2026-04-02T00:25:00Z
+skill: execute
+phase: 6a
+cycle: 1
+agent_type: worker
+model: sonnet
+work_item: WI-553
+wall_clock_ms: 857313
+turns_used: null
+context_files_read:
+  - /Users/dan/code/ideate/mcp/artifact-server/src/tools/query.ts
+  - /Users/dan/code/ideate/mcp/artifact-server/src/tools/analysis.ts
+  - /Users/dan/code/ideate/mcp/artifact-server/src/adapter.ts
+input_tokens: null
+output_tokens: null
+cache_read_tokens: null
+cache_write_tokens: null
+mcp_tools_called:
+  - ideate_get_artifact_context
+rework_count: 0

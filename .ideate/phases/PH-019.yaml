@@ -1,9 +1,10 @@
 id: PH-019
 type: phase
 name: StorageAdapter Extraction
-description: Define the StorageAdapter interface (from WI-543 spec), extract storage operations from all MCP tool handlers, implement LocalAdapter wrapping existing YAML+SQLite logic. All existing tests must pass. New adapter-level contract tests added.
+description: Define the StorageAdapter interface, extract storage operations from all MCP tool handlers, implement LocalAdapter wrapping existing YAML+SQLite logic. All existing tests must pass. New adapter-level contract tests added.
 phase_type: implementation
-status: planned
+status: active
+started_date: 2026-04-02
 project: PR-002
 work_items:
   - WI-551
@@ -13,5 +14,5 @@ work_items:
   - WI-555
   - WI-556
 success_criteria: All MCP tool handlers call StorageAdapter instead of direct YAML/SQLite operations. LocalAdapter passes all existing tests. Adapter interface contains zero YAML/SQLite/file-path idioms.
-content_hash: 872f12093a9fce93050df8c325f60cb25503310e7cfc2141099316ca04f21d4a
-token_count: 162
+content_hash: 56bcb6a731c5cfa9185a89618a14ed5c97a7ec900df0ec1dc89b792d7663f097
+token_count: 163

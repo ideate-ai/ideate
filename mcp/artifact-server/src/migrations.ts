@@ -39,19 +39,18 @@ export interface Migration {
  * 3. Implement the migrate function to transform artifacts/config as needed
  */
 export const MIGRATIONS: Migration[] = [
-  // Example for future use:
-  // {
-  //   fromVersion: 3,
-  //   toVersion: 4,
-  //   description: "Add spawn_mode field to config",
-  //   migrate: (ideateDir: string) => {
-  //     const config = readRawConfig(ideateDir);
-  //     if (!config.spawn_mode) {
-  //       config.spawn_mode = "subagent";
-  //       writeConfig(ideateDir, config);
-  //     }
-  //   },
-  // },
+  {
+    fromVersion: 3,
+    toVersion: 4,
+    description: "Add backend field to config (default: local)",
+    migrate: (ideateDir: string) => {
+      const config = readRawConfig(ideateDir);
+      if (!config.backend) {
+        config.backend = "local";
+        writeConfig(ideateDir, config);
+      }
+    },
+  },
 ];
 
 // ---------------------------------------------------------------------------
