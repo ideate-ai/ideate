@@ -3,7 +3,7 @@ type: finding
 cycle: 11
 reviewer: code-reviewer
 severity: minor
-title: `skills/execute/SKILL.md` heading "General critical findings (non-startup-failure)" is dangling — no body text precedes the existing prose
+title: "`skills/execute/SKILL.md` heading \"General critical findings (non-startup-failure)\" is dangling — no body text precedes the existing prose"
 description: |
   - **File**: `/Users/dan/code/ideate/skills/execute/SKILL.md:405`
   - **Issue**: The new heading `**General critical findings (non-startup-failure)**:` is followed immediately by a blank line, then the pre-existing prose ("If the finding is fixable..."). The heading is redundant with the prose it introduces and adds visual noise without additional information.

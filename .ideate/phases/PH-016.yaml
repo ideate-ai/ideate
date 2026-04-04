@@ -1,9 +1,10 @@
 id: PH-016
 type: phase
 name: New Skills — Project, Triage, Status
+intent: ""
 description: Create /ideate:project, /ideate:triage, /ideate:status skills. Extend MCP workspace status with view parameter. Add proportional review routing. Fix review findings.
 phase_type: implementation
-project_id: PR-001
+project: PR-001
 status: complete
 started_date: 2026-03-31
 completed_date: 2026-03-31

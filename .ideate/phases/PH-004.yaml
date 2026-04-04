@@ -1,6 +1,7 @@
 id: PH-004
 type: phase
 name: Structure & Coherence
+intent: ""
 description: DRY refactors, server core structure cleanup, agent definition accuracy, worker agent creation.
 phase_type: implementation
 status: complete

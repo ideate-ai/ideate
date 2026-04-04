@@ -3,7 +3,7 @@ type: finding
 cycle: 16
 reviewer: code-reviewer
 severity: minor
-title: `migrateJournal` duplicates `buildArtifact` hash logic inline
+title: "`migrateJournal` duplicates `buildArtifact` hash logic inline"
 description: |
   - **File**: `scripts/migrate-to-v3.ts:901-906`
   - **Issue**: Journal entry hashes are computed with an inline copy of the `buildArtifact` algorithm rather than calling `buildArtifact`. The inline version does not delete `content_hash` and `token_count` from the hash input. In the current call path both fields are absent at hash-time so the result is correct, but if either field is ever present before hashing the inline and `buildArtifact` results diverge silently.

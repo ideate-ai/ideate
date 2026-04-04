@@ -1,20 +1,19 @@
 id: overview
 type: overview
-title: "Change Plan — PH-017: Documentation & Cleanup"
-body: |-
-  ## What Is Changing
-
-  1. Fix 3 deferred minor items from cycle 6-7 reviews (sed fallback, journal enum, status model)
-  2. Update ARCHITECTURE.md to reflect the 3 new skills added in PH-016
-  3. Create GUIDE.md — comprehensive user guide covering all 10 skills, project/phase management, work item types, and the SDLC loop
-
-  ## Why
-
-  PH-016 delivered functional skills but left documentation and minor fixes incomplete. The user guide fills a gap — ideate has README (overview + installation) and QUICKSTART (5-minute walkthrough) but no comprehensive reference for users managing real projects.
-
-  ## Scope Boundary
-
-  **In scope**: 3 deferred fixes, ARCHITECTURE.md update, GUIDE.md creation
-  **Not in scope**: New features, MCP server changes, skill behavior changes
-content_hash: 1c0f26bda8752d887724f2b5b89590598af63a2a3d3aa85aad8475dae76b90c4
-token_count: 217
+title: "PH-024: Equivalence Test Infrastructure"
+description: Build a test infrastructure that proves LocalAdapter (YAML+SQLite) and RemoteAdapter (Neo4j+GraphQL) produce identical results for all 21 StorageAdapter methods. This is Phase 3 of PR-003 (Migration Tool Refinement).
+what_is_changing: Adding a Docker Compose test environment, a synthetic .ideate/ fixture with known values, a dual-adapter test harness, and 5 equivalence test suites covering all StorageAdapter methods.
+why: Phase 2 (Defect Remediation) achieved zero migration errors and fixed SQLite schema defects. Phase 3 proves that both backends behave identically from the perspective of the MCP tool handlers — the critical acceptance criterion for the platform pivot. Without these tests, backend parity is assumed but unverified.
+scope_boundary: This phase creates test infrastructure only. No changes to adapter implementations, MCP tool handlers, or the migration pipeline. If tests reveal divergences, they are documented as findings for a future fix cycle — not fixed inline.
+expected_impact: "New files only: docker-compose.test.yml, fixture YAML artifacts, 6 test files, 1 helper module, 1 shell script. No modifications to existing source code. Package.json gets a new test:equivalence script."
+work_items:
+  - "WI-589: Docker Compose test environment"
+  - "WI-590: Synthetic test fixture (~20 artifacts covering all types)"
+  - "WI-591: Dual-adapter harness + comparison utilities"
+  - "WI-592: Node CRUD and edge operation equivalence tests"
+  - "WI-593: Query and aggregation equivalence tests"
+  - "WI-594: PPR traverse with deterministic sort controls"
+  - "WI-595: Batch, lifecycle, and sequence operation equivalence tests"
+  - "WI-596: Null handling and edge-case consistency tests"
+content_hash: c89a5882c1a0a01bb3dc814ee4ef53b0db735e48c1cb06ff6fd005e15b124c54
+token_count: 449

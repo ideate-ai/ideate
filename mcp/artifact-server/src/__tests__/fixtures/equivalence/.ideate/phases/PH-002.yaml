@@ -1,0 +1,15 @@
+id: PH-002
+type: phase
+name: Schema v5 Validation
+project: PR-001
+phase_type: review
+status: active
+intent: |-
+  Run equivalence tests against the LocalAdapter and migration CLI to confirm
+  that every schema v5 column round-trips correctly through the full stack.
+description: null
+steering: null
+completed_date: null
+work_items: []
+cycle_created: 1
+cycle_modified: null

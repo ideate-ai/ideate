@@ -4,7 +4,7 @@ domain: artifact-structure
 status: settled
 cycle: 1
 supersedes: null
-description: `PRAGMA foreign_keys = ON` added to `index.ts` immediately after connection open. Without it, all FK constraints in the v7 schema are decorative.
+description: "`PRAGMA foreign_keys = ON` added to `index.ts` immediately after connection open. Without it, all FK constraints in the v7 schema are decorative."
 rationale: SQLite defaults to FK OFF. The v7 schema relies on FK ON DELETE CASCADE for cleanup of extension table rows when nodes are deleted.
 cycle_created: 1
 cycle_modified: null

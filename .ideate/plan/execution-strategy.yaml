@@ -1,17 +1,42 @@
 id: execution-strategy
 type: execution_strategy
-title: Execution Strategy — PH-021 Adapter Extraction Cleanup
 mode: batched_parallel
-parallelism: 3
+max_parallelism: 2
 review_cadence: per_item
-worktree: false
 groups:
-  - name: All Fixes
+  - name: Infrastructure (parallel)
     items:
-      - WI-577
-      - WI-578
-      - WI-579
-    notes: All independent with non-overlapping file scope. Single parallel batch.
-dependency_graph: No dependencies. All items independent.
-content_hash: 3fd784debb7126d58d44ed380308323e2d63434075ef35ad2702e3d6cb17c9fe
-token_count: 103
+      - WI-589
+      - WI-590
+    notes: Docker Compose and test fixture have no dependencies and can be built simultaneously.
+  - name: Harness
+    items:
+      - WI-591
+    notes: Depends on both WI-589 and WI-590. Builds the dual-adapter setup and comparison utilities.
+  - name: Test suites (parallel, max 2)
+    items:
+      - WI-592
+      - WI-593
+      - WI-594
+      - WI-595
+      - WI-596
+    notes: All depend on WI-591. Each creates its own test file so no scope collisions. Run up to 2 in parallel.
+dependency_graph:
+  WI-589: []
+  WI-590: []
+  WI-591:
+    - WI-589
+    - WI-590
+  WI-592:
+    - WI-591
+  WI-593:
+    - WI-591
+  WI-594:
+    - WI-591
+  WI-595:
+    - WI-591
+  WI-596:
+    - WI-591
+notes: Phase 3 of PR-003. The test suites are independent test files that all import from the shared equivalence-helpers.ts harness. WI-592-596 can run in parallel batches of 2. The Docker environment (WI-589) must be running for all tests. Consider running vitest with --pool=forks to isolate test files.
+content_hash: 7e8634b3c76fd9dd1a335e04d651c0ecaed5482fd5deb2b8f305589e1d354209
+token_count: 295

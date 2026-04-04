@@ -149,6 +149,7 @@ function buildExtensionRow(table: string, doc: Row): Row {
         phase: toStrOrNull(doc.phase),
         notes: toStrOrNull(doc.notes),
         work_item_type: toStrOrNull(doc.work_item_type) ?? "feature",
+        resolution: toStrOrNull(doc.resolution),
       };
 
     case "findings":
@@ -162,6 +163,7 @@ function buildExtensionRow(table: string, doc: Row): Row {
         description: toStrOrNull(doc.description),
         suggestion: toStrOrNull(doc.suggestion),
         addressed_by: toStrOrNull(doc.addressed_by),
+        title: toStrOrNull(doc.title),
       };
 
     case "domain_policies":
@@ -181,6 +183,8 @@ function buildExtensionRow(table: string, doc: Row): Row {
         supersedes: toStrOrNull(doc.supersedes),
         description: toStrOrNull(doc.description),
         rationale: toStrOrNull(doc.rationale),
+        title: toStrOrNull(doc.title),
+        source: toStrOrNull(doc.source),
       };
 
     case "domain_questions":
@@ -196,8 +200,8 @@ function buildExtensionRow(table: string, doc: Row): Row {
 
     case "guiding_principles":
       return {
-        name: toStrOrNull(doc.name) ?? "",
-        description: toStrOrNull(doc.description),
+        name: toStrOrNull(doc.name) ?? toStrOrNull(doc.title) ?? "",
+        description: toStrOrNull(doc.description) ?? toStrOrNull(doc.body) ?? null,
         amendment_history: toJsonOrNull(doc.amendment_history),
       };
 
@@ -245,7 +249,7 @@ function buildExtensionRow(table: string, doc: Row): Row {
         ? JSON.stringify(meComputedPayload)
         : null;
       return {
-        event_name: toStrOrNull(doc.agent_type ?? doc.event_name) ?? "",
+        event_name: toStrOrNull(doc.event_name) ?? toStrOrNull(doc.agent_type) ?? "",
         timestamp: toStrOrNull(doc.timestamp),
         payload: meStoredPayload,
         // Token accounting
@@ -307,18 +311,20 @@ function buildExtensionRow(table: string, doc: Row): Row {
         steering:         toStrOrNull(doc.steering),
         horizon:          toJsonOrNull(doc.horizon),
         status:           toStrOrNull(doc.status) ?? "",
+        current_phase_id: toStrOrNull(doc.current_phase_id),
       };
 
     case "phases":
       return {
-        name:       toStrOrNull(doc.name) ?? toStrOrNull(doc.title),
-        description: toStrOrNull(doc.description),
-        project:    toStrOrNull(doc.project) ?? "",
-        phase_type: toStrOrNull(doc.phase_type) ?? "",
-        intent:     toStrOrNull(doc.intent) ?? "",
-        steering:   toStrOrNull(doc.steering),
-        status:     toStrOrNull(doc.status) ?? "",
-        work_items: toJsonOrNull(doc.work_items),
+        name:           toStrOrNull(doc.name) ?? toStrOrNull(doc.title),
+        description:    toStrOrNull(doc.description),
+        project:        toStrOrNull(doc.project) ?? toStrOrNull(doc.project_id) ?? "",
+        phase_type:     toStrOrNull(doc.phase_type) ?? "",
+        intent:         toStrOrNull(doc.intent) ?? "",
+        steering:       toStrOrNull(doc.steering),
+        status:         toStrOrNull(doc.status) ?? "",
+        work_items:     toJsonOrNull(doc.work_items),
+        completed_date: toStrOrNull(doc.completed_date),
       };
 
     default:

@@ -3,7 +3,7 @@ type: finding
 cycle: 1
 reviewer: code-reviewer
 severity: minor
-title: `autopilot/phases/execute.md` and `execute/SKILL.md` unverifiable scrutiny phrasing divergence
+title: "`autopilot/phases/execute.md` and `execute/SKILL.md` unverifiable scrutiny phrasing divergence"
 description: |
   - **File**: `skills/execute/SKILL.md` vs `skills/autopilot/phases/execute.md`
   - **Issue**: `execute/SKILL.md` (WI-106) adds scrutiny but does not include the phrase "Prioritize investigation of unverifiable criteria" that appears in the autopilot version. Minor textual divergence; behavioral impact negligible.

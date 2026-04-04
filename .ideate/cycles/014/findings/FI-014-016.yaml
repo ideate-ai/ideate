@@ -3,7 +3,7 @@ type: finding
 cycle: 14
 reviewer: code-reviewer
 severity: minor
-title: `set -uo pipefail` omits `-e`
+title: "`set -uo pipefail` omits `-e`"
 description: |
   - **File**: `benchmarks/evaluate.sh:15`
   - **Issue**: `set -uo pipefail` is used without `-e`. Combined with S2 above, this means command failures inside command substitutions are not caught. Most other scripts in this project and the broader convention for defensive shell scripts use `set -euo pipefail`.

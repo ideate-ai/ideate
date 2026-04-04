@@ -12,7 +12,11 @@
  * automatically before the index rebuild.
  */
 
+import * as path from "path";
+import * as fs from "fs";
+import Database from "better-sqlite3";
 import { readRawConfig, writeConfig, CONFIG_SCHEMA_VERSION } from "./config.js";
+import { CURRENT_SCHEMA_VERSION } from "./schema.js";
 
 // ---------------------------------------------------------------------------
 // Migration interface
@@ -48,6 +52,42 @@ export const MIGRATIONS: Migration[] = [
       if (!config.backend) {
         config.backend = "local";
         writeConfig(ideateDir, config);
+      }
+    },
+  },
+  {
+    fromVersion: 4,
+    toVersion: 5,
+    description: "Add missing SQLite extension table columns (resolution, title, source, completed_date, current_phase_id)",
+    migrate: (ideateDir: string) => {
+      const dbPath = path.join(ideateDir, "index.db");
+      if (!fs.existsSync(dbPath)) return; // No DB yet — createSchema will handle it
+
+      const db = new Database(dbPath);
+      try {
+        const version = db.pragma("user_version", { simple: true }) as number;
+        if (version >= CURRENT_SCHEMA_VERSION) return; // Already migrated
+
+        // Helper: add column only if it does not already exist
+        const addColumnIfMissing = (table: string, column: string, colType: string) => {
+          const cols = db.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>;
+          if (!cols.some((c) => c.name === column)) {
+            db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${colType}`);
+          }
+        };
+
+        db.transaction(() => {
+          addColumnIfMissing("work_items", "resolution", "TEXT");
+          addColumnIfMissing("findings", "title", "TEXT");
+          addColumnIfMissing("domain_decisions", "title", "TEXT");
+          addColumnIfMissing("domain_decisions", "source", "TEXT");
+          addColumnIfMissing("phases", "completed_date", "TEXT");
+          addColumnIfMissing("projects", "current_phase_id", "TEXT");
+
+          db.pragma(`user_version = ${CURRENT_SCHEMA_VERSION}`);
+        })();
+      } finally {
+        db.close();
       }
     },
   },

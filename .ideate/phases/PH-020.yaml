@@ -1,6 +1,7 @@
 id: PH-020
 type: phase
 name: Remote Adapter Implementation
+intent: ""
 phase_type: implementation
 status: complete
 completed_date: 2026-04-02

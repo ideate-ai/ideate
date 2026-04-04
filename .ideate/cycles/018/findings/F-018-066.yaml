@@ -3,7 +3,7 @@ type: finding
 cycle: 18
 reviewer: code-reviewer
 severity: minor
-title: `PRAGMA foreign_keys = ON` is set but no foreign keys exist
+title: "`PRAGMA foreign_keys = ON` is set but no foreign keys exist"
 description: |
   - **File**: `src/schema.ts:309`
   - **Issue**: `createSchema` enables the foreign_keys pragma, but no table in the schema uses `REFERENCES` or `FOREIGN KEY`. The pragma has no effect.

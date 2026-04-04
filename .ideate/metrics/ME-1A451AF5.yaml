@@ -1,0 +1,25 @@
+id: ME-1A451AF5
+type: metrics_event
+event_name: code-reviewer
+timestamp: 2026-04-03T18:35:00Z
+phase: 6a
+cycle: 1
+agent_type: code-reviewer
+model: sonnet
+work_item: WI-591
+wall_clock_ms: 154879
+context_files_read: []
+mcp_tools_called: []
+outcome: rework
+finding_count: 5
+finding_severities:
+  critical: 0
+  significant: 2
+  minor: 3
+first_pass_accepted: false
+rework_count: null
+turns_used: null
+input_tokens: null
+output_tokens: null
+cache_read_tokens: null
+cache_write_tokens: null

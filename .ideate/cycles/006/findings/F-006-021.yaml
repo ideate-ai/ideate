@@ -3,7 +3,7 @@ type: finding
 cycle: 6
 reviewer: code-reviewer
 severity: minor
-title: `cycle` field absent from refine skill's metrics entry schema
+title: "`cycle` field absent from refine skill's metrics entry schema"
 description: |
   - **File**: `/Users/dan/code/ideate/skills/refine/SKILL.md:373`
   - **Issue**: The inline schema example for the refine skill omits the `cycle` field entirely. Every other skill's inline schema includes `cycle` — `autopilot` uses `"cycle":<N>`, while `plan`, `execute`, and `review` omit it from their inline examples but the artifact-conventions canonical schema includes it. The `artifact-conventions.md` agent spawn schema (line 719) includes `"cycle": null` and the documentation at line 768 explicitly states "The `cycle` field in agent-spawn entries is null for skills that are not cycle-aware (plan, execute, refine)." The refine skill's inline schema should match.

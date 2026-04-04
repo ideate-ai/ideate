@@ -3,7 +3,7 @@ type: finding
 cycle: 1
 reviewer: code-reviewer
 severity: minor
-title: `col_widths["Team"]` initialized to `15` but no other column has a preset minimum wider than its header
+title: "`col_widths[\"Team\"]` initialized to `15` but no other column has a preset minimum wider than its header"
 description: |
   - **File**: `/Users/dan/code/ideate/mcp/session-spawner/server.py:503`
   - **Issue**: The `Team` column minimum is hardcoded to `15`, which is wider than its 4-character header and wider than all the other columns' minimums. The spec says nothing about a minimum team column width. This is an undocumented assumption about maximum team name length that will still expand if a longer name is provided, but wastes space for the common case.

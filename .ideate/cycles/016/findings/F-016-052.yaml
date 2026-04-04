@@ -3,7 +3,7 @@ type: finding
 cycle: 16
 reviewer: spec-reviewer
 severity: minor
-title: `belongs_to_domain` source_types includes `work_item` — undocumented in spec
+title: "`belongs_to_domain` source_types includes `work_item` — undocumented in spec"
 description: |
   - **File**: `/Users/dan/code/ideate/mcp/artifact-server/src/schema.ts:54`
   - **Issue**: WI-148 notes/148.md specifies source types for `belongs_to_domain` as `domain_policy`, `domain_decision`, `domain_question`. Implementation adds `work_item` (fixed during WI-148 review but not reflected in the spec notes).

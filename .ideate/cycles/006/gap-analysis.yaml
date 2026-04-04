@@ -1,61 +1,7 @@
 id: gap-analysis
 type: cycle_summary
-reviewer: gap-analyst
-verdict: Fail
-content: |-
-  ## Verdict: Fail
-
-  Multiple significant integration gaps and missing infrastructure specs that would block implementation.
-
-  ## Significant Findings
-
-  ### EC2: archiveCycle mutation has no atomicity spec for remote mode
-  graphql-schema.md Section 5.5 says archiveCycle changes statuses but specifies no atomicity or rollback semantics.
-
-  ### EC3: HAS_CYCLE relationship and Cycle node in diagram but never defined
-  Same as code-reviewer C2.
-
-  ### II1: GraphQL SDL completeness unverified against design doc mapping table
-  Section 10 mapping table lists ~10 additional queries not covered in design sections 3.1-3.7.
-
-  ### II2: archiveCycle missing from StorageAdapter interface
-  architecture-overview.md references it as an open question. GraphQL schema defines the mutation. No adapter method exists.
-
-  ### II3: BELONGS_TO_DOMAIN contradiction between neo4j-schema and migration-tool-spec
-  Same as code-reviewer C1.
-
-  ### II5: bootstrapWorkspace mutation mapped but has no design section
-  Section 10 maps ideate_bootstrap_workspace to a mutation. No spec for what it does.
-
-  ### II6: Multiple queries in mapping table missing from design sections
-  reviewManifest, contextPackage, artifactContext, executionStatus, config queries have no design sections.
-
-  ### MI1: No health/status endpoint specification
-  ECS requires health checks. No spec for endpoint path, response format, or degradation behavior.
-
-  ### MI2: No logging strategy for ideate-server
-  No log format, levels, correlation IDs, or retention policy specified.
-
-  ### MI3: No testing/validation strategy for spec conformance
-  No contract testing to verify server conforms to GraphQL SDL or Neo4j constraints.
-
-  ### IR1: GraphQL SDL never validated as parseable
-  No step verifies the .graphql file is syntactically valid.
-
-  ### IR3: No acceptance criteria for dogfooding merge
-  Migration tool spec has no post-import validation criteria for the merged graph.
-
-  ## Minor Findings
-
-  ### MR1-3: Pricing, GTM, principle amendments deferred (expected)
-  ### EC1: Migration tool no spec for missing config.json
-  ### EC4: batchMutate duplicate ID behavior undefined
-  ### EC5: Intra-codebase duplicate artifact IDs not warned
-  ### II4: Weight table duplicated in migration spec without cross-reference
-  ### MI4: No Neo4j connection pool spec
-  ### MI5: No CI/CD spec for ideate-infra repo
-  ### IR2: Bootstrap guide assumes ideate knowledge
-  ### IR4: No business email setup step
 cycle: 6
-content_hash: 109a403016a9a056b6a205672dca0209bc38cdde69d3458bdb22b79b3f5ad5a3
-token_count: 640
+reviewer: gap-analyst
+findings_summary: "5 significant gaps, 2 minor. EC1: putEdge/removeEdges missing — fixed. EC2: getConvergenceData cycle_summary_content untested — fixture CS-001.yaml added. II1: No developer docs for running equivalence suite — deferred to Production Validation phase. II2: IDEATE_SERVER_PATH not validated before Docker start — deferred. MI1: No CI workflow — out of scope. MI2: cycle_summary fixture missing — fixed."
+content_hash: df00bdfe20c065d6175aff6e36e3c2d2b92ff35b153c35a4ce8e85dd336b4d97
+token_count: 122

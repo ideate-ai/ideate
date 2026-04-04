@@ -1,0 +1,22 @@
+id: WI-003
+type: work_item
+title: Validate nullable cycle fields in indexer
+status: done
+complexity: small
+work_item_type: bug
+domain: artifact-structure
+phase: PH-001
+scope:
+  - path: mcp/artifact-server/src/indexer.ts
+    op: modify
+depends:
+  - WI-001
+blocks: []
+criteria:
+  - indexer handles null cycle_created without crashing
+  - indexer handles null cycle_modified without crashing
+  - null values stored as NULL in SQLite nodes table
+governed_by: []
+resolution: null
+cycle_created: null
+cycle_modified: null

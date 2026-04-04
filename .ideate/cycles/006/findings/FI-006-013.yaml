@@ -3,7 +3,7 @@ type: finding
 cycle: 6
 reviewer: code-reviewer
 severity: minor
-title: `fmt_ms(0)` displays `0s` for cycles with no timing entries
+title: "`fmt_ms(0)` displays `0s` for cycles with no timing entries"
 description: |
   - **File**: `/Users/dan/code/ideate/scripts/report.sh:196`
   - **Issue**: In `section_per_cycle_breakdown`, cycles that exist only in `quality_events` (no corresponding metric entries) will show `0s` wall clock and `0` tokens rather than `-`, because `sum(...)` over an empty list returns 0 and `fmt_ms(0)` returns `'0s'`. This can mislead a reader into thinking a cycle ran but was instantaneous.

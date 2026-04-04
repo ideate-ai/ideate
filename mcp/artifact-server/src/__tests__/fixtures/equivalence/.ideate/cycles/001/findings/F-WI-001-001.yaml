@@ -1,0 +1,21 @@
+id: F-WI-001-001
+type: finding
+title: Missing resolution column in initial schema migration
+severity: significant
+work_item: WI-001
+verdict: fail
+cycle: 1
+reviewer: code-reviewer
+file_refs:
+  - path: mcp/artifact-server/src/schema.ts
+    line: 425
+description: |-
+  The initial schema migration for v5 was missing the resolution column
+  in the work_items DDL. The column was added to the Drizzle table definition
+  in db.ts but not to the createSchema SQL string in schema.ts.
+suggestion: |-
+  Add resolution TEXT to the work_items CREATE TABLE statement in schema.ts
+  at line 425, after the work_item_type column.
+addressed_by: WI-001
+cycle_created: 1
+cycle_modified: null

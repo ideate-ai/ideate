@@ -3,7 +3,7 @@ type: finding
 cycle: 18
 reviewer: code-reviewer
 severity: minor
-title: `TYPE_TO_TABLE` in indexer.ts duplicates `TYPE_TO_DRIZZLE_TABLE` in db.ts
+title: "`TYPE_TO_TABLE` in indexer.ts duplicates `TYPE_TO_DRIZZLE_TABLE` in db.ts"
 description: |
   - **File**: `src/indexer.ts:29-52`, `src/db.ts:246-269`
   - **Issue**: Both maps cover the same 21 type strings. No compile-time or runtime check ensures they stay in sync. Adding a new type to one map but not the other would cause silent misbehavior: hash lookups would miss (triggering unnecessary re-parses) or upserts would fail.

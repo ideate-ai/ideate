@@ -1,0 +1,20 @@
+id: PH-001
+type: phase
+name: Schema v5 Implementation
+project: PR-001
+phase_type: implementation
+status: complete
+intent: |-
+  Implement all schema v5 extension columns and create the equivalence
+  test fixture that validates their correctness end-to-end.
+description: |-
+  Covers schema migration, indexer row-builder updates, and fixture creation.
+  All work items in scope were completed in cycle 1.
+steering: null
+completed_date: "2026-04-01"
+work_items:
+  - WI-001
+  - WI-002
+  - WI-003
+cycle_created: 1
+cycle_modified: 1

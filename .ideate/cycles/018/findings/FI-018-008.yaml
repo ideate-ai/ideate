@@ -3,7 +3,7 @@ type: finding
 cycle: 18
 reviewer: code-reviewer
 severity: minor
-title: `migratePlanArtifacts` and `migrateSteeringArtifacts` inline the dry-run / write logic instead of using `writeOutput`
+title: "`migratePlanArtifacts` and `migrateSteeringArtifacts` inline the dry-run / write logic instead of using `writeOutput`"
 description: |
   - **File**: `/Users/dan/code/ideate/scripts/migrate-to-v3.ts:1119-1127`, `1153-1161`, `1200-1208`, `1234-1242`
   - **Issue**: The new functions bypass the existing `writeOutput` helper and duplicate its logic inline (dry-run guard, `mkdirSync`, `writeFileSync`, `ctx.created.push`). All other migration functions (e.g., `migratePolicies`, `migrateWorkItems`) call `writeOutput`. The inconsistency has no correctness impact but creates a maintenance hazard — any future change to `writeOutput` (e.g., adding a file counter or changing the log format) will not apply to these two functions.

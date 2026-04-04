@@ -3,7 +3,7 @@ type: finding
 cycle: 14
 reviewer: code-reviewer
 severity: significant
-title: `$?` check after command substitution containing pipeline is unreliable
+title: "`$?` check after command substitution containing pipeline is unreliable"
 description: |
   - **File**: `benchmarks/evaluate.sh:163,279`
   - **Issue**: The pattern `JUDGE_YAML="$(python3 ...)" ` followed by `if [[ $? -ne 0 ]]` is unreliable. In bash, the exit code of a command substitution assignment is the exit code of the last command in the substitution, but assigning a command substitution to a variable with `VAR="$(cmd)"` always exits 0 when `set -e` is not active (it is not active here — `set -uo pipefail` was used, not `set -euo pipefail`). The `$?` check at line 163 and line 279 will always see 0 because bash sets `$?` to 0 for a successful variable assignment even when the command substitution fails.

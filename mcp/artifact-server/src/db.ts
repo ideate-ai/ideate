@@ -32,6 +32,7 @@ export const workItems = sqliteTable("work_items", {
   phase: text("phase"),
   notes: text("notes"),
   work_item_type: text("work_item_type").default("feature"),
+  resolution: text("resolution"),
 });
 
 export const findings = sqliteTable("findings", {
@@ -45,6 +46,7 @@ export const findings = sqliteTable("findings", {
   description: text("description"),
   suggestion: text("suggestion"),
   addressed_by: text("addressed_by"),
+  title: text("title"),
 });
 
 export const domainPolicies = sqliteTable("domain_policies", {
@@ -64,6 +66,8 @@ export const domainDecisions = sqliteTable("domain_decisions", {
   supersedes: text("supersedes"),
   description: text("description"),
   rationale: text("rationale"),
+  title: text("title"),
+  source: text("source"),
 });
 
 export const domainQuestions = sqliteTable("domain_questions", {
@@ -179,6 +183,7 @@ export const projects = sqliteTable("projects", {
   steering: text("steering"),
   horizon: text("horizon"),
   status: text("status").notNull(),
+  current_phase_id: text("current_phase_id"),
 });
 
 export const phases = sqliteTable("phases", {
@@ -191,6 +196,7 @@ export const phases = sqliteTable("phases", {
   steering: text("steering"),
   status: text("status").notNull(),
   work_items: text("work_items"),
+  completed_date: text("completed_date"),
 });
 
 // ---------------------------------------------------------------------------

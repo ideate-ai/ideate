@@ -1,6 +1,7 @@
 id: PH-010
 type: phase
 name: Reporting Skill
+intent: ""
 description: New /ideate:report skill.
 phase_type: implementation
 status: complete

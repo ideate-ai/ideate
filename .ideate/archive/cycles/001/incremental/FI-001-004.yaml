@@ -3,7 +3,7 @@ type: finding
 cycle: 1
 reviewer: code-reviewer
 severity: minor
-title: `prompt_byte_len` variable is redundant alias for `original_prompt_bytes`
+title: "`prompt_byte_len` variable is redundant alias for `original_prompt_bytes`"
 description: |
   - **File**: `/Users/dan/code/ideate/mcp/session-spawner/server.py:141`
   - **Issue**: Line 141 assigns `prompt_byte_len = original_prompt_bytes` and line 142 uses `prompt_byte_len` in the size check. The alias adds no value; `original_prompt_bytes` is already available and descriptive.

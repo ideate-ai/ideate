@@ -3,7 +3,7 @@ type: finding
 cycle: 1
 reviewer: code-reviewer
 severity: significant
-title: `execute/SKILL.md` Phase 4.5 context digest missing interface contracts cap exemption
+title: "`execute/SKILL.md` Phase 4.5 context digest missing interface contracts cap exemption"
 description: |
   - **File**: `skills/execute/SKILL.md:148-153`
   - **Issue**: WI-105 restructured `autopilot/phases/execute.md` to exempt the `## Interface Contracts` section from the 150-line cap (always included uncapped). The standalone execute skill's Phase 4.5 still uses a flat "~100-150 line" cap with no interface contracts exemption. The two skills now have inconsistent behavior for the same context digest function.

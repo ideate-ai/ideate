@@ -3,7 +3,7 @@ type: finding
 cycle: 17
 reviewer: code-reviewer
 severity: minor
-title: `addressed_by` registry claims `domain_question` as a source type but `domainQuestions` table has no `addressed_by` column
+title: "`addressed_by` registry claims `domain_question` as a source type but `domainQuestions` table has no `addressed_by` column"
 description: |
   - **File**: `mcp/artifact-server/src/schema.ts:EDGE_TYPE_REGISTRY`, `mcp/artifact-server/src/db.ts`
   - **Issue**: `EDGE_TYPE_REGISTRY.addressed_by.source_types` includes `"domain_question"`, but the `domainQuestions` Drizzle table definition does not include an `addressed_by` column. The `findings` table has the column; `domainQuestions` does not.

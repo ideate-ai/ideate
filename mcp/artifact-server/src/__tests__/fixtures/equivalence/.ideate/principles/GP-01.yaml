@@ -1,0 +1,11 @@
+id: GP-01
+type: guiding_principle
+name: Deterministic Fixture Values
+description: |-
+  All fixture artifact IDs, field values, and edge targets must be deterministic and documented.
+  A fixture that relies on random or runtime-generated values is unreliable as a test baseline.
+  Every field must be set to a known, stable value so test assertions can be hard-coded.
+status: active
+amendment_history: []
+cycle_created: 1
+cycle_modified: null

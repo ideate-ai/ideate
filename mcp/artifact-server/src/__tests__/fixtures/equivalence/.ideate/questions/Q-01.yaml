@@ -1,0 +1,16 @@
+id: Q-01
+type: domain_question
+domain: artifact-structure
+status: resolved
+impact: |-
+  Without exercising nullable fields in tests, a schema migration could silently
+  introduce a NOT NULL constraint that breaks indexing for existing artifacts.
+source: triage report — schema v5 triage findings
+resolution: Resolved by including explicit null-valued fixtures in the equivalence set.
+resolved_in: 1
+description: |-
+  Should nullable extension table columns be exercised by dedicated fixture
+  artifacts, or is it sufficient to rely on the column being absent from the
+  YAML document (which the indexer maps to null via toStrOrNull)?
+cycle_created: 1
+cycle_modified: null

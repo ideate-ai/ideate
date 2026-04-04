@@ -3,7 +3,7 @@ type: finding
 cycle: 18
 reviewer: code-reviewer
 severity: minor
-title: `tools.ts` is a stub — MCP server advertises zero tools
+title: "`tools.ts` is a stub — MCP server advertises zero tools"
 description: |
   - **File**: `src/tools.ts:1-7`
   - **Issue**: `TOOLS` is an empty array and `handleTool` throws unconditionally. The MCP server starts and listens but offers no capabilities. This is presumably intentional (tools are provided by a different mechanism or pending implementation), but a client connecting to this server sees an empty tool list.

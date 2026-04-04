@@ -1,0 +1,18 @@
+id: D-02
+type: domain_decision
+domain: artifact-structure
+status: open
+cycle: 1
+supersedes: null
+title: null
+source: null
+description: |-
+  Placeholder decision with null title and null source fields to exercise
+  nullable column handling in the domain_decisions extension table.
+  This artifact should not be interpreted as a real architectural decision.
+rationale: |-
+  The schema v5 domain_decisions table has title (nullable text) and
+  source (nullable text). At least one artifact must set both to null
+  to verify the indexer writes NULL rather than the string "null".
+cycle_created: 1
+cycle_modified: null

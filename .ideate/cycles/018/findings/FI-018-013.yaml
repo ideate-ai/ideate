@@ -3,7 +3,7 @@ type: finding
 cycle: 18
 reviewer: code-reviewer
 severity: minor
-title: `deleteStaleRows` iterates `document_artifacts` 10 times per rebuild
+title: "`deleteStaleRows` iterates `document_artifacts` 10 times per rebuild"
 description: |
   - **File**: `mcp/artifact-server/src/indexer.ts:417-440`
   - **Issue**: `deleteStaleRows` iterates `Object.values(dbSchema.TYPE_TO_DRIZZLE_TABLE)`, which now includes `documentArtifacts` 10 times (once per mapped type key). Each pass issues a `SELECT` against `document_artifacts`; passes 2–10 find 0 rows and skip the `DELETE`, but the 9 extra queries are wasted.

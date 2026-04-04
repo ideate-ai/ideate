@@ -1,6 +1,7 @@
 id: PH-007
 type: phase
 name: Foundation & Configuration
+intent: ""
 description: Auto-migration infrastructure, spawn mode configuration.
 phase_type: implementation
 status: complete

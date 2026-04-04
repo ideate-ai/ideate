@@ -3,7 +3,7 @@ type: finding
 cycle: 5
 reviewer: code-reviewer
 severity: minor
-title: `spec-reviewer` and `gap-analyst` agent definitions still reference `reviews/incremental/`
+title: "`spec-reviewer` and `gap-analyst` agent definitions still reference `reviews/incremental/`"
 description: |
   - **File**: `/Users/dan/code/ideate/agents/spec-reviewer.md:26`
   - **File**: `/Users/dan/code/ideate/agents/gap-analyst.md:24`

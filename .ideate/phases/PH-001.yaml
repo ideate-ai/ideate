@@ -1,6 +1,7 @@
 id: PH-001
 type: phase
 name: Implementation
+intent: ""
 description: Retroactive phase grouping all existing work items. Contains the full history of the workspace prior to the project/phase hierarchy introduction.
 phase_type: implementation
 status: complete

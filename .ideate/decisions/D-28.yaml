@@ -4,7 +4,7 @@ domain: artifact-structure
 status: settled
 cycle: 1
 supersedes: null
-description: `scripts/report.sh` lines 207-209 and 376-378 read `qe.get('critical', 0)` directly from the quality_summary event, but WI-093 defined the schema with severity counts nested at `findings.by_severity.{critical,significant,minor}`. Both the Per-Cycle Breakdown and Quality Trends sections silently display zeros. WI-114 will fix both locations.
+description: "`scripts/report.sh` lines 207-209 and 376-378 read `qe.get('critical', 0)` directly from the quality_summary event, but WI-093 defined the schema with severity counts nested at `findings.by_severity.{critical,significant,minor}`. Both the Per-Cycle Breakdown and Quality Trends sections silently display zeros. WI-114 will fix both locations."
 rationale: "Root cause is a spec-level inconsistency: WI-094's planning note implied flat keys while WI-093's SKILL.md defined nested structure. The executor implemented conflicting assumptions from two separately-planned work items."
 cycle_created: 1
 cycle_modified: null

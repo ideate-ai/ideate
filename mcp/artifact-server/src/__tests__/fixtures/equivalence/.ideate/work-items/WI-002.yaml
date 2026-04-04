@@ -1,0 +1,23 @@
+id: WI-002
+type: work_item
+title: Write equivalence test fixture
+status: pending
+complexity: small
+work_item_type: chore
+domain: artifact-structure
+phase: PH-001
+scope:
+  - path: mcp/artifact-server/src/__tests__/fixtures/equivalence
+    op: create
+depends:
+  - WI-001
+blocks: []
+criteria:
+  - fixture directory created at correct path
+  - at least one artifact per NodeType with extension table columns
+  - all YAML is parseable by js-yaml
+governed_by:
+  - GP-01
+resolution: null
+cycle_created: 1
+cycle_modified: null

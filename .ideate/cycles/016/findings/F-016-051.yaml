@@ -3,7 +3,7 @@ type: finding
 cycle: 16
 reviewer: spec-reviewer
 severity: minor
-title: `idx_edges_composite` absent from schema (WI-144)
+title: "`idx_edges_composite` absent from schema (WI-144)"
 description: |
   - **File**: `/Users/dan/code/ideate/mcp/artifact-server/src/schema.ts:538`
   - **Issue**: WI-144 criterion specifies `idx_edges_composite(source_id, target_id, edge_type)`. Omitted with an inline comment that the UNIQUE constraint creates an equivalent implicit index. The implicit index satisfies the functional purpose but the named index does not exist and the criterion is technically unmet.

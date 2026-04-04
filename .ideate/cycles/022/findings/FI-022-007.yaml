@@ -3,7 +3,7 @@ type: finding
 cycle: 22
 reviewer: code-reviewer
 severity: minor
-title: `schema.test.ts` test description still says "removed in schema v6"
+title: "`schema.test.ts` test description still says \"removed in schema v6\""
 description: |
   - **File**: `/Users/dan/code/ideate/mcp/artifact-server/src/__tests__/schema.test.ts:67`
   - **Issue**: The test description says `"does not create the interview_responses table (removed in schema v6)"` — this is accurate history, but "v6" is now two versions ago. Not a breaking issue but worth noting as history.

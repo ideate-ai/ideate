@@ -1,34 +1,9 @@
 id: spec-adherence
 type: cycle_summary
-reviewer: spec-reviewer
-verdict: Fail
-content: |-
-  ## Verdict: Fail (1 principle violation)
-
-  All work item acceptance criteria are met. One GP-14 violation found in adapter-interface.md behavioral documentation.
-
-  ## Significant Findings
-
-  ### D1: BELONGS_TO_DOMAIN inconsistency within neo4j-schema.md
-  Section 8.2 migration mapping includes belongs_to_domain -> BELONGS_TO_DOMAIN at weight 0.6. Section 9 says domain is a property, not a relationship. Internal contradiction.
-
-  ### D3: BELONGS_TO_DOMAIN in GraphQL EdgeType enum but excluded from Neo4j
-  graphql-schema.graphql includes BELONGS_TO_DOMAIN in EdgeType enum. Neo4j schema Section 9 excludes it. adapter-interface.md also includes it in EdgeType union.
-
-  ### P1: GP-14 violation - YAML idiom in adapter traverse behavior spec
-  adapter-interface.md Section 4.4: 'Content is returned as raw YAML strings (local) or structured content (remote).' This leaks YAML through the interface boundary.
-
-  ## Minor Findings
-
-  ### D2: WorkItemComplexity enum includes undocumented LOW and HIGH values
-  ### D5: ResearchFinding.content not explicitly exposed in GraphQL SDL
-  ### U1: WI-550 referenced in manifest but may lack YAML artifact
-  ### U2: LOW/HIGH enum values undocumented
-  ### N1: JournalEntry.content missing from GraphQL SDL type
-  ### N3: IaC decision made in bootstrap guide but steering.md still lists it as deferred
-
-  ## Acceptance Criteria
-  All criteria for WI-543 through WI-549 verified and met.
 cycle: 6
-content_hash: ba60d2390fe1ace6986376bd89756b7a44e07487348f8bfa5fb75118f539f390
-token_count: 382
+reviewer: spec-reviewer
+verdict: Pass (after rework)
+findings_summary: "2 deviations fixed. D1: putEdge and removeEdges missing from equivalence tests (19/21 methods) — added to equivalence-crud.test.ts. D2: No ordering guarantee for setup test noted (each file is self-contained). GP-4 parallel race on Neo4j namespace fixed via --no-file-parallelism."
+principle_adherence: GP-8 satisfied (FIXTURE-README.md documents all fixtures). GP-14 satisfied (no direct .ideate/ access). C-06 satisfied (non-overlapping file scopes).
+content_hash: 11ecfa17a733a31920c7b88a8d3c941a18922c2f4a2ecfaff78d6b4630f8004c
+token_count: 143

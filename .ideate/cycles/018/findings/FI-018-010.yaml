@@ -3,7 +3,7 @@ type: finding
 cycle: 18
 reviewer: code-reviewer
 severity: minor
-title: `ideateDir` parameter accepted but never used in `migrateInterviews`
+title: "`ideateDir` parameter accepted but never used in `migrateInterviews`"
 description: |
   - **File**: `/Users/dan/code/ideate/scripts/migrate-to-v3.ts:1229-1232`
   - **Issue**: The third parameter `ideateDir: string` is declared in the function signature but the body never references it — all output routes through `writeOutput(ctx, ...)` which reads `ctx.ideateDir`. This same dead-parameter pattern exists in `migratePlanArtifacts` (line 1091) and `migrateSteeringArtifacts` (line 1154), so WI-164 inherited the convention rather than introduced it. Still dead code.

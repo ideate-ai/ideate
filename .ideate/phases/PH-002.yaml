@@ -1,6 +1,7 @@
 id: PH-002
 type: phase
 name: Housekeeping
+intent: ""
 description: Repo cleanup, dead script removal, documentation updates.
 phase_type: implementation
 status: complete

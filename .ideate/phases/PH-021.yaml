@@ -1,6 +1,7 @@
 id: PH-021
 type: phase
 name: Adapter Extraction Cleanup
+intent: ""
 description: Complete the adapter extraction by adding adapter paths to remaining tool handlers, removing dead fallback code, and cleaning up minor technical debt.
 phase_type: implementation
 status: active
