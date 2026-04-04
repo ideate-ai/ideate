@@ -75,8 +75,8 @@ export const EDGE_TYPE_REGISTRY: Record<EdgeType, EdgeTypeSpec> = {
     yaml_field: "derived_from",
   },
   relates_to: {
-    description: "Finding relates to a specific work item",
-    source_types: ["finding"],
+    description: "Artifact relates to a specific work item",
+    source_types: ["finding", "metrics_event", "journal_entry"],
     target_types: ["work_item"],
     yaml_field: "work_item",
   },

@@ -393,6 +393,22 @@ export class LocalReaderAdapter {
         whereClauses.push("e.work_item_type = ?");
         params.push(filter.work_item_type);
       }
+    } else if (!type) {
+      // No type specified — apply cross-type filters via edges table or
+      // subqueries against all extension tables that have the column.
+      if (filter.domain) {
+        // Filter by domain: node must appear in any extension table with a matching domain column
+        whereClauses.push(
+          `n.id IN (SELECT id FROM work_items WHERE domain = ? UNION SELECT id FROM domain_policies WHERE domain = ? UNION SELECT id FROM domain_decisions WHERE domain = ? UNION SELECT id FROM domain_questions WHERE domain = ?)`
+        );
+        params.push(filter.domain, filter.domain, filter.domain, filter.domain);
+      }
+      if (filter.phase) {
+        whereClauses.push(
+          `n.id IN (SELECT id FROM work_items WHERE phase = ? UNION SELECT id FROM journal_entries WHERE phase = ?)`
+        );
+        params.push(filter.phase, filter.phase);
+      }
     }
 
     const whereClause =
