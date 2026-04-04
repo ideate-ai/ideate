@@ -231,14 +231,36 @@ export async function handleGetArtifactContext(
 
   // Try exact match first, then normalize for work item IDs (e.g., "185" → "WI-185")
   const idCandidates = normalizeWorkItemId(artifactId);
-  const placeholders = idCandidates.map(() => "?").join(", ");
-  const nodeMeta = ctx.db
-    .prepare(
-      `SELECT id, type, status, file_path, token_count, cycle_created, cycle_modified
-       FROM nodes WHERE id IN (${placeholders})
-       LIMIT 1`
-    )
-    .get(...idCandidates) as NodeMetaRow | undefined;
+
+  let nodeMeta: NodeMetaRow | undefined;
+
+  if (ctx.adapter) {
+    // Adapter path: try each candidate ID in turn.
+    for (const candidateId of idCandidates) {
+      const adapterNode = await ctx.adapter.getNode(candidateId);
+      if (adapterNode) {
+        nodeMeta = {
+          id: adapterNode.id,
+          type: adapterNode.type,
+          status: adapterNode.status,
+          file_path: null,
+          token_count: adapterNode.token_count,
+          cycle_created: adapterNode.cycle_created,
+          cycle_modified: adapterNode.cycle_modified,
+        };
+        break;
+      }
+    }
+  } else {
+    const placeholders = idCandidates.map(() => "?").join(", ");
+    nodeMeta = ctx.db
+      .prepare(
+        `SELECT id, type, status, file_path, token_count, cycle_created, cycle_modified
+         FROM nodes WHERE id IN (${placeholders})
+         LIMIT 1`
+      )
+      .get(...idCandidates) as NodeMetaRow | undefined;
+  }
 
   if (!nodeMeta) {
     throw new Error(`Artifact not found: "${artifactId}"`);
@@ -284,32 +306,72 @@ async function handlePhaseContext(
     work_items: string | null;
   }
 
-  const phaseRow = ctx.db
-    .prepare(
-      `SELECT p.id, p.project, p.phase_type, p.intent, p.steering, p.status, p.work_items
-       FROM phases p
-       WHERE p.id = ?`
-    )
-    .get(nodeMeta.id) as PhaseExtRow | undefined;
+  interface WISummaryRow {
+    id: string;
+    title: string;
+    status: string | null;
+    complexity: string | null;
+  }
 
-  if (!phaseRow) {
-    throw new Error(`Phase metadata not found for: "${nodeMeta.id}"`);
+  let phaseId: string;
+  let phaseProject: string;
+  let phaseType: string;
+  let phaseIntent: string;
+  let phaseSteering: string | null;
+  let phaseStatus: string;
+  let phaseWorkItemsRaw: string | null;
+
+  if (ctx.adapter) {
+    // Adapter path: read phase properties from the node.
+    const phaseNode = await ctx.adapter.getNode(nodeMeta.id);
+    if (!phaseNode) {
+      throw new Error(`Phase metadata not found for: "${nodeMeta.id}"`);
+    }
+    const p = phaseNode.properties;
+    phaseId = phaseNode.id;
+    phaseProject = (p.project as string) ?? "";
+    phaseType = (p.phase_type as string) ?? "";
+    phaseIntent = (p.intent as string) ?? "";
+    phaseSteering = (p.steering as string | null) ?? null;
+    phaseStatus = (p.status as string) ?? (phaseNode.status ?? "unknown");
+    // work_items may be a JSON string or an array depending on how the adapter stores it
+    const wiVal = p.work_items;
+    phaseWorkItemsRaw = Array.isArray(wiVal) ? JSON.stringify(wiVal) : ((wiVal as string | null) ?? null);
+  } else {
+    const phaseRow = ctx.db
+      .prepare(
+        `SELECT p.id, p.project, p.phase_type, p.intent, p.steering, p.status, p.work_items
+         FROM phases p
+         WHERE p.id = ?`
+      )
+      .get(nodeMeta.id) as PhaseExtRow | undefined;
+
+    if (!phaseRow) {
+      throw new Error(`Phase metadata not found for: "${nodeMeta.id}"`);
+    }
+    phaseId = phaseRow.id;
+    phaseProject = phaseRow.project;
+    phaseType = phaseRow.phase_type;
+    phaseIntent = phaseRow.intent;
+    phaseSteering = phaseRow.steering;
+    phaseStatus = phaseRow.status;
+    phaseWorkItemsRaw = phaseRow.work_items;
   }
 
   const sections: string[] = [];
 
   // Phase header
   const phaseSection: string[] = [
-    `## Phase: ${phaseRow.id}`,
+    `## Phase: ${phaseId}`,
     "",
-    `**Type**: ${phaseRow.phase_type}`,
-    `**Project**: ${phaseRow.project}`,
-    `**Status**: ${phaseRow.status}`,
-    `**Intent**: ${phaseRow.intent}`,
+    `**Type**: ${phaseType}`,
+    `**Project**: ${phaseProject}`,
+    `**Status**: ${phaseStatus}`,
+    `**Intent**: ${phaseIntent}`,
   ];
 
-  if (phaseRow.steering) {
-    phaseSection.push(`**Steering**: ${phaseRow.steering}`);
+  if (phaseSteering) {
+    phaseSection.push(`**Steering**: ${phaseSteering}`);
   }
 
   if (nodeMeta.cycle_created != null) {
@@ -319,25 +381,37 @@ async function handlePhaseContext(
   sections.push(phaseSection.join("\n"));
 
   // Load work item summaries
-  const workItemIds = parseJsonArray(phaseRow.work_items);
+  const workItemIds = parseJsonArray(phaseWorkItemsRaw);
   if (workItemIds.length > 0) {
-    interface WISummaryRow {
-      id: string;
-      title: string;
-      status: string | null;
-      complexity: string | null;
-    }
+    let wiRows: WISummaryRow[];
 
-    const placeholders = workItemIds.map(() => "?").join(", ");
-    const wiRows = ctx.db
-      .prepare(
-        `SELECT n.id, w.title, n.status, w.complexity
-         FROM nodes n
-         JOIN work_items w ON w.id = n.id
-         WHERE n.id IN (${placeholders})
-         ORDER BY n.id`
-      )
-      .all(...workItemIds) as WISummaryRow[];
+    if (ctx.adapter) {
+      // Adapter path: fetch all work item nodes at once, extract properties.
+      const wiNodesMap = await ctx.adapter.getNodes(workItemIds);
+      wiRows = workItemIds
+        .filter((id) => wiNodesMap.has(id))
+        .map((id) => {
+          const n = wiNodesMap.get(id)!;
+          return {
+            id: n.id,
+            title: (n.properties.title as string) ?? n.id,
+            status: n.status,
+            complexity: (n.properties.complexity as string | null) ?? null,
+          };
+        })
+        .sort((a, b) => a.id.localeCompare(b.id));
+    } else {
+      const placeholders = workItemIds.map(() => "?").join(", ");
+      wiRows = ctx.db
+        .prepare(
+          `SELECT n.id, w.title, n.status, w.complexity
+           FROM nodes n
+           JOIN work_items w ON w.id = n.id
+           WHERE n.id IN (${placeholders})
+           ORDER BY n.id`
+        )
+        .all(...workItemIds) as WISummaryRow[];
+    }
 
     if (wiRows.length > 0) {
       const wiSection: string[] = [
@@ -367,7 +441,26 @@ async function handlePhaseContext(
   }
 
   // Read phase YAML for success criteria if available
-  if (nodeMeta.file_path) {
+  if (ctx.adapter) {
+    // Adapter path: use readNodeContent — no file_path needed.
+    try {
+      const yamlContent = await ctx.adapter.readNodeContent(nodeMeta.id);
+      if (yamlContent) {
+        const parsed = parseYaml(yamlContent) as Record<string, unknown>;
+        const successCriteria = parsed.success_criteria;
+
+        if (Array.isArray(successCriteria) && successCriteria.length > 0) {
+          const criteriaSection: string[] = [`## Phase Success Criteria`, ""];
+          for (const c of successCriteria as unknown[]) {
+            criteriaSection.push(`- ${c}`);
+          }
+          sections.push(criteriaSection.join("\n"));
+        }
+      }
+    } catch {
+      // If we can't read the content, skip success criteria
+    }
+  } else if (nodeMeta.file_path) {
     try {
       const yamlContent = fs.readFileSync(nodeMeta.file_path, "utf8");
       const parsed = parseYaml(yamlContent) as Record<string, unknown>;
@@ -413,7 +506,17 @@ async function handleGenericArtifactContext(
   sections.push(metaSection.join("\n"));
 
   // Full YAML content
-  if (nodeMeta.file_path) {
+  if (ctx.adapter) {
+    // Adapter path: read content via adapter — no file_path needed.
+    try {
+      const yamlContent = await ctx.adapter.readNodeContent(nodeMeta.id);
+      if (yamlContent && yamlContent.trim()) {
+        sections.push(`## Content\n\n\`\`\`yaml\n${yamlContent.trim()}\n\`\`\``);
+      }
+    } catch {
+      sections.push(`## Content\n\n*Content not available*`);
+    }
+  } else if (nodeMeta.file_path) {
     try {
       const yamlContent = fs.readFileSync(nodeMeta.file_path, "utf8");
       if (yamlContent.trim()) {
@@ -431,23 +534,37 @@ async function handleGenericArtifactContext(
     edge_type: string;
   }
 
-  const outgoingEdges = ctx.db
-    .prepare(
-      `SELECT source_id, target_id, edge_type
-       FROM edges
-       WHERE source_id = ?
-       ORDER BY edge_type, target_id`
-    )
-    .all(nodeMeta.id) as EdgeRow[];
+  let outgoingEdges: EdgeRow[];
+  let incomingEdges: EdgeRow[];
 
-  const incomingEdges = ctx.db
-    .prepare(
-      `SELECT source_id, target_id, edge_type
-       FROM edges
-       WHERE target_id = ?
-       ORDER BY edge_type, source_id`
-    )
-    .all(nodeMeta.id) as EdgeRow[];
+  if (ctx.adapter) {
+    // Adapter path: fetch edges via adapter.getEdges().
+    const allEdges = await ctx.adapter.getEdges(nodeMeta.id, "both");
+    outgoingEdges = allEdges
+      .filter((e) => e.source_id === nodeMeta.id)
+      .sort((a, b) => a.edge_type.localeCompare(b.edge_type) || a.target_id.localeCompare(b.target_id));
+    incomingEdges = allEdges
+      .filter((e) => e.target_id === nodeMeta.id)
+      .sort((a, b) => a.edge_type.localeCompare(b.edge_type) || a.source_id.localeCompare(b.source_id));
+  } else {
+    outgoingEdges = ctx.db
+      .prepare(
+        `SELECT source_id, target_id, edge_type
+         FROM edges
+         WHERE source_id = ?
+         ORDER BY edge_type, target_id`
+      )
+      .all(nodeMeta.id) as EdgeRow[];
+
+    incomingEdges = ctx.db
+      .prepare(
+        `SELECT source_id, target_id, edge_type
+         FROM edges
+         WHERE target_id = ?
+         ORDER BY edge_type, source_id`
+      )
+      .all(nodeMeta.id) as EdgeRow[];
+  }
 
   if (outgoingEdges.length > 0 || incomingEdges.length > 0) {
     const edgeSection: string[] = [`## Related Artifacts`, ""];
@@ -494,16 +611,45 @@ async function handleGetWorkItemContext(
   // 1. Look up work item (JOIN nodes + work_items)
   // -------------------------------------------------------------------------
 
-  const placeholders = idCandidates.map(() => "?").join(", ");
-  const workItemRow = ctx.db
-    .prepare(
-      `SELECT n.id, n.type, n.status, n.cycle_created, n.cycle_modified,
-              w.title, w.complexity, w.scope, w.depends, w.blocks, w.criteria, w.module, w.domain, w.notes
-       FROM nodes n JOIN work_items w ON w.id = n.id
-       WHERE n.id IN (${placeholders})
-       LIMIT 1`
-    )
-    .get(...idCandidates) as WorkItemRow | undefined;
+  let workItemRow: WorkItemRow | undefined;
+
+  if (ctx.adapter) {
+    // Adapter path: try each candidate ID in turn.
+    for (const candidateId of idCandidates) {
+      const wiNode = await ctx.adapter.getNode(candidateId);
+      if (wiNode && wiNode.type === "work_item") {
+        const p = wiNode.properties;
+        workItemRow = {
+          id: wiNode.id,
+          type: wiNode.type,
+          status: wiNode.status,
+          cycle_created: wiNode.cycle_created,
+          cycle_modified: wiNode.cycle_modified,
+          title: (p.title as string) ?? wiNode.id,
+          complexity: (p.complexity as string | null) ?? null,
+          scope: Array.isArray(p.scope) ? JSON.stringify(p.scope) : ((p.scope as string | null) ?? null),
+          depends: Array.isArray(p.depends) ? JSON.stringify(p.depends) : ((p.depends as string | null) ?? null),
+          blocks: Array.isArray(p.blocks) ? JSON.stringify(p.blocks) : ((p.blocks as string | null) ?? null),
+          criteria: Array.isArray(p.criteria) ? JSON.stringify(p.criteria) : ((p.criteria as string | null) ?? null),
+          module: (p.module as string | null) ?? null,
+          domain: (p.domain as string | null) ?? null,
+          notes: (p.notes as string | null) ?? null,
+        };
+        break;
+      }
+    }
+  } else {
+    const placeholders = idCandidates.map(() => "?").join(", ");
+    workItemRow = ctx.db
+      .prepare(
+        `SELECT n.id, n.type, n.status, n.cycle_created, n.cycle_modified,
+                w.title, w.complexity, w.scope, w.depends, w.blocks, w.criteria, w.module, w.domain, w.notes
+         FROM nodes n JOIN work_items w ON w.id = n.id
+         WHERE n.id IN (${placeholders})
+         LIMIT 1`
+      )
+      .get(...idCandidates) as WorkItemRow | undefined;
+  }
 
   if (!workItemRow) {
     throw new Error(
@@ -591,16 +737,38 @@ async function handleGetWorkItemContext(
   // 4. Find module spec via belongs_to_module edge
   // -------------------------------------------------------------------------
 
-  const moduleRow = ctx.db
-    .prepare(
-      `SELECT ms.id, ms.name, ms.scope, ms.provides, ms.requires, ms.boundary_rules
-       FROM edges e
-       JOIN nodes n ON n.id = e.target_id
-       JOIN module_specs ms ON ms.id = n.id
-       WHERE e.source_id = ? AND e.edge_type = 'belongs_to_module'
-       LIMIT 1`
-    )
-    .get(workItemRow.id) as ModuleSpecRow | undefined;
+  let moduleRow: ModuleSpecRow | undefined;
+
+  if (ctx.adapter) {
+    // Adapter path: get outgoing belongs_to_module edges, then fetch the target node.
+    const edges = await ctx.adapter.getEdges(workItemRow.id, "outgoing");
+    const moduleEdge = edges.find((e) => e.edge_type === "belongs_to_module");
+    if (moduleEdge) {
+      const msNode = await ctx.adapter.getNode(moduleEdge.target_id);
+      if (msNode && msNode.type === "module_spec") {
+        const p = msNode.properties;
+        moduleRow = {
+          id: msNode.id,
+          name: (p.name as string) ?? msNode.id,
+          scope: (p.scope as string | null) ?? null,
+          provides: Array.isArray(p.provides) ? JSON.stringify(p.provides) : ((p.provides as string | null) ?? null),
+          requires: Array.isArray(p.requires) ? JSON.stringify(p.requires) : ((p.requires as string | null) ?? null),
+          boundary_rules: Array.isArray(p.boundary_rules) ? JSON.stringify(p.boundary_rules) : ((p.boundary_rules as string | null) ?? null),
+        };
+      }
+    }
+  } else {
+    moduleRow = ctx.db
+      .prepare(
+        `SELECT ms.id, ms.name, ms.scope, ms.provides, ms.requires, ms.boundary_rules
+         FROM edges e
+         JOIN nodes n ON n.id = e.target_id
+         JOIN module_specs ms ON ms.id = n.id
+         WHERE e.source_id = ? AND e.edge_type = 'belongs_to_module'
+         LIMIT 1`
+      )
+      .get(workItemRow.id) as ModuleSpecRow | undefined;
+  }
 
   if (moduleRow) {
     const provides = parseJsonArray(moduleRow.provides);
@@ -647,14 +815,45 @@ async function handleGetWorkItemContext(
   // -------------------------------------------------------------------------
 
   if (workItemRow.domain) {
-    const policyRows = ctx.db
-      .prepare(
-        `SELECT dp.id, dp.domain, dp.derived_from, dp.established, dp.amended, dp.description
-         FROM domain_policies dp
-         WHERE dp.domain = ?
-         ORDER BY dp.id`
-      )
-      .all(workItemRow.domain) as DomainPolicyRow[];
+    let policyRows: DomainPolicyRow[];
+
+    if (ctx.adapter) {
+      // Adapter path: query nodes of type domain_policy filtered by domain.
+      const policyResult = await ctx.adapter.queryNodes(
+        { type: "domain_policy", domain: workItemRow.domain },
+        100,
+        0
+      );
+      // Fetch full properties for each policy node.
+      const policyIds = policyResult.nodes.map((n) => n.node.id);
+      const policyNodesMap = policyIds.length > 0
+        ? await ctx.adapter.getNodes(policyIds)
+        : new Map();
+      policyRows = policyIds
+        .filter((id) => policyNodesMap.has(id))
+        .map((id) => {
+          const n = policyNodesMap.get(id)!;
+          const p = n.properties;
+          return {
+            id: n.id,
+            domain: (p.domain as string) ?? "",
+            derived_from: (p.derived_from as string | null) ?? null,
+            established: (p.established as string | null) ?? null,
+            amended: (p.amended as string | null) ?? null,
+            description: (p.description as string | null) ?? null,
+          };
+        })
+        .sort((a, b) => a.id.localeCompare(b.id));
+    } else {
+      policyRows = ctx.db
+        .prepare(
+          `SELECT dp.id, dp.domain, dp.derived_from, dp.established, dp.amended, dp.description
+           FROM domain_policies dp
+           WHERE dp.domain = ?
+           ORDER BY dp.id`
+        )
+        .all(workItemRow.domain) as DomainPolicyRow[];
+    }
 
     if (policyRows.length > 0) {
       const policySection: string[] = [
@@ -694,7 +893,38 @@ async function handleGetWorkItemContext(
   if (workItemRow.module) relevanceTokens.push(workItemRow.module.toLowerCase());
 
   let relevantResearch: ResearchFindingRow[];
-  if (relevanceTokens.length > 0) {
+
+  if (ctx.adapter) {
+    // Adapter path: fetch all research_finding nodes and filter by topic in JS.
+    const researchResult = await ctx.adapter.queryNodes({ type: "research_finding" }, 200, 0);
+    const researchIds = researchResult.nodes.map((n) => n.node.id);
+    const researchNodesMap = researchIds.length > 0
+      ? await ctx.adapter.getNodes(researchIds)
+      : new Map();
+
+    const allResearch: ResearchFindingRow[] = researchIds
+      .filter((id) => researchNodesMap.has(id))
+      .map((id) => {
+        const n = researchNodesMap.get(id)!;
+        const p = n.properties;
+        return {
+          id: n.id,
+          topic: (p.topic as string) ?? "",
+          date: (p.date as string | null) ?? null,
+          content: (p.content as string | null) ?? null,
+          sources: Array.isArray(p.sources) ? JSON.stringify(p.sources) : ((p.sources as string | null) ?? null),
+        };
+      })
+      .sort((a, b) => a.id.localeCompare(b.id));
+
+    if (relevanceTokens.length > 0) {
+      relevantResearch = allResearch.filter((r) =>
+        relevanceTokens.some((token) => r.topic.toLowerCase().includes(token))
+      );
+    } else {
+      relevantResearch = allResearch.slice(0, 3);
+    }
+  } else if (relevanceTokens.length > 0) {
     // Build SQL with LIKE conditions for each relevance token
     const likeClauses = relevanceTokens.map(() => `LOWER(rf.topic) LIKE ?`).join(" OR ");
     const likeParams = relevanceTokens.map((t) => `%${t}%`);
@@ -802,8 +1032,16 @@ export async function handleGetContextPackage(
 
   const sections: string[] = [];
 
-  // Create adapter instance for all storage queries
-  const contextAdapter = new LocalContextAdapter(ctx.drizzleDb, ctx.db);
+  // Use ctx.adapter query methods when the adapter is set (production path).
+  // Fall back to creating a LocalContextAdapter directly for test compatibility
+  // (tests that build ToolContext without an adapter still work).
+  // Use the adapter's context methods when available. Both LocalAdapter and
+  // LocalContextAdapter expose the same query methods — we need only check
+  // for their presence, not the concrete type.
+  const contextAdapter: LocalContextAdapter =
+    ctx.adapter && "queryArchitectureDocument" in ctx.adapter
+      ? (ctx.adapter as unknown as LocalContextAdapter)
+      : new LocalContextAdapter(ctx.drizzleDb, ctx.db);
 
   // -------------------------------------------------------------------------
   // 1. Architecture document
@@ -1140,15 +1378,15 @@ export async function handleAssembleContext(
     : pprConfig.edge_type_weights;
 
   // -------------------------------------------------------------------------
-  // 3. Run PPR and assemble context via LocalContextAdapter
+  // 3. Run PPR and assemble context via adapter or LocalContextAdapter
   //
-  // The adapter wraps computePPR internally — tool handlers do not import
-  // ppr.ts directly. All PPR logic flows through the adapter's traverse().
+  // When ctx.adapter is set (production), delegate traverse() to it so all
+  // PPR logic flows through the StorageAdapter contract. Fall back to creating
+  // a LocalContextAdapter directly for test compatibility (tests that build
+  // ToolContext without an adapter still work).
   // -------------------------------------------------------------------------
 
-  const contextAdapter = new LocalContextAdapter(ctx.drizzleDb, ctx.db);
-
-  const traversalResult = await contextAdapter.traverse({
+  const traverseOptions = {
     seed_ids: seedNodeIds,
     alpha: pprConfig.alpha,
     max_iterations: pprConfig.max_iterations,
@@ -1156,7 +1394,11 @@ export async function handleAssembleContext(
     edge_type_weights: edgeTypeWeights,
     token_budget: tokenBudget,
     always_include_types: includeTypes as import("../adapter.js").NodeType[],
-  });
+  };
+
+  const traversalResult = await (ctx.adapter
+    ? ctx.adapter.traverse(traverseOptions)
+    : new LocalContextAdapter(ctx.drizzleDb, ctx.db).traverse(traverseOptions));
 
   // -------------------------------------------------------------------------
   // 4. Assemble markdown context grouped by artifact type

@@ -1,0 +1,8 @@
+id: gap-analysis
+type: cycle_summary
+reviewer: gap-analyst
+verdict: Fail
+content: "II1/MI1 (Critical): ctx.adapter never populated — all adapter branches dead in production. EC1: handleAppendJournal direct DB for cycle lookup. II2: metrics.ts imports db-helpers directly. II3: context.ts never uses ctx.adapter for storage. II4: analysis.ts buildProjectView/buildPhaseView bypass adapter. II5: LocalAdapter.traverse unimplemented. MI2: createAdapter declared but not implemented. MI3: No integration test for server→adapter wiring."
+cycle: 9
+content_hash: cb6084204d2c92502125779a5c8d51d08afca429ea619de65984a50bd848ca2f
+token_count: 135

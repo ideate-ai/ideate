@@ -1,0 +1,8 @@
+id: code-quality
+type: cycle_summary
+reviewer: code-reviewer
+verdict: Fail
+content: "C1 (Critical): ctx.adapter never set in server.ts — all adapter branches dead code. S1: context.ts bypasses adapter, creates LocalContextAdapter directly. S2: batchMutate defaults status to 'pending' while putNode defaults to null. S3: handleAppendJournal casts to LocalAdapter for putNodeForJournal — not on interface. M1: archiveCycle doesn't throw NotFoundError per JSDoc. M2: nextId shadowing between writer and reader. M3: selectAdapter() returns void despite name."
+cycle: 9
+content_hash: c9d304c9b631ea93210e87d7e424c93a4c1c09e656140b02cbdb678c8ecf75bc
+token_count: 141

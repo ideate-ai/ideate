@@ -413,19 +413,45 @@ export interface StorageAdapter {
    * Archive completed work items and findings for the given cycle.
    * Must be called after a cycle review is finalized.
    *
-   * LocalAdapter: moves artifacts to cycle-scoped archive locations,
+   * LocalAdapter: transitions artifacts to archived state,
    * updates node location entries in the index to reflect new locations, and
    * removes stale index entries for moved artifacts.
    *
    * RemoteAdapter: calls the archiveCycle GraphQL mutation which transitions
    * artifact statuses from 'active' to 'archived' for the given cycle.
    *
-   * @throws {NotFoundError} if the cycle number does not exist (i.e. was never
-   *   created). Calling archiveCycle on a cycle that exists but has already
-   *   been archived is a no-op — it does not throw.
-   * @throws {StorageAdapterError} if the cycle has no artifacts to archive.
+   * Returns a human-readable summary string (e.g. "Archived cycle 3: 2 work
+   * items, 4 incremental reviews moved."). On error the string begins with
+   * "Error during cycle archival" rather than throwing, so callers can surface
+   * the message to the user.
+   *
+   * Calling archiveCycle on a cycle that exists but has already been archived
+   * is a no-op returning a "0 work items, 0 incremental reviews moved" message.
    */
-  archiveCycle(cycle: number): Promise<void>;
+  archiveCycle(cycle: number): Promise<string>;
+
+  /**
+   * Append a journal entry for the given skill invocation.
+   *
+   * Handles all persistence details (persistence and indexing, sequence
+   * numbering) atomically in an exclusive transaction.
+   *
+   * @param args.skill      - Skill name (e.g. "execute", "review").
+   * @param args.date       - ISO date string for the entry.
+   * @param args.entryType  - Entry subtype label (e.g. "work-item-complete").
+   * @param args.body       - Full entry body text.
+   * @param args.cycle      - Cycle number; defaults to the current max cycle
+   *                          when omitted.
+   *
+   * @returns The ID of the newly created journal entry node (e.g. "J-003-001").
+   */
+  appendJournalEntry(args: {
+    skill: string;
+    date: string;
+    entryType: string;
+    body: string;
+    cycle: number;
+  }): Promise<string>;
 }
 
 // ---------------------------------------------------------------------------
@@ -544,8 +570,3 @@ export interface AdapterConfig {
   };
 }
 
-/**
- * Create the appropriate StorageAdapter based on configuration.
- * Implementations are provided by LocalAdapter (WI-552) and RemoteAdapter (WI-554).
- */
-export declare function createAdapter(config: AdapterConfig): StorageAdapter;

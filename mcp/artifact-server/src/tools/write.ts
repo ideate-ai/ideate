@@ -39,10 +39,21 @@ export async function handleAppendJournal(
     throw new Error("Missing required parameters: skill, date, entry_type, body");
   }
 
-  // Determine cycle number: use caller-supplied cycle_number, or query SQLite for max
+  const adapter = getAdapter(ctx);
+
+  // Determine cycle number: use caller-supplied cycle_number, or query for max
   let cycleNumber = 0;
   if (args.cycle_number !== undefined && args.cycle_number !== null) {
     cycleNumber = args.cycle_number as number;
+  } else if (ctx.adapter) {
+    // Adapter path: query journal entries to find the max cycle_created.
+    // queryNodes returns NodeMeta rows which include cycle_created.
+    const result = await ctx.adapter.queryNodes({ type: "journal_entry" }, 1000, 0);
+    for (const { node } of result.nodes) {
+      if (node.cycle_created !== null && node.cycle_created > cycleNumber) {
+        cycleNumber = node.cycle_created;
+      }
+    }
   } else {
     if (!ctx.db) throw new Error("handleAppendJournal: ctx.db required when cycle_number is not supplied");
     const maxCycleRow = ctx.db.prepare(
@@ -51,15 +62,13 @@ export async function handleAppendJournal(
     cycleNumber = maxCycleRow?.max_cycle ?? 0;
   }
 
-  const adapter = getAdapter(ctx);
-
   // Delegate to adapter's journal write (handles exclusive transaction + sequence numbering)
-  const entryId = await (adapter as LocalAdapter).putNodeForJournal({
+  const entryId = await adapter.appendJournalEntry({
     skill,
     date,
     entryType,
     body,
-    cycleNumber,
+    cycle: cycleNumber,
   });
 
   return `Wrote journal entry ${entryId}.`;
@@ -84,15 +93,9 @@ export async function handleArchiveCycle(
 
   const adapter = getAdapter(ctx);
 
-  // Use archiveCycleLocal to get the count/status message when adapter is a LocalAdapter.
-  // This preserves the original response format (counts, error strings as return values).
-  if (adapter instanceof LocalAdapter) {
-    return adapter.archiveCycleLocal(cycleNumber);
-  }
-
-  // For non-local adapters (remote), delegate to the interface method and return a generic message.
-  await adapter.archiveCycle(cycleNumber);
-  return `Archived cycle ${cycleNumber}.`;
+  // Delegate to the adapter interface method which returns a human-readable
+  // summary string (or an error string beginning with "Error during cycle archival").
+  return adapter.archiveCycle(cycleNumber);
 }
 
 // ---------------------------------------------------------------------------
@@ -166,7 +169,7 @@ export async function handleWriteWorkItems(
         work_item_type: item.work_item_type ?? "feature",
         notes: item.notes_content ?? `# ${item.resolvedId}: ${item.title ?? ""}`,
         resolution: item.resolution !== undefined ? item.resolution : null,
-        status: item.status ?? "pending",
+        status: item.status ?? null,
         cycle_created: item.cycle_created ?? null,
         cycle_modified: null,
       },

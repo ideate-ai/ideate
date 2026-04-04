@@ -1428,7 +1428,7 @@ describe("handleWriteWorkItems", () => {
     expect(row!.id).toBe("WI-100");
     expect(row!.file_path).toContain("work-items");
     expect(row!.file_path).toContain("WI-100.yaml");
-    expect(row!.status).toBe("pending");
+    expect(row!.status).toBeNull();
   });
 
   it("happy path: YAML file contains all required fields", async () => {
@@ -1774,9 +1774,9 @@ describe("handleWriteWorkItems", () => {
   it("work_item_type filter: handleArtifactQuery filters by work_item_type", async () => {
     await handleWriteWorkItems(ctx, {
       items: [
-        { id: "WI-WIT03", title: "Bug A", complexity: "small", work_item_type: "bug" },
-        { id: "WI-WIT04", title: "Spike B", complexity: "small", work_item_type: "spike" },
-        { id: "WI-WIT05", title: "Feature C", complexity: "small", work_item_type: "feature" },
+        { id: "WI-WIT03", title: "Bug A", complexity: "small", work_item_type: "bug", status: "pending" },
+        { id: "WI-WIT04", title: "Spike B", complexity: "small", work_item_type: "spike", status: "pending" },
+        { id: "WI-WIT05", title: "Feature C", complexity: "small", work_item_type: "feature", status: "pending" },
       ],
     });
 

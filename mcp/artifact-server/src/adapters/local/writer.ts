@@ -444,6 +444,11 @@ export class LocalWriterAdapter {
   protected drizzleDb: DrizzleDb;
   protected ideateDir: string;
 
+  /** Cached current cycle number from domains/index.yaml */
+  private _cachedCycleNumber: number | null = null;
+  /** mtime (ms) of domains/index.yaml at last cache fill */
+  private _cycleCacheMtime: number = 0;
+
   constructor(config: LocalWriterConfig) {
     this.db = config.db;
     this.drizzleDb = config.drizzleDb;
@@ -610,22 +615,28 @@ export class LocalWriterAdapter {
     }
     const existingObj = parseYaml(existingContent) as Record<string, unknown>;
 
-    // Determine current cycle for cycle_modified
+    // Determine current cycle for cycle_modified (cached to avoid re-reading on every call)
     let cycleNumber: number | null = null;
     try {
       const indexYamlPath = path.join(this.ideateDir, "domains", "index.yaml");
       const indexMdPath = path.join(this.ideateDir, "domains", "index.md");
-      let indexContent: string | null = null;
+      // Check mtime of the preferred index file to decide whether the cache is stale
+      let indexPath: string | null = null;
       if (fs.existsSync(indexYamlPath)) {
-        indexContent = fs.readFileSync(indexYamlPath, "utf8");
+        indexPath = indexYamlPath;
       } else if (fs.existsSync(indexMdPath)) {
-        indexContent = fs.readFileSync(indexMdPath, "utf8");
+        indexPath = indexMdPath;
       }
-      if (indexContent) {
-        const match = indexContent.match(/^current_cycle:\s*(\d+)/m);
-        if (match) {
-          cycleNumber = parseInt(match[1], 10);
+      if (indexPath) {
+        const mtime = fs.statSync(indexPath).mtimeMs;
+        if (mtime !== this._cycleCacheMtime || this._cachedCycleNumber === null) {
+          // Cache is stale or empty — re-read
+          const indexContent = fs.readFileSync(indexPath, "utf8");
+          const match = indexContent.match(/^current_cycle:\s*(\d+)/m);
+          this._cachedCycleNumber = match ? parseInt(match[1], 10) : null;
+          this._cycleCacheMtime = mtime;
         }
+        cycleNumber = this._cachedCycleNumber;
       }
     } catch {
       // cycle_modified remains null if index cannot be read
@@ -996,7 +1007,7 @@ export class LocalWriterAdapter {
             content_hash: contentHash,
             token_count: tokenCount(writtenContent),
             file_path: absoluteFilePath,
-            status: (properties.status as string | null) ?? "pending",
+            status: (properties.status as string | null) ?? null,
           };
 
           upsertNode(this.drizzleDb, nodeRow);
@@ -1040,10 +1051,9 @@ export class LocalWriterAdapter {
   // -------------------------------------------------------------------------
   // archiveCycleLocal — atomic cycle archival (copy, verify, delete)
   //
-  // Returns a formatted result string matching the original handleArchiveCycle
-  // response format. This method is LocalAdapter-specific; the StorageAdapter
-  // interface's archiveCycle() calls this and discards the result (returns void).
-  // Tool handlers that need the count message cast to LocalAdapter and call this.
+  // Returns a formatted result string. This method is LocalAdapter-specific;
+  // the StorageAdapter interface's archiveCycle() delegates here and returns
+  // the result string to callers.
   // -------------------------------------------------------------------------
 
   async archiveCycleLocal(cycle: number): Promise<string> {
@@ -1175,16 +1185,34 @@ export class LocalWriterAdapter {
   }
 
   // -------------------------------------------------------------------------
-  // archiveCycle — StorageAdapter interface method (returns void)
-  // Calls archiveCycleLocal and discards the result string.
+  // archiveCycle — StorageAdapter interface method
+  // Delegates to archiveCycleLocal and returns the result string (including
+  // error strings) so callers can surface the message to the user.
   // -------------------------------------------------------------------------
 
-  async archiveCycle(cycle: number): Promise<void> {
-    const result = await this.archiveCycleLocal(cycle);
-    // Propagate errors embedded in the result string as exceptions
-    if (result.startsWith("Error during cycle archival")) {
-      throw new Error(result);
-    }
+  async archiveCycle(cycle: number): Promise<string> {
+    return this.archiveCycleLocal(cycle);
+  }
+
+  // -------------------------------------------------------------------------
+  // appendJournalEntry — StorageAdapter interface method
+  // Delegates to putNodeForJournal with the cycle-number parameter renamed.
+  // -------------------------------------------------------------------------
+
+  async appendJournalEntry(args: {
+    skill: string;
+    date: string;
+    entryType: string;
+    body: string;
+    cycle: number;
+  }): Promise<string> {
+    return this.putNodeForJournal({
+      skill: args.skill,
+      date: args.date,
+      entryType: args.entryType,
+      body: args.body,
+      cycleNumber: args.cycle,
+    });
   }
 
   // -------------------------------------------------------------------------

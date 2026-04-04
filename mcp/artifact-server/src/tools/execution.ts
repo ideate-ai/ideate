@@ -56,6 +56,7 @@ function buildJournalCompletedSet(ctx: ToolContext): Set<string> {
 // handleGetExecutionStatus
 // ---------------------------------------------------------------------------
 
+// Direct DB path — adapter aggregate methods not yet available
 export async function handleGetExecutionStatus(
   ctx: ToolContext,
   args: Record<string, unknown>
@@ -165,6 +166,7 @@ export async function handleGetExecutionStatus(
 // handleGetReviewManifest
 // ---------------------------------------------------------------------------
 
+// Direct DB path — adapter aggregate methods not yet available
 export async function handleGetReviewManifest(
   ctx: ToolContext,
   args: Record<string, unknown>

@@ -367,6 +367,7 @@ interface ToolContext {
   db: Database.Database;          // better-sqlite3 raw connection
   drizzleDb: BetterSQLite3Database<any>;  // Drizzle ORM wrapper
   ideateDir: string;              // absolute path to .ideate/
+  adapter?: StorageAdapter;       // storage adapter (set when adapter layer is active)
 }
 ```
 
@@ -465,6 +466,48 @@ skill calls ideate_write_work_items
   → upsertNode() + upsertExtension() + extractEdges()
   → return YAML results list with id and result
 ```
+
+### StorageAdapter
+
+The `StorageAdapter` interface (`src/adapter.ts`) decouples MCP tool handlers from the underlying storage mechanism. All persistence operations — reads, writes, graph traversal, and lifecycle management — flow through this interface. Tool handlers never reference the filesystem, SQLite, or Drizzle directly; they call adapter methods that speak in graph-native vocabulary (nodes, edges, traversals, mutations).
+
+**Adapter pattern**:
+
+```
+ToolContext.adapter (StorageAdapter)
+  ├── LocalAdapter      → filesystem YAML + SQLite index
+  └── RemoteAdapter     → GraphQL server (future)
+```
+
+**LocalAdapter composition** (`src/adapters/local/`):
+
+| Module | Role |
+|--------|------|
+| `writer.ts` | All mutating operations: `putNode`, `patchNode`, `deleteNode`, `putEdge`, `removeEdges`, `batchMutate`, `appendJournalEntry`, `archiveCycle` |
+| `reader.ts` | All read-only operations: `getNode`, `getNodes`, `readNodeContent`, `getEdges`, `traverse`, `queryGraph`, `queryNodes`, `nextId`, `countNodes`, `getDomainState`, `getConvergenceData` |
+| `context.ts` | Shared state and helpers used by both writer and reader: database handles, artifact directory path, index-ready signal |
+| `index.ts` | Assembles and exports the `LocalAdapter` instance; wires writer and reader to the shared context |
+
+**Data flow through the adapter**:
+
+```
+MCP tool handler
+  → ctx.adapter.putNode(input)          // write path
+      → LocalAdapter.writer.putNode()
+          → serialize to YAML
+          → write YAML file to .ideate/
+          → upsertNode() in SQLite index
+          → return MutateNodeResult
+
+  → ctx.adapter.getNode(id)             // read path
+      → LocalAdapter.reader.getNode()
+          → SELECT from nodes + extension table
+          → return Node
+```
+
+The adapter layer is optional during the transition period. Tools that have been migrated check `ctx.adapter` first; unmigrated tools fall back to direct `ctx.db` / `ctx.drizzleDb` access. Once all tools are migrated, the `db` and `drizzleDb` fields will be removed from `ToolContext`.
+
+For the full interface specification, see [docs/platform/adapter-interface.md](docs/platform/adapter-interface.md).
 
 ---
 
@@ -755,6 +798,11 @@ Based on the context assembly research (`context-assembly-strategies.yaml`, Ques
 | `mcp/artifact-server/src/tools/metrics.ts` | `ideate_get_metrics` (agent/work_item/cycle aggregations) |
 | `mcp/artifact-server/src/tools/autopilot-state.ts` | `ideate_manage_autopilot_state` (get or update autopilot session state) |
 | `mcp/artifact-server/src/tools/config.ts` | `handleUpdateConfig` (deep-merge patch into config.json with validation) |
+| `mcp/artifact-server/src/adapter.ts` | `StorageAdapter` interface, error classes (`StorageAdapterError`, `NotFoundError`, etc.), `createAdapter` factory |
+| `mcp/artifact-server/src/adapters/local/writer.ts` | `LocalAdapter` write operations: `putNode`, `patchNode`, `deleteNode`, `putEdge`, `removeEdges`, `batchMutate`, `appendJournalEntry`, `archiveCycle` |
+| `mcp/artifact-server/src/adapters/local/reader.ts` | `LocalAdapter` read operations: `getNode`, `getNodes`, `readNodeContent`, `getEdges`, `traverse`, `queryGraph`, `queryNodes`, `nextId`, `countNodes`, `getDomainState`, `getConvergenceData` |
+| `mcp/artifact-server/src/adapters/local/context.ts` | Shared `LocalAdapterContext`: database handles, artifact directory path, index-ready signal used by both writer and reader |
+| `mcp/artifact-server/src/adapters/local/index.ts` | Assembles `LocalAdapter` from writer, reader, and shared context; exports `createLocalAdapter` factory |
 
 ---
 

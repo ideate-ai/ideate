@@ -1,16 +1,16 @@
 id: PR-002
 type: project
 name: Ideate Plugin — Adapter Refactor
-intent: Refactor the MCP artifact server to decouple storage operations from tool handlers via a StorageAdapter interface. Extract YAML/SQLite logic into a LocalAdapter. Prepare the codebase for a RemoteAdapter (GraphQL client to ideate-server) without implementing it. All existing functionality preserved — this is an internal restructuring with zero behavior change.
+intent: Refactor the MCP artifact server to decouple storage operations from tool handlers via a StorageAdapter interface. Extract YAML/SQLite logic into a LocalAdapter. Implement RemoteAdapter as GraphQL client to ideate-server. Complete adapter extraction across all tool handlers.
 status: active
 appetite: 6
-current_phase_id: PH-019
+current_phase_id: PH-021
 horizon:
-  current: PH-019
-  completed: []
-  next:
-    - name: Remote Adapter Implementation
-      description: Implement RemoteAdapter as GraphQL client to ideate-server. Config switch for backend selection. End-to-end testing against running ideate-server instance.
+  current: PH-021
+  completed:
+    - PH-019
+    - PH-020
+  next: []
   later: []
-content_hash: 05654804de69e2c21753173365811d6fc21ba368ab6024f7efdaa4d46b496a23
-token_count: 191
+content_hash: 76599c02ff4d6b94cbb65b926f7194f815f0f26140b37dd26e97e2bdd0811f74
+token_count: 122

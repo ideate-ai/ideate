@@ -1,0 +1,15 @@
+id: PH-021
+type: phase
+name: Adapter Extraction Cleanup
+description: Complete the adapter extraction by adding adapter paths to remaining tool handlers, removing dead fallback code, and cleaning up minor technical debt.
+phase_type: implementation
+status: active
+started_date: 2026-04-02
+project: PR-002
+work_items:
+  - WI-577
+  - WI-578
+  - WI-579
+success_criteria: All tool handlers use adapter when ctx.adapter is set. No dead fallback code in production paths. No direct filesystem I/O in tool handlers. All tests pass.
+content_hash: 73689f7dd2169fbc03aa998343774e6e22fa4f4d260bbc3e85c561c2dbc51371
+token_count: 130

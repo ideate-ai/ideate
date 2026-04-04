@@ -152,6 +152,10 @@ const TYPE_EXTENSION_INFO: Record<
     table: "document_artifacts",
     summaryExpr: "COALESCE(e.title, n.type)",
   },
+  review_output: {
+    table: "document_artifacts",
+    summaryExpr: "COALESCE(e.title, n.type)",
+  },
   architecture: {
     table: "document_artifacts",
     summaryExpr: "COALESCE(e.title, n.type)",
@@ -179,6 +183,10 @@ const TYPE_EXTENSION_INFO: Record<
   interview: {
     table: "document_artifacts",
     summaryExpr: "COALESCE(e.title, n.type)",
+  },
+  interview_question: {
+    table: "interview_questions",
+    summaryExpr: "e.interview_id || ': ' || e.question",
   },
   proxy_human_decision: {
     table: "proxy_human_decisions",
@@ -265,6 +273,7 @@ interface GraphModeResult {
   total_count: number;
 }
 
+// Test-only fallback path — in production, handleArtifactQuery delegates to ctx.adapter
 function runFilterMode(
   ctx: ToolContext,
   type: string | undefined,
@@ -392,6 +401,7 @@ function runFilterMode(
 // Graph traversal mode
 // ---------------------------------------------------------------------------
 
+// Test-only fallback path — in production, handleArtifactQuery delegates to ctx.adapter
 function runGraphMode(
   ctx: ToolContext,
   relatedTo: string,

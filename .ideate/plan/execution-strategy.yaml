@@ -1,21 +1,17 @@
 id: execution-strategy
 type: execution_strategy
-title: "Execution Strategy — PH-017: Documentation & Cleanup"
-body: |-
-  ## Mode
-
-  Batched parallel — all 3 items have non-overlapping file scopes.
-
-  ## Work Items
-
-  | Group | Items | Mode |
-  |-------|-------|------|
-  | 1 | WI-533, WI-534, WI-535 | parallel |
-
-  No dependencies between items.
-
-  ## Review Cadence
-
-  Incremental review after each item. Capstone after all 3 complete.
-content_hash: dcd7b67d6a0dde81609560a72862a0c457ece0ed632f1487f4ee242d689c6862
-token_count: 109
+title: Execution Strategy — PH-021 Adapter Extraction Cleanup
+mode: batched_parallel
+parallelism: 3
+review_cadence: per_item
+worktree: false
+groups:
+  - name: All Fixes
+    items:
+      - WI-577
+      - WI-578
+      - WI-579
+    notes: All independent with non-overlapping file scope. Single parallel batch.
+dependency_graph: No dependencies. All items independent.
+content_hash: 3fd784debb7126d58d44ed380308323e2d63434075ef35ad2702e3d6cb17c9fe
+token_count: 103

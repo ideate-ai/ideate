@@ -1,0 +1,8 @@
+id: spec-adherence
+type: cycle_summary
+reviewer: spec-reviewer
+verdict: Fail
+content: "D1-D7: ToolContext retains db/drizzleDb (target removes them), context.ts makes direct DB calls, analysis.ts helpers bypass adapter, query.ts raw SQL remains, server.ts never sets adapter, traverse unimplemented, config uses url instead of endpoint. 4 unmet criteria. P1: GP-14 violated — context.ts instantiates LocalContextAdapter directly. U1-U4: LocalAdapter-specific methods (putNodeForJournal, archiveCycleLocal) exposed to handlers. N1-N3: adapter optional vs required, url vs endpoint, missing codebase_id."
+cycle: 9
+content_hash: e08637ad9d29a6a9c89d14573b3099d6c0e475f7925caadd19a362b89a8980e5
+token_count: 153

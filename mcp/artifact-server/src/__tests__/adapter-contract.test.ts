@@ -855,9 +855,69 @@ export function runAdapterContractTests(
     // -----------------------------------------------------------------------
 
     describe("archiveCycle", () => {
-      it("archiveCycle is a no-op (returns void) when cycle has no artifacts", async () => {
-        // A cycle with no findings should not throw (resolves cleanly)
-        await expect(adapter.archiveCycle(99)).resolves.toBeUndefined();
+      it("archiveCycle is a no-op (returns a summary string) when cycle has no artifacts", async () => {
+        // A cycle with no findings should not throw and returns a summary string
+        const result = await adapter.archiveCycle(99);
+        expect(typeof result).toBe("string");
+        expect(result).toContain("0");
+      });
+    });
+
+    // -----------------------------------------------------------------------
+    // appendJournalEntry
+    // -----------------------------------------------------------------------
+
+    describe("appendJournalEntry", () => {
+      it("returns a J-NNN-NNN format ID", async () => {
+        const id = await adapter.appendJournalEntry({
+          skill: "execute",
+          date: "2026-04-02",
+          entryType: "test",
+          body: "Test entry",
+          cycle: 1,
+        });
+        expect(id).toMatch(/^J-\d{3}-\d{3}$/);
+      });
+
+      it("sequential entries within a cycle get incrementing sequence numbers", async () => {
+        const first = await adapter.appendJournalEntry({
+          skill: "execute",
+          date: "2026-04-02",
+          entryType: "test",
+          body: "First entry",
+          cycle: 1,
+        });
+        const second = await adapter.appendJournalEntry({
+          skill: "execute",
+          date: "2026-04-02",
+          entryType: "test",
+          body: "Second entry",
+          cycle: 1,
+        });
+
+        // Both match the format
+        expect(first).toMatch(/^J-\d{3}-\d{3}$/);
+        expect(second).toMatch(/^J-\d{3}-\d{3}$/);
+
+        // Parse out the sequence numbers (last three digits)
+        const firstSeq = parseInt(first.split("-")[2], 10);
+        const secondSeq = parseInt(second.split("-")[2], 10);
+        expect(secondSeq).toBeGreaterThan(firstSeq);
+      });
+
+      it("created journal entry can be retrieved via getNode", async () => {
+        const id = await adapter.appendJournalEntry({
+          skill: "execute",
+          date: "2026-04-02",
+          entryType: "test",
+          body: "Retrievable entry",
+          cycle: 1,
+        });
+
+        const node = await adapter.getNode(id);
+        expect(node).not.toBeNull();
+        expect(node!.id).toBe(id);
+        expect(node!.type).toBe("journal_entry");
       });
     });
   });
@@ -877,9 +937,6 @@ describe("LocalAdapter", () => {
     db: null,
   };
 
-  // LocalAdapter.traverse is a stub (not yet implemented, tracked in WI-554).
-  // Pass skipTraverse: true so the traverse contract tests are skipped here;
-  // they will be enabled once WI-554 is complete.
   runAdapterContractTests(
     async (): Promise<StorageAdapter> => {
       const tmpDir = fs.mkdtempSync(
@@ -942,6 +999,5 @@ describe("LocalAdapter", () => {
         state.tmpDir = "";
       }
     },
-    { skipTraverse: true }
   );
 });

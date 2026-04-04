@@ -1,5 +1,6 @@
 {
-  "schema_version": 3,
+  "schema_version": 4,
   "circuit_breaker_threshold": 5,
-  "default_appetite": 6
+  "default_appetite": 6,
+  "backend": "local"
 }

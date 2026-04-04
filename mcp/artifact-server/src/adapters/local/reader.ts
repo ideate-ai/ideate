@@ -142,6 +142,10 @@ const TYPE_EXTENSION_INFO: Record<
     table: "document_artifacts",
     summaryExpr: "COALESCE(e.title, n.type)",
   },
+  interview_question: {
+    table: "interview_questions",
+    summaryExpr: "e.interview_id || ': ' || e.question",
+  },
   domain_index: {
     table: "document_artifacts",
     summaryExpr: "COALESCE(e.title, n.type)",

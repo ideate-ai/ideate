@@ -15,6 +15,9 @@ import Database from "better-sqlite3";
 import { drizzle, BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
 import * as path from "path";
 import type { ToolContext } from "./types.js";
+import type { StorageAdapter } from "./adapter.js";
+import { LocalAdapter } from "./adapters/local/index.js";
+import { RemoteAdapter } from "./adapters/remote/index.js";
 import { signalIndexReady } from "./tools/index.js";
 import { artifactWatcher, BatchChangeEvent } from "./watcher.js";
 import { createIdeateDir, CONFIG_SCHEMA_VERSION, IDEATE_SUBDIRS, IdeateConfigJson, resolveArtifactDir, readIdeateConfig, readRawConfig } from "./config.js";
@@ -51,19 +54,24 @@ export function createDormantState(): ServerState {
  * @param dir - Path to the .ideate/ directory (used to read config)
  * @throws {Error} when backend is "remote" (not yet implemented) or unknown
  */
-export function selectAdapter(dir: string): void {
+export function selectAdapter(
+  dir: string,
+  db: InstanceType<typeof Database>,
+  drizzleDb: BetterSQLite3Database<typeof dbSchema>
+): StorageAdapter {
   const config = readRawConfig(dir);
   const backend = config.backend ?? "local";
 
   if (backend === "local" || backend === undefined) {
-    // Local is the only functional backend; nothing additional required.
-    return;
+    return new LocalAdapter({ db, drizzleDb, ideateDir: dir });
   }
 
   if (backend === "remote") {
-    throw new Error(
-      "Remote backend not yet implemented. Set backend to local or omit the field."
-    );
+    const remoteConfig = config.remote;
+    if (!remoteConfig || !remoteConfig.endpoint) {
+      throw new Error("Remote backend requires 'remote.endpoint' in config.json");
+    }
+    return new RemoteAdapter(remoteConfig);
   }
 
   throw new Error(
@@ -117,9 +125,6 @@ export function initServer(dir: string, state: ServerState): void {
     console.error(`[ideate-artifact-server] Migration errors: ${migrationResult.errors.join("; ")}`);
   }
 
-  // Select adapter based on config.backend. Throws if backend is unsupported.
-  selectAdapter(dir);
-
   // Use locals so server state is only committed after full success
   const newDb = openDatabase(dir);
   let newDrizzle;
@@ -132,10 +137,13 @@ export function initServer(dir: string, state: ServerState): void {
     throw err;
   }
 
+  // Select adapter based on config.backend. Throws if backend is unsupported.
+  const adapter = selectAdapter(dir, newDb, newDrizzle);
+
   // Commit state
   state.ideateDir = dir;
   state.db = newDb;
-  state.ctx = { db: newDb, drizzleDb: newDrizzle, ideateDir: dir };
+  state.ctx = { db: newDb, drizzleDb: newDrizzle, ideateDir: dir, adapter };
 
   signalIndexReady();
   console.error(`[ideate-artifact-server] initialized, ${stats.files_scanned} files indexed`);

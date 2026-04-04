@@ -353,6 +353,69 @@ export async function handleGetDomainState(
 // ---------------------------------------------------------------------------
 
 async function buildProjectView(ctx: ToolContext): Promise<string> {
+  if (ctx.adapter) {
+    // Delegate to adapter
+    const projectResult = await ctx.adapter.queryNodes({ type: "project", status: "active" }, 1, 0);
+    let activeProject: { id: string; name: string | null; intent: string; appetite: number | null } | undefined;
+    if (projectResult.nodes.length > 0) {
+      const projectNode = await ctx.adapter.getNode(projectResult.nodes[0].node.id);
+      if (projectNode) {
+        activeProject = {
+          id: projectNode.id,
+          name: (projectNode.properties.name as string | null) ?? null,
+          intent: (projectNode.properties.intent as string) ?? "",
+          appetite: (projectNode.properties.appetite as number | null) ?? null,
+        };
+      }
+    }
+
+    if (!activeProject) {
+      return "# Project View\n\nNo active project.";
+    }
+
+    const lines: string[] = [];
+    lines.push("# Project View");
+    lines.push("");
+    lines.push(`**Project**: ${activeProject.id}${activeProject.name ? ` — ${activeProject.name}` : ""}`);
+    lines.push(`**Intent**: ${activeProject.intent}`);
+    lines.push(`**Appetite**: ${activeProject.appetite ?? "unset"}`);
+    lines.push("");
+
+    const phaseResult = await ctx.adapter.queryNodes({ type: "phase", status: "active" }, 1, 0);
+    if (phaseResult.nodes.length > 0) {
+      const phaseNode = await ctx.adapter.getNode(phaseResult.nodes[0].node.id);
+      if (phaseNode) {
+        const activePhaseId = phaseNode.id;
+        const phaseName = (phaseNode.properties.name as string | null) ?? null;
+        const phaseType = (phaseNode.properties.phase_type as string) ?? "";
+
+        const wiCounts = await ctx.adapter.countNodes({ type: "work_item", phase: activePhaseId }, "status");
+        let total = 0;
+        let done = 0;
+        for (const entry of wiCounts) {
+          total += entry.count;
+          if (entry.key === "done") done = entry.count;
+        }
+
+        lines.push("## Current Phase");
+        lines.push(`**Phase**: ${activePhaseId}${phaseName ? ` — ${phaseName}` : ""}`);
+        lines.push(`**Type**: ${phaseType}`);
+        lines.push(`**Progress**: ${done}/${total} work items done`);
+        lines.push("");
+      }
+    } else {
+      lines.push("## Current Phase");
+      lines.push("No active phase.");
+      lines.push("");
+    }
+
+    lines.push("## Horizon");
+    lines.push("No phases planned.");
+
+    return lines.join("\n");
+  }
+
+  // Fallback: direct SQLite path
   const activeProject = ctx.db.prepare(`
     SELECT p.id, p.name, p.intent, p.appetite
     FROM projects p
@@ -447,6 +510,63 @@ async function buildProjectView(ctx: ToolContext): Promise<string> {
 }
 
 async function buildPhaseView(ctx: ToolContext): Promise<string> {
+  if (ctx.adapter) {
+    // Delegate to adapter
+    const phaseResult = await ctx.adapter.queryNodes({ type: "phase", status: "active" }, 1, 0);
+
+    if (phaseResult.nodes.length === 0) {
+      return "# Phase View\n\nNo active phase.";
+    }
+
+    const phaseNode = await ctx.adapter.getNode(phaseResult.nodes[0].node.id);
+    if (!phaseNode) {
+      return "# Phase View\n\nNo active phase.";
+    }
+
+    const activePhaseId = phaseNode.id;
+    const phaseName = (phaseNode.properties.name as string | null) ?? null;
+    const phaseType = (phaseNode.properties.phase_type as string) ?? "";
+    const phaseStatus = phaseNode.status ?? "unknown";
+
+    const lines: string[] = [];
+    lines.push("# Phase View");
+    lines.push("");
+    lines.push(`**Phase**: ${activePhaseId}${phaseName ? ` — ${phaseName}` : ""}`);
+    lines.push(`**Type**: ${phaseType}`);
+    lines.push(`**Status**: ${phaseStatus}`);
+    lines.push("");
+
+    // Work items in this phase
+    const wiResult = await ctx.adapter.queryNodes({ type: "work_item", phase: activePhaseId }, 1000, 0);
+    if (wiResult.nodes.length > 0) {
+      const wiIds = wiResult.nodes.map((n) => n.node.id);
+      const wiNodes = await ctx.adapter.getNodes(wiIds);
+
+      lines.push("## Work Items");
+      lines.push("");
+      lines.push("| ID | Title | Status | Complexity | Type |");
+      lines.push("|----|-------|--------|------------|------|");
+      for (const nodeId of wiIds) {
+        const node = wiNodes.get(nodeId);
+        if (!node) continue;
+        const title = truncateDesc((node.properties.title as string) ?? "");
+        const complexity = (node.properties.complexity as string | null) ?? "-";
+        const work_item_type = (node.properties.work_item_type as string | null) ?? "-";
+        lines.push(
+          `| ${node.id} | ${title} | ${node.status ?? "unknown"} | ${complexity} | ${work_item_type} |`
+        );
+      }
+      lines.push("");
+    } else {
+      lines.push("## Work Items");
+      lines.push("No work items assigned to this phase.");
+      lines.push("");
+    }
+
+    return lines.join("\n");
+  }
+
+  // Fallback: direct SQLite path
   const activePhase = ctx.db.prepare(`
     SELECT p.id, p.name, p.phase_type, n.status
     FROM phases p

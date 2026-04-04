@@ -30,9 +30,11 @@ export interface IdeateConfigJson {
   /** Remote backend configuration. Required when backend is "remote". */
   remote?: {
     /** GraphQL endpoint URL for the ideate-server. */
-    url: string;
+    endpoint: string;
     /** Organization ID for multi-tenant isolation. */
     org_id: string;
+    /** Codebase ID within the organization. */
+    codebase_id: string;
     /** Auth fields reserved for future use. */
     auth_token?: string | null;
   };

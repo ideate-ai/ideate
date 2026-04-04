@@ -21,6 +21,7 @@ import type {
 } from "../../adapter.js";
 import { LocalWriterAdapter, type LocalWriterConfig } from "./writer.js";
 import { LocalReaderAdapter } from "./reader.js";
+import { LocalContextAdapter } from "./context.js";
 
 // ---------------------------------------------------------------------------
 // LocalAdapter — full StorageAdapter implementation for local .ideate/ storage
@@ -28,10 +29,12 @@ import { LocalReaderAdapter } from "./reader.js";
 
 export class LocalAdapter extends LocalWriterAdapter implements StorageAdapter {
   private reader: LocalReaderAdapter;
+  private contextAdapter: LocalContextAdapter;
 
   constructor(config: LocalWriterConfig) {
     super(config);
     this.reader = new LocalReaderAdapter(this.db, this.drizzleDb, this.ideateDir);
+    this.contextAdapter = new LocalContextAdapter(this.drizzleDb, this.db);
   }
 
   // -------------------------------------------------------------------------
@@ -78,8 +81,8 @@ export class LocalAdapter extends LocalWriterAdapter implements StorageAdapter {
   // Graph traversal (WI-554 scope)
   // -------------------------------------------------------------------------
 
-  async traverse(_options: TraversalOptions): Promise<TraversalResult> {
-    throw new Error("LocalAdapter.traverse: not yet implemented (WI-554)");
+  async traverse(options: TraversalOptions): Promise<TraversalResult> {
+    return this.contextAdapter.traverse(options);
   }
 
   async queryGraph(
@@ -144,6 +147,31 @@ export class LocalAdapter extends LocalWriterAdapter implements StorageAdapter {
     cycle_summary_content: string | null;
   }> {
     return this.reader.getConvergenceData(cycle);
+  }
+
+  // -------------------------------------------------------------------------
+  // Context assembly query methods — delegates to LocalContextAdapter
+  // These are used by tool handlers (tools/context.ts) when ctx.adapter is set.
+  // -------------------------------------------------------------------------
+
+  queryArchitectureDocument(): import("./context.js").DocumentArtifactRow | null {
+    return this.contextAdapter.queryArchitectureDocument();
+  }
+
+  queryGuidingPrinciples(): import("./context.js").GuidingPrincipleRow[] {
+    return this.contextAdapter.queryGuidingPrinciples();
+  }
+
+  queryConstraints(): import("./context.js").ConstraintRow[] {
+    return this.contextAdapter.queryConstraints();
+  }
+
+  queryActiveProject(): import("./context.js").ProjectRow | null {
+    return this.contextAdapter.queryActiveProject();
+  }
+
+  queryActivePhase(): import("./context.js").PhaseRow | null {
+    return this.contextAdapter.queryActivePhase();
   }
 }
 

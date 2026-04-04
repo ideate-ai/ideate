@@ -2,6 +2,7 @@ import * as fs from "fs";
 import * as path from "path";
 import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
 import type { ToolContext } from "../types.js";
+import type { MutateNodeInput } from "../adapter.js";
 
 // ---------------------------------------------------------------------------
 // Default autopilot state
@@ -77,8 +78,21 @@ function autopilotStatePath(ideateDir: string): string {
   return path.join(ideateDir, "autopilot-state.yaml");
 }
 
-function readAutopilotState(ideateDir: string): AutopilotState {
-  const filePath = autopilotStatePath(ideateDir);
+async function readAutopilotState(ctx: ToolContext): Promise<AutopilotState> {
+  if (ctx.adapter) {
+    const raw = await ctx.adapter.readNodeContent("autopilot-state");
+    if (raw) {
+      try {
+        const parsed = parseYaml(raw) as Record<string, unknown>;
+        return { ...defaultAutopilotState(), ...parsed };
+      } catch {
+        return defaultAutopilotState();
+      }
+    }
+    return defaultAutopilotState();
+  }
+  // Fallback: direct filesystem read (used in tests and when adapter is not set)
+  const filePath = autopilotStatePath(ctx.ideateDir);
   if (!fs.existsSync(filePath)) {
     return defaultAutopilotState();
   }
@@ -91,8 +105,18 @@ function readAutopilotState(ideateDir: string): AutopilotState {
   }
 }
 
-function writeAutopilotState(ideateDir: string, state: AutopilotState): void {
-  const filePath = autopilotStatePath(ideateDir);
+async function writeAutopilotState(ctx: ToolContext, state: AutopilotState): Promise<void> {
+  if (ctx.adapter) {
+    const input: MutateNodeInput = {
+      id: "autopilot-state",
+      type: "autopilot_state" as MutateNodeInput["type"],
+      properties: { ...state },
+    };
+    await ctx.adapter.putNode(input);
+    return;
+  }
+  // Fallback: direct filesystem write (used in tests and when adapter is not set)
+  const filePath = autopilotStatePath(ctx.ideateDir);
   fs.writeFileSync(filePath, stringifyYaml(state), "utf8");
 }
 
@@ -111,7 +135,7 @@ export async function handleManageAutopilotState(
   }
 
   if (action === "get") {
-    const state = readAutopilotState(ctx.ideateDir);
+    const state = await readAutopilotState(ctx);
     return JSON.stringify(state, null, 2);
   }
 
@@ -131,7 +155,7 @@ export async function handleManageAutopilotState(
     );
   }
 
-  const current = readAutopilotState(ctx.ideateDir);
+  const current = await readAutopilotState(ctx);
 
   // Shallow merge update onto current state
   const merged: AutopilotState = { ...current };
@@ -139,7 +163,7 @@ export async function handleManageAutopilotState(
     merged[key] = value;
   }
 
-  writeAutopilotState(ctx.ideateDir, merged);
+  await writeAutopilotState(ctx, merged);
 
   return JSON.stringify(merged, null, 2);
 }
