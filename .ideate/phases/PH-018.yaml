@@ -1,6 +1,7 @@
 id: PH-018
 type: phase
 name: Foundation & Architecture
+intent: ""
 phase_type: design
 status: complete
 completed_date: 2026-04-01

@@ -1,0 +1,18 @@
+id: D-01
+type: domain_decision
+domain: artifact-structure
+status: settled
+cycle: 1
+supersedes: null
+title: Use YAML block scalars for multi-line fixture values
+source: triage report — schema v5 fixture spec
+description: |-
+  All multi-line string values in fixture YAML files use block scalars (|- or |)
+  rather than quoted strings with embedded newlines. This prevents YAML parse
+  errors from special characters and makes diffs easier to read.
+rationale: |-
+  js-yaml rejects certain quoted strings containing colons and other special
+  characters. Block scalars sidestep this class of error entirely and produce
+  cleaner diffs in version control.
+cycle_created: 1
+cycle_modified: null

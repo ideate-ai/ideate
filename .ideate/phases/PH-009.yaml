@@ -1,6 +1,7 @@
 id: PH-009
 type: phase
 name: Intelligent Phase Chunking
+intent: ""
 description: Auto-chunk work items into thin-slice phases.
 phase_type: implementation
 status: complete

@@ -3,7 +3,7 @@ type: finding
 cycle: 1
 reviewer: code-reviewer
 severity: minor
-title: `test_status_table_printed_to_stderr` asserts only that stderr is non-empty, not that it contains a table
+title: "`test_status_table_printed_to_stderr` asserts only that stderr is non-empty, not that it contains a table"
 description: |
   - **File**: `/Users/dan/code/ideate/mcp/session-spawner/test_server.py:685`
   - **Issue**: The test asserts `len(captured.err) > 0` (line 691). This would pass if the implementation printed a single space character. It does not verify the ASCII box characters (`+`, `-`, `|`), the required column headers, or any content derived from the registry entry.

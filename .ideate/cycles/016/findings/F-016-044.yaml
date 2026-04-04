@@ -3,7 +3,7 @@ type: finding
 cycle: 16
 reviewer: code-reviewer
 severity: minor
-title: `deleteStaleRows` issues three DELETE statements per stale row
+title: "`deleteStaleRows` issues three DELETE statements per stale row"
 description: |
   - **File**: `mcp/artifact-server/src/indexer.ts:394-411`
   - **Issue**: For each stale row the code runs three separate prepared statements (delete from typed table, delete from edges, delete from node_file_refs). With many deleted files this is N times 3 statements inside the already-open transaction.

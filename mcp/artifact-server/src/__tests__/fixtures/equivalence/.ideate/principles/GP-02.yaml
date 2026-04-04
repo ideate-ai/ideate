@@ -1,0 +1,13 @@
+id: GP-02
+type: guiding_principle
+title: Schema Coverage
+description: |-
+  Every extension table column introduced in a schema migration must be exercised
+  by at least one fixture artifact. Coverage gaps allow silent regressions where
+  a column is added but never written or read in tests.
+status: active
+amendment_history:
+  - cycle: 1
+    change_summary: Initial principle established alongside schema v5 fixture work.
+cycle_created: 1
+cycle_modified: null

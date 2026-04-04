@@ -1,6 +1,7 @@
 id: PH-006
 type: phase
 name: Test Quality
+intent: ""
 description: Fix critical fireEvent assertion gap, add behavioral verification, expand handler coverage, improve test infrastructure.
 phase_type: implementation
 status: complete

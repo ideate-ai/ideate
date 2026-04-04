@@ -3,7 +3,7 @@ type: finding
 cycle: 20
 reviewer: code-reviewer
 severity: minor
-title: `--declaration false` flag does not suppress `.d.ts` output in the committed scripts/ directory
+title: "`--declaration false` flag does not suppress `.d.ts` output in the committed scripts/ directory"
 description: |
   - **File**: `/Users/dan/code/ideate/mcp/artifact-server/package.json:13`
   - **Issue**: The `build:migration` command passes `--declaration false`, which correctly suppresses `.d.ts` generation when run in a clean output directory. However, the `scripts/` directory already contains committed `migrate-to-v3.d.ts` and `migrate-to-v3.d.ts.map` files (visible in `git status` as untracked). These are stale artifacts from a prior `tsc` invocation that lacked the flag. The `.gitignore` entries added in this cycle prevent future commits of those files, but the stale copies already on disk are not cleaned up by the script.

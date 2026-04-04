@@ -3,7 +3,7 @@ type: finding
 cycle: 22
 reviewer: code-reviewer
 severity: significant
-title: `indexer.ts` `upsertEdge` and `upsertFileRef` pass dropped columns
+title: "`indexer.ts` `upsertEdge` and `upsertFileRef` pass dropped columns"
 description: |
   - **File**: `/Users/dan/code/ideate/mcp/artifact-server/src/indexer.ts:297-317`
   - **Issue**: `upsertEdge` passes `source_type` and `target_type` to `drizzleDb.insert(dbSchema.edges).values(...)`, and `upsertFileRef` passes `node_type` to `drizzleDb.insert(dbSchema.nodeFileRefs).values(...)`. These columns were dropped in the schema DDL. This is distinct from S1 (which is the Drizzle schema definition); this is the call-site passing values for non-existent columns.

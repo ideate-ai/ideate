@@ -1,6 +1,7 @@
 id: PH-011
 type: phase
 name: Documentation & MCP Correctness
+intent: ""
 phase_type: implementation
 status: complete
 project: PR-001

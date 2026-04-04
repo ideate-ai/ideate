@@ -3,7 +3,7 @@ type: finding
 cycle: 1
 reviewer: code-reviewer
 severity: minor
-title: `GET /jobs/{job_id}` running response omits `job_id` field
+title: "`GET /jobs/{job_id}` running response omits `job_id` field"
 description: |
   - **File**: `/Users/dan/code/ideate/mcp/remote-worker/README.md:179-182`
   - **Issue**: The documented running-state response does not include `job_id`, while the queued and completed responses do. This is accurate — the server code at `server.py:219-220` returns only `{"status": "running", "started_at": ...}` — but the inconsistency is a latent usability defect in the server itself, reflected faithfully in the docs. A caller who loses track of the job ID after submitting cannot recover it from a mid-flight poll.

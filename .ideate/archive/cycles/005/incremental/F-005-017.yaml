@@ -3,7 +3,7 @@ type: finding
 cycle: 5
 reviewer: spec-reviewer
 severity: minor
-title: `metrics.jsonl` section uses wrong heading level in artifact-conventions.md
+title: "`metrics.jsonl` section uses wrong heading level in artifact-conventions.md"
 description: |
   WI-096 specified adding the section "following the same format as other artifact sections." Every other top-level artifact section in `specs/artifact-conventions.md` uses `###` heading level. The `metrics.jsonl` section was added with `####`, placing it one level deeper in the document hierarchy than the adjacent `journal.md` section and all 15 other artifact section definitions.
   

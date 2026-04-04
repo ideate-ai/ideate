@@ -3,7 +3,7 @@ type: finding
 cycle: 18
 reviewer: code-reviewer
 severity: minor
-title: `migrateSteeringArtifacts` dry-run test does not cover the `guiding-principles.md` path
+title: "`migrateSteeringArtifacts` dry-run test does not cover the `guiding-principles.md` path"
 description: |
   - **File**: `/Users/dan/code/ideate/mcp/artifact-server/src/__tests__/migrate.test.ts:811-833`
   - **Issue**: The dry-run test for `migrateSteeringArtifacts` only creates `steering/constraints.md` in the fixture and asserts on `steering/constraints.yaml`. The `guiding-principles.md` code path in the same function (lines 1184–1208 of the implementation) is exercised zero times in any dry-run assertion. If a regression were introduced in that branch specifically, no test would catch it.

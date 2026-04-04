@@ -3,7 +3,7 @@ type: finding
 cycle: 4
 reviewer: code-reviewer
 severity: minor
-title: `metrics.jsonl` omitted from `archive/cycles/{NNN}/` directory listing in artifact-conventions.md
+title: "`metrics.jsonl` omitted from `archive/cycles/{NNN}/` directory listing in artifact-conventions.md"
 description: |
   - **File**: `/Users/dan/code/ideate/specs/artifact-conventions.md:30-38`
   - **Issue**: The directory structure diagram in artifact-conventions.md does not include `metrics.jsonl`, which was added at the artifact directory root level as part of WI-092. The README.md (WI-088) and architecture.md (WI-090) both include it; artifact-conventions.md does not.

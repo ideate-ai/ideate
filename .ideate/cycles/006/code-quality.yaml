@@ -1,41 +1,8 @@
 id: code-quality
 type: cycle_summary
-reviewer: code-reviewer
-verdict: Fail
-content: |-
-  ## Verdict: Fail
-
-  Multiple significant cross-document inconsistencies and a critical self-referential error in the Neo4j schema require correction before these specs are used for implementation.
-
-  ## Critical Findings
-
-  ### C1: BELONGS_TO_DOMAIN contradiction in neo4j-schema.md
-  Section 4.2 lists BELONGS_TO_DOMAIN as a relationship type with weight 0.6. Section 9 reverses this: 'Domain as a property, not a node.' Migration tool spec correctly follows Section 9. Section 4.2 and 5.2 are stale.
-
-  ### C2: Cycle node referenced in diagram but never defined
-  Section 2.1 diagram shows Phase --HAS_CYCLE--> Cycle. No Cycle node label exists in Section 3 or the label summary table. HAS_CYCLE relationship not in Section 4.1.
-
-  ## Significant Findings
-
-  ### S1: WorkItemComplexity enum includes undocumented LOW and HIGH values
-  graphql-schema.graphql defines LOW|SMALL|MEDIUM|LARGE|HIGH. Codebase uses small|medium|large only.
-
-  ### S2: Architecture overview references tools/emit.ts which does not exist
-  Actual files are tools/metrics.ts and tools/events.ts. Diagram omits several actual tool files.
-
-  ### S3: AuraDB Free tier node limit contradicts between documents
-  business-setup-checklist.md says 50k nodes. bootstrap-ideate-infra.md says 200K nodes.
-
-  ### S4: ResearchFinding.content missing from GraphQL SDL
-  Neo4j schema and SQLite schema both define content on ResearchFinding. GraphQL SDL type omits it.
-
-  ## Minor Findings
-
-  ### M1: Tool files missing from architecture overview diagram
-  ### M2: Migration tool config example uses personal paths
-  ### M3: bootstrapWorkspace mutation has no behavioral spec
-  ### M4: Constraint syntax inconsistency between Section 6.1 and Section 10
-  ### M5: Docker Compose healthcheck shell variable expansion issue
 cycle: 6
-content_hash: de86afe762e5b4d37f19b1204968d1f5c43007911d460c5252146819bda71c49
-token_count: 470
+reviewer: code-reviewer
+verdict: Pass (after rework)
+findings_summary: "2 critical, 1 significant, 3 minor. C1: Docker healthcheck used curl (not in node:22-slim) — fixed with Node.js http.get. C2: vitest parallel file execution caused Neo4j purge races — fixed with --no-file-parallelism. S1: Sort-order verification used Number.EPSILON instead of PPR_TOLERANCE — fixed. M1: test:equivalence up command chaining. M2: Indentation. M3: tsx watch in container replaced with tsx direct."
+content_hash: 65d967846511b438d08f544c1b14b829c2fafb454f5a5037ca43f3314d1ad459
+token_count: 132

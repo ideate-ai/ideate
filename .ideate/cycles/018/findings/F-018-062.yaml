@@ -3,7 +3,7 @@ type: finding
 cycle: 18
 reviewer: code-reviewer
 severity: minor
-title: `deleteStaleRows` accepts an unused `db` parameter
+title: "`deleteStaleRows` accepts an unused `db` parameter"
 description: |
   - **File**: `src/indexer.ts:417`
   - **Issue**: The `db: Database.Database` parameter is never used — all operations go through `drizzleDb`. Passed at line 640 as a dead argument.

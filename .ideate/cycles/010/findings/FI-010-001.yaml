@@ -3,7 +3,7 @@ type: finding
 cycle: 10
 reviewer: code-reviewer
 severity: minor
-title: `Derived from` field value changed without AC authorization
+title: "`Derived from` field value changed without AC authorization"
 description: |
   - **File**: `specs/domains/workflow/policies.md:53`
   - **Issue**: The original value was `D-33 (Startup failure must bypass scope judgment)`. The amended value is `D-33 (amended), user correction after Cycle 008`. AC3 lists `Derived from` as a field to be preserved. The D-33 citation annotation changed and a second provenance source was added inline rather than as a separate entry.

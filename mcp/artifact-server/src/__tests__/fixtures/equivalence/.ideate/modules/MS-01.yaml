@@ -1,0 +1,22 @@
+id: MS-01
+type: module_spec
+name: artifact-indexer
+status: active
+scope: mcp/artifact-server/src/indexer.ts
+provides:
+  - rebuildIndex
+  - indexFiles
+  - removeFiles
+  - detectCycles
+requires:
+  - better-sqlite3
+  - drizzle-orm
+  - js-yaml
+boundary_rules:
+  - All YAML parsing happens inside this module; callers receive typed row objects
+  - No direct SQL is written here; all DB writes go through db-helpers
+  - File system reads are confined to this module and watcher.ts
+governed_by:
+  - C-01
+cycle_created: 1
+cycle_modified: null

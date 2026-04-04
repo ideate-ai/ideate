@@ -3,7 +3,7 @@ type: finding
 cycle: 1
 reviewer: code-reviewer
 severity: minor
-title: `cycles_completed` only incremented in Phase 6d — converging cycle never counted
+title: "`cycles_completed` only incremented in Phase 6d — converging cycle never counted"
 description: |
   - **File**: `skills/autopilot/SKILL.md:522`
   - **Suggested fix**: Move increment to Phase 6e (unconditional). Fixed in rework.

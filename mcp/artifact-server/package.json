@@ -13,7 +13,8 @@
     "test": "vitest run",
     "build:migration": "tsc ../../scripts/migrate-to-v3.ts --target ES2022 --module NodeNext --moduleResolution NodeNext --esModuleInterop --skipLibCheck --outDir ../../scripts --declaration false",
     "prebuild:migration": "node -e \"['../../scripts/migrate-to-v3.d.ts','../../scripts/migrate-to-v3.d.ts.map','../../scripts/migrate-to-v3.js.map'].forEach(f=>{try{require('fs').rmSync(f)}catch(e){}})\"",
-    "test:coverage": "vitest run --coverage"
+    "test:coverage": "vitest run --coverage",
+    "test:equivalence": "docker compose -f docker-compose.test.yml up -d && scripts/wait-for-healthy.sh docker-compose.test.yml 180; EXIT=$?; if [ $EXIT -eq 0 ]; then vitest run --reporter=verbose --no-file-parallelism src/__tests__/equivalence*.test.ts; EXIT=$?; fi; docker compose -f docker-compose.test.yml down; exit $EXIT"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.0.0",

@@ -4,7 +4,7 @@ domain: project-boundaries
 status: settled
 cycle: 1
 supersedes: null
-description: `agents/proxy-human.md` and `skills/autopilot/SKILL.md` remain in ideate; `agents/manager.md` moved to outpost.
+description: "`agents/proxy-human.md` and `skills/autopilot/SKILL.md` remain in ideate; `agents/manager.md` moved to outpost."
 rationale: proxy-human handles Andon events within autopilot cycles — an SDLC concern, not MCP orchestration; autopilot is the autonomous SDLC loop skill; manager coordinates agent teams via MCP tooling (archive/cycles/001/decision-log.md D5).
 cycle_created: 1
 cycle_modified: null

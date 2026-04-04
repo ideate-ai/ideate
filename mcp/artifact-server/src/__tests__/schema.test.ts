@@ -352,18 +352,18 @@ describe("createSchema — node_file_refs table", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Schema version — CURRENT_SCHEMA_VERSION is 4
+// Schema version — CURRENT_SCHEMA_VERSION is 5
 // ---------------------------------------------------------------------------
 
 describe("createSchema — schema version", () => {
-  it("CURRENT_SCHEMA_VERSION is 4", () => {
-    expect(CURRENT_SCHEMA_VERSION).toBe(4);
+  it("CURRENT_SCHEMA_VERSION is 5", () => {
+    expect(CURRENT_SCHEMA_VERSION).toBe(5);
   });
 
-  it("sets user_version = 4 after createSchema", () => {
+  it("sets user_version = 5 after createSchema", () => {
     const db = freshDb();
     const version = db.pragma("user_version", { simple: true }) as number;
-    expect(version).toBe(4);
+    expect(version).toBe(5);
   });
 });
 
@@ -579,7 +579,7 @@ describe("checkSchemaVersion", () => {
     try {
       {
         const db = new Database(dbPath);
-        db.pragma("user_version = 5"); // stale — current is 2
+        db.pragma("user_version = 99"); // stale — current is 5
         db.close();
       }
 

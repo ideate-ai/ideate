@@ -1,9 +1,10 @@
 id: PH-017
 type: phase
 name: Documentation & Cleanup
+intent: ""
 description: Fix deferred minor items from reviews, update ARCHITECTURE.md for new skills, create comprehensive GUIDE.md user guide.
 phase_type: implementation
-project_id: PR-001
+project: PR-001
 status: active
 started_date: 2026-03-31
 work_items:

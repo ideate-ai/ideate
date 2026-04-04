@@ -1,20 +1,18 @@
 id: review-manifest
 type: cycle_summary
-content: |-
-  ## Review Manifest (Cycle 6 — PH-018 Foundation & Architecture)
-
-  | # | WI | Title | Type | File Scope | Incremental | Findings |
-  |---|-----|-------|------|------------|-------------|----------|
-  | 1 | WI-543 | Design StorageAdapter interface | spike | docs/platform/adapter-interface.md (create), docs/platform/architecture-overview.md (create) | None (design phase) | — |
-  | 2 | WI-544 | Design Neo4j schema | spike | docs/platform/neo4j-schema.md (create) | None (design phase) | — |
-  | 3 | WI-545 | Design GraphQL schema | spike | docs/platform/graphql-schema.md (create), docs/platform/graphql-schema.graphql (create) | None (design phase) | — |
-  | 4 | WI-546 | Business setup checklist | chore | docs/platform/business-setup-checklist.md (create) | None (design phase) | — |
-  | 5 | WI-547 | Server bootstrap guide | chore | docs/platform/bootstrap-ideate-server.md (create) | None (design phase) | — |
-  | 6 | WI-548 | Infra bootstrap guide | chore | docs/platform/bootstrap-ideate-infra.md (create) | None (design phase) | — |
-  | 7 | WI-549 | Migration tool spec | spike | docs/platform/migration-tool-spec.md (create) | None (design phase) | — |
-  | 8 | WI-550 | Fix stale agent paths | maintenance | agents/spec-reviewer.md, agents/gap-analyst.md, agents/journal-keeper.md (modify) | None (no changes needed) | — |
-
-  All deliverables are specification documents and checklists in docs/platform/. No source code was written. No incremental code reviews were run. Additionally, docs/platform/steering.md was created during the refinement interview as the comprehensive vision document.
 cycle: 6
-content_hash: 0cbfa0fe71ad46362b9a35575159073c0854e2daf5b4550b84d9a02d22602c15
-token_count: 416
+content: |-
+  PH-024 Equivalence Test Infrastructure — 8 work items, all done.
+
+  | WI | Title | Verdict | Findings |
+  |----|-------|---------|----------|
+  | WI-589 | Docker Compose test environment | Pass (rework) | 2S, 4M |
+  | WI-590 | Synthetic test fixture | Pass (rework) | 2S |
+  | WI-591 | Equivalence test harness | Pass (rework) | 2S, 3M |
+  | WI-592 | CRUD equivalence tests | Pass (rework) | 2S, 2M |
+  | WI-593 | Query equivalence tests | Pass | 1M |
+  | WI-594 | PPR traverse tests | Pass (rework) | 1S, 1M |
+  | WI-595 | Batch/lifecycle tests | Pass (rework) | 2S, 2M |
+  | WI-596 | Null handling tests | Pass | 3M |
+content_hash: efea942f5f292db31b195a10f9aabd2ecbb7ecd3386ede70447c7749c91241b1
+token_count: 170

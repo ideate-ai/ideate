@@ -3,7 +3,7 @@ type: finding
 cycle: 4
 reviewer: spec-reviewer
 severity: significant
-title: `.ideate.json` key name mismatch — `artifact_dir` vs. `artifactDir`
+title: "`.ideate.json` key name mismatch — `artifact_dir` vs. `artifactDir`"
 description: |
   - **File**: `scripts/report.sh:83`
   - **Issue**: `discover_metrics()` calls `config.get('artifact_dir')`. Every skill reads/writes `artifactDir` (camelCase). The MCP artifact server reads `artifactDir` (`mcp/artifact-server/src/config.ts:17`). Any `.ideate.json` written by the skills uses camelCase, which report.sh will not find.

@@ -3,7 +3,7 @@ type: finding
 cycle: 14
 reviewer: code-reviewer
 severity: minor
-title: `cost_tokens` has an undocumented `fields` key
+title: "`cost_tokens` has an undocumented `fields` key"
 description: |
   - **File**: `benchmarks/rubric.yaml:23–25`
   - **Issue**: `cost_tokens` includes a `fields` key (`input_tokens`, `output_tokens`) that no other quantitative dimension has and that is not part of the spec's required schema (`name`, `description`, `unit`, `direction`). This creates an inconsistency in the quantitative schema.

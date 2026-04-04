@@ -1,0 +1,14 @@
+id: P-01
+type: domain_policy
+domain: artifact-structure
+status: active
+derived_from:
+  - GP-01
+established: cycle 1
+amended: null
+description: |-
+  Fixture artifacts must use deterministic, hard-coded IDs in the WI-NNN, GP-NN,
+  C-NN, P-NN, D-NN, Q-NN, MS-NN, PR-NNN, PH-NNN naming scheme. Generated or
+  UUID-style IDs are prohibited in the equivalence test fixture.
+cycle_created: 1
+cycle_modified: null

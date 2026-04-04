@@ -3,7 +3,7 @@ type: finding
 cycle: 17
 reviewer: code-reviewer
 severity: significant
-title: `deleteStaleRows` uses raw SQL with string-interpolated table names
+title: "`deleteStaleRows` uses raw SQL with string-interpolated table names"
 description: |
   - **File**: `mcp/artifact-server/src/indexer.ts:400,406`
   - **Issue**: `deleteStaleRows` uses `db.prepare(\`SELECT id, file_path FROM ${table}\`)` and `db.prepare(\`DELETE FROM ${table} WHERE id = ?\`)` with the table name as a template literal variable. WI-154 acceptance criterion states: "No column names or table names are interpolated as strings in SQL anywhere in indexer.ts." This criterion is unmet.

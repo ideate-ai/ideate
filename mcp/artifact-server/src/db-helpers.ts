@@ -103,6 +103,7 @@ export interface WorkItemRow {
   phase: string | null;
   notes: string | null;
   work_item_type: string | null;
+  resolution: string | null;
 }
 
 /** Row type for findings table */
@@ -117,6 +118,7 @@ export interface FindingRow {
   description: string | null;
   suggestion: string | null;
   addressed_by: string | null;
+  title: string | null;
 }
 
 /** Row type for domain_policies table */
@@ -138,6 +140,8 @@ export interface DomainDecisionRow {
   supersedes: string | null;
   description: string | null;
   rationale: string | null;
+  title: string | null;
+  source: string | null;
 }
 
 /** Row type for domain_questions table */
@@ -260,6 +264,7 @@ export interface ProjectRow {
   steering: string | null;
   horizon: string | null;
   status: string;
+  current_phase_id: string | null;
 }
 
 /** Row type for phases table */
@@ -273,6 +278,7 @@ export interface PhaseRow {
   steering: string | null;
   status: string;
   work_items: string | null;
+  completed_date: string | null;
 }
 
 /** Row type for edges table */

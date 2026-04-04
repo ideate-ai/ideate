@@ -3,7 +3,7 @@ type: finding
 cycle: 19
 reviewer: code-reviewer
 severity: minor
-title: `_ideateDir` parameter is unused in `migratePlanArtifacts` and `migrateSteeringArtifacts`
+title: "`_ideateDir` parameter is unused in `migratePlanArtifacts` and `migrateSteeringArtifacts`"
 description: |
   - **File**: `/Users/dan/code/ideate/scripts/migrate-to-v3.ts:1253` and `:1322`
   - **Issue**: Both exported functions accept an `_ideateDir` parameter (underscore-prefixed to suppress the compiler warning) but never use it. They use `writeOutput(ctx, ...)` which resolves paths via `ctx.ideateDir`. The parameter misleads callers into thinking it controls the output directory independently of `ctx`.

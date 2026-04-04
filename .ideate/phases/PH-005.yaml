@@ -1,6 +1,7 @@
 id: PH-005
 type: phase
 name: Performance & Cleanup
+intent: ""
 description: Context assembly performance, PPR edge filtering, hooks caching, dead code removal.
 phase_type: implementation
 status: complete

@@ -51,7 +51,7 @@ notes: |
 
   ```typescript
   const obj = {
-    id: `F-${cycleNum}-${findingSeq}`,
+    id: "`F-${cycleNum}-${findingSeq}`,"
     type: 'finding',
     cycle: cycleNum,
     reviewer,
@@ -74,7 +74,7 @@ notes: |
   const workItem = `cycle-${cycleNum}`;
 
   const obj = {
-    id: `F-${cycleNum}-${findingSeq}`,
+    id: "`F-${cycleNum}-${findingSeq}`,"
     type: 'finding',
     cycle: cycleNum,
     reviewer,

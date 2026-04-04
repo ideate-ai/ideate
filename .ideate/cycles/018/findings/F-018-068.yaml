@@ -3,7 +3,7 @@ type: finding
 cycle: 18
 reviewer: code-reviewer
 severity: minor
-title: `walkDir` silently swallows directory read errors
+title: "`walkDir` silently swallows directory read errors"
 description: |
   - **File**: `src/indexer.ts:73-77`
   - **Issue**: If `fs.readdirSync` throws (e.g. permission denied on a subdirectory), the error is caught and the directory is silently skipped. No warning is logged. An artifact directory with incorrect permissions would produce an incomplete index with no diagnostic output.

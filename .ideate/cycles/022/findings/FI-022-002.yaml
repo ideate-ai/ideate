@@ -3,7 +3,7 @@ type: finding
 cycle: 22
 reviewer: code-reviewer
 severity: significant
-title: `db.ts` Drizzle schema not updated — still carries `source_type`, `target_type`, `node_type`
+title: "`db.ts` Drizzle schema not updated — still carries `source_type`, `target_type`, `node_type`"
 description: |
   - **File**: `/Users/dan/code/ideate/mcp/artifact-server/src/db.ts:201-217`
   - **Issue**: The Drizzle ORM schema for `edges` still declares `source_type: text("source_type").notNull()` and `target_type: text("target_type").notNull()`, and `nodeFileRefs` still declares `node_type: text("node_type").notNull()`. These columns do not exist in the SQLite schema produced by `createSchema` in `schema.ts`. Any Drizzle-driven insert to `edges` or `nodeFileRefs` will fail at runtime with a column-not-found error. `indexer.ts` uses `upsertEdge` and `upsertFileRef` which call through Drizzle with these stale field definitions.

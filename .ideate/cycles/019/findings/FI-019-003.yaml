@@ -3,7 +3,7 @@ type: finding
 cycle: 19
 reviewer: code-reviewer
 severity: minor
-title: `pretest` script uses CommonJS `require` in an ESM package
+title: "`pretest` script uses CommonJS `require` in an ESM package"
 description: |
   - **File**: `/Users/dan/code/ideate/mcp/artifact-server/package.json:11`
   - **Issue**: The package declares `"type": "module"` (line 5), making `.js` files ESM by default. The `pretest` inline script uses `const fs=require('fs')` which is CommonJS syntax. Node runs `node -e "..."` as a CJS script regardless of `"type": "module"`, so this works at runtime, but it is inconsistent with the module system declared by the package and will cause confusion if the inline script is ever expanded.

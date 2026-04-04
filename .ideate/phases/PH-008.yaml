@@ -1,6 +1,7 @@
 id: PH-008
 type: phase
 name: MCP Response Optimization
+intent: ""
 description: Audit and trim MCP tool response payloads.
 phase_type: implementation
 status: complete

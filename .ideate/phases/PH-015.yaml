@@ -1,9 +1,10 @@
 id: PH-015
 type: phase
 name: Infrastructure — Schema & Metrics
+intent: ""
 description: Add name/description to projects and phases, fix metrics pipeline bugs, add work_item_type field, update status display. Foundational schema and pipeline changes required before new skills.
 phase_type: implementation
-project_id: PR-001
+project: PR-001
 status: complete
 completed_date: 2026-03-31
 work_items:

@@ -3,7 +3,7 @@ type: finding
 cycle: 4
 reviewer: code-reviewer
 severity: minor
-title: `fmt_ms` formats zero-millisecond wall clock as "0s" rather than "-"
+title: "`fmt_ms` formats zero-millisecond wall clock as \"0s\" rather than \"-\""
 description: |
   - **File**: `/Users/dan/code/ideate/scripts/report.sh:57-68`
   - **Issue**: `fmt_ms(0)` returns `"0s"` because `ms = int(0) = 0`, which is not `None`. Entries with no timing data default to `wall_clock_ms = 0` via the `or 0` fallback (lines 133, 199, 263), so a spawn with missing timing appears as `0s` rather than `-`. This is a display ambiguity: `0s` looks like a sub-second operation rather than missing data.

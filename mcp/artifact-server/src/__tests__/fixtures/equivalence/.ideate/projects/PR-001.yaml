@@ -1,0 +1,33 @@
+id: PR-001
+type: project
+name: Artifact Server Schema v5
+status: active
+intent: |-
+  Extend the artifact-server SQLite schema to version 5, adding five new
+  extension table columns and a comprehensive equivalence test fixture that
+  exercises every new column with known, deterministic values.
+description: |-
+  Schema v5 project covering the work_items.resolution, findings.title,
+  domain_decisions.title, domain_decisions.source, phases.completed_date,
+  and projects.current_phase_id columns.
+scope_boundary:
+  in:
+    - mcp/artifact-server/src/schema.ts
+    - mcp/artifact-server/src/db.ts
+    - mcp/artifact-server/src/__tests__/fixtures/equivalence
+  out:
+    - ideate-server Neo4j migration
+    - CLI tooling changes
+success_criteria:
+  - schema version bumped to 5
+  - all new columns present in SQLite DDL
+  - equivalence fixture covers every new column
+appetite: 2
+steering: null
+current_phase_id: PH-001
+horizon:
+  current: PH-001
+  next: []
+  later: []
+cycle_created: 1
+cycle_modified: null

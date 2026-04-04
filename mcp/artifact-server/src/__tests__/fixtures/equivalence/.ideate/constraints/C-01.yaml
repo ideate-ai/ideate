@@ -1,0 +1,10 @@
+id: C-01
+type: constraint
+category: technology
+status: active
+description: |-
+  All fixture YAML files must be parseable by js-yaml without errors.
+  No backtick-starting values, no unquoted colons in values, no flow-style
+  entries with special characters. Use block scalars for multi-line values.
+cycle_created: 1
+cycle_modified: null

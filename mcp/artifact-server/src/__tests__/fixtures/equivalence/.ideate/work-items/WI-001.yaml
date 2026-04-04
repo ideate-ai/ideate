@@ -1,0 +1,28 @@
+id: WI-001
+type: work_item
+title: Implement schema v5 extension columns
+status: done
+complexity: medium
+work_item_type: feature
+domain: artifact-structure
+phase: PH-001
+scope:
+  - path: mcp/artifact-server/src/schema.ts
+    op: modify
+  - path: mcp/artifact-server/src/db.ts
+    op: modify
+depends: []
+blocks:
+  - WI-002
+criteria:
+  - resolution column added to work_items table
+  - title column added to findings table
+  - title and source columns added to domain_decisions table
+  - completed_date column added to phases table
+  - current_phase_id column added to projects table
+  - all nullable columns accept null without error
+governed_by:
+  - GP-01
+resolution: Completed in cycle 1. All five extension columns landed in schema v5 migration.
+cycle_created: 1
+cycle_modified: 2

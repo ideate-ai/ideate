@@ -1,0 +1,23 @@
+id: RF-001
+type: research_finding
+topic: SQLite nullable column handling in better-sqlite3
+status: active
+date: "2026-04-01"
+content: |-
+  When a YAML field is explicitly set to null (YAML null literal), js-yaml
+  parses it as JavaScript null. The indexer's toStrOrNull helper returns null
+  for both undefined and null inputs, so both absent fields and explicit null
+  fields map to NULL in SQLite.
+
+  Key finding: there is no behavioral difference between an absent YAML field
+  and one explicitly set to null — both produce NULL in the database. This is
+  intentional and matches the design of toStrOrNull/toNumOrNull helpers.
+
+  Implication for fixtures: setting a field to null in YAML is equivalent to
+  omitting it entirely for indexing purposes, but explicit null is preferred in
+  test fixtures because it documents intent clearly.
+sources:
+  - mcp/artifact-server/src/indexer.ts
+  - mcp/artifact-server/src/__tests__/indexer.test.ts
+cycle_created: 1
+cycle_modified: null

@@ -6,7 +6,7 @@ import * as fs from "fs";
 // ---------------------------------------------------------------------------
 
 // SQLite user_version for the artifact index schema. Note: CONFIG_SCHEMA_VERSION in config.ts is a separate version for the .ideate/config.json format (D-79).
-export const CURRENT_SCHEMA_VERSION = 4;
+export const CURRENT_SCHEMA_VERSION = 5;
 
 // ---------------------------------------------------------------------------
 // Edge type enumeration
@@ -436,7 +436,8 @@ export function createSchema(db: Database.Database): void {
         domain         TEXT,
         phase          TEXT,
         notes          TEXT,
-        work_item_type TEXT DEFAULT 'feature'
+        work_item_type TEXT DEFAULT 'feature',
+        resolution     TEXT
       )
     `);
 
@@ -452,7 +453,8 @@ export function createSchema(db: Database.Database): void {
         reviewer     TEXT NOT NULL,
         description  TEXT,
         suggestion   TEXT,
-        addressed_by TEXT
+        addressed_by TEXT,
+        title        TEXT
       )
     `);
 
@@ -477,7 +479,9 @@ export function createSchema(db: Database.Database): void {
         cycle       INTEGER,
         supersedes  TEXT,
         description TEXT,
-        rationale   TEXT
+        rationale   TEXT,
+        title       TEXT,
+        source      TEXT
       )
     `);
 
@@ -623,7 +627,8 @@ export function createSchema(db: Database.Database): void {
         appetite          INTEGER,
         steering          TEXT,
         horizon           TEXT,
-        status            TEXT NOT NULL
+        status            TEXT NOT NULL,
+        current_phase_id  TEXT
       )
     `);
 
@@ -637,8 +642,9 @@ export function createSchema(db: Database.Database): void {
         phase_type TEXT NOT NULL,
         intent     TEXT NOT NULL,
         steering   TEXT,
-        status     TEXT NOT NULL,
-        work_items TEXT
+        status         TEXT NOT NULL,
+        work_items     TEXT,
+        completed_date TEXT
       )
     `);
     db.exec(`CREATE INDEX IF NOT EXISTS idx_phases_project ON phases(project)`);

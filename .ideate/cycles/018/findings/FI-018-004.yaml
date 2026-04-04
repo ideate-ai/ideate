@@ -3,7 +3,7 @@ type: finding
 cycle: 18
 reviewer: code-reviewer
 severity: minor
-title: `verdict` field is an empty string when no Verdict line is present — not `null`
+title: "`verdict` field is an empty string when no Verdict line is present — not `null`"
 description: |
   - **File**: `/Users/dan/code/ideate/scripts/migrate-to-v3.ts:954`
   - **Issue**: `extractVerdict` returns `''` (empty string) when the review file contains no `## Verdict:` line. The finding object is then serialized with `verdict: ''` or `verdict: ""`. Other nullable fields in the same object (`file_path`, `line`, `suggestion`, `addressed_by`) are consistently set to `null`. An empty string is semantically different from "unknown / not present" and will require callers to handle two distinct falsy values.

@@ -3,7 +3,7 @@ type: finding
 cycle: 18
 reviewer: code-reviewer
 severity: significant
-title: `migrateSteeringArtifacts` duplicates processing of `guiding-principles.md` and `constraints.md`
+title: "`migrateSteeringArtifacts` duplicates processing of `guiding-principles.md` and `constraints.md`"
 description: |
   - **File**: `/Users/dan/code/ideate/scripts/migrate-to-v3.ts:1341-1342` and `1350`
   - **Issue**: `runMigration` calls `migrateGuidingPrinciples(ctx)` and `migrateConstraints(ctx)` (the pre-existing fine-grained functions) at lines 1341–1342, and then also calls `migrateSteeringArtifacts` at line 1350, which reads those same two source files again and emits holistic single-document YAML files to `steering/guiding-principles.yaml` and `steering/constraints.yaml`. The outputs do not collide (different output paths), but both runs read the same source files and the rationale for having two representations of the same source content is not documented anywhere. A consumer reading the index would see `guiding-principles.md` migrated both as an atomic `steering/guiding-principles.yaml` (type: `guiding_principles`) and as a set of individual `principles/GP-NN.yaml` files (type: `guiding_principle`). This is a structural duplication that can create confusion about which representation is authoritative for downstream tooling.

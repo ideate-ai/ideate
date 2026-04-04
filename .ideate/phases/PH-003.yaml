@@ -1,6 +1,7 @@
 id: PH-003
 type: phase
 name: Correctness
+intent: ""
 description: Fix bugs and wrong behavior from audit findings.
 phase_type: implementation
 status: complete
