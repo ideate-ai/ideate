@@ -4,18 +4,26 @@ mode: sequential
 max_parallelism: 1
 review_cadence: per_item
 groups:
-  - name: Validation
+  - name: Parallel foundations
     items:
-      - WI-597
-    notes: "Spike: run equivalence suite against real data, diagnose failures."
-  - name: Report
+      - WI-599
+      - WI-600
+    notes: No dependencies between them. WI-599 fixes LocalAdapter edge extraction, WI-600 fixes server query filters. Can run in parallel.
+  - name: Graph traversal
     items:
-      - WI-598
-    notes: Produce final parity report based on WI-597 results.
+      - WI-601
+    notes: Depends on WI-599 (edge parity needed for PPR convergence).
+  - name: Write path
+    items:
+      - WI-602
+    notes: Depends on WI-600 (server query fixes needed for round-trip verification).
 dependency_graph:
-  WI-597: []
-  WI-598:
-    - WI-597
-notes: Phase 4 of PR-003. Sequential execution — WI-598 depends on WI-597 results. WI-597 requires Docker stack running.
-content_hash: 899b5c899f33beb84739acb1b3f01bb534f79ae3aaff65096c64a79af9b5784a
-token_count: 131
+  WI-599: []
+  WI-600: []
+  WI-601:
+    - WI-599
+  WI-602:
+    - WI-600
+notes: "PR-003 PH-025 refinement. All 4 items fix equivalence test failures. Server must be running for testing. Target: 170/170 pass."
+content_hash: ea789d70b48cc34eaac5ddf6ee5a0c4fc958b60c5f6d2cdebd2b1fb95fc8b4a7
+token_count: 202

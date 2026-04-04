@@ -1,12 +1,14 @@
 id: overview
 type: overview
-title: "PH-025: Production Validation"
-description: Final phase of PR-003. Run the equivalence test suite built in PH-024 against the full ideate .ideate/ directory (real production data with 2048+ artifacts). Diagnose any failures, document divergences, and produce the final parity report.
-what_is_changing: No new test infrastructure. This phase exercises the existing equivalence suite against real data instead of the synthetic fixture. May require minor test adjustments for scale.
-why: PH-024 built the test infrastructure against a 20-artifact synthetic fixture. Real data has 2048+ artifacts with complex edge graphs, historical artifacts, and edge cases not covered by the fixture. Production validation proves the equivalence guarantee holds at scale.
-scope_boundary: Test execution and reporting only. No adapter implementation changes. If adapter bugs are found, they are filed as findings for a future fix cycle.
+title: "PH-025 Refinement: Fix remaining 35 equivalence test failures"
+description: Fix all divergences between LocalAdapter and RemoteAdapter. Zero accepted differences. Both backends must produce identical results for all 21 StorageAdapter methods.
+what_is_changing: LocalAdapter edge extraction gaps (missing BELONGS_TO_DOMAIN for domain_decision/question). Server query filter behavior (domain/phase filters, countNodes, getDomainState, convergenceData). Server graph traversal (BFS and PPR containment edge leaks). Write path alignment (putNode/patchNode/batchMutate/nextId/archiveCycle/appendJournalEntry).
+why: PH-025 Production Validation revealed 35/170 equivalence test failures. All trace to genuine backend divergences, not test bugs. The project acceptance criterion requires 100% parity.
+scope_boundary: Fix adapter and server code only. No changes to the equivalence test assertions or comparison helpers — the tests are correct, the backends need to match.
 work_items:
-  - "WI-597: Run equivalence suite against real data, diagnose failures"
-  - "WI-598: Produce final parity report (docs/platform/parity-report.md)"
-content_hash: b1a4a5a624eff1e781edbe58ad9c2e12fd10ad305c925b4488823f5b663c6834
-token_count: 278
+  - "WI-599: Edge extraction parity (LocalAdapter indexer)"
+  - "WI-600: Server query/aggregation alignment"
+  - "WI-601: Server BFS and PPR containment edge filtering"
+  - "WI-602: Write path alignment (putNode, batchMutate, nextId, etc.)"
+content_hash: 4c5cda3655faeb297c24cbbda73684a0aeab3963253ed0a77a3d407487cb8710
+token_count: 313
