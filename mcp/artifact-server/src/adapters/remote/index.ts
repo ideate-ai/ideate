@@ -84,6 +84,25 @@ const EXTENSION_COLUMNS: Record<string, string[]> = {
 };
 
 // ---------------------------------------------------------------------------
+// Field fallback mappings — mirrors buildExtensionRow logic in indexer.ts.
+// When the content blob has field A but not field B, map A → B.
+// ---------------------------------------------------------------------------
+
+const FIELD_FALLBACKS: Record<string, Record<string, string[]>> = {
+  guiding_principle: {
+    name: ["title"],          // doc.name ?? doc.title
+    description: ["body"],    // doc.description ?? doc.body
+  },
+  phase: {
+    name: ["title"],          // doc.name ?? doc.title
+    project: ["project_id"], // doc.project ?? doc.project_id
+  },
+  metrics_event: {
+    event_name: ["agent_type"], // doc.event_name ?? doc.agent_type
+  },
+};
+
+// ---------------------------------------------------------------------------
 // Response type helpers — shape of data returned by GraphQL queries
 // ---------------------------------------------------------------------------
 
@@ -134,16 +153,51 @@ function mapGqlNodeToNode(gql: GqlArtifactNode): Node {
         const artifactType = fromGraphQLEnum(type);
         const allowed = EXTENSION_COLUMNS[artifactType];
         if (allowed) {
+          const contentObj = parsed as Record<string, unknown>;
+
+          // Apply indexer field-name fallbacks (matches buildExtensionRow in indexer.ts)
+          const fallbacks = FIELD_FALLBACKS[artifactType];
+          if (fallbacks) {
+            for (const [target, sources] of Object.entries(fallbacks)) {
+              // Match indexer's toStrOrNull(x) ?? toStrOrNull(y) pattern:
+              // if target is absent, undefined, or null, try fallback sources
+              if (contentObj[target] === undefined || contentObj[target] === null) {
+                for (const src of sources) {
+                  if (src in contentObj && contentObj[src] !== undefined && contentObj[src] !== null) {
+                    contentObj[target] = contentObj[src];
+                    break;
+                  }
+                }
+              }
+            }
+          }
+
           for (const key of allowed) {
-            if (key in (parsed as Record<string, unknown>)) {
-              const val = (parsed as Record<string, unknown>)[key];
+            if (key in contentObj) {
+              const val = contentObj[key];
               // Stringify arrays/objects to match LocalAdapter's SQLite text columns
               if (val !== null && typeof val === "object") {
                 properties[key] = JSON.stringify(val);
               } else {
                 properties[key] = val;
               }
+            } else {
+              // Absent fields default to null (matching LocalAdapter's SQLite NULL)
+              properties[key] = null;
             }
+          }
+
+          // Compute derived fields that the indexer builds from raw YAML
+          if (artifactType === "metrics_event" && properties["payload"] === null) {
+            // indexer.ts computes payload from top-level fields
+            const payloadFields = ["agent_type", "skill", "phase", "work_item", "model", "wall_clock_ms", "turns_used", "cycle"];
+            const computed: Record<string, unknown> = {};
+            for (const f of payloadFields) {
+              if (f in contentObj && contentObj[f] !== undefined && contentObj[f] !== null) {
+                computed[f] = contentObj[f];
+              }
+            }
+            properties["payload"] = Object.keys(computed).length > 0 ? JSON.stringify(computed) : null;
           }
         } else {
           // Unknown type — pass through non-metadata fields
