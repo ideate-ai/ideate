@@ -1,10 +1,10 @@
 id: PH-024
 type: phase
 name: Equivalence Test Infrastructure
-status: active
+status: done
+completed_date: 2026-04-03
 project: PR-003
 phase_type: implementation
-success_criteria: Equivalence test suite covering all 21 StorageAdapter methods passes against both LocalAdapter (YAML+SQLite) and RemoteAdapter (Neo4j+GraphQL). Docker Compose fixture brings up Neo4j + ideate-server automatically. Seed/sort controls handle non-deterministic PPR results.
-description: Docker Compose test fixture (Neo4j + ideate-server). Import known .ideate/ fixture into both backends. Equivalence test suite covering all 21 StorageAdapter methods. Seed/sort controls for PPR.
-content_hash: c07767de318c768c898e92d3806d78ff6d5bb469553213d22bd03b50b59daa8b
-token_count: 153
+success_criteria: Equivalence test suite covering all 21 StorageAdapter methods passes against both LocalAdapter and RemoteAdapter. Docker Compose fixture brings up Neo4j + ideate-server automatically. Seed/sort controls handle non-deterministic PPR results.
+content_hash: a4242ada7d1563930a2bb1865d1c2549996062716e9c20dd79c2444005d34eb5
+token_count: 100

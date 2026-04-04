@@ -1,42 +1,21 @@
 id: execution-strategy
 type: execution_strategy
-mode: batched_parallel
-max_parallelism: 2
+mode: sequential
+max_parallelism: 1
 review_cadence: per_item
 groups:
-  - name: Infrastructure (parallel)
+  - name: Validation
     items:
-      - WI-589
-      - WI-590
-    notes: Docker Compose and test fixture have no dependencies and can be built simultaneously.
-  - name: Harness
+      - WI-597
+    notes: "Spike: run equivalence suite against real data, diagnose failures."
+  - name: Report
     items:
-      - WI-591
-    notes: Depends on both WI-589 and WI-590. Builds the dual-adapter setup and comparison utilities.
-  - name: Test suites (parallel, max 2)
-    items:
-      - WI-592
-      - WI-593
-      - WI-594
-      - WI-595
-      - WI-596
-    notes: All depend on WI-591. Each creates its own test file so no scope collisions. Run up to 2 in parallel.
+      - WI-598
+    notes: Produce final parity report based on WI-597 results.
 dependency_graph:
-  WI-589: []
-  WI-590: []
-  WI-591:
-    - WI-589
-    - WI-590
-  WI-592:
-    - WI-591
-  WI-593:
-    - WI-591
-  WI-594:
-    - WI-591
-  WI-595:
-    - WI-591
-  WI-596:
-    - WI-591
-notes: Phase 3 of PR-003. The test suites are independent test files that all import from the shared equivalence-helpers.ts harness. WI-592-596 can run in parallel batches of 2. The Docker environment (WI-589) must be running for all tests. Consider running vitest with --pool=forks to isolate test files.
-content_hash: 7e8634b3c76fd9dd1a335e04d651c0ecaed5482fd5deb2b8f305589e1d354209
-token_count: 295
+  WI-597: []
+  WI-598:
+    - WI-597
+notes: Phase 4 of PR-003. Sequential execution — WI-598 depends on WI-597 results. WI-597 requires Docker stack running.
+content_hash: 899b5c899f33beb84739acb1b3f01bb534f79ae3aaff65096c64a79af9b5784a
+token_count: 131

@@ -28,7 +28,7 @@ services:
     container_name: ideate-test-server
     working_dir: /app
     volumes:
-      - ${IDEATE_SERVER_PATH:-../../ideate-server}:/app
+      - ${IDEATE_SERVER_PATH:-../../../ideate-server}:/app
       - ideate_test_node_modules:/app/node_modules
     command: >
       sh -c "npm install && npx tsx src/index.ts"

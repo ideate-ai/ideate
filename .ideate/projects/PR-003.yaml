@@ -4,15 +4,14 @@ name: Migration Tool Refinement
 intent: Ensure the YAML-to-Neo4j migration pipeline produces pristine data with 100% parity to the SQLite backend. Discover and fix latent defects in both backends. Build equivalence tests proving identical query results regardless of backend.
 status: active
 appetite: 4
-current_phase_id: PH-024
+current_phase_id: PH-025
 horizon:
-  current: PH-024
+  current: PH-025
   completed:
     - PH-022
     - PH-023
-  next:
-    - name: Production Validation
-      description: Run equivalence suite against full ideate .ideate/ (real data). Verify dogfood acceptance criteria. Produce final parity report.
+    - PH-024
+  next: []
   later: []
-content_hash: d8014f7ebf22484f7d21b31f43b5025c424fc4e25c74a52fe40f9dff54054960
-token_count: 155
+content_hash: d60b45efeb47c6f8e4606ea395a0b42065e57f4def9f267bf0644eb4a76f00d2
+token_count: 113
