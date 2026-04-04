@@ -680,11 +680,20 @@ export class LocalReaderAdapter {
         groupExpr = "n.type";
         break;
       case "domain": {
-        // domain lives on extension tables; use domain_policies/decisions/questions
-        // For generic use, fall back to a subquery approach
+        // domain lives on extension tables
         if (filter.type && (filter.type.startsWith("domain_") || filter.type === "work_item")) {
           const info = TYPE_EXTENSION_INFO[filter.type];
           joinClause = `LEFT JOIN ${info.table} e ON e.id = n.id`;
+          groupExpr = "e.domain";
+        } else if (!filter.type) {
+          // No type filter: query across all domain-bearing extension tables
+          const domainUnion = `(
+            SELECT id, domain FROM work_items WHERE domain IS NOT NULL
+            UNION ALL SELECT id, domain FROM domain_policies WHERE domain IS NOT NULL
+            UNION ALL SELECT id, domain FROM domain_decisions WHERE domain IS NOT NULL
+            UNION ALL SELECT id, domain FROM domain_questions WHERE domain IS NOT NULL
+          )`;
+          joinClause = `INNER JOIN ${domainUnion} e ON e.id = n.id`;
           groupExpr = "e.domain";
         } else {
           groupExpr = "'unknown'";
