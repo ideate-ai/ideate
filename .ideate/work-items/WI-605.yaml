@@ -1,0 +1,24 @@
+id: WI-605
+type: work_item
+title: "Plugin: queryGraph BFS populate NodeMeta fields (P1)"
+status: pending
+complexity: small
+scope:
+  - path: mcp/artifact-server/src/adapters/local/reader.ts
+    op: modify
+depends: []
+blocks: []
+criteria:
+  - LocalAdapter queryGraph returns cycle_created, cycle_modified, content_hash, token_count in each result NodeMeta
+  - queryGraph 1-hop outgoing returns identical results from both adapters for WI-001 and PH-001
+  - queryGraph 2-hop both returns identical results from both adapters for GP-01 and WI-001
+  - 4 queryGraph equivalence tests pass
+domain: agent-system
+phase: PH-025
+work_item_type: bug
+notes: "Spec ref: P1. The LocalAdapter queryGraph builds NodeMeta from the loaded node DataLoader results but currently omits cycle_created and cycle_modified. The reader.ts queryGraph method needs to include these fields from the nodes table in its SQL JOIN and pass them through to the NodeMeta result."
+resolution: null
+cycle_created: null
+cycle_modified: null
+content_hash: 86b237a75dcddd815f160757923f4b4c60472763bcd1c93a8ccafe8cb63a3094
+token_count: 250

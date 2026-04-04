@@ -1,29 +1,25 @@
 id: execution-strategy
 type: execution_strategy
 mode: sequential
-max_parallelism: 1
+max_parallelism: 2
 review_cadence: per_item
 groups:
   - name: Parallel foundations
     items:
-      - WI-599
-      - WI-600
-    notes: No dependencies between them. WI-599 fixes LocalAdapter edge extraction, WI-600 fixes server query filters. Can run in parallel.
-  - name: Graph traversal
+      - WI-604
+      - WI-605
+      - WI-606
+    notes: WI-604 (server putNode merge), WI-605 (plugin queryGraph metadata), WI-606 (server PPR) are independent. Run up to 2 in parallel.
+  - name: Batch alignment
     items:
-      - WI-601
-    notes: Depends on WI-599 (edge parity needed for PPR convergence).
-  - name: Write path
-    items:
-      - WI-602
-    notes: Depends on WI-600 (server query fixes needed for round-trip verification).
+      - WI-607
+    notes: Depends on WI-604 (content blob merge pattern). Bundles remaining 8 smaller fixes.
 dependency_graph:
-  WI-599: []
-  WI-600: []
-  WI-601:
-    - WI-599
-  WI-602:
-    - WI-600
-notes: "PR-003 PH-025 refinement. All 4 items fix equivalence test failures. Server must be running for testing. Target: 170/170 pass."
-content_hash: ea789d70b48cc34eaac5ddf6ee5a0c4fc958b60c5f6d2cdebd2b1fb95fc8b4a7
-token_count: 202
+  WI-604: []
+  WI-605: []
+  WI-606: []
+  WI-607:
+    - WI-604
+notes: "Target: 170/170 equivalence tests. Docker test stack must be running. All fixes reference docs/platform/adapter-method-specs.md."
+content_hash: d79bdcfb2024fefeb7d5c2ecdfa3f2aef83a61700d5928fb3a3f106055146623
+token_count: 177

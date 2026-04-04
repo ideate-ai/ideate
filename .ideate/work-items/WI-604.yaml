@@ -1,0 +1,25 @@
+id: WI-604
+type: work_item
+title: "Server: putNode/patchNode content blob merge on update (S1)"
+status: pending
+complexity: medium
+scope:
+  - path: ideate-server/src/resolvers/mutations/node.ts
+    op: modify
+depends: []
+blocks: []
+criteria:
+  - putNode on existing node merges new content blob with existing content (not replaces)
+  - patchNode preserves content blob fields not included in the update
+  - putNode + getNode round-trip returns all extension column properties from both adapters
+  - patchNode + getNode returns equivalent node from both adapters
+  - 3 write op equivalence tests pass
+domain: agent-system
+phase: PH-025
+work_item_type: bug
+notes: "Spec ref: S1 in adapter-method-specs.md. The MERGE cypher ON MATCH path must read existing n.content, parse it, merge with new input properties, then store the merged result. Add a helper function mergeContentBlob(existing, update) that JSON.parses existing, spreads update over it, and JSON.stringifies the result."
+resolution: null
+cycle_created: null
+cycle_modified: null
+content_hash: 02204d684bc3a4d2c150667117b049530ff94b7cc1ad5c2c51882cffa4f3f960
+token_count: 259
