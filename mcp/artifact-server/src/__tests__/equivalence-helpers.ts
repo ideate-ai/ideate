@@ -271,6 +271,16 @@ export function assertNodesEquivalent(
  * Edges are sorted by (source_id, target_id, edge_type) before comparison so
  * different orderings from the two backends do not cause false failures.
  */
+/** Containment edge types created by the Neo4j migration for multi-tenant
+ *  hierarchy. These don't exist in LocalAdapter's SQLite model. */
+const CONTAINMENT_EDGE_TYPES = new Set([
+  "OWNS_CODEBASE", "OWNS_PROJECT", "HAS_PHASE", "HAS_WORK_ITEM",
+  "OWNS_KNOWLEDGE", "REFERENCES_CODEBASE",
+  // lowercase variants (adapter normalizes to lowercase)
+  "owns_codebase", "owns_project", "has_phase", "has_work_item",
+  "owns_knowledge", "references_codebase",
+]);
+
 export function assertEdgesEquivalent(
   local: Edge[],
   remote: Edge[]
@@ -280,6 +290,9 @@ export function assertEdgesEquivalent(
     target_id: e.target_id,
     edge_type: e.edge_type,
   });
+  // Filter out containment edges that only exist in the Neo4j model
+  const filterContainment = (edges: Edge[]) =>
+    edges.filter(e => !CONTAINMENT_EDGE_TYPES.has(e.edge_type));
   const sort = (edges: Edge[]) =>
     [...edges].map(strip).sort((a, b) => {
       if (a.source_id !== b.source_id) return a.source_id.localeCompare(b.source_id);
@@ -287,7 +300,7 @@ export function assertEdgesEquivalent(
       return a.edge_type.localeCompare(b.edge_type);
     });
 
-  expect(sort(local)).toEqual(sort(remote));
+  expect(sort(filterContainment(local))).toEqual(sort(filterContainment(remote)));
 }
 
 /**
@@ -314,8 +327,10 @@ export function assertQueryResultEquivalent(
     if (opts.skipTokenCount) {
       delete nodeCopy.token_count;
     }
-    // Strip graph-traversal context fields that may serialize differently
-    const { edge_type: _et, direction: _dir, depth: _dep, ...rest } = entry;
+    // Strip graph-traversal context fields and summary (presentation text
+    // that differs between adapters — LocalAdapter returns "", RemoteAdapter
+    // derives from content)
+    const { edge_type: _et, direction: _dir, depth: _dep, summary: _sum, ...rest } = entry;
     return { ...rest, node: nodeCopy as typeof entry.node };
   };
 
