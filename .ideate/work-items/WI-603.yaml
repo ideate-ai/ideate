@@ -1,0 +1,45 @@
+id: WI-603
+type: work_item
+title: Unified StorageAdapter method specifications — analyze divergences and produce per-method specs
+status: pending
+complexity: large
+scope:
+  - path: docs/platform/adapter-method-specs.md
+    op: create
+depends: []
+blocks: []
+criteria:
+  - Read both LocalAdapter and RemoteAdapter implementations for all 21 StorageAdapter methods
+  - "For each method, document: (a) what the LocalAdapter does, (b) what the RemoteAdapter + server does, (c) the specific divergence"
+  - Produce a unified spec per method that defines the canonical behavior both adapters must implement
+  - "Specs cover: return types, null handling, edge cases, property serialization, ID generation strategy, content format"
+  - Specs address the 20 remaining equivalence test failures with a concrete fix plan per failure
+  - "Output: docs/platform/adapter-method-specs.md with one section per method"
+  - "Each spec section includes: method signature, canonical behavior, known divergences with fix assignments (plugin vs server)"
+domain: agent-system
+phase: PH-025
+work_item_type: spike
+notes: |-
+  This is a research/analysis spike, not an implementation task. The goal is to produce specifications that future work items can implement against. Focus areas based on the 20 remaining test failures:
+
+  1. getNode/queryGraph — cycle_created/cycle_modified null in BFS results despite being populated in Neo4j. Check the full GraphQL response chain.
+  2. traverse — token_budget enforcement and always_include_types handling differ. Local PPR includes all nodes matching type regardless of budget; server may cap them.
+  3. putNode/patchNode — content blob update semantics. On update, does content merge with existing or replace? Local writes to YAML then re-indexes; server stores content as JSON.stringify(input.properties).
+  4. batchMutate — result array format. Local returns {id, status} per node; server may return differently.
+  5. nextId — Local uses COUNT+1; server may use MAX+1 or a different strategy.
+  6. archiveCycle — message format alignment.
+  7. appendJournalEntry — ID generation (J-{cycle}-{seq}) alignment.
+  8. getConvergenceData — cycle_summary_content: local reads YAML file content, server reads content property from Neo4j node.
+
+  Read the source files side-by-side:
+  - Plugin: mcp/artifact-server/src/adapters/local/{reader,writer,context,index}.ts
+  - Plugin: mcp/artifact-server/src/ppr.ts
+  - Server: ideate-server/src/resolvers/{queries,mutations}/*.ts
+  - Server: ideate-server/src/services/ppr.ts
+  - Server: ideate-server/src/loaders/index.ts
+  - Interface: mcp/artifact-server/src/adapter.ts
+resolution: null
+cycle_created: null
+cycle_modified: null
+content_hash: 1161c8d181b80bde83d6f3a00d1ed12b8907765fa1beedd3200179604883db28
+token_count: 672
