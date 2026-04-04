@@ -48,6 +48,42 @@ function fromGraphQLEnum(value: string): string {
 }
 
 // ---------------------------------------------------------------------------
+// Extension table column allowlists — matches LocalAdapter's SQLite schema.
+// Only these fields are returned in Node.properties, keeping responses lean.
+// ---------------------------------------------------------------------------
+
+const EXTENSION_COLUMNS: Record<string, string[]> = {
+  work_item: ["title", "complexity", "scope", "depends", "blocks", "criteria", "module", "domain", "phase", "notes", "work_item_type", "resolution"],
+  finding: ["severity", "work_item", "file_refs", "verdict", "cycle", "reviewer", "description", "suggestion", "addressed_by", "title"],
+  domain_policy: ["domain", "derived_from", "established", "amended", "amended_by", "description"],
+  domain_decision: ["domain", "cycle", "supersedes", "description", "rationale", "title", "source"],
+  domain_question: ["domain", "impact", "source", "resolution", "resolved_in", "description", "addressed_by"],
+  guiding_principle: ["name", "description", "amendment_history"],
+  constraint: ["category", "description"],
+  module_spec: ["name", "scope", "provides", "requires", "boundary_rules"],
+  research_finding: ["topic", "date", "content", "sources"],
+  journal_entry: ["phase", "date", "title", "work_item", "content"],
+  metrics_event: ["event_name", "timestamp", "payload", "input_tokens", "output_tokens", "cache_read_tokens", "cache_write_tokens", "outcome", "finding_count", "finding_severities", "first_pass_accepted", "rework_count", "work_item_total_tokens", "cycle_total_tokens", "cycle_total_cost_estimate", "convergence_cycles", "context_artifact_ids"],
+  interview_question: ["interview_id", "question", "answer", "domain", "seq"],
+  proxy_human_decision: ["cycle", "trigger", "triggered_by", "decision", "rationale", "timestamp", "status"],
+  project: ["name", "description", "intent", "scope_boundary", "success_criteria", "appetite", "steering", "horizon", "status", "current_phase_id"],
+  phase: ["name", "description", "project", "phase_type", "intent", "steering", "status", "work_items", "completed_date"],
+  // Document types (decision_log, cycle_summary, review_output, etc.)
+  decision_log: ["title", "cycle", "content"],
+  cycle_summary: ["title", "cycle", "content"],
+  review_output: ["title", "cycle", "content"],
+  review_manifest: ["title", "cycle", "content"],
+  architecture: ["title", "cycle", "content"],
+  overview: ["title", "cycle", "content"],
+  execution_strategy: ["title", "cycle", "content"],
+  guiding_principles: ["title", "cycle", "content"],
+  constraints: ["title", "cycle", "content"],
+  research: ["title", "cycle", "content"],
+  interview: ["title", "cycle", "content"],
+  domain_index: ["title", "cycle", "content"],
+};
+
+// ---------------------------------------------------------------------------
 // Response type helpers — shape of data returned by GraphQL queries
 // ---------------------------------------------------------------------------
 
@@ -87,29 +123,43 @@ function mapGqlNodeToNode(gql: GqlArtifactNode): Node {
     ...rest
   } = gql;
 
-  // Reconstruct properties from the serialized content field.
-  // The server stores JSON.stringify(input.properties) as content, so parsing
-  // it gives us the original property bag (name, title, description, etc.).
-  // Strip metadata fields that are already on NodeMeta to avoid duplication.
-  const METADATA_KEYS = new Set([
-    "id", "type", "status", "cycle_created", "cycle_modified",
-    "content_hash", "token_count", "content",
-  ]);
-  let properties: Record<string, unknown> = rest as Record<string, unknown>;
+  // Reconstruct properties from the serialized content field, filtered to
+  // only the columns that exist in the corresponding SQLite extension table.
+  // This matches LocalAdapter behavior and reduces token usage in MCP responses.
+  let properties: Record<string, unknown> = {};
   if (typeof content === "string" && content.length > 0) {
     try {
       const parsed = JSON.parse(content);
       if (typeof parsed === "object" && parsed !== null && !Array.isArray(parsed)) {
-        const filtered: Record<string, unknown> = {};
-        for (const [k, v] of Object.entries(parsed as Record<string, unknown>)) {
-          if (!METADATA_KEYS.has(k)) {
-            filtered[k] = v;
+        const artifactType = fromGraphQLEnum(type);
+        const allowed = EXTENSION_COLUMNS[artifactType];
+        if (allowed) {
+          for (const key of allowed) {
+            if (key in (parsed as Record<string, unknown>)) {
+              const val = (parsed as Record<string, unknown>)[key];
+              // Stringify arrays/objects to match LocalAdapter's SQLite text columns
+              if (val !== null && typeof val === "object") {
+                properties[key] = JSON.stringify(val);
+              } else {
+                properties[key] = val;
+              }
+            }
+          }
+        } else {
+          // Unknown type — pass through non-metadata fields
+          const METADATA_KEYS = new Set([
+            "id", "type", "status", "cycle_created", "cycle_modified",
+            "content_hash", "token_count", "content",
+          ]);
+          for (const [k, v] of Object.entries(parsed as Record<string, unknown>)) {
+            if (!METADATA_KEYS.has(k)) {
+              properties[k] = v;
+            }
           }
         }
-        properties = { ...properties, ...filtered };
       }
     } catch {
-      // content may not be valid JSON — fall back to rest
+      // content may not be valid JSON — use empty properties
     }
   }
 
