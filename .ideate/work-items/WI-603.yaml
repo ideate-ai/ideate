@@ -1,7 +1,7 @@
 id: WI-603
 type: work_item
 title: Unified StorageAdapter method specifications — analyze divergences and produce per-method specs
-status: pending
+status: done
 complexity: large
 scope:
   - path: docs/platform/adapter-method-specs.md
@@ -43,5 +43,5 @@ notes: |-
 resolution: null
 cycle_created: null
 cycle_modified: 5
-content_hash: e04ddc4e16ab168eff220422414f53b9678a928d7eb45a9b4345f7b157a8f5c9
+content_hash: d2fc576d615c2d46c7d02cf8948897c98a29877dbc79baaa05a795973852a20f
 token_count: 793
