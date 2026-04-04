@@ -1,0 +1,10 @@
+id: PH-025
+type: phase
+name: Production Validation
+status: active
+project: PR-003
+phase_type: implementation
+success_criteria: Equivalence suite passes against full ideate .ideate/ (real data). Dogfood acceptance criteria verified. Final parity report produced.
+description: Run equivalence suite against full ideate .ideate/ (real data). Verify dogfood acceptance criteria. Produce final parity report.
+content_hash: 297f0b9a1baba176ace56bfd3e1a9617ae81afeb6e26a4447b5e05741eab41be
+token_count: 101
