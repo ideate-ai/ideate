@@ -498,7 +498,7 @@ export class LocalReaderAdapter {
       const edgeTypeFilter = buildEdgeFilter("e");
       if (direction === "outgoing") {
         baseSql = `
-          SELECT n.id AS node_id, n.type, e.edge_type, 'outgoing' AS direction, 1 AS depth, n.status
+          SELECT n.id AS node_id, n.type, e.edge_type, 'outgoing' AS direction, 1 AS depth, n.status, n.cycle_created, n.cycle_modified, n.content_hash, n.token_count
           FROM edges e
           JOIN nodes n ON n.id = e.target_id
           WHERE e.source_id = ? ${edgeTypeFilter}
@@ -506,7 +506,7 @@ export class LocalReaderAdapter {
         baseParams = [origin_id, ...edgeTypeParams];
       } else if (direction === "incoming") {
         baseSql = `
-          SELECT n.id AS node_id, n.type, e.edge_type, 'incoming' AS direction, 1 AS depth, n.status
+          SELECT n.id AS node_id, n.type, e.edge_type, 'incoming' AS direction, 1 AS depth, n.status, n.cycle_created, n.cycle_modified, n.content_hash, n.token_count
           FROM edges e
           JOIN nodes n ON n.id = e.source_id
           WHERE e.target_id = ? ${edgeTypeFilter}
@@ -514,12 +514,12 @@ export class LocalReaderAdapter {
         baseParams = [origin_id, ...edgeTypeParams];
       } else {
         baseSql = `
-          SELECT n.id AS node_id, n.type, e.edge_type, 'outgoing' AS direction, 1 AS depth, n.status
+          SELECT n.id AS node_id, n.type, e.edge_type, 'outgoing' AS direction, 1 AS depth, n.status, n.cycle_created, n.cycle_modified, n.content_hash, n.token_count
           FROM edges e
           JOIN nodes n ON n.id = e.target_id
           WHERE e.source_id = ? ${edgeTypeFilter}
           UNION
-          SELECT n.id AS node_id, n.type, e.edge_type, 'incoming' AS direction, 1 AS depth, n.status
+          SELECT n.id AS node_id, n.type, e.edge_type, 'incoming' AS direction, 1 AS depth, n.status, n.cycle_created, n.cycle_modified, n.content_hash, n.token_count
           FROM edges e
           JOIN nodes n ON n.id = e.source_id
           WHERE e.target_id = ? ${edgeTypeFilter}
@@ -574,7 +574,7 @@ export class LocalReaderAdapter {
         WITH RECURSIVE traversal(node_id, edge_type, direction, depth) AS (
           ${recursiveBody}
         )
-        SELECT n.id AS node_id, n.type, t.edge_type, t.direction, t.depth, n.status
+        SELECT n.id AS node_id, n.type, t.edge_type, t.direction, t.depth, n.status, n.cycle_created, n.cycle_modified, n.content_hash, n.token_count
         FROM traversal t
         JOIN nodes n ON n.id = t.node_id
         WHERE t.depth > 0
@@ -611,6 +611,10 @@ export class LocalReaderAdapter {
       direction: string;
       depth: number;
       status: string | null;
+      cycle_created: number | null;
+      cycle_modified: number | null;
+      content_hash: string | null;
+      token_count: number | null;
     };
 
     const rawRows = this.db.prepare(filteredSql).all(...filteredParams) as RawRow[];
@@ -626,10 +630,10 @@ export class LocalReaderAdapter {
         id: r.node_id,
         type: r.type as NodeType,
         status: r.status,
-        cycle_created: null,
-        cycle_modified: null,
-        content_hash: "",
-        token_count: null,
+        cycle_created: r.cycle_created ?? null,
+        cycle_modified: r.cycle_modified ?? null,
+        content_hash: r.content_hash ?? "",
+        token_count: r.token_count ?? null,
       };
       return {
         node: nodeMeta,
