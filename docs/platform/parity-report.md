@@ -1,114 +1,98 @@
 # Backend Parity Report
 
 **Project**: PR-003 (Migration Tool Refinement)
-**Date**: 2026-04-03
+**Date**: 2026-04-03 (updated)
 **Phase**: PH-025 (Production Validation)
 
 ---
 
 ## Executive Summary
 
-The equivalence test suite (PH-024) runs successfully against the synthetic fixture (20 artifacts) when both adapters are live. However, running against the live server reveals a **fundamental data model mismatch** between how the migration tool stores data in Neo4j and how the RemoteAdapter retrieves it.
+Two blocking issues prevent full backend parity. The first (content field null) was fixed during this session. The second (properties scope divergence) requires a design decision.
 
-**Verdict**: Parity is **not yet achieved**. One blocking issue must be resolved before the backends can be considered equivalent.
+**Test results after content fix**: 54/114 pass, 60 fail. All `readNodeContent` tests pass (19/19). All `getNode` tests still fail due to properties scope mismatch.
 
 ---
 
-## Blocking Issue: `content` Field Null on Migrated Nodes
+## Issue 1: Content Field Null (FIXED)
 
-### Root Cause
+**Status**: Fixed in ideate-server transformer.ts
 
-The RemoteAdapter's `mapGqlNodeToNode()` reconstructs the `properties` bag by parsing the `content` field as JSON (`remote/index.ts:90-103`). The server's `artifact` GraphQL query returns `content: null` for all nodes imported by the migration tool.
+The migration tool was not storing a `content` JSON blob on Neo4j nodes. The RemoteAdapter's `mapGqlNodeToNode` parses this field to reconstruct properties. Without it, `properties: {}` for all migrated nodes.
 
-The migration tool (`ideate-server/src/migration/writer.ts`) stores YAML fields as individual Neo4j node properties (e.g., `title`, `status`, `criteria` as separate properties on the Neo4j node). It does **not** store a serialized JSON blob in a `content` property.
+**Fix**: Added `rawProps["content"] = JSON.stringify(parsed)` in `transformer.ts` before content hash computation. Also updated RemoteAdapter to strip metadata keys (`id`, `type`, `status`, `cycle_created`, `cycle_modified`, `content_hash`, `token_count`, `content`) from the parsed content before merging into properties.
 
-The RemoteAdapter was designed for nodes created via `putNode`, which stores `JSON.stringify(input.properties)` as the `content` field. Migration-imported nodes use a different storage model.
+---
 
-### Impact
+## Issue 2: Properties Scope Divergence (OPEN)
 
-- `getNode()` returns `properties: {}` for all migrated nodes
-- `readNodeContent()` returns empty string for all migrated nodes
-- All equivalence tests comparing `properties` fail (100% of getNode, queryNodes, etc.)
-- `batchMutate` results differ (server doesn't return results array in the expected format)
-- `nextId` diverges (different ID generation strategies)
+**Status**: Design decision needed
+
+After the content fix, a structural mismatch remains:
+
+| Adapter | Properties source | Includes |
+|---------|------------------|----------|
+| **LocalAdapter** | SQLite extension table columns | Only columns defined in the schema (e.g., work_item: `title`, `resolution`, `work_item_type`, `complexity`) |
+| **RemoteAdapter** | Full YAML content blob (minus metadata) | ALL YAML fields (e.g., work_item: `title`, `resolution`, `scope`, `criteria`, `depends`, `blocks`, `governed_by`, ...) |
+
+The LocalAdapter reader (`reader.ts`) constructs properties from the extension table row columns. Fields like `scope`, `criteria`, `depends`, `blocks`, `governed_by` are stored as edges or in the raw YAML file, not in extension table columns.
 
 ### Resolution Options
 
-| Option | Description | Effort | Risk |
-|--------|-------------|--------|------|
-| **A: Server stores content blob** | Migration writer stores `JSON.stringify(yamlDoc)` as a `content` property on each Neo4j node, alongside the individual properties | Medium | Low — additive change |
-| **B: RemoteAdapter reads individual properties** | RemoteAdapter's `getNode` query requests all individual properties and reconstructs the properties bag from them | High | Medium — requires knowing all property names per type |
-| **C: Server resolves content at query time** | Server's `artifact` resolver assembles `content` from individual Neo4j properties before returning | Medium | Low — transparent to both migration and RemoteAdapter |
+| Option | Description | Effort |
+|--------|-------------|--------|
+| **A: LocalAdapter reads YAML** | LocalAdapter `getNode` reads the YAML file content and parses all fields into properties (like RemoteAdapter parses the content blob) | Medium |
+| **B: RemoteAdapter filters to extension columns** | RemoteAdapter strips content to only the columns that match extension table schema | High — requires per-type column lists |
+| **C: Both return raw content as properties** | Both adapters store and return `JSON.stringify(allFields)` as properties, using content as the canonical source | Medium |
 
-**Recommendation**: Option A or C. Option A is simplest — add a `content` property during migration that mirrors what `putNode` stores. Option C is more robust but requires server-side changes.
-
----
-
-## Test Results Summary
-
-### Synthetic Fixture (20 artifacts, Docker stack)
-
-| Suite | Tests | Pass | Fail | Skip |
-|-------|-------|------|------|------|
-| equivalence-setup | 8 | 8 | 0 | 0 |
-| equivalence-crud | ~60 | ~5 | ~55 | 0 |
-| equivalence-query | ~40 | ~2 | ~38 | 0 |
-| equivalence-traverse | ~15 | 0 | 15 | 0 |
-| equivalence-batch | ~12 | 5 | 7 | 0 |
-| equivalence-null | ~29 | ~8 | ~21 | 0 |
-
-The setup sanity checks pass (both adapters can retrieve nodes by ID and agree on metadata). All failures trace back to the `content: null` / `properties: {}` divergence.
-
-### Failure Categories
-
-| Category | Count | Root Cause |
-|----------|-------|------------|
-| properties mismatch | ~80 | content field null on migrated nodes |
-| readNodeContent empty | 19 | content field null |
-| batchMutate format | 2 | server returns different result structure |
-| nextId divergence | 3 | different ID generation strategies |
-| archiveCycle | 1 | server error on archive operation |
+**Recommendation**: Option A. The LocalAdapter already has `readNodeContent` which reads the YAML file. Use the same mechanism in `getNode` to populate properties from the full YAML, falling back to extension columns for computed/derived values.
 
 ---
 
-## Known Divergences (Documented)
+## Test Results (After Content Fix)
 
-### T-13: SQLite Null-to-Default Coercion
+| Suite | Total | Pass | Fail |
+|-------|-------|------|------|
+| equivalence-setup | 8 | 8 | 0 |
+| equivalence-crud | 66 | 40 | 26 |
+| equivalence-query | ~40 | ~6 | ~34 |
+| equivalence-traverse | ~15 | TBD | TBD |
+| equivalence-batch | ~12 | ~5 | ~7 |
+| equivalence-null | ~29 | TBD | TBD |
 
-The SQLite indexer uses `?? ''` in several places, coercing null values to empty strings. Neo4j stores null as-is. One confirmed case:
+### What passes now
+- All `readNodeContent` tests (19/19) — content blob populated correctly
+- All `readNodeContent` cross-adapter comparisons (id and type match)
+- Setup sanity checks (8/8)
+- Edge tests for nodes with matching properties (some)
+- Schema v5 extension column tests (where both adapters return the column value)
 
-- **ME-002 event_name**: SQLite returns `agent_type` fallback (`"reviewer"`), Neo4j stores null
-
-This is a minor, accepted divergence. Fix: update the indexer `??` chain to preserve null.
+### What still fails
+- All `getNode` comparisons — properties scope mismatch
+- All `queryNodes` comparisons — node metadata in results has different summaries
+- `getEdges` — edge sets differ (migration creates containment edges not present in SQLite)
+- `batchMutate` — server returns different result structure
+- `nextId` — different ID generation strategies
+- `getConvergenceData` — findings_by_severity counts differ
 
 ---
 
-## Infrastructure Findings
+## Changes Made This Session
 
-### Docker Compose Path Resolution
+### ideate-server (server repo)
+- `src/migration/transformer.ts`: Added `rawProps["content"] = JSON.stringify(parsed)` to store content blob on migrated nodes
 
-The `docker-compose.test.yml` default path for `IDEATE_SERVER_PATH` was `../../ideate-server` (resolves inside the ideate repo), but the server is at `../../../ideate-server` (sibling repo). Fixed during this phase.
-
-### Server Healthcheck
-
-The original `curl`-based healthcheck failed because `node:22-slim` doesn't include curl. Fixed to use `node -e "require('http').get(...)"`.
-
----
-
-## Acceptance Criteria Assessment
-
-| Criterion | Status |
-|-----------|--------|
-| 100% YAML-to-SQLite/Neo4j parity | **Not met** — content field gap |
-| Audit SQLite indexer for latent defects | **Met** — schema v5, T-13 documented |
-| Equivalence tests proving identical results | **Partially met** — tests exist and run, but fail due to content field gap |
+### ideate (plugin repo)
+- `mcp/artifact-server/src/adapters/remote/index.ts`: Strip metadata keys from parsed content blob in `mapGqlNodeToNode`
+- `mcp/artifact-server/docker-compose.test.yml`: Fixed server volume path (../../ -> ../../../), curl healthcheck -> node http.get, tsx watch -> tsx direct
+- `mcp/artifact-server/package.json`: Added `--no-file-parallelism` to test:equivalence script
 
 ---
 
 ## Recommended Next Steps
 
-1. **Fix content field gap** (Option A or C) — this is the blocking issue for parity
-2. **Fix nextId divergence** — align ID generation strategy between LocalAdapter and server
-3. **Fix batchMutate response format** — align server response with StorageAdapter contract
-4. **Re-run equivalence suite** — verify parity after fixes
-5. **Fix T-13 coercion** — update indexer to preserve null values
+1. **Design decision**: Choose Option A, B, or C for properties scope alignment
+2. **Implement the chosen option** — likely a new refinement cycle
+3. **Align edge sets** — LocalAdapter extracts edges from YAML fields at index time; RemoteAdapter gets edges from Neo4j relationships (which include containment edges the LocalAdapter doesn't create)
+4. **Align nextId** — different ID generation strategies need reconciliation
+5. **Re-run equivalence suite** after fixes

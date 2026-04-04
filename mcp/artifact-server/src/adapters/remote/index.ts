@@ -90,12 +90,23 @@ function mapGqlNodeToNode(gql: GqlArtifactNode): Node {
   // Reconstruct properties from the serialized content field.
   // The server stores JSON.stringify(input.properties) as content, so parsing
   // it gives us the original property bag (name, title, description, etc.).
+  // Strip metadata fields that are already on NodeMeta to avoid duplication.
+  const METADATA_KEYS = new Set([
+    "id", "type", "status", "cycle_created", "cycle_modified",
+    "content_hash", "token_count", "content",
+  ]);
   let properties: Record<string, unknown> = rest as Record<string, unknown>;
   if (typeof content === "string" && content.length > 0) {
     try {
       const parsed = JSON.parse(content);
       if (typeof parsed === "object" && parsed !== null && !Array.isArray(parsed)) {
-        properties = { ...properties, ...(parsed as Record<string, unknown>) };
+        const filtered: Record<string, unknown> = {};
+        for (const [k, v] of Object.entries(parsed as Record<string, unknown>)) {
+          if (!METADATA_KEYS.has(k)) {
+            filtered[k] = v;
+          }
+        }
+        properties = { ...properties, ...filtered };
       }
     } catch {
       // content may not be valid JSON — fall back to rest
