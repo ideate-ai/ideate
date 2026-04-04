@@ -31,6 +31,8 @@ notes: |-
   7. appendJournalEntry — ID generation (J-{cycle}-{seq}) alignment.
   8. getConvergenceData — cycle_summary_content: local reads YAML file content, server reads content property from Neo4j node.
 
+  IMPORTANT: The spec should define the BEST behavior for each method, not just document what exists. If analysis reveals that one adapter's approach is superior (cleaner semantics, better graph traversal, fewer edge cases), the spec should recommend that approach — even if it requires changing the other adapter. Alignment means converging on the best design, not freezing the current one.
+
   Read the source files side-by-side:
   - Plugin: mcp/artifact-server/src/adapters/local/{reader,writer,context,index}.ts
   - Plugin: mcp/artifact-server/src/ppr.ts
@@ -40,6 +42,6 @@ notes: |-
   - Interface: mcp/artifact-server/src/adapter.ts
 resolution: null
 cycle_created: null
-cycle_modified: null
-content_hash: 1161c8d181b80bde83d6f3a00d1ed12b8907765fa1beedd3200179604883db28
-token_count: 672
+cycle_modified: 5
+content_hash: e04ddc4e16ab168eff220422414f53b9678a928d7eb45a9b4345f7b157a8f5c9
+token_count: 793
