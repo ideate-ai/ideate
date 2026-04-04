@@ -1,7 +1,7 @@
 id: WI-604
 type: work_item
 title: "Server: putNode/patchNode content blob merge on update (S1)"
-status: pending
+status: done
 complexity: medium
 scope:
   - path: ideate-server/src/resolvers/mutations/node.ts
@@ -20,6 +20,6 @@ work_item_type: bug
 notes: "Spec ref: S1 in adapter-method-specs.md. The MERGE cypher ON MATCH path must read existing n.content, parse it, merge with new input properties, then store the merged result. Add a helper function mergeContentBlob(existing, update) that JSON.parses existing, spreads update over it, and JSON.stringifies the result."
 resolution: null
 cycle_created: null
-cycle_modified: null
-content_hash: 02204d684bc3a4d2c150667117b049530ff94b7cc1ad5c2c51882cffa4f3f960
-token_count: 259
+cycle_modified: 5
+content_hash: e0c609f606cf796f5b0db7cb6301b9e34ddb9dddc41fd3082fee6bea3ba6616f
+token_count: 282

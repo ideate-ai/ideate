@@ -1,7 +1,7 @@
 id: WI-606
 type: work_item
 title: "Server: PPR always_include_types scope + budget continue (S4, S5)"
-status: pending
+status: done
 complexity: medium
 scope:
   - path: ideate-server/src/services/ppr.ts
@@ -19,6 +19,6 @@ work_item_type: bug
 notes: "Spec ref: S4+S5. Two fixes: (1) For always_include_types, fetch ALL nodes of those types from Neo4j (not just PPR-reachable ones) and force-include them regardless of score. (2) When token budget is exceeded during ranked node assembly, use continue (skip this node) not break (stop adding). This matches the LocalAdapter which skips over-budget nodes but continues checking smaller ones."
 resolution: null
 cycle_created: null
-cycle_modified: null
-content_hash: 534089adffe7757559f879f2a368f388a88da2672c12bb0ed2cf3461b89aaffe
-token_count: 286
+cycle_modified: 5
+content_hash: 71dcc4ef0f5c4dd425af2d81ec83cc78f789a0462678b1dbe7e60336bdc4422a
+token_count: 308
