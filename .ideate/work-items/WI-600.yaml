@@ -1,7 +1,7 @@
 id: WI-600
 type: work_item
 title: "Server: align query filters, domain counts, getDomainState, and convergenceData"
-status: pending
+status: done
 complexity: medium
 scope:
   - path: ideate-server/src/resolvers/queries/artifact.ts
@@ -24,6 +24,6 @@ work_item_type: bug
 notes: "Domain/phase filters: add n.domain IS NOT NULL guard. Domain counts: refine the IS NOT NULL exclusion. getDomainState: verify status case matching. convergenceData: verify cycle_summary content field lookup."
 resolution: null
 cycle_created: null
-cycle_modified: null
-content_hash: 66456c174662b2cd983e02cb6d28a436f942b1d838ad78b1f4c56ab1f6999add
-token_count: 261
+cycle_modified: 5
+content_hash: 8c268d1bbdee6c872fbafe63467d1218998208df75071b29e11734ae8e495bc2
+token_count: 284

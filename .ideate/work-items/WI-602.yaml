@@ -1,7 +1,7 @@
 id: WI-602
 type: work_item
 title: "Align write path: putNode, patchNode, batchMutate, nextId, archiveCycle, appendJournalEntry"
-status: pending
+status: done
 complexity: large
 scope:
   - path: mcp/artifact-server/src/adapters/remote/index.ts
@@ -30,6 +30,6 @@ work_item_type: bug
 notes: "Server putNode must store content = JSON.stringify(properties). RemoteAdapter mapGqlNodeToNode must handle properties for nodes written via putNode (not just migration). batchMutate result format alignment. nextId strategy alignment (max+1 vs count). archiveCycle message format. appendJournalEntry ID format. T-13: decide whether indexer stops coercing null or RemoteAdapter applies same fallback."
 resolution: null
 cycle_created: null
-cycle_modified: null
-content_hash: 5b7b136fa136d1a037349075c060c48be2bf0e12315495f4a19bfcd6c64927fe
-token_count: 387
+cycle_modified: 5
+content_hash: 4665bcc479b34dc5dcc73ce06ae7620952e731bdd8aabbd72362d0db30bbc02f
+token_count: 410

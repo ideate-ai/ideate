@@ -197,3 +197,4 @@ describeLive("RemoteAdapter — live server at localhost:4000", () => {
     await expect(adapter.initialize()).resolves.not.toThrow();
   });
 });
+

@@ -1,0 +1,18 @@
+id: review-manifest
+type: cycle_summary
+content: |-
+  ## Cycle 25 Review Manifest
+
+  | WI | Title | Files | Verdict |
+  |---|---|---|---|
+  | WI-690 | Fix putEdge TRANSACTION_FAILED test mock | tests/adapters/write-transaction.test.ts | Pass |
+  | WI-691 | TRANSACTION_FAILED wrapping + IMMUTABLE_FIELD in RemoteAdapter | src/adapters/remote/index.ts | Pass (after rework: fetchCurrentCycle moved inside try) |
+
+  **Test suite**: 1061 passed, 292 skipped, 0 failed
+
+  **Summary**: WI-690 fixed test mock precision (now throws at .run() level). WI-691 added TRANSACTION_FAILED try/catch to putNode/patchNode/deleteNode/appendJournalEntry and added IMMUTABLE_FIELD client-side validation to patchNode. fetchCurrentCycle was moved inside try blocks for putNode/patchNode after rework.
+content_hash: b0b8f783dcd0acd372f97f06c57d81e52e776c08907f2d4d144ff924d8595444
+token_count: 239
+file_path: .ideate/cycles/068/review-manifest.yaml
+cycle: 25
+cycle_modified: 19

@@ -205,7 +205,7 @@ export function dispatchHook(
   // Validate command against allowlist
   const allowedCommand = validateCommand(parsed.command);
   if (!allowedCommand) {
-    console.error(
+    console.log(
       `[ideate:hooks] Hook rejected: command "${parsed.command}" is not in allowlist. ` +
       `Allowed commands: ${Array.from(ALLOWLISTED_COMMANDS).join(", ")}`
     );
@@ -259,7 +259,7 @@ export function fireEvent(
     try {
       dispatchHook(hook, variables);
     } catch (err) {
-      console.error(
+      console.log(
         `[ideate:hooks] Error firing hook for event "${eventName}":`,
         err
       );

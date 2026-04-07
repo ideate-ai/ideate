@@ -1,0 +1,32 @@
+id: gap-analysis
+type: cycle_summary
+reviewer: gap-analyst
+content: |-
+  ## Gap Analysis — Cycle 24
+
+  **Verdict**: Fail
+
+  ## Significant Gaps
+
+  - [SG1] `src/adapters/remote/index.ts` putNode (~line 593), patchNode (~line 619), deleteNode (~line 655), appendJournalEntry (~line 1518) all call `this.client.mutate(...)` with no try/catch. WI-687 added wrapping to putEdge and removeEdges but left the other four write methods unwrapped. Transport failures propagate as raw errors. LocalAdapter has TRANSACTION_FAILED handling for all of these. adapter-contract.md documents TRANSACTION_FAILED for all of them.
+
+  - [SG2] `src/adapters/remote/index.ts` patchNode (~line 619) validates only INVALID_NODE_ID client-side. LocalAdapter.patchNode (writer.ts:689-693) also checks for immutable fields (id, type, cycle_created) before touching storage and throws ImmutableFieldError. RemoteAdapter.patchNode skips this check. adapter-contract.md:108 (updated WI-689) now documents IMMUTABLE_FIELD for patchNode. The code does not produce it from RemoteAdapter.
+
+  ## Minor Gaps
+
+  - [MG1] `docs/adapter-contract.md` master error codes table (lines ~540-565) omits IMMUTABLE_FIELD, CYCLE_DETECTED, and SCOPE_COLLISION. All three are documented in their method sections and Error Types section but absent from the master table.
+
+  ## Note: False Positive from Gap Analyst
+
+  The gap analyst initially flagged MI1 as 'WI-686 deliverable absent' after looking at `src/__tests__/write-transaction.test.ts`. This is a false positive — WI-686 tests are in `tests/adapters/write-transaction.test.ts` (a different file at the same path as the existing validation tests). The code reviewer confirmed tests exist at lines 277 and 317 of that file.
+
+  ## Resolved from Prior Cycles
+
+  - SG1 (cycle 23): write-transaction.test.ts TRANSACTION_FAILED for putEdge/removeEdges — resolved cycle 24 WI-686
+  - SG2 (cycle 23): EDGE_TYPES/ALL_EDGE_TYPES unification — resolved cycle 24 WI-688
+content_hash: fd896472a40e66462e170e429bbec3cfc40b5c1ffa9ab3d784fc4920ddd2f927
+token_count: 538
+file_path: .ideate/cycles/068/gap-analysis.yaml
+cycle: 24
+cycle_modified: 19
+verdict: Fail

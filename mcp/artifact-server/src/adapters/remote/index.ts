@@ -30,7 +30,7 @@ import type {
   AdapterConfig,
 } from "../../adapter.js";
 
-import { ConnectionError } from "../../adapter.js";
+import { ConnectionError, ValidationError, StorageAdapterError, ImmutableFieldError, ALL_NODE_TYPES, ALL_EDGE_TYPES } from "../../adapter.js";
 import { GraphQLClient } from "./client.js";
 
 // ---------------------------------------------------------------------------
@@ -112,6 +112,17 @@ const FIELD_FALLBACKS: Record<string, Record<string, string[]>> = {
 };
 
 // ---------------------------------------------------------------------------
+// Default values for fields — mirrors server-side defaults in LocalAdapter
+// Applied when the field is null or undefined to ensure adapter parity
+// ---------------------------------------------------------------------------
+
+const DEFAULT_VALUES: Record<string, Record<string, unknown>> = {
+  work_item: {
+    work_item_type: "feature",
+  },
+};
+
+// ---------------------------------------------------------------------------
 // Response type helpers — shape of data returned by GraphQL queries
 // ---------------------------------------------------------------------------
 
@@ -129,9 +140,24 @@ interface GqlArtifactNode {
   [key: string]: unknown;
 }
 
+/** Reverse mapping for putNode-created nodes: server field names → local field names.
+ *  When putNode writes directly to the server, properties are stored as-is without
+ *  the FIELD_FALLBACKS transform. On read, we need to reverse-map server field names
+ *  back to local field names for the properties to match.
+ */
+const FIELD_REVERSE_MAPPINGS: Record<string, Record<string, string>> = {
+  journal_entry: {
+    // Server stores: skill, entry_type, body
+    // Local expects: phase, title, content
+    skill: "phase",
+    entry_type: "title",
+    body: "content",
+  },
+};
+
 /** Map a GraphQL ArtifactNode response to a StorageAdapter Node. */
 function mapGqlNodeToNode(gql: GqlArtifactNode): Node {
-  // Extract known metadata fields, everything else goes into properties
+  // Extract known metadata fields
   const {
     artifactId,
     type,
@@ -148,7 +174,6 @@ function mapGqlNodeToNode(gql: GqlArtifactNode): Node {
     updatedAt: _updatedAt,
     __typename: _typename,
     edges: _edges,
-    ...rest
   } = gql;
 
   // Reconstruct properties from the serialized content field, filtered to
@@ -161,9 +186,22 @@ function mapGqlNodeToNode(gql: GqlArtifactNode): Node {
       if (typeof parsed === "object" && parsed !== null && !Array.isArray(parsed)) {
         const artifactType = fromGraphQLEnum(type);
         const allowed = EXTENSION_COLUMNS[artifactType];
-        if (allowed) {
-          const contentObj = parsed as Record<string, unknown>;
 
+        // Start with a copy of parsed content for processing
+        let contentObj: Record<string, unknown> = { ...parsed };
+
+        // Apply reverse mappings for putNode-created nodes (server field names → local)
+        const reverseMappings = FIELD_REVERSE_MAPPINGS[artifactType];
+        if (reverseMappings) {
+          for (const [serverField, localField] of Object.entries(reverseMappings)) {
+            if (serverField in contentObj && !(localField in contentObj)) {
+              contentObj[localField] = contentObj[serverField];
+              // Keep the server field too — the allowed list will filter appropriately
+            }
+          }
+        }
+
+        if (allowed) {
           // Apply indexer field-name fallbacks (matches buildExtensionRow in indexer.ts)
           // T-13: handles ?? '' pattern for NOT NULL columns (e.g., metrics_events.event_name)
           const fallbacks = FIELD_FALLBACKS[artifactType];
@@ -190,6 +228,16 @@ function mapGqlNodeToNode(gql: GqlArtifactNode): Node {
                 if (!fallbackApplied && !(target in contentObj)) {
                   contentObj[target] = null;
                 }
+              }
+            }
+          }
+
+          // Apply default values for type-specific fields (matching server-side behavior)
+          const defaults = DEFAULT_VALUES[artifactType];
+          if (defaults) {
+            for (const [key, defaultValue] of Object.entries(defaults)) {
+              if (contentObj[key] === undefined || contentObj[key] === null) {
+                contentObj[key] = defaultValue;
               }
             }
           }
@@ -227,7 +275,7 @@ function mapGqlNodeToNode(gql: GqlArtifactNode): Node {
             "id", "type", "status", "cycle_created", "cycle_modified",
             "content_hash", "token_count", "content",
           ]);
-          for (const [k, v] of Object.entries(parsed as Record<string, unknown>)) {
+          for (const [k, v] of Object.entries(contentObj)) {
             if (!METADATA_KEYS.has(k)) {
               properties[k] = v;
             }
@@ -235,7 +283,16 @@ function mapGqlNodeToNode(gql: GqlArtifactNode): Node {
         }
       }
     } catch {
-      // content may not be valid JSON — use empty properties
+      // Decision: throw explicit error (not silent catch or log-only).
+      // This ensures RemoteAdapter matches LocalAdapter behavior where
+      // malformed content is treated as a hard failure, surfacing data
+      // integrity issues immediately rather than silently returning
+      // empty properties that could mask corruption.
+      throw new StorageAdapterError(
+        `Failed to parse content for node ${artifactId}: invalid JSON`,
+        "PARSE_ERROR",
+        { nodeId: artifactId, content: content.substring(0, 1000) }
+      );
     }
   }
 
@@ -314,6 +371,14 @@ function buildFilterInput(
   if (filter.phase) input.phase = filter.phase;
   if (filter.work_item) input.workItem = filter.work_item;
   if (filter.work_item_type) input.workItemType = filter.work_item_type;
+
+  // D-134/P-62: Add implicit status exclusion for work_item queries without explicit status filter.
+  // This ensures RemoteAdapter matches LocalAdapter behavior per D-131.
+  // When querying work_items (by type or cross-type) without status filter, exclude done/obsolete.
+  if (!filter.status && (filter.type === "work_item" || !filter.type)) {
+    input.statusNotIn = ["DONE", "OBSOLETE"];
+  }
+
   return input;
 }
 
@@ -323,7 +388,9 @@ function buildFilterInput(
 
 export class RemoteAdapter implements StorageAdapter {
   private client: GraphQLClient;
+  private endpoint: string;
   private codebaseId: string;
+  private currentCycle: number | null = null;
 
   constructor(config: NonNullable<AdapterConfig["remote"]>) {
     const headers: Record<string, string> = {};
@@ -338,8 +405,70 @@ export class RemoteAdapter implements StorageAdapter {
     headers["X-Org-Id"] = config.org_id;
     headers["X-Codebase-Id"] = config.codebase_id;
 
-    this.client = new GraphQLClient(config.endpoint, headers);
+    this.client = new GraphQLClient(config.endpoint, headers, config.tokenProvider);
+    this.endpoint = config.endpoint;
     this.codebaseId = config.codebase_id;
+  }
+
+  /**
+   * Fetch the current cycle from the domain_index artifact.
+   * Caches the result for subsequent calls.
+   *
+   * Error handling:
+   * - JSON parse errors throw StorageAdapterError (PARSE_ERROR)
+   * - GraphQL/network errors throw ValidationError with context
+   * - Missing/empty domain_index returns null (no cycle data yet)
+   */
+  private async fetchCurrentCycle(): Promise<number | null> {
+    if (this.currentCycle !== null) {
+      return this.currentCycle;
+    }
+
+    try {
+      const data = await this.client.query<{
+        artifact: { content: string | null } | null;
+      }>(
+        `query GetDomainIndex($codebaseId: ID) {
+          artifact(id: "domain_index", codebaseId: $codebaseId) {
+            content
+          }
+        }`,
+        { codebaseId: this.codebaseId }
+      );
+
+      if (data.artifact?.content) {
+        let parsed: Record<string, unknown>;
+        try {
+          parsed = JSON.parse(data.artifact.content) as Record<string, unknown>;
+        } catch {
+          throw new StorageAdapterError(
+            "Failed to parse domain_index content as JSON",
+            "PARSE_ERROR",
+            { artifactId: "domain_index", field: "content" }
+          );
+        }
+        const cycle = typeof parsed.current_cycle === "number" ? parsed.current_cycle : null;
+        this.currentCycle = cycle;
+        return cycle;
+      }
+    } catch (err) {
+      // DECISION (WI-656): Remove silent fallback to cycle 1
+      // Rationale: Silent fallbacks hide errors and make debugging difficult.
+      // Explicit errors allow callers to handle failures appropriately per P-58/P-002.
+      // Re-throw StorageAdapterError (e.g., PARSE_ERROR) for proper handling upstream
+      if (err instanceof StorageAdapterError) {
+        throw err;
+      }
+      // Wrap other errors (GraphQL errors, network issues) with context
+      const errorMessage = err instanceof Error ? err.message : String(err);
+      throw new ValidationError(
+        `Failed to fetch domain_index: ${errorMessage}`,
+        "VALIDATION_ERROR",
+        { codebaseId: this.codebaseId, originalError: errorMessage }
+      );
+    }
+    // No artifact or empty content - return null (no cycle data yet)
+    return null;
   }
 
   // -------------------------------------------------------------------------
@@ -356,8 +485,14 @@ export class RemoteAdapter implements StorageAdapter {
       if (err instanceof ConnectionError) {
         throw err;
       }
+      // Handle authentication failures (401) - convert to ConnectionError
+      if (err instanceof Error && err.message.includes("401")) {
+        throw new ConnectionError(
+          `Authentication failed: GraphQL endpoint ${this.endpoint} returned 401 Unauthorized`
+        );
+      }
       throw new ConnectionError(
-        "Failed to initialize remote adapter: could not reach GraphQL endpoint",
+        `Failed to initialize remote adapter: could not reach GraphQL endpoint ${this.endpoint}`,
         err instanceof Error ? err : undefined
       );
     }
@@ -384,7 +519,14 @@ export class RemoteAdapter implements StorageAdapter {
     );
 
     if (!data.artifact) return null;
-    return mapGqlNodeToNode(data.artifact);
+    const node = mapGqlNodeToNode(data.artifact);
+
+    // Apply current cycle as cycle_modified default (matches LocalAdapter behavior)
+    if (node.cycle_modified === null) {
+      node.cycle_modified = await this.fetchCurrentCycle();
+    }
+
+    return node;
   }
 
   async getNodes(ids: string[]): Promise<Map<string, Node>> {
@@ -402,8 +544,13 @@ export class RemoteAdapter implements StorageAdapter {
     );
 
     const result = new Map<string, Node>();
+    const currentCycle = await this.fetchCurrentCycle();
     for (const gql of data.artifacts) {
       const node = mapGqlNodeToNode(gql);
+      // Apply current cycle as cycle_modified default (matches LocalAdapter behavior)
+      if (node.cycle_modified === null) {
+        node.cycle_modified = currentCycle;
+      }
       result.set(node.id, node);
     }
     return result;
@@ -425,25 +572,55 @@ export class RemoteAdapter implements StorageAdapter {
   }
 
   async putNode(input: MutateNodeInput): Promise<MutateNodeResult> {
-    const data = await this.client.mutate<{
-      putNode: { id: string; status: string };
-    }>(
-      `mutation PutNode($input: MutateNodeInput!) {
-        putNode(input: $input) {
-          id
-          status
+    // Input validation
+    if (typeof input.id !== 'string' || input.id.trim() === '') {
+      throw new ValidationError('Node id must be a non-empty string', 'INVALID_NODE_ID', { value: input.id });
+    }
+    if (!ALL_NODE_TYPES.includes(input.type as NodeType)) {
+      throw new ValidationError(`Invalid NodeType: ${input.type}`, 'INVALID_NODE_TYPE', { value: input.type });
+    }
+    if (input.properties == null) {
+      throw new ValidationError('Node properties must be provided', 'MISSING_NODE_PROPERTIES', {});
+    }
+
+    let data: { putNode: { id: string; status: string } };
+    try {
+      // Fetch current cycle and include cycle_modified in properties (matches LocalAdapter behavior)
+      const currentCycle = await this.fetchCurrentCycle();
+      const propertiesWithCycle = {
+        ...input.properties,
+        ...(currentCycle !== null ? { cycle_modified: currentCycle } : {}),
+      };
+      data = await this.client.mutate<{
+        putNode: { id: string; status: string };
+      }>(
+        `mutation PutNode($input: MutateNodeInput!) {
+          putNode(input: $input) {
+            id
+            status
+          }
+        }`,
+        {
+          input: {
+            id: input.id,
+            type: toGraphQLEnum(input.type),
+            properties: propertiesWithCycle,
+            cycle: input.cycle,
+            codebaseId: this.codebaseId,
+          },
         }
-      }`,
-      {
-        input: {
-          id: input.id,
-          type: toGraphQLEnum(input.type),
-          properties: input.properties,
-          cycle: input.cycle,
-          codebaseId: this.codebaseId,
-        },
+      );
+    } catch (err) {
+      if (err instanceof StorageAdapterError) {
+        throw err;
       }
-    );
+      const errorMessage = err instanceof Error ? err.message : String(err);
+      throw new ValidationError(
+        `Transport error in putNode: ${errorMessage}`,
+        "TRANSACTION_FAILED",
+        { id: input.id }
+      );
+    }
 
     return {
       id: data.putNode.id,
@@ -452,22 +629,54 @@ export class RemoteAdapter implements StorageAdapter {
   }
 
   async patchNode(input: UpdateNodeInput): Promise<UpdateNodeResult> {
-    const data = await this.client.mutate<{
-      patchNode: { id: string; status: string };
-    }>(
-      `mutation PatchNode($input: UpdateNodeInput!) {
-        patchNode(input: $input) {
-          id
-          status
-        }
-      }`,
-      {
-        input: {
-          id: input.id,
-          properties: input.properties,
-        },
+    // Input validation
+    if (typeof input.id !== 'string' || input.id.trim() === '') {
+      throw new ValidationError('Node id must be a non-empty string', 'INVALID_NODE_ID', { value: input.id });
+    }
+
+    // Reject immutable fields
+    const IMMUTABLE = ["id", "type", "cycle_created"];
+    for (const field of IMMUTABLE) {
+      if (field in input.properties) {
+        throw new ImmutableFieldError(field);
       }
-    );
+    }
+
+    let data: { patchNode: { id: string; status: string } };
+    try {
+      // Fetch current cycle and include cycle_modified in properties (matches LocalAdapter behavior)
+      const currentCycle = await this.fetchCurrentCycle();
+      const propertiesWithCycle = {
+        ...input.properties,
+        ...(currentCycle !== null ? { cycle_modified: currentCycle } : {}),
+      };
+      data = await this.client.mutate<{
+        patchNode: { id: string; status: string };
+      }>(
+        `mutation PatchNode($input: UpdateNodeInput!) {
+          patchNode(input: $input) {
+            id
+            status
+          }
+        }`,
+        {
+          input: {
+            id: input.id,
+            properties: propertiesWithCycle,
+          },
+        }
+      );
+    } catch (err) {
+      if (err instanceof StorageAdapterError) {
+        throw err;
+      }
+      const errorMessage = err instanceof Error ? err.message : String(err);
+      throw new ValidationError(
+        `Transport error in patchNode: ${errorMessage}`,
+        "TRANSACTION_FAILED",
+        { id: input.id }
+      );
+    }
 
     return {
       id: data.patchNode.id,
@@ -476,17 +685,33 @@ export class RemoteAdapter implements StorageAdapter {
   }
 
   async deleteNode(id: string): Promise<DeleteNodeResult> {
-    const data = await this.client.mutate<{
-      deleteNode: { id: string; status: string };
-    }>(
-      `mutation DeleteNode($id: ID!) {
-        deleteNode(id: $id) {
-          id
-          status
-        }
-      }`,
-      { id }
-    );
+    if (typeof id !== 'string' || id.trim() === '') {
+      throw new ValidationError('Node id must be a non-empty string', 'INVALID_NODE_ID', { value: id });
+    }
+    let data: { deleteNode: { id: string; status: string } };
+    try {
+      data = await this.client.mutate<{
+        deleteNode: { id: string; status: string };
+      }>(
+        `mutation DeleteNode($id: ID!) {
+          deleteNode(id: $id) {
+            id
+            status
+          }
+        }`,
+        { id }
+      );
+    } catch (err) {
+      if (err instanceof StorageAdapterError) {
+        throw err;
+      }
+      const errorMessage = err instanceof Error ? err.message : String(err);
+      throw new ValidationError(
+        `Transport error in deleteNode: ${errorMessage}`,
+        "TRANSACTION_FAILED",
+        { id }
+      );
+    }
 
     return {
       id: data.deleteNode.id,
@@ -499,34 +724,79 @@ export class RemoteAdapter implements StorageAdapter {
   // -------------------------------------------------------------------------
 
   async putEdge(edge: Edge): Promise<void> {
-    await this.client.mutate<{ putEdge: boolean }>(
-      `mutation PutEdge($input: EdgeInput!) {
-        putEdge(input: $input)
-      }`,
-      {
-        input: {
-          sourceId: edge.source_id,
-          targetId: edge.target_id,
-          edgeType: toGraphQLEnum(edge.edge_type),
-          properties: edge.properties,
-        },
+    if (!edge.source_id || edge.source_id.trim() === '') {
+      throw new ValidationError('Edge source_id required', 'MISSING_EDGE_SOURCE', {});
+    }
+    if (!edge.target_id || edge.target_id.trim() === '') {
+      throw new ValidationError('Edge target_id required', 'MISSING_EDGE_TARGET', {});
+    }
+    if (!edge.edge_type) {
+      throw new ValidationError('Edge type required', 'MISSING_EDGE_TYPE', {});
+    }
+    if (!ALL_EDGE_TYPES.includes(edge.edge_type as EdgeType)) {
+      throw new ValidationError(`Invalid EdgeType: ${edge.edge_type}`, 'INVALID_EDGE_TYPE', { value: edge.edge_type });
+    }
+    try {
+      await this.client.mutate<{ putEdge: boolean }>(
+        `mutation PutEdge($input: EdgeInput!) {
+          putEdge(input: $input)
+        }`,
+        {
+          input: {
+            sourceId: edge.source_id,
+            targetId: edge.target_id,
+            edgeType: toGraphQLEnum(edge.edge_type),
+            properties: edge.properties,
+          },
+        }
+      );
+    } catch (err) {
+      if (err instanceof StorageAdapterError) {
+        throw err;
       }
-    );
+      const errorMessage = err instanceof Error ? err.message : String(err);
+      throw new ValidationError(
+        `Transport error in putEdge: ${errorMessage}`,
+        "TRANSACTION_FAILED",
+        { source_id: edge.source_id, target_id: edge.target_id, edge_type: edge.edge_type }
+      );
+    }
   }
 
   async removeEdges(
     source_id: string,
     edge_types: EdgeType[]
   ): Promise<void> {
-    await this.client.mutate<{ removeEdges: boolean }>(
-      `mutation RemoveEdges($sourceId: ID!, $edgeTypes: [EdgeType!]!) {
-        removeEdges(sourceId: $sourceId, edgeTypes: $edgeTypes)
-      }`,
-      {
-        sourceId: source_id,
-        edgeTypes: edge_types.map(toGraphQLEnum),
+    if (typeof source_id !== 'string' || source_id.trim() === '') {
+      throw new ValidationError('Node id must be a non-empty string', 'INVALID_NODE_ID', { value: source_id });
+    }
+    for (const et of edge_types) {
+      if (!ALL_EDGE_TYPES.includes(et)) {
+        throw new ValidationError(`Invalid EdgeType: ${et}`, 'INVALID_EDGE_TYPE', { value: et });
       }
-    );
+    }
+    if (edge_types.length === 0) return;
+    try {
+      await this.client.mutate<{ removeEdges: boolean }>(
+        `mutation RemoveEdges($sourceId: ID!, $edgeTypes: [EdgeType!]!) {
+          removeEdges(sourceId: $sourceId, edgeTypes: $edgeTypes)
+        }`,
+        {
+          sourceId: source_id,
+          edgeTypes: edge_types.map(toGraphQLEnum),
+        }
+      );
+    } catch (err) {
+      if (err instanceof StorageAdapterError) {
+        throw err;
+      }
+      const errorMessage = err instanceof Error ? err.message : String(err);
+      throw new ValidationError(
+        `Transport error in removeEdges: ${errorMessage}`,
+        "TRANSACTION_FAILED",
+        { source_id, edge_types }
+      );
+    }
   }
 
   async getEdges(
@@ -570,6 +840,91 @@ export class RemoteAdapter implements StorageAdapter {
 
   // AC-6: traverse mapped to assembleContext query with PPR delegation to server
   async traverse(options: TraversalOptions): Promise<TraversalResult> {
+    // Validate seed_ids (WI-653)
+    if (!Array.isArray(options.seed_ids)) {
+      throw new ValidationError(
+        "seed_ids must be an array",
+        "INVALID_SEED_IDS",
+        { value: options.seed_ids }
+      );
+    }
+    if (options.seed_ids.length === 0) {
+      throw new ValidationError(
+        "seed_ids cannot be empty",
+        "EMPTY_SEED_IDS",
+        {}
+      );
+    }
+    for (const id of options.seed_ids) {
+      if (typeof id !== "string") {
+        throw new ValidationError(
+          `Each seed_id must be a string, received ${typeof id}`,
+          "INVALID_SEED_ID",
+          { value: id }
+        );
+      }
+    }
+
+    // Validate PPR parameters (WI-663)
+    // token_budget: must be non-negative
+    if (options.token_budget !== undefined && options.token_budget < 0) {
+      throw new ValidationError(
+        `token_budget must be non-negative (valid range: 0 to Infinity), received ${options.token_budget}`,
+        "INVALID_TOKEN_BUDGET",
+        { value: options.token_budget, validRange: "0 to Infinity" }
+      );
+    }
+
+    // alpha: must be 0 <= alpha <= 1
+    if (options.alpha !== undefined && (options.alpha < 0 || options.alpha > 1)) {
+      throw new ValidationError(
+        `alpha must be between 0 and 1 inclusive (valid range: 0 to 1), received ${options.alpha}`,
+        "INVALID_ALPHA",
+        { value: options.alpha, validRange: "0 to 1" }
+      );
+    }
+
+    // max_iterations: must be non-negative integer
+    if (options.max_iterations !== undefined && (!Number.isInteger(options.max_iterations) || options.max_iterations < 0)) {
+      throw new ValidationError(
+        `max_iterations must be a non-negative integer (valid range: 0 to Infinity), received ${options.max_iterations}`,
+        "INVALID_MAX_ITERATIONS",
+        { value: options.max_iterations, validRange: "0 to Infinity" }
+      );
+    }
+
+    // convergence_threshold: must be positive number
+    if (options.convergence_threshold !== undefined && options.convergence_threshold <= 0) {
+      throw new ValidationError(
+        `convergence_threshold must be a positive number (valid range: > 0), received ${options.convergence_threshold}`,
+        "INVALID_CONVERGENCE_THRESHOLD",
+        { value: options.convergence_threshold, validRange: "> 0" }
+      );
+    }
+
+    // max_nodes: must be non-negative integer
+    if (options.max_nodes !== undefined && (!Number.isInteger(options.max_nodes) || options.max_nodes < 0)) {
+      throw new ValidationError(
+        `max_nodes must be a non-negative integer (valid range: 0 to Infinity), received ${options.max_nodes}`,
+        "INVALID_MAX_NODES",
+        { value: options.max_nodes, validRange: "0 to Infinity" }
+      );
+    }
+
+    // Validate always_include_types: each value must be a valid NodeType
+    if (options.always_include_types !== undefined) {
+      const validNodeTypes = new Set<string>(ALL_NODE_TYPES);
+      for (const type of options.always_include_types) {
+        if (!validNodeTypes.has(type)) {
+          throw new ValidationError(
+            `Invalid NodeType in always_include_types: ${type}`,
+            "INVALID_ALWAYS_INCLUDE_TYPE",
+            { value: type }
+          );
+        }
+      }
+    }
+
     const input: Record<string, unknown> = {
       seedIds: options.seed_ids,
     };
@@ -588,6 +943,7 @@ export class RemoteAdapter implements StorageAdapter {
     if (options.token_budget !== undefined) input.tokenBudget = options.token_budget;
     if (options.always_include_types !== undefined)
       input.alwaysIncludeTypes = options.always_include_types.map(toGraphQLEnum);
+    if (options.max_nodes !== undefined) input.maxNodes = options.max_nodes;
 
     const data = await this.client.query<{
       assembleContext: {
@@ -619,13 +975,55 @@ export class RemoteAdapter implements StorageAdapter {
       { input }
     );
 
+    let rankedNodes = data.assembleContext.rankedNodes.map((rn) => ({
+      node: mapGqlNodeToNode(rn.node),
+      score: rn.score,
+      content: rn.content,
+    }));
+
+    // Apply max_nodes limit if specified (for adapter parity with LocalAdapter)
+    if (options.max_nodes != null && options.max_nodes > 0 && rankedNodes.length > options.max_nodes) {
+      rankedNodes = rankedNodes.slice(0, options.max_nodes);
+    }
+
+    // Apply token_budget enforcement client-side (WI-639)
+    // Matches LocalAdapter behavior in context.ts:
+    //   - Seeds are always included (even if they exceed budget)
+    //   - Non-seed ranked nodes are included greedily by score until budget exhausted
+    //   - token_budget=0 means zero budget (only seeds and always_include_types)
+    let totalTokens = data.assembleContext.totalTokens;
+    if (options.token_budget !== undefined && options.token_budget >= 0) {
+      const budget = options.token_budget;
+      const seedSet = new Set(options.seed_ids);
+      let accumulatedTokens = 0;
+      const withinBudget: typeof rankedNodes = [];
+
+      for (const rn of rankedNodes) {
+        const nodeTokens = rn.node.token_count ?? 0;
+        const isSeed = seedSet.has(rn.node.id);
+
+        if (isSeed) {
+          // Seeds are always included (force-include, even if exceeds budget)
+          accumulatedTokens += nodeTokens;
+          withinBudget.push(rn);
+        } else if (accumulatedTokens + nodeTokens <= budget) {
+          // Non-seeds: include if within budget
+          accumulatedTokens += nodeTokens;
+          withinBudget.push(rn);
+        } else {
+          // Budget exhausted for non-seeds - skip remaining nodes
+          // (continue to check if smaller nodes later can fit, matching LocalAdapter)
+          continue;
+        }
+      }
+
+      rankedNodes = withinBudget;
+      totalTokens = accumulatedTokens;
+    }
+
     return {
-      ranked_nodes: data.assembleContext.rankedNodes.map((rn) => ({
-        node: mapGqlNodeToNode(rn.node),
-        score: rn.score,
-        content: rn.content,
-      })),
-      total_tokens: data.assembleContext.totalTokens,
+      ranked_nodes: rankedNodes,
+      total_tokens: totalTokens,
       ppr_scores: data.assembleContext.pprScores,
     };
   }
@@ -635,6 +1033,13 @@ export class RemoteAdapter implements StorageAdapter {
     limit: number,
     offset: number
   ): Promise<QueryResult> {
+    if (!Number.isInteger(limit) || limit < 0) {
+      throw new ValidationError("Limit must be a non-negative integer", "INVALID_LIMIT", { limit });
+    }
+    if (!Number.isInteger(offset) || offset < 0) {
+      throw new ValidationError("Offset must be a non-negative integer", "INVALID_OFFSET", { offset });
+    }
+
     const gqlQuery: Record<string, unknown> = {
       originId: query.origin_id,
     };
@@ -644,6 +1049,17 @@ export class RemoteAdapter implements StorageAdapter {
       gqlQuery.edgeTypes = query.edge_types.map(toGraphQLEnum);
     if (query.type_filter) gqlQuery.typeFilter = toGraphQLEnum(query.type_filter);
     if (query.filters) gqlQuery.filters = buildFilterInput(query.filters);
+
+    // Build the variables object with proper null handling for optional parameters
+    const variables: Record<string, unknown> = {
+      query: gqlQuery,
+      first: limit,
+    };
+
+    // Encode offset as a cursor string for pagination only if offset > 0
+    if (offset > 0) {
+      variables.after = Buffer.from(String(offset - 1)).toString("base64");
+    }
 
     const data = await this.client.query<{
       graphQuery: {
@@ -671,12 +1087,7 @@ export class RemoteAdapter implements StorageAdapter {
           totalCount
         }
       }`,
-      {
-        query: gqlQuery,
-        first: limit,
-        // Encode offset as a cursor string for pagination
-        after: offset > 0 ? Buffer.from(String(offset - 1)).toString("base64") : undefined,
-      }
+      variables
     );
 
     return {
@@ -704,6 +1115,13 @@ export class RemoteAdapter implements StorageAdapter {
     limit: number,
     offset: number
   ): Promise<QueryResult> {
+    if (!Number.isInteger(limit) || limit < 0) {
+      throw new ValidationError("Limit must be a non-negative integer", "INVALID_LIMIT", { limit });
+    }
+    if (!Number.isInteger(offset) || offset < 0) {
+      throw new ValidationError("Offset must be a non-negative integer", "INVALID_OFFSET", { offset });
+    }
+
     const data = await this.client.query<{
       artifactQuery: {
         edges: Array<{
@@ -743,6 +1161,24 @@ export class RemoteAdapter implements StorageAdapter {
   }
 
   async nextId(type: NodeType, cycle?: number): Promise<string> {
+    // Validate cycle parameter: must be non-negative integer if provided
+    if (cycle !== undefined) {
+      if (!Number.isInteger(cycle)) {
+        throw new ValidationError(
+          `Cycle must be an integer, received ${typeof cycle}`,
+          "INVALID_CYCLE",
+          { value: cycle }
+        );
+      }
+      if (cycle < 0) {
+        throw new ValidationError(
+          `Cycle must be a non-negative integer, received ${cycle}`,
+          "INVALID_CYCLE",
+          { value: cycle }
+        );
+      }
+    }
+
     const data = await this.client.query<{ nextId: string }>(
       `query NextId($type: NodeType!, $cycle: Int) {
         nextId(type: $type, cycle: $cycle)
@@ -761,6 +1197,91 @@ export class RemoteAdapter implements StorageAdapter {
   // -------------------------------------------------------------------------
 
   async batchMutate(input: BatchMutateInput): Promise<BatchMutateResult> {
+    const { nodes, edges: extraEdges = [] } = input;
+
+    // ---------- Input validation ----------
+    if (!nodes || nodes.length === 0) {
+      throw new ValidationError(
+        "Batch mutation requires at least one node",
+        "EMPTY_BATCH",
+        {}
+      );
+    }
+
+    const validNodeTypes = new Set<string>(ALL_NODE_TYPES);
+
+    for (const node of nodes) {
+      // Validate node has an id property (can be null/undefined for auto-generation)
+      if (!("id" in node)) {
+        throw new ValidationError(
+          "Node is missing required 'id' field",
+          "MISSING_NODE_ID",
+          { node }
+        );
+      }
+
+      if (node.type === undefined || node.type === null) {
+        throw new ValidationError(
+          "Node is missing required 'type' field",
+          "MISSING_NODE_TYPE",
+          { id: node.id }
+        );
+      }
+
+      if (!node.properties || typeof node.properties !== "object") {
+        throw new ValidationError(
+          "Node is missing required 'properties' field",
+          "MISSING_NODE_PROPERTIES",
+          { id: node.id }
+        );
+      }
+
+      if (!validNodeTypes.has(node.type)) {
+        throw new ValidationError(
+          `Invalid node type: "${node.type}"`,
+          "INVALID_NODE_TYPE",
+          { id: node.id, type: node.type }
+        );
+      }
+    }
+
+    // Valid edge types for validation
+    const validEdgeTypes = new Set<string>(ALL_EDGE_TYPES);
+
+    for (const edge of extraEdges) {
+      if (!edge.source_id) {
+        throw new ValidationError(
+          "Edge is missing required 'source_id' field",
+          "MISSING_EDGE_SOURCE",
+          { edge }
+        );
+      }
+
+      if (!edge.target_id) {
+        throw new ValidationError(
+          "Edge is missing required 'target_id' field",
+          "MISSING_EDGE_TARGET",
+          { edge }
+        );
+      }
+
+      if (!edge.edge_type) {
+        throw new ValidationError(
+          "Edge is missing required 'edge_type' field",
+          "MISSING_EDGE_TYPE",
+          { edge }
+        );
+      }
+
+      if (!validEdgeTypes.has(edge.edge_type)) {
+        throw new ValidationError(
+          `Invalid edge type: "${edge.edge_type}"`,
+          "INVALID_EDGE_TYPE",
+          { edge }
+        );
+      }
+    }
+
     const gqlInput: Record<string, unknown> = {
       nodes: input.nodes.map((n) => ({
         id: n.id,
@@ -837,7 +1358,86 @@ export class RemoteAdapter implements StorageAdapter {
       }
     );
 
+    // Normalize status keys to lowercase to match LocalAdapter behavior.
+    // GraphQL returns UPPER_SNAKE_CASE enum values (e.g., DONE, OBSOLETE),
+    // but LocalAdapter uses lowercase (e.g., done, obsolete).
+    if (group_by === "status") {
+      const result = data.nodeCounts.map((item) => ({
+        key: fromGraphQLEnum(item.key),
+        count: item.count,
+      }));
+
+      // The server excludes nodes without status (WHERE rawKey IS NOT NULL).
+      // LocalAdapter groups these as "unknown", so we need to query for them
+      // separately and add to the result.
+      const unknownCount = await this._countNodesWithoutStatus(filter);
+      if (unknownCount > 0) {
+        result.push({ key: "unknown", count: unknownCount });
+      }
+
+      return result;
+    }
+
     return data.nodeCounts;
+  }
+
+  /**
+   * Count nodes that don't have a status property set.
+   * The server's nodeCounts query excludes these (WHERE rawKey IS NOT NULL),
+   * but LocalAdapter counts them as "unknown".
+   */
+  private async _countNodesWithoutStatus(filter: NodeFilter): Promise<number> {
+    // Query directly using artifactQuery to bypass the implicit statusNotIn filter
+    // that buildFilterInput adds for work_item queries. We need all nodes including
+    // those with null status to match LocalAdapter behavior.
+    try {
+      // Build filter input manually to avoid the implicit statusNotIn filter
+      const filterInput: Record<string, unknown> = {};
+      if (filter.type) filterInput.type = toGraphQLEnum(filter.type);
+      if (filter.domain) filterInput.domain = filter.domain;
+      if (filter.cycle !== undefined) filterInput.cycle = filter.cycle;
+      if (filter.severity) filterInput.severity = filter.severity;
+      if (filter.phase) filterInput.phase = filter.phase;
+
+      // Build the query - if no filters, don't pass filter variable
+      // Note: codebaseId comes from headers (this.codebaseId), not query variables
+      const hasFilters = Object.keys(filterInput).length > 0;
+      const query = hasFilters
+        ? `query GetAllNodesForStatusCount($filter: NodeFilterInput) {
+          artifactQuery(filter: $filter, first: 10000) {
+            edges {
+              node {
+                status
+              }
+            }
+          }
+        }`
+        : `query GetAllNodesForStatusCount {
+          artifactQuery(first: 10000) {
+            edges {
+              node {
+                status
+              }
+            }
+          }
+        }`;
+      const variables = hasFilters ? { filter: filterInput } : {};
+
+      const data = await this.client.query<{
+        artifactQuery: {
+          edges: Array<{
+            node: {
+              status: string | null;
+            };
+          }>;
+        };
+      }>(query, variables);
+
+      // Count nodes where status is null
+      return data.artifactQuery.edges.filter((edge) => edge.node.status === null).length;
+    } catch {
+      return 0;
+    }
   }
 
   async getDomainState(
@@ -960,25 +1560,38 @@ export class RemoteAdapter implements StorageAdapter {
     body: string;
     cycle: number;
   }): Promise<string> {
-    const data = await this.client.mutate<{
-      appendJournal: { id: string; status: string };
-    }>(
-      `mutation AppendJournal($input: JournalEntryInput!) {
-        appendJournal(input: $input) {
-          id
-          status
+    let data: { appendJournal: { id: string; status: string } };
+    try {
+      data = await this.client.mutate<{
+        appendJournal: { id: string; status: string };
+      }>(
+        `mutation AppendJournal($input: JournalEntryInput!) {
+          appendJournal(input: $input) {
+            id
+            status
+          }
+        }`,
+        {
+          input: {
+            skill: args.skill,
+            date: args.date,
+            entryType: args.entryType,
+            body: args.body,
+            cycle: args.cycle,
+          },
         }
-      }`,
-      {
-        input: {
-          skill: args.skill,
-          date: args.date,
-          entryType: args.entryType,
-          body: args.body,
-          cycle: args.cycle,
-        },
+      );
+    } catch (err) {
+      if (err instanceof StorageAdapterError) {
+        throw err;
       }
-    );
+      const errorMessage = err instanceof Error ? err.message : String(err);
+      throw new ValidationError(
+        `Transport error in appendJournalEntry: ${errorMessage}`,
+        "TRANSACTION_FAILED",
+        { skill: args.skill, cycle: args.cycle }
+      );
+    }
 
     return data.appendJournal.id;
   }

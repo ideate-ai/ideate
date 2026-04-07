@@ -98,3 +98,19 @@ npm install
 npm run build   # compile TypeScript to dist/
 npm test        # run vitest test suite
 ```
+
+## TLS Configuration
+
+For production deployments using the RemoteAdapter to connect to ideate-server over HTTPS, see [TLS Configuration Guide](docs/tls-configuration.md).
+
+Quick example:
+```typescript
+const adapter = new RemoteAdapter({
+  endpoint: "https://ideate-server.example.com/graphql",
+  org_id: "my-org",
+  codebase_id: "my-codebase",
+  auth_token: process.env.IDEATE_AUTH_TOKEN,
+});
+```
+
+For mTLS (mutual TLS) authentication, see the full guide.

@@ -1,0 +1,23 @@
+id: spec-adherence
+type: cycle_summary
+reviewer: spec-reviewer
+content: |-
+  ## Spec Adherence Review — Cycle 27
+
+  **Verdict**: Pass
+
+  ## Findings
+
+  None.
+
+  ## Adherence Confirmed
+
+  - P-002: All 22 new equivalence test assertions use `.rejects.toMatchObject({ name: 'ValidationError', code: '<CODE>' })`. patchNode INVALID_NODE_ID in remote-adapter-validation.test.ts asserts `err.code === 'INVALID_NODE_ID'`.
+  - P-65: adapter-equivalence.test.ts has no vi.mock. remote-adapter-validation.test.ts vi.mock at line 13 is pre-existing. No new module-level vi.mock introduced by cycle 27.
+  - D-177: All Local tests unconditional, all Remote tests use it.skipIf(!remoteAvailable) with if (!remoteAdapter) return guard. Verified across all 16 new Local/Remote pairs.
+content_hash: f739f006251ee30238457104d078acb520b40dad47f61d32811301e96f50b403
+token_count: 239
+file_path: .ideate/cycles/068/spec-adherence.yaml
+cycle: 27
+cycle_modified: 19
+verdict: Pass

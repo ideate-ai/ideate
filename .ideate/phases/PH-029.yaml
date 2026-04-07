@@ -1,0 +1,26 @@
+id: PH-029
+type: phase
+acceptance_criteria:
+  - LocalAdapter and RemoteAdapter return equivalent results for all operations
+  - Equivalence tests pass consistently
+  - BFS traversal produces identical results in both adapters
+  - PPR scores converge to same values
+  - Edge extraction returns same edges for both adapters
+appetite: 3
+content_hash: 44e9d498eeff918a647e59e89f6f56b7fb576611a1d399d98aa6cd3fb36e4a80
+depends_on:
+  - PH-026
+intent: Complete adapter equivalence between LocalAdapter (SQLite) and RemoteAdapter (GraphQL/Neo4j). Fix any remaining divergence in query results, graph traversal, and edge extraction. Ensure both backends can be used interchangeably.
+name: Adapter Equivalence & Reliability
+phase_type: implementation
+project: PR-001
+status: active
+token_count: 185
+work_items:
+  - WI-635
+  - WI-636
+  - WI-637
+  - WI-638
+  - WI-639
+  - WI-640
+  - WI-641

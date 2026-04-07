@@ -1,16 +1,6 @@
-id: domain-index
+id: index
 type: domain_index
-title: Domain Index
-current_cycle: 5
-domains:
-  - name: workflow
-    description: Policies and decisions governing the plan-execute-review-refine lifecycle, user interaction model, and skill invocation patterns.
-  - name: artifact-structure
-    description: Policies and decisions governing YAML artifact format, MCP server schema, extension tables, write handlers, and the SQLite index layer.
-  - name: agent-system
-    description: Policies and decisions governing agent specialization, spawning, budget allocation, and inter-agent communication.
-  - name: project-boundaries
-    description: Policies and decisions governing scope constraints, external dependency boundaries, and platform assumptions.
-content_hash: 3592adfccd7e322d077e810e930220b6c268a756c6fddb742553854809ed6024
-token_count: 185
-file_path: .ideate/domains/index.yaml
+current_cycle: 19
+cycle_modified: 18
+content_hash: ed38fae1a644c6af857df2e436576bd5c8674c7236dd9098b05c480c3e1ed991
+token_count: 16

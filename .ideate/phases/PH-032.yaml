@@ -1,0 +1,13 @@
+id: PH-032
+type: phase
+depends_on:
+  - PH-031
+description: Deep investigation and resolution of PPR algorithm divergence
+name: PPR Divergence Investigation
+phase_type: spike
+status: pending
+success_criteria: PPR scores match between LocalAdapter and RemoteAdapter within acceptable threshold (delta < 0.001). Root cause documented.
+work_items:
+  - WI-650
+content_hash: 6843544855baa7f424c386fd7610319b29365004aa647654b83e3e7d7a491e8d
+token_count: 88

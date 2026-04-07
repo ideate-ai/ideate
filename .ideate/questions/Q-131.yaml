@@ -1,0 +1,11 @@
+id: Q-131
+type: domain_question
+title: nextId() cycle validation in writer.ts produces VALIDATION_ERROR instead of INVALID_CYCLE
+domain: adapter-equivalence
+status: open
+body: "src/adapters/local/writer.ts:474,481 calls ValidationError with the raw field name 'cycle' as the second argument, producing .code === 'VALIDATION_ERROR' instead of 'INVALID_CYCLE'. WI-667 scope listed local/index.ts but the actual cycle validation for nextId() lives in writer.ts. The remote adapter was correctly fixed. The test at src/__tests__/nextid-cycle-validation.test.ts:232 asserts code === 'VALIDATION_ERROR' with details.field === 'cycle', corroborating the wrong behavior rather than catching it. P-64 violation. Fix: change writer.ts:474 and 481 to pass 'INVALID_CYCLE' as second arg; update nextid-cycle-validation.test.ts:232 to assert code === 'INVALID_CYCLE'."
+source: cycle 020 spec-adherence C1
+reexamination_trigger: next adapter validation work item
+cycle_modified: 19
+content_hash: 161ff331998cd7f85b9b940a7d4c56e435371a98b7da8eaa528790595bf4af8f
+token_count: 242

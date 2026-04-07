@@ -1,7 +1,7 @@
 id: WI-599
 type: work_item
 title: "Align edge extraction: LocalAdapter must produce all edges Neo4j has"
-status: pending
+status: done
 complexity: medium
 scope:
   - path: mcp/artifact-server/src/indexer.ts
@@ -19,6 +19,6 @@ work_item_type: bug
 notes: Add domain_decision and domain_question to EDGE_TYPE_REGISTRY source_types for BELONGS_TO_DOMAIN. The migration already creates these edges. LocalAdapter needs to match.
 resolution: null
 cycle_created: null
-cycle_modified: null
-content_hash: fa08e89fef3d5eea8cc6a5f1e9a98e54eb67e416e0f68a99c539d7271b87ed86
-token_count: 200
+cycle_modified: 5
+content_hash: 48eef59faba8faf26c007e0f031e1bfa5819637efd062cac626535cd2ddeddbc
+token_count: 223

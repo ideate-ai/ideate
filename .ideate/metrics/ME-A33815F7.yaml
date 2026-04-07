@@ -1,0 +1,35 @@
+id: ME-A33815F7
+type: metrics_event
+event_name: unknown
+timestamp: 2026-04-05T04:00:00Z
+andon_events: 0
+cycle: 16
+event_type: quality_summary
+findings:
+  by_category:
+    bugs_introduced: 3
+    implementation_gaps: 4
+    other: 1
+    principles_violated: 0
+    requirements_missed: 2
+  by_reviewer:
+    code-reviewer:
+      critical: 1
+      minor: 2
+      significant: 2
+    gap-analyst:
+      critical: 2
+      minor: 3
+      significant: 4
+    spec-reviewer:
+      critical: 0
+      minor: 1
+      significant: 0
+  by_severity:
+    critical: 3
+    minor: 6
+    significant: 5
+    suggestion: 0
+  total: 14
+skill: autopilot
+work_items_reviewed: 9

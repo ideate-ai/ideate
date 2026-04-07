@@ -1,11 +1,13 @@
 id: D-132
 type: domain_decision
-domain: artifact-structure
-title: Typed Drizzle ORM helpers centralized in db-helpers.ts
-decision: Consolidate all 14 extension-table upsert functions into a single db-helpers.ts module.
-rationale: Codebase had 30+ @typescript-eslint/no-explicit-any suppressions scattered across tool files. Centralizing eliminates the pattern at source and makes all DB operations type-safe through one auditable call chain.
-source: cycle 1 decision-log D1; WI-397
+cycle_created: 17
+description: max_nodes option was not being passed through in RemoteAdapter.queryGraph, causing divergent behavior between LocalAdapter (which respects the limit) and RemoteAdapter (which ignores it). The options mapping must be complete for all adapter methods.
+domain: adapter-equivalence
+rationale: CR-005 identified incomplete options propagation. Adapter options must pass through consistently to ensure equivalent behavior. The decision is to map all options explicitly rather than relying on defaults.
+references:
+  - CR-005
+  - GA-003
 status: settled
-content_hash: 06edbe2c6bb5c47034336a5736b58b57d0671635ccc1bd7f03468c65efac1598
-token_count: 124
-file_path: .ideate/decisions/D-132.yaml
+cycle: 17
+content_hash: 8f0ff8caa983cef7cb10366e087290532d7373d7c07da5a6b2843d51c418f300
+token_count: 154

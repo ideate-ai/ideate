@@ -15,7 +15,7 @@ import * as path from "path";
 import * as crypto from "crypto";
 import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
 import type Database from "better-sqlite3";
-import { eq, inArray } from "drizzle-orm";
+import { eq, inArray, and } from "drizzle-orm";
 import { detectCycles } from "../../indexer.js";
 import { TYPE_TO_EXTENSION_TABLE } from "../../db.js";
 import * as dbSchema from "../../db.js";
@@ -70,7 +70,8 @@ import type {
   BatchMutateResult,
   NodeType,
 } from "../../adapter.js";
-import { ImmutableFieldError } from "../../adapter.js";
+import { ImmutableFieldError, ValidationError, ALL_NODE_TYPES } from "../../adapter.js";
+import { EDGE_TYPES } from "../../schema.js";
 
 // ---------------------------------------------------------------------------
 // Internal helpers
@@ -191,6 +192,8 @@ function upsertExtensionTableRow(
       supersedes: (content.supersedes as string | null) ?? null,
       description: (content.description as string | null) ?? null,
       rationale: (content.rationale as string | null) ?? null,
+      title: (content.title as string | null) ?? null,
+      source: (content.source as string | null) ?? null,
     };
     upsertDomainDecision(drizzleDb, decisionRow);
   } else if (type === "domain_question") {
@@ -298,6 +301,7 @@ function upsertExtensionTableRow(
       description: (content.description as string | null) ?? null,
       suggestion: (content.suggestion as string | null) ?? null,
       addressed_by: (content.addressed_by as string | null) ?? null,
+      title: (content.title as string | null) ?? null,
     };
     upsertFinding(drizzleDb, findingRow);
   } else if (type === "metrics_event") {
@@ -359,6 +363,7 @@ function upsertExtensionTableRow(
       steering: (content.steering as string | null) ?? null,
       horizon: content.horizon ? JSON.stringify(content.horizon) : null,
       status: (content.status as string) ?? "active",
+      current_phase_id: (content.current_phase_id as string | null) ?? null,
     };
     upsertProject(drizzleDb, projRow);
   } else if (type === "phase") {
@@ -372,6 +377,7 @@ function upsertExtensionTableRow(
       steering: (content.steering as string | null) ?? null,
       status: (content.status as string) ?? "pending",
       work_items: content.work_items ? JSON.stringify(content.work_items) : null,
+      completed_date: (content.completed_date as string | null) ?? null,
     };
     upsertPhaseRow(drizzleDb, phaseRow);
   }
@@ -401,6 +407,7 @@ function upsertExtensionTableRow(
       phase: (content.phase as string | null) ?? null,
       notes: (content.notes as string | null) ?? null,
       work_item_type: (content.work_item_type as string | null) ?? "feature",
+      resolution: (content.resolution as string | null) ?? null,
     };
     upsertWorkItem(drizzleDb, wiRow);
 
@@ -460,6 +467,24 @@ export class LocalWriterAdapter {
   // -------------------------------------------------------------------------
 
   async nextId(type: NodeType, cycle?: number): Promise<string> {
+    // Validate cycle parameter: must be non-negative integer if provided
+    if (cycle !== undefined) {
+      if (!Number.isInteger(cycle)) {
+        throw new ValidationError(
+          `Cycle must be an integer, received ${typeof cycle}`,
+          "INVALID_CYCLE",
+          { value: cycle }
+        );
+      }
+      if (cycle < 0) {
+        throw new ValidationError(
+          `Cycle must be a non-negative integer, received ${cycle}`,
+          "INVALID_CYCLE",
+          { value: cycle }
+        );
+      }
+    }
+
     if (type === "journal_entry") {
       // Journal entries: J-{cycleStr}-{seqStr}
       const cycleNum = cycle ?? 0;
@@ -500,6 +525,17 @@ export class LocalWriterAdapter {
   // -------------------------------------------------------------------------
 
   async putNode(input: MutateNodeInput): Promise<MutateNodeResult> {
+    // Input validation
+    if (typeof input.id !== 'string' || input.id.trim() === '') {
+      throw new ValidationError('Node id must be a non-empty string', 'INVALID_NODE_ID', { value: input.id });
+    }
+    if (!ALL_NODE_TYPES.includes(input.type as NodeType)) {
+      throw new ValidationError(`Invalid NodeType: ${input.type}`, 'INVALID_NODE_TYPE', { value: input.type });
+    }
+    if (input.properties == null) {
+      throw new ValidationError('Node properties must be provided', 'MISSING_NODE_PROPERTIES', {});
+    }
+
     const { id, type, properties: content, cycle } = input;
 
     // Determine output path
@@ -516,6 +552,34 @@ export class LocalWriterAdapter {
       yamlObj.cycle = cycle;
     }
 
+    // Apply defaults for work_item type (match server behavior)
+    if (type === "work_item") {
+      if (!yamlObj.work_item_type) {
+        yamlObj.work_item_type = "feature";
+      }
+    }
+
+    // Determine current cycle for cycle_modified (same logic as patchNode)
+    let cycleNumber: number | null = null;
+    try {
+      const indexYamlPath = path.join(this.ideateDir, "domains", "index.yaml");
+      const indexMdPath = path.join(this.ideateDir, "domains", "index.md");
+      let indexPath: string | null = null;
+      if (fs.existsSync(indexYamlPath)) {
+        indexPath = indexYamlPath;
+      } else if (fs.existsSync(indexMdPath)) {
+        indexPath = indexMdPath;
+      }
+      if (indexPath) {
+        const indexContent = fs.readFileSync(indexPath, "utf8");
+        const match = indexContent.match(/^current_cycle:\s*(\d+)/m);
+        cycleNumber = match ? parseInt(match[1], 10) : null;
+      }
+    } catch {
+      // cycle_modified remains null if index cannot be read
+    }
+    yamlObj.cycle_modified = cycleNumber;
+
     // Compute hash over content fields only
     const contentHash = computeArtifactHash(yamlObj);
     const yamlForTokens = stringifyYaml(yamlObj, { lineWidth: 0 });
@@ -525,13 +589,32 @@ export class LocalWriterAdapter {
     yamlObj.content_hash = contentHash;
     yamlObj.token_count = tokens;
 
-    const finalYaml = stringifyYaml(yamlObj, { lineWidth: 0 });
-
     // Determine if this is a create or update
     const existingRow = this.db.prepare(
-      `SELECT id FROM nodes WHERE id = ?`
-    ).get(id) as { id: string } | undefined;
+      `SELECT id, file_path FROM nodes WHERE id = ?`
+    ).get(id) as { id: string; file_path: string } | undefined;
     const isUpdate = existingRow !== undefined;
+
+    // For updates: read existing YAML and merge with new properties
+    let finalYamlObj = yamlObj;
+    if (isUpdate && fs.existsSync(existingRow.file_path)) {
+      try {
+        const existingContent = fs.readFileSync(existingRow.file_path, "utf8");
+        const existingObj = parseYaml(existingContent) as Record<string, unknown>;
+        // Merge: existing values + new values (new wins for provided fields)
+        finalYamlObj = { ...existingObj, ...yamlObj };
+        // Recompute hash and tokens for merged content
+        const mergedContentHash = computeArtifactHash(finalYamlObj);
+        const mergedYamlForTokens = stringifyYaml(finalYamlObj, { lineWidth: 0 });
+        const mergedTokens = tokenCount(mergedYamlForTokens);
+        finalYamlObj.content_hash = mergedContentHash;
+        finalYamlObj.token_count = mergedTokens;
+      } catch {
+        // If read/parse fails, use the new yamlObj as-is
+      }
+    }
+
+    const finalYaml = stringifyYaml(finalYamlObj, { lineWidth: 0 });
 
     // Phase 1 — Write the YAML file (source of truth)
     fs.writeFileSync(absoluteFilePath, finalYaml, "utf8");
@@ -539,7 +622,19 @@ export class LocalWriterAdapter {
     // Phase 2 — SQLite upserts in a single exclusive transaction
     const cycleForNode = CYCLE_SCOPED_TYPES.has(type) && cycle !== undefined
       ? cycle
-      : (content.cycle_created as number | null) ?? null;
+      : (finalYamlObj.cycle_created as number | null) ?? null;
+    const finalCycleModified = finalYamlObj.cycle_modified as number | null;
+    const finalContentHash = finalYamlObj.content_hash as string;
+    const finalTokenCount = finalYamlObj.token_count as number;
+
+    // Build extension content from finalYamlObj (for work_item extension table)
+    const extensionContent: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(finalYamlObj)) {
+      // Skip metadata fields, keep user-visible properties
+      if (!["id", "type", "content_hash", "token_count", "file_path"].includes(k)) {
+        extensionContent[k] = v;
+      }
+    }
 
     try {
       const upsertPhase = this.db.transaction(() => {
@@ -547,26 +642,33 @@ export class LocalWriterAdapter {
           id,
           type,
           cycle_created: cycleForNode,
-          cycle_modified: (content.cycle_modified as number | null) ?? null,
-          content_hash: contentHash,
-          token_count: tokens,
+          cycle_modified: finalCycleModified,
+          content_hash: finalContentHash,
+          token_count: finalTokenCount,
           file_path: absoluteFilePath,
-          status: (content.status as string | null) ?? null,
+          status: (finalYamlObj.status as string | null) ?? null,
         };
 
         upsertNode(this.drizzleDb, nodeRow);
-        upsertExtensionTableRow(this.drizzleDb, type, id, content, cycleForNode);
+        upsertExtensionTableRow(this.drizzleDb, type, id, extensionContent, cycleForNode);
       });
       upsertPhase.exclusive();
     } catch (dbErr) {
       // SQLite transaction failed — clean up the YAML file
-      console.error("LocalAdapter.putNode: SQLite transaction failed, cleaning up YAML file:", (dbErr as Error).message);
       try {
         if (fs.existsSync(absoluteFilePath)) fs.unlinkSync(absoluteFilePath);
       } catch (cleanupErr) {
-        console.error(`LocalAdapter.putNode: failed to remove ${absoluteFilePath} during cleanup:`, (cleanupErr as Error).message);
+        throw new ValidationError(
+          `SQLite transaction failed: ${(dbErr as Error).message}; cleanup also failed: ${(cleanupErr as Error).message}`,
+          "TRANSACTION_FAILED",
+          { operation: "putNode", id, filePath: absoluteFilePath }
+        );
       }
-      throw dbErr;
+      throw new ValidationError(
+        `SQLite transaction failed: ${(dbErr as Error).message}`,
+        "TRANSACTION_FAILED",
+        { operation: "putNode", id, filePath: absoluteFilePath }
+      );
     }
 
     return { id, status: isUpdate ? "updated" : "created" };
@@ -577,6 +679,11 @@ export class LocalWriterAdapter {
   // -------------------------------------------------------------------------
 
   async patchNode(input: UpdateNodeInput): Promise<UpdateNodeResult> {
+    // Input validation
+    if (typeof input.id !== 'string' || input.id.trim() === '') {
+      throw new ValidationError('Node id must be a non-empty string', 'INVALID_NODE_ID', { value: input.id });
+    }
+
     const { id, properties } = input;
 
     // Reject immutable fields
@@ -656,6 +763,11 @@ export class LocalWriterAdapter {
     // Update cycle_modified
     merged.cycle_modified = cycleNumber;
 
+    // Apply work_item_type default for work_item type (match server behavior)
+    if (nodeRow.type === "work_item" && !merged.work_item_type) {
+      merged.work_item_type = "feature";
+    }
+
     // Recompute hash and token count
     const contentHash = computeArtifactHash(merged);
     const yamlForTokens = stringifyYaml(merged, { lineWidth: 0 });
@@ -696,6 +808,10 @@ export class LocalWriterAdapter {
 
         // For work_item type, also upsert extension table and replace edges
         if (type === "work_item") {
+          // Apply defaults to parsedObj to match server behavior
+          const workItemType = (parsedObj.work_item_type as string | null) ?? "feature";
+          parsedObj.work_item_type = workItemType;
+
           const wiRow: WorkItemRow = {
             id,
             title: (parsedObj.title as string) ?? "",
@@ -708,7 +824,8 @@ export class LocalWriterAdapter {
             domain: (parsedObj.domain as string | null) ?? null,
             phase: (parsedObj.phase as string | null) ?? null,
             notes: (parsedObj.notes as string | null) ?? null,
-            work_item_type: (parsedObj.work_item_type as string | null) ?? "feature",
+            work_item_type: workItemType,
+            resolution: (parsedObj.resolution as string | null) ?? null,
           };
           upsertWorkItem(this.drizzleDb, wiRow);
 
@@ -730,13 +847,20 @@ export class LocalWriterAdapter {
       upsertPhase.exclusive();
     } catch (dbErr) {
       // SQLite transaction failed — restore original YAML content
-      console.error("LocalAdapter.patchNode: SQLite transaction failed, restoring original YAML:", (dbErr as Error).message);
       try {
         fs.writeFileSync(filePath, existingContent, "utf8");
       } catch (cleanupErr) {
-        console.error(`LocalAdapter.patchNode: failed to restore ${filePath}:`, (cleanupErr as Error).message);
+        throw new ValidationError(
+          `SQLite transaction failed: ${(dbErr as Error).message}; cleanup also failed: ${(cleanupErr as Error).message}`,
+          "TRANSACTION_FAILED",
+          { operation: "patchNode", id, filePath }
+        );
       }
-      throw dbErr;
+      throw new ValidationError(
+        `SQLite transaction failed: ${(dbErr as Error).message}`,
+        "TRANSACTION_FAILED",
+        { operation: "patchNode", id, filePath }
+      );
     } finally {
       if (fkWasOn) this.db.pragma("foreign_keys = ON");
     }
@@ -749,6 +873,9 @@ export class LocalWriterAdapter {
   // -------------------------------------------------------------------------
 
   async deleteNode(id: string): Promise<DeleteNodeResult> {
+    if (typeof id !== 'string' || id.trim() === '') {
+      throw new ValidationError('Node id must be a non-empty string', 'INVALID_NODE_ID', { value: id });
+    }
     const nodeRow = this.db.prepare(
       `SELECT file_path FROM nodes WHERE id = ?`
     ).get(id) as { file_path: string } | undefined;
@@ -758,10 +885,18 @@ export class LocalWriterAdapter {
     }
 
     // Delete from SQLite (edges cascade or are deleted separately)
-    this.db.transaction(() => {
-      this.db.prepare(`DELETE FROM edges WHERE source_id = ? OR target_id = ?`).run(id, id);
-      this.db.prepare(`DELETE FROM nodes WHERE id = ?`).run(id);
-    })();
+    try {
+      this.db.transaction(() => {
+        this.db.prepare(`DELETE FROM edges WHERE source_id = ? OR target_id = ?`).run(id, id);
+        this.db.prepare(`DELETE FROM nodes WHERE id = ?`).run(id);
+      })();
+    } catch (dbErr) {
+      throw new ValidationError(
+        `SQLite transaction failed: ${(dbErr as Error).message}`,
+        "TRANSACTION_FAILED",
+        { operation: "deleteNode", id }
+      );
+    }
 
     // Best-effort: remove YAML file
     try {
@@ -780,14 +915,34 @@ export class LocalWriterAdapter {
   // -------------------------------------------------------------------------
 
   async putEdge(edge: Edge): Promise<void> {
-    insertEdge(this.drizzleDb, {
-      source_id: edge.source_id,
-      target_id: edge.target_id,
-      edge_type: edge.edge_type,
-      props: edge.properties && Object.keys(edge.properties).length > 0
-        ? JSON.stringify(edge.properties)
-        : null,
-    });
+    if (!edge.source_id || edge.source_id.trim() === '') {
+      throw new ValidationError('Edge source_id required', 'MISSING_EDGE_SOURCE', {});
+    }
+    if (!edge.target_id || edge.target_id.trim() === '') {
+      throw new ValidationError('Edge target_id required', 'MISSING_EDGE_TARGET', {});
+    }
+    if (!edge.edge_type) {
+      throw new ValidationError('Edge type required', 'MISSING_EDGE_TYPE', {});
+    }
+    if (!(EDGE_TYPES as readonly string[]).includes(edge.edge_type)) {
+      throw new ValidationError(`Invalid EdgeType: ${edge.edge_type}`, 'INVALID_EDGE_TYPE', { value: edge.edge_type });
+    }
+    try {
+      insertEdge(this.drizzleDb, {
+        source_id: edge.source_id,
+        target_id: edge.target_id,
+        edge_type: edge.edge_type,
+        props: edge.properties && Object.keys(edge.properties).length > 0
+          ? JSON.stringify(edge.properties)
+          : null,
+      });
+    } catch (dbErr) {
+      throw new ValidationError(
+        `SQLite transaction failed: ${(dbErr as Error).message}`,
+        "TRANSACTION_FAILED",
+        { operation: "putEdge" }
+      );
+    }
   }
 
   // -------------------------------------------------------------------------
@@ -795,11 +950,27 @@ export class LocalWriterAdapter {
   // -------------------------------------------------------------------------
 
   async removeEdges(source_id: string, edge_types: EdgeType[]): Promise<void> {
+    if (typeof source_id !== 'string' || source_id.trim() === '') {
+      throw new ValidationError('source_id must be a non-empty string', 'INVALID_NODE_ID', { value: source_id });
+    }
+    for (const edge_type of edge_types) {
+      if (!(EDGE_TYPES as readonly string[]).includes(edge_type)) {
+        throw new ValidationError(`Invalid EdgeType: ${edge_type}`, 'INVALID_EDGE_TYPE', { value: edge_type });
+      }
+    }
     if (edge_types.length === 0) return;
     const placeholders = edge_types.map(() => "?").join(", ");
-    this.db.prepare(
-      `DELETE FROM edges WHERE source_id = ? AND edge_type IN (${placeholders})`
-    ).run(source_id, ...edge_types);
+    try {
+      this.db.prepare(
+        `DELETE FROM edges WHERE source_id = ? AND edge_type IN (${placeholders})`
+      ).run(source_id, ...edge_types);
+    } catch (dbErr) {
+      throw new ValidationError(
+        `SQLite transaction failed: ${(dbErr as Error).message}`,
+        "TRANSACTION_FAILED",
+        { operation: "removeEdges" }
+      );
+    }
   }
 
   // -------------------------------------------------------------------------
@@ -810,6 +981,89 @@ export class LocalWriterAdapter {
     const { nodes, edges: extraEdges = [] } = input;
     const results: MutateNodeResult[] = [];
     const errors: Array<{ id: string; error: string }> = [];
+
+    // ---------- Input validation ----------
+    if (!nodes || nodes.length === 0) {
+      throw new ValidationError(
+        "Batch mutation requires at least one node",
+        "EMPTY_BATCH",
+        {}
+      );
+    }
+
+    const validNodeTypes = new Set<string>(ALL_NODE_TYPES);
+
+    for (const node of nodes) {
+      // Validate node has an id property (can be null/undefined for auto-generation)
+      if (!("id" in node)) {
+        throw new ValidationError(
+          "Node is missing required 'id' field",
+          "MISSING_NODE_ID",
+          { node }
+        );
+      }
+
+      if (node.type === undefined || node.type === null) {
+        throw new ValidationError(
+          "Node is missing required 'type' field",
+          "MISSING_NODE_TYPE",
+          { id: node.id }
+        );
+      }
+
+      if (!node.properties || typeof node.properties !== "object") {
+        throw new ValidationError(
+          "Node is missing required 'properties' field",
+          "MISSING_NODE_PROPERTIES",
+          { id: node.id }
+        );
+      }
+
+      if (!validNodeTypes.has(node.type)) {
+        throw new ValidationError(
+          `Invalid node type: "${node.type}"`,
+          "INVALID_NODE_TYPE",
+          { id: node.id, type: node.type }
+        );
+      }
+    }
+
+    // Valid edge types for validation
+    const validEdgeTypes = new Set<string>(EDGE_TYPES);
+
+    for (const edge of extraEdges) {
+      if (!edge.source_id) {
+        throw new ValidationError(
+          "Edge is missing required 'source_id' field",
+          "MISSING_EDGE_SOURCE",
+          { edge }
+        );
+      }
+
+      if (!edge.target_id) {
+        throw new ValidationError(
+          "Edge is missing required 'target_id' field",
+          "MISSING_EDGE_TARGET",
+          { edge }
+        );
+      }
+
+      if (!edge.edge_type) {
+        throw new ValidationError(
+          "Edge is missing required 'edge_type' field",
+          "MISSING_EDGE_TYPE",
+          { edge }
+        );
+      }
+
+      if (!validEdgeTypes.has(edge.edge_type)) {
+        throw new ValidationError(
+          `Invalid edge type: "${edge.edge_type}"`,
+          "INVALID_EDGE_TYPE",
+          { edge }
+        );
+      }
+    }
 
     // ---------- Assign IDs to nodes that don't have one ----------
     // For work_item nodes, query current max ID
@@ -1043,12 +1297,15 @@ export class LocalWriterAdapter {
       upsertPhase.exclusive();
     } catch (dbErr) {
       // SQLite transaction failed — clean up written YAML files
-      console.error("LocalAdapter.batchMutate: SQLite transaction failed, cleaning up YAML files:", (dbErr as Error).message);
       for (const fp of writtenFilePaths) {
         try { if (fs.existsSync(fp)) fs.unlinkSync(fp); } catch { /* ignore */ }
       }
       if (fkWasOn) this.db.pragma("foreign_keys = ON");
-      throw dbErr;
+      throw new ValidationError(
+        `SQLite transaction failed: ${(dbErr as Error).message}`,
+        "TRANSACTION_FAILED",
+        { operation: "batchMutate", filePaths: writtenFilePaths }
+      );
     } finally {
       if (fkWasOn) this.db.pragma("foreign_keys = ON");
     }
@@ -1077,45 +1334,60 @@ export class LocalWriterAdapter {
     const cycleWorkItemsDir = path.join(cycleDir, "work-items");
     const cycleIncrementalDir = path.join(cycleDir, "incremental");
 
-    // Identify findings files
+    // Query SQLite for active work items with cycle_created = cycle
+    // This matches the server-side behavior in lifecycle.ts archiveCycle mutation
+    const activeWorkItems = this.drizzleDb
+      .select({
+        id: dbSchema.nodes.id,
+        file_path: dbSchema.nodes.file_path,
+      })
+      .from(dbSchema.nodes)
+      .where(
+        and(
+          eq(dbSchema.nodes.cycle_created, cycle),
+          eq(dbSchema.nodes.type, "work_item"),
+          eq(dbSchema.nodes.status, "active")
+        )
+      )
+      .all();
+
+    // Query SQLite for active findings with cycle = cycle
+    // Findings use the 'cycle' field in the findings table, not cycle_created
+    const activeFindings = this.drizzleDb
+      .select({
+        id: dbSchema.nodes.id,
+        file_path: dbSchema.nodes.file_path,
+      })
+      .from(dbSchema.nodes)
+      .innerJoin(dbSchema.findings, eq(dbSchema.nodes.id, dbSchema.findings.id))
+      .where(
+        and(
+          eq(dbSchema.findings.cycle, cycle),
+          eq(dbSchema.nodes.type, "finding"),
+          eq(dbSchema.nodes.status, "active")
+        )
+      )
+      .all();
+
+    // Build file lists from database queries (no filesystem fallback)
+    // This ensures parity with the RemoteAdapter/server behavior
     const incrementalFiles: string[] = [];
-    if (fs.existsSync(findingsDir)) {
-      for (const entry of fs.readdirSync(findingsDir)) {
-        const fullPath = path.join(findingsDir, entry);
-        const stat = fs.statSync(fullPath);
-        if (stat.isFile()) {
-          incrementalFiles.push(fullPath);
-        }
+    for (const finding of activeFindings) {
+      if (finding.file_path && fs.existsSync(finding.file_path)) {
+        incrementalFiles.push(finding.file_path);
       }
     }
 
-    if (incrementalFiles.length === 0) {
-      return `Archived cycle ${cycle}: 0 work items, 0 incremental reviews moved.`;
-    }
-
-    // Identify work item files referenced by the incremental reviews
-    const workItemsDir = path.join(this.ideateDir, "work-items");
     const workItemFiles: { src: string; name: string }[] = [];
-    const seenWorkItems = new Set<string>();
+    for (const wi of activeWorkItems) {
+      if (wi.file_path && fs.existsSync(wi.file_path)) {
+        workItemFiles.push({ src: wi.file_path, name: path.basename(wi.file_path) });
+      }
+    }
 
-    for (const reviewFile of incrementalFiles) {
-      let wiId: string | null = null;
-      try {
-        const content = fs.readFileSync(reviewFile, "utf8");
-        const parsed = parseYaml(content) as Record<string, unknown> | null;
-        if (parsed && typeof parsed.work_item === "string" && parsed.work_item.trim()) {
-          wiId = parsed.work_item.trim();
-        }
-      } catch {
-        // Skip if unreadable
-      }
-      if (wiId && !seenWorkItems.has(wiId)) {
-        seenWorkItems.add(wiId);
-        const wiFilePath = path.join(workItemsDir, `${wiId}.yaml`);
-        if (fs.existsSync(wiFilePath)) {
-          workItemFiles.push({ src: wiFilePath, name: `${wiId}.yaml` });
-        }
-      }
+    // If no files to archive, return early with zero counts
+    if (incrementalFiles.length === 0 && workItemFiles.length === 0) {
+      return `Archived cycle ${cycle}: 0 work items, 0 incremental reviews moved.`;
     }
 
     // Phase 1: Copy
@@ -1265,6 +1537,7 @@ export class LocalWriterAdapter {
 
     let writtenYamlPath = "";
     let entryId: string;
+    let id: string | undefined;
 
     try {
       entryId = this.db.transaction(() => {
@@ -1274,7 +1547,7 @@ export class LocalWriterAdapter {
         ).get(`J-${cycleStr}-`.length + 1, `J-${cycleStr}-%`) as { max_num: number | null };
         const seq = (maxRow?.max_num ?? 0) + 1;
         const seqStr = String(seq).padStart(3, "0");
-        const id = `J-${cycleStr}-${seqStr}`;
+        id = `J-${cycleStr}-${seqStr}`;
 
         // Build YAML object
         const entryObj = {
@@ -1324,10 +1597,18 @@ export class LocalWriterAdapter {
         try {
           if (fs.existsSync(writtenYamlPath)) fs.unlinkSync(writtenYamlPath);
         } catch (cleanupErr) {
-          console.error(`LocalAdapter.putNodeForJournal: failed to remove ${writtenYamlPath}:`, (cleanupErr as Error).message);
+          throw new ValidationError(
+            `SQLite transaction failed: ${(txErr as Error).message}; cleanup also failed: ${(cleanupErr as Error).message}`,
+            "TRANSACTION_FAILED",
+            { operation: "appendJournalEntry", id, filePath: writtenYamlPath }
+          );
         }
       }
-      throw txErr;
+      throw new ValidationError(
+        `SQLite transaction failed: ${(txErr as Error).message}`,
+        "TRANSACTION_FAILED",
+        { operation: "appendJournalEntry", id, filePath: writtenYamlPath || undefined }
+      );
     }
 
     return entryId;

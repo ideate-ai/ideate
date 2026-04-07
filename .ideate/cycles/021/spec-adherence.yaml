@@ -1,0 +1,33 @@
+id: spec-adherence
+type: cycle_summary
+reviewer: spec-reviewer
+content: |-
+  ## Spec Adherence Review — Cycle 21
+
+  **Verdict**: Pass
+
+  ## Critical Findings
+  None.
+
+  ## Significant Findings
+  None.
+
+  ## Minor Findings
+
+  ### M1: ppr.ts ValidationError third argument is a raw scalar, not a Record
+  - **File**: `src/ppr.ts:113,122,131,140`
+  - **Issue**: All four ValidationError calls pass a raw number as third argument (e.g., `new ValidationError(..., 'INVALID_ALPHA', alpha)` where `alpha` is number). The convention is `{ value: alpha }`. P-64 is satisfied (second arg is correct code string). Minor inconsistency with how all other callers structure the details object.
+
+  ## Principle Adherence Confirmed
+  - **P-64**: All ValidationError second args use correct code strings (INVALID_CYCLE, INVALID_NODE_ID, MISSING_EDGE_SOURCE/TARGET/TYPE, INVALID_EDGE_TYPE, INVALID_ALPHA/MAX_ITERATIONS/CONVERGENCE_THRESHOLD/MAX_NODES). No raw field names.
+  - **P-65**: Module-level vi.mock only in new file (remote-adapter-validation.test.ts was created in WI-671). No vi.mock added to pre-existing files.
+  - **P-002**: deleteNode/putEdge/removeEdges validation covered by local-adapter-validation.test.ts AC-7, remote-adapter-validation.test.ts AC-676, and nextid-cycle-validation.test.ts.
+  - **P-58**: Input validation for all mutating methods (deleteNode, putEdge, removeEdges, putNode, patchNode, nextId) has test coverage.
+  - **D-177**: LocalAdapter equivalence tests run unconditionally; RemoteAdapter tests use `it.skipIf(!remoteAvailable)`. Verified in adapter-equivalence.test.ts.
+  - **P-53**: adapter-contract.md no longer references concrete storage formats.
+content_hash: ff4a1761fef4e22b5f1d06aa3106dad7f787a3fcfc52acd6616620eb3aa2cf3c
+token_count: 465
+file_path: .ideate/cycles/068/spec-adherence.yaml
+cycle: 21
+cycle_modified: 19
+verdict: Pass

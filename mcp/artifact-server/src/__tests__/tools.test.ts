@@ -907,13 +907,13 @@ describe("handleGetWorkspaceStatus", () => {
   it("shows correct finding counts from findings table", async () => {
     // Insert 2 critical, 1 significant, 3 minor findings for cycle 3
     for (let i = 1; i <= 2; i++) {
-      db.prepare(`INSERT INTO nodes (id, type, cycle_created, content_hash, file_path, status) VALUES (?, 'finding', 3, 'hash', '/tmp/f.yaml', 'open')`).run(`F-003-00${i}`);
+      db.prepare(`INSERT INTO nodes (id, type, cycle_created, content_hash, file_path, status) VALUES (?, 'finding', 3, 'hash', '/tmp/f.yaml', 'active')`).run(`F-003-00${i}`);
       db.prepare(`INSERT INTO findings (id, severity, work_item, verdict, cycle, reviewer) VALUES (?, 'critical', 'WI-001', 'fail', 3, 'code-reviewer')`).run(`F-003-00${i}`);
     }
     db.prepare(`INSERT INTO nodes (id, type, cycle_created, content_hash, file_path, status) VALUES ('F-003-003', 'finding', 3, 'hash', '/tmp/f.yaml', 'open')`).run();
     db.prepare(`INSERT INTO findings (id, severity, work_item, verdict, cycle, reviewer) VALUES ('F-003-003', 'significant', 'WI-001', 'fail', 3, 'code-reviewer')`).run();
     for (let i = 4; i <= 6; i++) {
-      db.prepare(`INSERT INTO nodes (id, type, cycle_created, content_hash, file_path, status) VALUES (?, 'finding', 3, 'hash', '/tmp/f.yaml', 'open')`).run(`F-003-00${i}`);
+      db.prepare(`INSERT INTO nodes (id, type, cycle_created, content_hash, file_path, status) VALUES (?, 'finding', 3, 'hash', '/tmp/f.yaml', 'active')`).run(`F-003-00${i}`);
       db.prepare(`INSERT INTO findings (id, severity, work_item, verdict, cycle, reviewer) VALUES (?, 'minor', 'WI-001', 'pass', 3, 'code-reviewer')`).run(`F-003-00${i}`);
     }
 
@@ -1189,11 +1189,20 @@ describe("handleArchiveCycle", () => {
     // Create a v3 finding file in cycles/001/findings/ with work_item field
     const findingsDir = path.join(artifactDir, "cycles", "001", "findings");
     fs.mkdirSync(findingsDir, { recursive: true });
+    const findingPath = path.join(findingsDir, "F-001-001.yaml");
     fs.writeFileSync(
-      path.join(findingsDir, "F-001-001.yaml"),
+      findingPath,
       "id: F-001-001\ntype: finding\nwork_item: WI-500\nseverity: minor\nverdict: pass\ncycle: 1\nreviewer: code-reviewer\n",
       "utf8"
     );
+
+    // Insert into database so archiveCycle finds it
+    db.prepare(`INSERT INTO nodes (id, type, cycle_created, content_hash, file_path, status) VALUES ('F-001-001', 'finding', 1, 'hash', ?, 'active')`).run(findingPath);
+    db.prepare(`INSERT INTO findings (id, severity, work_item, verdict, cycle, reviewer) VALUES ('F-001-001', 'minor', 'WI-500', 'pass', 1, 'code-reviewer')`).run();
+
+    // Ensure the work item has status='active' and cycle_created matches
+    db.prepare(`UPDATE nodes SET status = 'active', cycle_created = 1 WHERE id = 'WI-500'`).run();
+    db.prepare(`INSERT OR REPLACE INTO work_items (id, complexity, work_item_type, domain, title) VALUES ('WI-500', 'medium', 'feature', 'test', 'happy path archive test')`).run();
 
     const result = await handleArchiveCycle(ctx, { cycle_number: 1 });
 
@@ -1232,20 +1241,28 @@ describe("handleArchiveCycle", () => {
     // Create findings in the correct new location: cycles/002/findings/
     const findingsDir = path.join(artifactDir, "cycles", "002", "findings");
     fs.mkdirSync(findingsDir, { recursive: true });
+    const findingPath = path.join(findingsDir, "F-001-build-schema.yaml");
     fs.writeFileSync(
-      path.join(findingsDir, "F-001-build-schema.yaml"),
-      "id: F-001\ntype: finding\nverdict: pass\n",
+      findingPath,
+      "id: F-001\ntype: finding\nverdict: pass\ncycle: 2\nwork_item: WI-001\nseverity: minor\n",
       "utf8"
     );
 
     // Create a work item YAML in the correct new location: work-items/ (not plan/work-items/)
     const wiDir = path.join(artifactDir, "work-items");
     fs.mkdirSync(wiDir, { recursive: true });
+    const wiPath = path.join(wiDir, "WI-001.yaml");
     fs.writeFileSync(
-      path.join(wiDir, "001-build-schema.yaml"),
-      "id: WI-001\ntype: work_item\ntitle: Build schema\nstatus: done\n",
+      wiPath,
+      "id: WI-001\ntype: work_item\ntitle: Build schema\nstatus: active\n",
       "utf8"
     );
+
+    // Insert into database so archiveCycle finds them
+    db.prepare(`INSERT INTO nodes (id, type, cycle_created, content_hash, file_path, status) VALUES ('F-001', 'finding', 2, 'hash', ?, 'active')`).run(findingPath);
+    db.prepare(`INSERT INTO findings (id, severity, work_item, verdict, cycle, reviewer) VALUES ('F-001', 'minor', 'WI-001', 'pass', 2, 'code-reviewer')`).run();
+    db.prepare(`INSERT INTO nodes (id, type, cycle_created, content_hash, file_path, status) VALUES ('WI-001', 'work_item', 2, 'hash', ?, 'active')`).run(wiPath);
+    db.prepare(`INSERT INTO work_items (id, complexity, work_item_type, domain, title) VALUES ('WI-001', 'medium', 'feature', 'test', 'Build schema')`).run();
 
     const result = await handleArchiveCycle(ctx, {
       cycle_number: 2,
@@ -1267,7 +1284,12 @@ describe("handleArchiveCycle", () => {
     // Create a finding file so archival is attempted
     const findingsDir = path.join(artifactDir, "cycles", "003", "findings");
     fs.mkdirSync(findingsDir, { recursive: true });
-    fs.writeFileSync(path.join(findingsDir, "F-003-test.yaml"), "id: F-003-test\ntype: finding\n");
+    const findingPath = path.join(findingsDir, "F-003-test.yaml");
+    fs.writeFileSync(findingPath, "id: F-003-test\ntype: finding\ncycle: 3\nwork_item: WI-999\nseverity: minor\nverdict: pass\n");
+
+    // Insert into database so archiveCycle finds it
+    db.prepare(`INSERT INTO nodes (id, type, cycle_created, content_hash, file_path, status) VALUES ('F-003-test', 'finding', 3, 'hash', ?, 'active')`).run(findingPath);
+    db.prepare(`INSERT INTO findings (id, severity, work_item, verdict, cycle, reviewer) VALUES ('F-003-test', 'minor', 'WI-999', 'pass', 3, 'code-reviewer')`).run();
 
     // Place a regular file where the destination incremental directory would be created,
     // so the copy step fails (can't copy into a path that is a file, not a dir)
@@ -1293,11 +1315,20 @@ describe("handleArchiveCycle", () => {
     // Create a finding file with v3 naming: F-{cycle}-{seq}.yaml
     const findingsDir = path.join(artifactDir, "cycles", "005", "findings");
     fs.mkdirSync(findingsDir, { recursive: true });
+    const findingPath = path.join(findingsDir, "F-005-001.yaml");
     fs.writeFileSync(
-      path.join(findingsDir, "F-005-001.yaml"),
+      findingPath,
       "id: F-005-001\ntype: finding\nwork_item: WI-501\nseverity: minor\nverdict: pass\ncycle: 5\nreviewer: code-reviewer\n",
       "utf8"
     );
+
+    // Insert into database so archiveCycle finds it
+    db.prepare(`INSERT INTO nodes (id, type, cycle_created, content_hash, file_path, status) VALUES ('F-005-001', 'finding', 5, 'hash', ?, 'active')`).run(findingPath);
+    db.prepare(`INSERT INTO findings (id, severity, work_item, verdict, cycle, reviewer) VALUES ('F-005-001', 'minor', 'WI-501', 'pass', 5, 'code-reviewer')`).run();
+
+    // Ensure the work item has status='active' in the database
+    db.prepare(`UPDATE nodes SET status = 'active', cycle_created = 5 WHERE id = 'WI-501'`).run();
+    db.prepare(`INSERT OR REPLACE INTO work_items (id, complexity, work_item_type, domain, title) VALUES ('WI-501', 'medium', 'feature', 'test', 'v3 naming test')`).run();
 
     const result = await handleArchiveCycle(ctx, { cycle_number: 5 });
 
@@ -1330,7 +1361,8 @@ describe("handleArchiveCycle", () => {
       "utf8"
     );
     // Insert a node row pointing to the finding file path
-    db.prepare(`INSERT INTO nodes (id, type, cycle_created, content_hash, file_path, status) VALUES ('F-006-001', 'finding', 6, 'testhash', ?, 'open')`).run(findingPath);
+    db.prepare(`INSERT INTO nodes (id, type, cycle_created, content_hash, file_path, status) VALUES ('F-006-001', 'finding', 6, 'testhash', ?, 'active')`).run(findingPath);
+    db.prepare(`INSERT INTO findings (id, severity, work_item, verdict, cycle, reviewer) VALUES ('F-006-001', 'minor', 'WI-502', 'pass', 6, 'code-reviewer')`).run();
 
     const nodeCountBefore = (db.prepare(`SELECT COUNT(*) as cnt FROM nodes WHERE id = 'F-006-001'`).get() as { cnt: number }).cnt;
     expect(nodeCountBefore).toBe(1);
@@ -1370,8 +1402,10 @@ describe("handleArchiveCycle", () => {
     );
 
     // Insert both nodes into SQLite
-    db.prepare(`INSERT INTO nodes (id, type, cycle_created, content_hash, file_path, status) VALUES ('F-007-001', 'finding', 7, 'hash1', ?, 'open')`).run(finding1Path);
-    db.prepare(`INSERT INTO nodes (id, type, cycle_created, content_hash, file_path, status) VALUES ('F-007-002', 'finding', 7, 'hash2', ?, 'open')`).run(finding2Path);
+    db.prepare(`INSERT INTO nodes (id, type, cycle_created, content_hash, file_path, status) VALUES ('F-007-001', 'finding', 7, 'hash1', ?, 'active')`).run(finding1Path);
+    db.prepare(`INSERT INTO findings (id, severity, work_item, verdict, cycle, reviewer) VALUES ('F-007-001', 'minor', 'WI-503', 'pass', 7, 'code-reviewer')`).run();
+    db.prepare(`INSERT INTO nodes (id, type, cycle_created, content_hash, file_path, status) VALUES ('F-007-002', 'finding', 7, 'hash2', ?, 'active')`).run(finding2Path);
+    db.prepare(`INSERT INTO findings (id, severity, work_item, verdict, cycle, reviewer) VALUES ('F-007-002', 'minor', 'WI-503', 'pass', 7, 'code-reviewer')`).run();
 
     const beforeCount = (db.prepare(`SELECT COUNT(*) as cnt FROM nodes WHERE id IN ('F-007-001', 'F-007-002')`).get() as { cnt: number }).cnt;
     expect(beforeCount).toBe(2);

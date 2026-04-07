@@ -1,39 +1,83 @@
 id: code-quality
-type: cycle_summary
+type: review_output
+critical:
+  - evidence: "Test divergences: WI-001 local=0.363 remote=0.293 (delta 0.070), WI-002 local=0.250 remote=0.189 (delta 0.061), PH-001 local=0.139 remote=0.192 (delta 0.052)"
+    file: /Users/dan/code/ideate/mcp/artifact-server/src/__tests__/equivalence-traverse.test.ts
+    id: C1
+    impact: Adapter implementations are not equivalent; context assembly produces different results
+    issue: PPR Score Divergence Between Adapters
+    suggested_fix: Investigate and align PPR implementations; check edge weights, specificity dampening, convergence thresholds
+  - file: /Users/dan/code/ideate/mcp/artifact-server/src/config.ts:133, hooks.ts:46, adapters/remote/index.ts:426
+    id: C2
+    impact: Server crashes on malformed JSON without graceful error handling
+    issue: Unsafe JSON.parse Without Error Handling
+    suggested_fix: Wrap all JSON.parse calls in try-catch with domain-specific errors
+  - file: /Users/dan/code/ideate/mcp/artifact-server/src/tools/query.ts:74-78
+    id: C3
+    impact: User-provided cycle parameter could be exploited if validation bypassed
+    issue: SQL Injection Risk in ID Generation
+    suggested_fix: Add strict validation for cycle parameter (non-negative integer)
+  - file: /Users/dan/code/ideate/mcp/artifact-server/src/server.ts:122,125,149,168,191,268,286 and adapters/remote/client.ts:208,221,227
+    id: C4
+    impact: Log aggregation may flag informational messages as errors
+    issue: Console.error Used for Non-Error Logging
+    suggested_fix: Use console.log/console.info for informational messages
 cycle: 5
+minor:
+  - file: /Users/dan/code/ideate/mcp/artifact-server/src/adapters/remote/client.ts:334-368
+    id: M1
+    issue: executeOnceWithAuth duplicates logic from executeOnce
+    suggested_fix: Refactor to extract common response handling
+  - file: /Users/dan/code/ideate/mcp/artifact-server/src/adapters/local/writer.ts:1045-1046
+    id: M2
+    issue: Error variable caught but loses stack trace
+    suggested_fix: "Preserve original error with { cause: err }"
+  - file: /Users/dan/code/ideate/mcp/artifact-server/src/adapters/local/writer.ts:630-633,810-813,1122-1125
+    id: M3
+    issue: File cleanup errors logged but not fatal
+    suggested_fix: Consider if cleanup failure should be fatal
+  - file: /Users/dan/code/ideate/mcp/artifact-server/src/adapters/local/writer.ts:469-498
+    id: M4
+    issue: Magic numbers for ID padding widths
+    suggested_fix: Extract constants CYCLE_PAD_WIDTH, SEQ_PAD_WIDTH
+  - file: Multiple files
+    id: M5
+    issue: "Inconsistent naming: cycle vs cycle_number"
+    suggested_fix: Standardize on one name throughout codebase
 reviewer: code-reviewer
+significant:
+  - file: /Users/dan/code/ideate/mcp/artifact-server/src/adapters/local/writer.ts:698-700
+    id: S1
+    impact: Stale cycle data may be used
+    issue: Race Condition in Cycle Cache
+    suggested_fix: Use file locking or read fresh each time
+  - file: /Users/dan/code/ideate/mcp/artifact-server/src/adapters/local/writer.ts:168,408,528
+    id: S2
+    impact: Invalid work_item_type values can be persisted
+    issue: Missing work_item_type Validation
+    suggested_fix: Add enum validation in putNode/patchNode
+  - file: /Users/dan/code/ideate/mcp/artifact-server/src/adapters/remote/client.ts:334-368
+    id: S3
+    impact: After token rotation fails, error handling may not propagate properly
+    issue: GraphQL Client Missing 401 Handler in Retry Path
+    suggested_fix: Add 401 handling to executeOnceWithAuth
+  - file: /Users/dan/code/ideate/mcp/artifact-server/src/ppr.ts:131-136
+    id: S4
+    impact: Callers cannot distinguish between no results and limit exceeded
+    issue: PPR Empty Result Without Error Indication
+    suggested_fix: Throw specific error or return result with metadata
+  - file: /Users/dan/code/ideate/mcp/artifact-server/src/adapters/remote/index.ts:776-779
+    id: S5
+    impact: If seed nodes have very large content, token budget is ignored
+    issue: Token Budget Overflow in RemoteAdapter traverse
+    suggested_fix: Document behavior or check bounds for seeds
 verdict: Fail
-content: |-
-  ## Verdict: Fail
-
-  Two significant findings.
-
-  ## Significant Findings
-
-  ### S1: `parsePrincipleVerdict` Step 2 silently broken for DB-path content
-  - **File**: `mcp/artifact-server/src/tools/analysis.ts:49-81`
-  - **Issue**: `handleWriteArtifact` stores `document_artifacts.content` as `JSON.stringify(content)`. When `handleGetConvergenceStatus` reads `da_content` and passes it to `parsePrincipleVerdict`, Step 2 splits on `\n` and looks for `## heading` lines. In a JSON-encoded string, `\n` is an escape sequence (two characters), not a real newline — `split("\n")` won't tokenize the markdown into lines. Only Step 1 (the bold `**Principle Violation Verdict**: Pass` regex) works in both paths. If a cycle_summary lacks the explicit bold tag and relies on section-heading format, Step 2 returns `unknown` via the DB path while returning the correct verdict from the file-path fallback, causing silent divergence.
-  - **Impact**: Convergence silently fails for any spec-adherence artifact that doesn't use the explicit bold verdict tag.
-  - **Suggested fix**: In `resolveContent`, when `da_content` is present, try `JSON.parse(da_content).content` before passing to `parsePrincipleVerdict`. Fall through to raw string on parse failure.
-
-  ### S2: `handleArchiveCycle` SQLite cleanup DELETEs run outside a transaction (carried from CQ-003 M1)
-  - **File**: `mcp/artifact-server/src/tools/write.ts:304-311`
-  - **Issue**: Individual `DELETE FROM nodes WHERE file_path = ?` statements in a loop with no enclosing transaction. Interrupted mid-loop leaves index partially cleaned — some finding nodes still reference deleted file paths.
-  - **Impact**: Stale node entries remain in the index; `handleGetConvergenceStatus` file-path fallback reads these and returns null content, reporting `unknown` convergence.
-  - **Suggested fix**: Wrap delete loop in `ctx.db.transaction(() => { ... }).exclusive()`.
-
-  ## Minor Findings
-
-  ### M1: `suggestionsCount` dead variable always zero
-  - **File**: `mcp/artifact-server/src/tools/analysis.ts:158`
-  - `const suggestionsCount = 0` is never populated from the database, always written as 0 to output.
-
-  ### M2: `file_path` fields in cycle YAML artifacts contain relative paths
-  - **Files**: `.ideate/cycles/003/CS-003.yaml:34`, `CQ-003.yaml:33`, `GA-003.yaml` — `file_path` field contains relative path. P-33 restricts tool responses, not YAML content. Not a violation, but inconsistently normalized across artifact types.
-
-  ## Confirmed Fixed
-  - CQ-003 S1: agent_type filter description — resolved (tools/index.ts:469 now reads "Include only events whose payload.agent_type field equals this value.")
-  - WI-424: LEFT JOIN + three-branch WHERE clause correctly implemented and tested (499/499 tests pass).
-content_hash: 0909e1e9e7d2819b4866ec877aa41393bfb00bf73b29453ead6030f3d81230a5
-token_count: 714
-file_path: .ideate/cycles/005/code-quality.yaml
+work_items_reviewed:
+  - WI-638
+  - WI-639
+  - WI-640
+  - WI-641
+  - WI-642
+  - WI-643
+content_hash: f4c2af913f05cddfe20b3c539dc2ae2898f958f71fbce5899ccefc38073b8513
+token_count: 1051

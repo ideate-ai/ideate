@@ -1,0 +1,23 @@
+id: PH-028
+type: phase
+acceptance_criteria:
+  - RemoteAdapter has TLS configuration documentation
+  - PPR stress tests pass with 10,000+ nodes
+  - ideate-server deployed and equivalence tests pass
+  - Auth token rotation mechanism documented
+  - All significant findings from Cycle 20 addressed
+appetite: 3
+content_hash: f2959d6122c12a5bc8fad2839a2a18ab6675016acbec5e0ab495e1579b6b8717
+depends_on:
+  - PH-025
+intent: Complete production hardening for MCP artifact-server and deploy ideate-server for end-to-end verification. Address deferred gaps from Cycles 17-20 including TLS documentation, stress testing, and server-side parity verification.
+name: Production Hardening & Server Deployment
+phase_type: hardening
+project: PR-003
+status: completed
+token_count: 190
+work_items:
+  - WI-631
+  - WI-632
+  - WI-633
+  - WI-634

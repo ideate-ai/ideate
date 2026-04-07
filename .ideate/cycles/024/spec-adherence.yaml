@@ -1,0 +1,30 @@
+id: spec-adherence
+type: cycle_summary
+reviewer: spec-reviewer
+content: |-
+  ## Spec Adherence Review — Cycle 24
+
+  **Verdict**: Pass
+
+  ## Findings
+
+  None.
+
+  ## Acceptance Criteria Verification
+
+  - WI-686: putEdge test at tests/adapters/write-transaction.test.ts:277 asserts `.code === 'TRANSACTION_FAILED'`. removeEdges test at :317. Both follow spy-throw-assert-finally-restore pattern.
+  - WI-687: putEdge catch block (lines 708-718) and removeEdges catch block (lines 744-754) in remote/index.ts correctly re-throw StorageAdapterError, wrap others as ValidationError('TRANSACTION_FAILED').
+  - WI-688: EDGE_TYPES defined only in schema.ts:15. adapter.ts:97 re-exports EDGE_TYPES; line 101 defines ALL_EDGE_TYPES = EDGE_TYPES. Both names exported.
+  - WI-689: adapter-contract.md:108 has IMMUTABLE_FIELD matching ImmutableFieldError code at src/adapter.ts:512. Stale comment in local-adapter-validation.test.ts corrected at lines 12-15, 583.
+
+  ## Principle Adherence Confirmed
+
+  - P-002: Specific error codes asserted in all new tests
+  - P-64: ValidationError second arguments are code strings in all modified files
+  - P-65: vi.mock isolation followed — write-transaction.test.ts uses only vi.spyOn, no module-level vi.mock
+content_hash: 4d994b78a43fdf1843bbd0214805135587508e1a14154cf536eb525bb74bf774
+token_count: 356
+file_path: .ideate/cycles/068/spec-adherence.yaml
+cycle: 24
+cycle_modified: 19
+verdict: Pass

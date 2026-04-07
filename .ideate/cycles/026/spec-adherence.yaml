@@ -1,0 +1,24 @@
+id: spec-adherence
+type: cycle_summary
+reviewer: spec-reviewer
+content: |-
+  ## Spec Adherence Review — Cycle 26
+
+  **Verdict**: Pass
+
+  ## Minor Findings
+
+  - [M1] `tests/adapters/local-adapter-validation.test.ts:1-16` — header comment does not mention patchNode coverage or WI-692. WI-692 spec notes explicitly said to update the header. All 5 formal ACs are met; this is an unmet spec note, not an AC.
+
+  ## Principle Adherence Confirmed
+
+  - P-002: All IMMUTABLE_FIELD tests in all 3 files assert `.code === 'IMMUTABLE_FIELD'` or `toBeInstanceOf(ImmutableFieldError)` and check code
+  - P-64: No new ValidationError calls introduced this cycle
+  - P-65: WI-692 added no new module-level vi.mock to pre-existing files
+  - D-177: adapter-equivalence.test.ts lines 889,908,927 use plain `it` for LocalAdapter; lines 898,917,936 use `it.skipIf(!remoteAvailable)` for RemoteAdapter
+content_hash: 67c66b9380e984d81239c3de7e6aca2d869eabf8201497682c4c11d50bb129c1
+token_count: 267
+file_path: .ideate/cycles/068/spec-adherence.yaml
+cycle: 26
+cycle_modified: 19
+verdict: Pass

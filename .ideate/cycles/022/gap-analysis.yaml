@@ -1,0 +1,40 @@
+id: gap-analysis
+type: cycle_summary
+reviewer: gap-analyst
+content: |-
+  ## Gap Analysis — Cycle 22
+
+  **Verdict**: Pass
+
+  ## Critical Gaps
+  None.
+
+  ## Significant Gaps
+  None.
+
+  ## Minor Gaps
+
+  ### MG1: putEdge and removeEdges not documented with TRANSACTION_FAILED in adapter-contract.md
+  - **Gap**: Both methods touch SQLite without a try/catch TRANSACTION_FAILED wrapper (unlike putNode, patchNode, deleteNode, batchMutate). Contract correctly omits it since the code doesn't throw it, but inconsistency exists in protection coverage.
+  - **Recommendation**: Defer — low risk; document with a follow-up work item.
+
+  ### MG2: Equivalence tests for putNode INVALID_NODE_TYPE and MISSING_NODE_PROPERTIES absent
+  - **Gap**: adapter-equivalence.test.ts covers putNode INVALID_NODE_ID but not INVALID_NODE_TYPE or MISSING_NODE_PROPERTIES. Both codes are tested in adapter-specific validation test files.
+  - **Recommendation**: Defer.
+
+  ### MG3: No .code assertion for EMPTY_SEED_IDS equivalence
+  - **Gap**: seed-ids-validation.test.ts covers EMPTY_SEED_IDS for LocalAdapter; no RemoteAdapter equivalence pair.
+  - **Recommendation**: Defer.
+
+  ### MG4: queryGraph INVALID_LIMIT / INVALID_OFFSET has no equivalence pair
+  - **Gap**: queryNodes equivalence covers INVALID_LIMIT; queryGraph does not. Both adapters validate identically.
+  - **Recommendation**: Defer.
+
+  ## Summary
+  Cycles 21–22 completed their stated objectives. adapter-contract.md now has Validation + Error Codes for all validated methods. ppr.test.ts verifies .code for all four codes. Equivalence tests cover all WI-682 scope codes. Remaining gaps are all narrow, deferred, with single-adapter coverage in place.
+content_hash: 7e950c4baf8f32d104ebf91f9f1ebd23288c0080528f404ee0cdea7c211241e4
+token_count: 470
+file_path: .ideate/cycles/068/gap-analysis.yaml
+cycle: 22
+cycle_modified: 19
+verdict: Pass

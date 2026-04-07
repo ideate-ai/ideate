@@ -1,0 +1,25 @@
+id: WI-657
+type: work_item
+title: Fix mapGqlNodeToNode Error Handling
+status: completed
+complexity: null
+scope:
+  - mcp/artifact-server/src/adapters/remote/index.ts
+depends:
+  - WI-656
+blocks: []
+criteria:
+  - Silent JSON.parse catch in mapGqlNodeToNode replaced with explicit error throw or logging
+  - Error includes node ID and content that failed to parse
+  - "Decision documented: either throw or log at error level (not silent)"
+  - If logging approach chosen, structured error logged with context
+  - Existing tests pass; test added for parse failure case
+domain: null
+phase: null
+work_item_type: feature
+notes: "# WI-657: Fix mapGqlNodeToNode Error Handling"
+resolution: Added decision comment in mapGqlNodeToNode documenting explicit error throw approach. Error includes nodeId and content (first 1000 chars). All tests pass.
+cycle_created: null
+cycle_modified: 18
+content_hash: 71b7c3af0f1609ebdedd738dcfb11c9b3680c4afb19e95617f700137b4e96d48
+token_count: 242

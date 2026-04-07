@@ -1,0 +1,36 @@
+id: gap-analysis
+type: cycle_summary
+reviewer: gap-analyst
+content: |-
+  ## Gap Analysis — Cycle 20
+
+  **Verdict**: Fail
+
+  ## Critical Gaps
+
+  - [G1] `deleteNode` lacks input validation in both adapters (writer.ts:874, remote/index.ts:655). An empty string id silently returns not_found. Contrast: putNode and patchNode both validate id. adapter-contract.md's "Validation-First" principle is unmet for deleteNode. No test in either validation file tests deleteNode with empty/invalid id.
+
+  - [G2] `putEdge` lacks input validation in both adapters (writer.ts:913, remote/index.ts:678). batchMutate validates edges with MISSING_EDGE_SOURCE, MISSING_EDGE_TARGET, MISSING_EDGE_TYPE, INVALID_EDGE_TYPE — but calling putEdge directly bypasses all of this. adapter-contract.md line 143-145 explicitly documents putEdge validation requirements that don't exist in code.
+
+  ## Significant Gaps
+
+  - [G3] `removeEdges` lacks input validation in both adapters. Empty source_id or invalid edge_type strings pass through silently.
+
+  - [G4] `PARSE_ERROR` code not documented in adapter-contract.md. WI-669 added StorageAdapterError("PARSE_ERROR") throws in mapGqlNodeToNode and fetchCurrentCycle, but neither the StorageAdapterError section nor the method sections mention this code.
+
+  - [G5] adapter-contract.md putEdge section documents `VALIDATION_ERROR: Invalid edge type or missing fields` (line 148) — a legacy generic code. The specific codes used in batchMutate for identical constraints (MISSING_EDGE_SOURCE, etc.) are not listed for putEdge. If putEdge validation is implemented, it should use specific codes, not VALIDATION_ERROR.
+
+  - [G6] No equivalence tests for batchMutate edge validation codes between adapters. Equivalence suite covers INVALID_LIMIT, INVALID_SEED_IDS, EMPTY_BATCH but not MISSING_EDGE_SOURCE, MISSING_EDGE_TARGET, MISSING_EDGE_TYPE, INVALID_EDGE_TYPE.
+
+  ## Minor Gaps
+
+  - [G7] deleteNode absent from both validation test files (local-adapter-validation.test.ts, remote-adapter-validation.test.ts).
+
+  - [G8] No equivalence tests for putNode/patchNode INVALID_NODE_ID between adapters. Added in WI-668 but not represented in equivalence suite.
+
+  - [G9] Q-122 and Q-128 (server-side BFS/PPR alignment) unchanged by cycle 20. Both remain open blocking questions for full adapter equivalence.
+content_hash: fcd5938b13fee8ad293d4ab65fd0eb53c036c4716434e2d2dd43c1fb55371a84
+token_count: 622
+file_path: .ideate/cycles/068/gap-analysis.yaml
+cycle: 20
+cycle_modified: 19

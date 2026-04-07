@@ -1,12 +1,11 @@
 id: Q-117
 type: domain_question
+description: Each file in a burst write triggers a separate rebuildIndex call
 domain: artifact-structure
-title: No end-to-end write-to-convergence roundtrip test
-description: "No test exists that calls handleWriteArtifact with type cycle_summary and cycle: N, then calls handleGetConvergenceStatus(N) and asserts the spec-adherence artifact is found and parsed. Existing tests cover the write path and query path in isolation but not the full roundtrip."
-source: cycle 4 gap-analysis-004 Gap 2
-impact: A regression in either handleWriteArtifact's DB upsert logic or handleGetConvergenceStatus's query would go undetected until a real review cycle fails.
-status: resolved
-resolution: "Decision: Yes, add a roundtrip test. The test should: (1) write a cycle_summary artifact with a known principle verdict via handleWriteArtifact, (2) call handleGetConvergenceStatus for that cycle, (3) assert convergence status reflects the written verdict. This is a moderate-priority gap since convergence is a core autopilot signal. Track for next cycle that touches convergence or write-transaction tests."
-resolved_date: 2026-03-31
-content_hash: f539ea6730ad7fc24ab2db863102c91672755b38de5c7ac0ed115e95af2f4f49
-token_count: 268
+impact: Performance degradation during bulk file operations
+reexamination_trigger: When file watcher performance becomes a measurable bottleneck
+source: gap-analysis MI1
+status: open
+title: Watcher debounce implementation
+content_hash: 7b4d9851b835b3da0a7a7bbb3280a5429537ae8edf346af8dc93266497edb446
+token_count: 89

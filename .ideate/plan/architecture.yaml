@@ -10,8 +10,7 @@ content: |
   
   | Skill | Purpose | Invokes Agents | Key Artifacts |
   |-------|---------|---------------|---------------|
-  | `/ideate:init` | Initialize .ideate/ for an existing codebase — scaffold, survey, interview, bootstrap domains | architect, domain-curator | .ideate/config.json, .ideate/principles/*, .ideate/constraints/*, domains/* |
-  | `/ideate:plan` | Interview → research → decompose → produce specs | researcher, architect, decomposer | steering/*, plan/* |
+  | `/ideate:init` | Initialize .ideate/ for an existing codebase — scaffold, survey, interview, bootstrap domains, plan | architect, domain-curator | .ideate/config.json, .ideate/principles/*, .ideate/constraints/*, domains/* |
   | `/ideate:execute` | Build project following the plan | code-reviewer (incremental) | archive/incremental/*, journal.md |
   | `/ideate:review` | Comprehensive multi-perspective evaluation | code-reviewer, spec-reviewer, gap-analyst, journal-keeper, domain-curator | archive/cycles/{NNN}/*, domains/* |
   | `/ideate:refine` | Plan changes to existing codebase | researcher, architect, decomposer | Updated steering/*, new plan/work-items/* |
@@ -21,8 +20,8 @@ content: |
   
   | Agent | Model | Background | Tools | Spawned By |
   |-------|-------|-----------|-------|------------|
-  | researcher | sonnet | yes | Read, Grep, Glob, WebSearch, WebFetch | plan, refine |
-  | architect | sonnet | no | Read, Grep, Glob, Bash | plan, refine |
+  | researcher | sonnet | yes | Read, Grep, Glob, WebSearch, WebFetch | init, refine |
+  | architect | sonnet | no | Read, Grep, Glob, Bash | init, refine |
   | decomposer | sonnet | no | Read, Grep, Glob | plan, refine |
   | code-reviewer | sonnet | no | Read, Grep, Glob, Bash | execute, review |
   | spec-reviewer | sonnet | no | Read, Grep, Glob | review |
@@ -50,7 +49,7 @@ content: |
       │
       ▼
   ┌─────────┐    spawns     ┌────────────┐
-  │  plan    │──────────────▶│ researcher │──▶ steering/research/*.md
+  │  init    │──────────────▶│ researcher │──▶ steering/research/*.md
   │  skill   │──────────────▶│ architect  │──▶ plan/architecture.md, plan/modules/*.md
   │          │──────────────▶│ decomposer │──▶ plan/work-items/*.md
   │          │                └────────────┘
@@ -99,7 +98,7 @@ content: |
   
   Read/write permissions per phase:
   
-  | Artifact | plan | execute | review | refine |
+  | Artifact | init | execute | review | refine |
   |----------|------|---------|--------|--------|
   | steering/interview.md | write | read | read | append |
   | steering/guiding-principles.md | write | read | read | update |
@@ -117,32 +116,32 @@ content: |
   ---
   
   ## 3. Skill Definitions
-  
-  ### `/ideate:plan`
-  
-  **Trigger**: User runs `/ideate:plan` with optional initial idea.
-  
-  **Input**: User's idea (argument or first response).
-  
+
+  ### `/ideate:init`
+
+  **Trigger**: User runs `/ideate:init` with optional project path.
+
+  **Input**: Project path (defaults to current directory), optional initial idea.
+
   **Process**:
-  1. Ask for artifact directory, create structure
-  2. Interview across three tracks (intent, design, process)
-     - Actively probe for ambiguity markers
-     - Spawn `researcher` agents in background for mentioned topics
-     - Integrate research findings into follow-up questions
-  3. Detect completion (all tracks covered or user says move on)
-  4. Present summary with open questions
-  5. Spawn `architect` to produce architecture + module decomposition
-  6. For large projects (5+ modules): spawn `decomposer` per module in parallel
-  7. For small projects: decompose to work items in main session
-  8. Validate: DAG check, 100% coverage, non-overlapping scope, spec sufficiency
-  9. Write all artifacts
-  10. Present plan summary
-  
-  **Output artifacts**: All steering/*, all plan/*, journal.md init.
-  
-  **Decision points**: User input needed for intent/design/process questions during interview. After interview, planning proceeds without user input unless contradictions are found.
-  
+  1. Detect existing codebase vs new project
+  2. For existing codebase:
+     - Survey codebase structure
+     - Lightweight interview (3-5 questions)
+     - Bootstrap domain policies, decisions, questions from codebase
+  3. For new project:
+     - Interview across three tracks (intent, design, process)
+     - Spawn `researcher` agents for mentioned topics
+     - Spawn `architect` to produce architecture + module decomposition
+     - Spawn `decomposer` per module for large projects
+  4. Validate: DAG check, 100% coverage, non-overlapping scope
+  5. Write all artifacts
+  6. Present summary
+
+  **Output artifacts**: .ideate/config.json, steering/*, plan/*, domains/*, journal.md init.
+
+  **Decision points**: User input during interview phase. Planning proceeds without user input unless contradictions are found.
+
   ### `/ideate:execute`
   
   **Trigger**: User runs `/ideate:execute` with optional artifact directory path.
@@ -500,59 +499,59 @@ content: |
   #### `.ideate/config.json`
   - **Purpose**: Identifies the schema version of the `.ideate/` artifact directory and stores optional project metadata
   - **Format**: `{"schema_version": 2, "project_name": "<optional>"}` — only `schema_version` is required
-  - **Semantics**: Written once during `/ideate:init` or `/ideate:plan` directory scaffolding. Read by the MCP server on startup to locate and validate the artifact directory. Updated only by migration scripts when the schema version advances.
-  - **Phases**: init/plan (write), runtime (read by MCP server)
+  - **Semantics**: Written once during `/ideate:init` directory scaffolding. Read by the MCP server on startup to locate and validate the artifact directory. Updated only by migration scripts when the schema version advances.
+  - **Phases**: init (write), runtime (read by MCP server)
   
   #### `steering/interview.md`
   - **Purpose**: Record of the planning conversation
   - **Format**: Alternating Q: and A: blocks capturing substance of each exchange
-  - **Semantics**: Plan writes initial; refine appends new section with date header and context
-  - **Phases**: plan (write), execute (read), review (read), refine (append)
+  - **Semantics**: Init writes initial; refine appends new section with date header and context
+  - **Phases**: init (write), execute (read), review (read), refine (append)
   
   #### `steering/guiding-principles.md`
   - **Purpose**: Decision framework — the "why" behind the project
   - **Format**: Numbered principles, each with name and one-paragraph explanation
-  - **Semantics**: Plan writes initial (5-15 principles). Refine updates with change notes. Deprecated principles marked, never silently deleted.
-  - **Phases**: plan (write), execute (read), review (read), refine (update)
+  - **Semantics**: Init writes initial (5-15 principles). Refine updates with change notes. Deprecated principles marked, never silently deleted.
+  - **Phases**: init (write), execute (read), review (read), refine (update)
   
   #### `steering/constraints.md`
   - **Purpose**: Hard boundaries on technology, design, and process
   - **Format**: Categorized list of constraints
-  - **Semantics**: Plan writes initial. Refine may add or update constraints.
-  - **Phases**: plan (write), execute (read), review (read), refine (update)
+  - **Semantics**: Init writes initial. Refine may add or update constraints.
+  - **Phases**: init (write), execute (read), review (read), refine (update)
   
   #### `steering/research/{topic-slug}.md`
   - **Purpose**: Background research findings on specific topics
   - **Format**: Structured report (Summary, Key Facts, Recommendations, Risks, Sources)
   - **Naming**: kebab-case topic slug (e.g., `session-multiplexing.md`)
-  - **Semantics**: Written by researcher agents during plan or refine. Never overwritten — new research on the same topic gets a new file with a suffix.
+  - **Semantics**: Written by researcher agents during init or refine. Never overwritten — new research on the same topic gets a new file with a suffix.
   - **Phases**: plan (write), execute (read), review (read), refine (write)
   
   #### `plan/overview.md`
   - **Purpose**: High-level summary of what's being built
   - **Format**: Prose with structural diagrams
-  - **Semantics**: Plan writes full project overview. Refine overwrites with a change plan focused on the delta.
-  - **Phases**: plan (write), execute (read), review (read), refine (overwrite)
+  - **Semantics**: Init writes full project overview. Refine overwrites with a change plan focused on the delta.
+  - **Phases**: init (write), execute (read), review (read), refine (overwrite)
   
   #### `plan/architecture.md`
   - **Purpose**: Technical architecture — components, relationships, data flow, interfaces
   - **Format**: Structured sections with component map, data flow diagrams, interface definitions
-  - **Semantics**: Plan writes initial. Refine updates only if architecture changes.
-  - **Phases**: plan (write), execute (read), review (read), refine (update if changed)
+  - **Semantics**: Init writes initial. Refine updates only if architecture changes.
+  - **Phases**: init (write), execute (read), review (read), refine (update if changed)
   
   #### `plan/modules/{name}.md`
   - **Purpose**: Intermediate decomposition — module scope, interfaces, boundary rules
   - **Format**: Module spec (Scope, Provides, Requires, Boundary Rules, Internal Design Notes)
   - **Naming**: kebab-case module name matching architecture.md references
-  - **Semantics**: Written during plan. Updated during refine if module scope changes.
-  - **Phases**: plan (write), execute (read), review (read), refine (update)
+  - **Semantics**: Written during init. Updated during refine if module scope changes.
+  - **Phases**: init (write), execute (read), review (read), refine (update)
   
   #### `plan/execution-strategy.md`
   - **Purpose**: How agents execute the plan — mode, parallelism, worktrees, grouping
   - **Format**: Structured fields (Mode, Parallelism, Worktrees, Review Cadence, Work Item Groups, Agent Configuration)
   - **Valid modes**: Sequential, Batched parallel, Full parallel (teams)
-  - **Semantics**: Plan writes initial. Refine writes new strategy for the refinement cycle.
-  - **Phases**: plan (write), execute (read), review (read), refine (overwrite)
+  - **Semantics**: Init writes initial. Refine writes new strategy for the refinement cycle.
+  - **Phases**: init (write), execute (read), review (read), refine (overwrite)
   
   #### `plan/work-items/NNN-{name}.md`
   - **Purpose**: Atomic executable task specification
@@ -560,7 +559,7 @@ content: |
   - **Naming**: 3-digit zero-padded number + kebab-case name (e.g., `001-plugin-manifest.md`)
   - **Numbering**: Sequential within a cycle. Refine continues from highest existing number.
   - **Constraints**: Non-overlapping file scope between concurrent items. Dependencies form a DAG. Acceptance criteria machine-verifiable where possible.
-  - **Phases**: plan (write), execute (read + mark criteria), review (read), refine (write new)
+  - **Phases**: init (write), execute (read + mark criteria), review (read), refine (write new)
   
   #### `archive/incremental/NNN-{name}.md`
   - **Purpose**: Per-work-item review results from execution phase
@@ -593,7 +592,7 @@ content: |
   - **Purpose**: Running log of all project activity
   - **Format**: Phase-tagged entries with dates. Format: `## [{phase}] {date} — {title}`
   - **Semantics**: STRICTLY APPEND-ONLY. No phase ever edits or deletes existing entries.
-  - **Phases**: plan (init), execute (append per item), review (append), refine (append)
+  - **Phases**: init (write), execute (append per item), review (append), refine (append)
   
   ---
   

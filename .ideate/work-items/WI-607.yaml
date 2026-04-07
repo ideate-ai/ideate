@@ -1,7 +1,7 @@
 id: WI-607
 type: work_item
 title: Align nextId, batchMutate, archiveCycle, appendJournalEntry, convergenceData, getDomainState (S2-S3, S7-S10, P2-P4)
-status: pending
+status: done
 complexity: large
 scope:
   - path: ideate-server/src/resolvers/mutations/batch.ts
@@ -44,6 +44,6 @@ notes: |-
   - T-13: RemoteAdapter apply event_name fallback for metrics_event putNode
 resolution: null
 cycle_created: null
-cycle_modified: null
-content_hash: 697f8b009541cfbfa3f230daa9bf92cea0559484f0434c3f7501d92e5735a9b6
-token_count: 516
+cycle_modified: 5
+content_hash: 6598d7180cec748367e713bb9219bb2abc6bdf7ebb0fcc95506289e3c4a0a772
+token_count: 538

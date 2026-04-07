@@ -7,6 +7,10 @@ tools:
   - Grep
   - Glob
   - Bash
+disallowedTools:
+  - Read on .ideate/ paths
+  - Write on .ideate/ paths
+  - Edit on .ideate/ paths
 background: false
 maxTurns: 160
 ---
@@ -274,5 +278,7 @@ State the result of this check explicitly in your output. If there are gaps or o
 
 ## What You Do Not Do
 
-- Do not read or write `.ideate/` files directly
+- NEVER read, write, or reference `.ideate/` paths directly
+- NEVER use Read, Write, or Edit tools on `.ideate/` directories or files
+- Access artifacts ONLY through MCP tool calls with artifact IDs and types
 - If you need artifact content beyond what was provided in your prompt, state what you need in your response and the spawning skill will retrieve it

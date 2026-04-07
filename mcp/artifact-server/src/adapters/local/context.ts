@@ -20,6 +20,7 @@ import type {
   Node,
   NodeType,
 } from "../../adapter.js";
+import { ValidationError, ALL_NODE_TYPES } from "../../adapter.js";
 
 // ---------------------------------------------------------------------------
 // Internal row types
@@ -167,10 +168,101 @@ export class LocalContextAdapter {
       max_iterations: maxIterations,
       convergence_threshold: convergenceThreshold,
       edge_type_weights: edgeTypeWeights,
-      token_budget: tokenBudget = 50000,
+      token_budget: tokenBudget,
       always_include_types: alwaysIncludeTypes = [],
       max_nodes: maxNodes,
     } = options;
+
+    // Validate seed_ids (WI-653)
+    if (!Array.isArray(seedNodeIds)) {
+      throw new ValidationError(
+        "seed_ids must be an array",
+        "INVALID_SEED_IDS",
+        { value: seedNodeIds }
+      );
+    }
+    if (seedNodeIds.length === 0) {
+      throw new ValidationError(
+        "seed_ids cannot be empty",
+        "EMPTY_SEED_IDS",
+        {}
+      );
+    }
+    for (const id of seedNodeIds) {
+      if (typeof id !== "string") {
+        throw new ValidationError(
+          `Each seed_id must be a string, received ${typeof id}`,
+          "INVALID_SEED_ID",
+          { value: id }
+        );
+      }
+    }
+
+    // Validate always_include_types BEFORE other validations (AC-3: WI-649)
+    // This ensures type validation errors are reported before PPR computation
+    if (!Array.isArray(alwaysIncludeTypes)) {
+      throw new ValidationError(
+        "always_include_types must be an array",
+        "INVALID_ALWAYS_INCLUDE_TYPE",
+        { value: alwaysIncludeTypes }
+      );
+    }
+    const validNodeTypes = new Set<string>(ALL_NODE_TYPES);
+    for (const type of alwaysIncludeTypes) {
+      if (!validNodeTypes.has(type)) {
+        throw new ValidationError(
+          `Invalid NodeType in always_include_types: ${type}`,
+          "INVALID_ALWAYS_INCLUDE_TYPE",
+          { value: type }
+        );
+      }
+    }
+
+    // Validate PPR parameters before calling computePPR (WI-663)
+    // token_budget: must be non-negative
+    if (tokenBudget !== undefined && tokenBudget < 0) {
+      throw new ValidationError(
+        `token_budget must be non-negative (valid range: 0 to Infinity), received ${tokenBudget}`,
+        "INVALID_TOKEN_BUDGET",
+        { value: tokenBudget }
+      );
+    }
+
+    // alpha: must be 0 <= alpha <= 1
+    if (alpha !== undefined && (alpha < 0 || alpha > 1)) {
+      throw new ValidationError(
+        `alpha must be between 0 and 1 inclusive (valid range: 0 to 1), received ${alpha}`,
+        "INVALID_ALPHA",
+        { value: alpha }
+      );
+    }
+
+    // max_iterations: must be non-negative integer
+    if (maxIterations !== undefined && (!Number.isInteger(maxIterations) || maxIterations < 0)) {
+      throw new ValidationError(
+        `max_iterations must be a non-negative integer (valid range: 0 to Infinity), received ${maxIterations}`,
+        "INVALID_MAX_ITERATIONS",
+        { value: maxIterations }
+      );
+    }
+
+    // convergence_threshold: must be positive number
+    if (convergenceThreshold !== undefined && convergenceThreshold <= 0) {
+      throw new ValidationError(
+        `convergence_threshold must be a positive number (valid range: > 0), received ${convergenceThreshold}`,
+        "INVALID_CONVERGENCE_THRESHOLD",
+        { value: convergenceThreshold }
+      );
+    }
+
+    // max_nodes: must be non-negative integer
+    if (maxNodes !== undefined && (!Number.isInteger(maxNodes) || maxNodes < 0)) {
+      throw new ValidationError(
+        `max_nodes must be a non-negative integer (valid range: 0 to Infinity), received ${maxNodes}`,
+        "INVALID_MAX_NODES",
+        { value: maxNodes }
+      );
+    }
 
     // Run PPR algorithm (ppr.ts is an adapter-internal dependency)
     const pprResults = computePPR(this.drizzleDb, seedNodeIds, {
@@ -279,12 +371,13 @@ export class LocalContextAdapter {
     }
 
     // Then add ranked artifacts by score until budget exhausted
+    const effectiveTokenBudget = tokenBudget ?? 50000;
     for (const row of ranked) {
-      if (usedTokens >= tokenBudget) break;
+      if (usedTokens >= effectiveTokenBudget) break;
       const content = readFileContent(row.file_path);
       contentCache.set(row.file_path, content);
       const tokenCount = row.token_count ?? estimateTokens(content);
-      if (usedTokens + tokenCount > tokenBudget) continue; // skip if would bust budget
+      if (usedTokens + tokenCount > effectiveTokenBudget) continue; // skip if would bust budget
       usedTokens += tokenCount;
       includedWithContent.push({ row, content, tokenCount });
     }

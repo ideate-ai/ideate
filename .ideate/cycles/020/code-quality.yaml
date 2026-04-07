@@ -1,0 +1,18 @@
+id: code-quality
+type: cycle_summary
+reviewer: code-reviewer
+content: |-
+  ## Code Quality Review — Cycle 20
+
+  **Verdict**: Incomplete (reviewer hit turn budget)
+
+  The code-reviewer agent returned an incomplete response after exhausting its tool call budget (122 tool uses). The agent was mid-investigation when it terminated — verifying mapGqlNodeToNode for WI-669. No complete findings were produced.
+
+  **Impact on review**: The dynamic testing pillar (npm test run) was not completed by this reviewer. The spec-adherence and gap-analyst reviewers partially overlap in their coverage of the validation layer.
+
+  **Known from incremental reviews**: npm test passed with 1015 tests, 0 failures after all cycle 20 work items completed.
+content_hash: 81b6136836479f4c4b582ede69f98a2d496072fd25199a319b0a6521b48963d3
+token_count: 227
+file_path: .ideate/cycles/068/code-quality.yaml
+cycle: 20
+cycle_modified: 19

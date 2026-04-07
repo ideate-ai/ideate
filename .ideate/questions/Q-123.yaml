@@ -1,10 +1,15 @@
 id: Q-123
 type: domain_question
-domain: artifact-structure
-title: WorkItemComplexity enum — 3-value or 5-value scale?
-description: GraphQL SDL has LOW|SMALL|MEDIUM|LARGE|HIGH. Codebase and neo4j schema use SMALL|MEDIUM|LARGE only. Remove LOW/HIGH or add to schema.
-source: cycle 6 S1/D2
-impact: Enum mismatch causes validation failures during migration
-status: open
-content_hash: 500b55d24622ca422b3a3850a4497f9d5f8cfd8353c319cc461e1dfae8a10a50
-token_count: 91
+description: WI-619 specified creation of adapter-equivalence.test.ts at mcp/artifact-server/tests/adapters/adapter-equivalence.test.ts, but this file does not exist. Without this test file, there is no automated verification of LocalAdapter/RemoteAdapter consistency per P-60.
+domain: adapter-equivalence
+impact: No automated verification that adapter implementations maintain interface contract equivalence. Violations of P-60 may go undetected until manual review or runtime failure.
+reexamination_trigger: When WI-619 is revisited or when adapter equivalence tests are implemented.
+source: cycle 18 gap-analysis CG2
+status: resolved
+title: adapter-equivalence.test.ts does not exist
+cycle: 18
+content_hash: 59ab09b9fe1f1abcaff4208335feee38699e2ddebe8d8c22a22170986769f8b4
+token_count: 307
+resolved_by: WI-672
+body: WI-619 specified creation of adapter-equivalence.test.ts at mcp/artifact-server/tests/adapters/adapter-equivalence.test.ts. WI-672 (cycle 020) created this file with validation equivalence cases for INVALID_LIMIT, INVALID_SEED_IDS, and EMPTY_BATCH. LocalAdapter cases run unconditionally; RemoteAdapter cases gated with it.skipIf(!remoteAvailable). Resolved.
+cycle_modified: 19

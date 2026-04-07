@@ -1,14 +1,58 @@
 id: overview
 type: overview
-title: "PH-025 Refinement: Fix remaining 35 equivalence test failures"
-description: Fix all divergences between LocalAdapter and RemoteAdapter. Zero accepted differences. Both backends must produce identical results for all 21 StorageAdapter methods.
-what_is_changing: LocalAdapter edge extraction gaps (missing BELONGS_TO_DOMAIN for domain_decision/question). Server query filter behavior (domain/phase filters, countNodes, getDomainState, convergenceData). Server graph traversal (BFS and PPR containment edge leaks). Write path alignment (putNode/patchNode/batchMutate/nextId/archiveCycle/appendJournalEntry).
-why: PH-025 Production Validation revealed 35/170 equivalence test failures. All trace to genuine backend divergences, not test bugs. The project acceptance criterion requires 100% parity.
-scope_boundary: Fix adapter and server code only. No changes to the equivalence test assertions or comparison helpers — the tests are correct, the backends need to match.
+content: |-
+  This refinement addresses 4 critical and 11 significant findings from the Full Audit (Cycle 5).
+
+  ## Scope
+
+  **Security**: Remove hardcoded Neo4j password fallback
+  **Interface Contracts**: Add archiveCycle to StorageAdapter; implement in LocalAdapter
+  **Schema Consistency**: Resolve BELONGS_TO_DOMAIN contradiction; align complexity enum
+  **Adapter Equivalence**: Fix 16 equivalence test failures (queryNodes, queryGraph, PPR)
+  **Reliability**: Add retry logic, hook validation, PPR resource limits
+
+  ## Changes
+
+  **Principles**: No changes — all existing principles apply
+  **Constraints**: No changes
+  **Architecture**: No structural changes — fixes within existing architecture
+
+  ## New Work Items
+
+  WI-608 through WI-616 (9 work items across 2 phases)
+
+  **Phase 1**: WI-608, WI-609, WI-610, WI-611 (Foundation & Security)
+  **Phase 2**: WI-612, WI-613, WI-614, WI-615, WI-616 (Equivalence & Reliability)
+content_hash: 4dc9fc3b17f2b452bab316e032b9581bf4d457f47fa6cd4dbfec0789e4f9d786
+token_count: 707
+title: Cycle 21 Change Plan
+trigger: "Cycle 20 capstone review findings (C1, S1, G1-G5, M1, M2) + new: Vitest process hang"
+what_is_changing: "1. Vitest forceExit + watcher cleanup (WI-674). 2. LocalAdapter validation: nextId INVALID_CYCLE fix, deleteNode/putEdge/removeEdges validation added (WI-675). 3. RemoteAdapter validation: same three methods (WI-676). 4. adapter-contract.md: remove dead patchNode type constraint, add PARSE_ERROR, fix putEdge codes (WI-677). 5. ppr.ts: four ValidationError calls use specific codes instead of raw field names (WI-678). 6. Equivalence tests for all new validation codes (WI-679)."
+what_is_not_changing: StorageAdapter interface definition (adapter.ts). All existing validation logic (batchMutate, putNode, patchNode, traverse, queryNodes, queryGraph). Test suite structure. SQLite schema. All non-adapter source files.
+scope_boundary: mcp/artifact-server only. No skill files, no agent files, no other packages.
+findings_addressed:
+  - "S2: ValidationError code always VALIDATION_ERROR due to field-name args — WI-667"
+  - "SG1: putNode/patchNode lack validation — WI-668"
+  - "M4: mapGqlNodeToNode error type inconsistency — WI-668+WI-669"
+  - "S1: vi.mock hoisting breaks initialize() test — WI-670"
+  - "SG2: No remote-adapter-validation.test.ts / P-58 gap — WI-671"
+  - "M1: Tautological TRANSACTION_FAILED test — WI-671"
+  - "SG3: adapter-equivalence.test.ts has no validation cases — WI-672"
+  - "P-53: adapter-contract.md references concrete storage formats — WI-673"
+  - "Q4: Edge weight customization gap documented — WI-673"
 work_items:
-  - "WI-599: Edge extraction parity (LocalAdapter indexer)"
-  - "WI-600: Server query/aggregation alignment"
-  - "WI-601: Server BFS and PPR containment edge filtering"
-  - "WI-602: Write path alignment (putNode, batchMutate, nextId, etc.)"
-content_hash: 4c5cda3655faeb297c24cbbda73684a0aeab3963253ed0a77a3d407487cb8710
-token_count: 313
+  - WI-667
+  - WI-668
+  - WI-669
+  - WI-670
+  - WI-671
+  - WI-672
+  - WI-673
+cycle_modified: 19
+new_work_items:
+  - WI-674
+  - WI-675
+  - WI-676
+  - WI-677
+  - WI-678
+  - WI-679

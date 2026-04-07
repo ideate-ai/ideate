@@ -29,7 +29,7 @@ try {
 } catch (err) {
   // Start in dormant mode — lazy recovery will retry on first tool call.
   const msg = err instanceof Error ? err.message : String(err);
-  console.error(`[ideate-artifact-server] Startup init failed (dormant mode): ${msg}`);
+  console.log(`[ideate-artifact-server] Startup init failed (dormant mode): ${msg}`);
 }
 
 // ---------------------------------------------------------------------------

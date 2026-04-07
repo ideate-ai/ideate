@@ -1,0 +1,21 @@
+id: ME-1838D035
+type: metrics_event
+event_name: worker
+timestamp: 2026-04-06T00:05:00Z
+agent_type: worker
+cache_read_tokens: null
+cache_write_tokens: null
+context_files_read: []
+cycle: 1
+input_tokens: null
+mcp_tools_called:
+  - ideate_assemble_context
+  - ideate_get_artifact_context
+model: sonnet
+outcome: null
+output_tokens: null
+phase: 6a
+skill: autopilot
+turns_used: null
+wall_clock_ms: 0
+work_item: WI-644

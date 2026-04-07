@@ -32,6 +32,13 @@ export interface GraphQLError {
   };
 }
 
+/**
+ * Token provider function type for auth token rotation.
+ * Called when a request fails with 401 Unauthorized.
+ * Should return the new token or null if rotation failed.
+ */
+export type TokenProvider = () => Promise<string | null>;
+
 // ---------------------------------------------------------------------------
 // Error mapping
 // ---------------------------------------------------------------------------
@@ -86,6 +93,13 @@ function mapGraphQLError(error: GraphQLError): StorageAdapterError {
         details
       );
 
+    case "TRANSACTION_FAILED":
+      return new StorageAdapterError(
+        error.message,
+        "TRANSACTION_FAILED",
+        details
+      );
+
     default:
       return new StorageAdapterError(
         error.message,
@@ -102,13 +116,27 @@ function mapGraphQLError(error: GraphQLError): StorageAdapterError {
 export class GraphQLClient {
   private endpoint: string;
   private headers: Record<string, string>;
+  private tokenProvider?: TokenProvider;
 
-  constructor(endpoint: string, headers?: Record<string, string>) {
+  constructor(
+    endpoint: string,
+    headers?: Record<string, string>,
+    tokenProvider?: TokenProvider
+  ) {
     this.endpoint = endpoint;
     this.headers = {
       "Content-Type": "application/json",
       ...headers,
     };
+    this.tokenProvider = tokenProvider;
+  }
+
+  /**
+   * Update the authorization header with a new token.
+   * Called after successful token rotation.
+   */
+  setAuthToken(token: string): void {
+    this.headers["Authorization"] = `Bearer ${token}`;
   }
 
   /**
@@ -184,7 +212,7 @@ export class GraphQLClient {
         const result = await this.executeOnce<T>(document, variables);
         // Log successful retry if this wasn't the first attempt
         if (attempt > 1) {
-          console.error(`[GraphQLClient] Request succeeded on attempt ${attempt}/${this.MAX_RETRIES}`);
+          console.log(`[GraphQLClient] Request succeeded on attempt ${attempt}/${this.MAX_RETRIES}`);
         }
         return result;
       } catch (err) {
@@ -197,13 +225,13 @@ export class GraphQLClient {
 
         // Don't retry if this was the last attempt
         if (attempt >= this.MAX_RETRIES) {
-          console.error(`[GraphQLClient] Request failed after ${this.MAX_RETRIES} attempts`);
+          console.log(`[GraphQLClient] Request failed after ${this.MAX_RETRIES} attempts`);
           throw err;
         }
 
         // Calculate and apply backoff delay
         const delay = this.getRetryDelay(attempt);
-        console.error(`[GraphQLClient] Attempt ${attempt}/${this.MAX_RETRIES} failed, retrying in ${delay}ms...`);
+        console.log(`[GraphQLClient] Attempt ${attempt}/${this.MAX_RETRIES} failed, retrying in ${delay}ms...`);
         await this.sleep(delay);
       }
     }
@@ -239,8 +267,29 @@ export class GraphQLClient {
       });
     } catch (err) {
       throw new ConnectionError(
-        `Failed to connect to GraphQL endpoint: ${this.endpoint}`,
+        `Failed to connect to GraphQL endpoint: ${this.endpoint} - ${err instanceof Error ? err.message : "Unknown error"}`,
         err instanceof Error ? err : undefined
+      );
+    }
+
+    // Handle 401 Unauthorized - attempt token rotation if tokenProvider is configured
+    if (response.status === 401 && this.tokenProvider) {
+      const newToken = await this.tokenProvider();
+      if (newToken) {
+        this.setAuthToken(newToken);
+        // Retry the request with the new token
+        return this.executeOnceWithAuth<T>(document, variables);
+      } else {
+        throw new ConnectionError(
+          `Authentication failed: GraphQL endpoint ${this.endpoint} returned 401 Unauthorized - token rotation failed`
+        );
+      }
+    }
+
+    // Handle 401 without tokenProvider - authentication failure
+    if (response.status === 401) {
+      throw new ConnectionError(
+        `Authentication failed: GraphQL endpoint ${this.endpoint} returned 401 Unauthorized`
       );
     }
 
@@ -248,7 +297,7 @@ export class GraphQLClient {
       // 5xx errors are retryable, 4xx errors are not
       if (response.status >= 500 && response.status < 600) {
         throw new ConnectionError(
-          `GraphQL endpoint returned HTTP ${response.status}: ${response.statusText}`
+          `GraphQL endpoint ${this.endpoint} returned HTTP ${response.status}: ${response.statusText}`
         );
       } else {
         // 4xx errors are client errors, not retryable
@@ -271,6 +320,46 @@ export class GraphQLClient {
 
     // If the response contains errors, throw the first one mapped to the
     // appropriate StorageAdapterError subtype.
+    if (body.errors && body.errors.length > 0) {
+      throw mapGraphQLError(body.errors[0]);
+    }
+
+    if (!body.data) {
+      throw new StorageAdapterError(
+        "GraphQL response contained no data",
+        "EMPTY_RESPONSE"
+      );
+    }
+
+    return body.data;
+  }
+
+  /**
+   * Internal: execute a request with the current auth token.
+   * Used for retry after token rotation.
+   */
+  private async executeOnceWithAuth<T>(
+    document: string,
+    variables?: Record<string, unknown>
+  ): Promise<T> {
+    const response = await fetch(this.endpoint, {
+      method: "POST",
+      headers: this.headers,
+      body: JSON.stringify({
+        query: document,
+        variables: variables ?? {},
+      }),
+    });
+
+    if (!response.ok) {
+      throw new StorageAdapterError(
+        `GraphQL endpoint returned HTTP ${response.status}: ${response.statusText}`,
+        `HTTP_${response.status}`
+      );
+    }
+
+    const body = (await response.json()) as GraphQLResponse<T>;
+
     if (body.errors && body.errors.length > 0) {
       throw mapGraphQLError(body.errors[0]);
     }

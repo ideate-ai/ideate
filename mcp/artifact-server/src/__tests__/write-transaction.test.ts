@@ -30,6 +30,8 @@ import type { DrizzleDb } from "../db-helpers.js";
 import { computeArtifactHash } from "../db-helpers.js";
 import type { ToolContext } from "../types.js";
 import { handleWriteWorkItems, handleWriteArtifact, handleUpdateWorkItems, handleAppendJournal } from "../tools/write.js";
+import { ValidationError } from "../adapter.js";
+import { LocalAdapter } from "../adapters/local/index.js";
 
 // ---------------------------------------------------------------------------
 // Setup / teardown
@@ -505,5 +507,163 @@ describe("handleWriteArtifact — interview_question rollback (interview_questio
     // No node row in SQLite
     const row = db.prepare("SELECT COUNT(*) as n FROM nodes WHERE id = ?").get(artifactId) as { n: number };
     expect(row.n).toBe(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Tests: ValidationError type verification on transaction failures
+// ---------------------------------------------------------------------------
+
+describe("Transaction failure error type", () => {
+  it("throws ValidationError with code TRANSACTION_FAILED on batchMutate failure", async () => {
+    const failCtx = makeFailingDrizzleCtx();
+
+    let caughtError: unknown;
+    try {
+      await handleWriteWorkItems(failCtx, {
+        items: [{ title: "Test work item" }],
+      });
+    } catch (err) {
+      caughtError = err;
+    }
+
+    expect(caughtError).toBeInstanceOf(ValidationError);
+    const error = caughtError as ValidationError;
+    expect(error.code).toBe("TRANSACTION_FAILED");
+    expect(error.details?.operation).toBe("batchMutate");
+    expect(error.message).toContain("SQLite transaction failed");
+  });
+
+  it("throws ValidationError with code TRANSACTION_FAILED on patchNode failure", async () => {
+    // First create a work item with the real ctx
+    await handleWriteWorkItems(ctx, { items: [{ id: "WI-PATCH-TEST", title: "Original" }] });
+
+    const failCtx = makeFailingDrizzleCtx();
+
+    let caughtError: unknown;
+    try {
+      await handleUpdateWorkItems(failCtx, {
+        updates: [{ id: "WI-PATCH-TEST", status: "in_progress" }],
+      });
+    } catch (err) {
+      caughtError = err;
+    }
+
+    expect(caughtError).toBeInstanceOf(ValidationError);
+    const error = caughtError as ValidationError;
+    expect(error.code).toBe("TRANSACTION_FAILED");
+    expect(error.details?.operation).toBe("patchNode");
+  });
+
+  it("throws ValidationError with code TRANSACTION_FAILED on appendJournal failure", async () => {
+    const failCtx = makeFailingDrizzleCtx();
+
+    let caughtError: unknown;
+    try {
+      await handleAppendJournal(failCtx, {
+        skill: "execute",
+        date: "2026-01-01",
+        entry_type: "test_validation_error",
+        body: "Test body",
+        cycle_number: 1,
+      });
+    } catch (err) {
+      caughtError = err;
+    }
+
+    expect(caughtError).toBeInstanceOf(ValidationError);
+    const error = caughtError as ValidationError;
+    expect(error.code).toBe("TRANSACTION_FAILED");
+    expect(error.details?.operation).toBe("appendJournalEntry");
+  });
+
+  it("throws ValidationError with code TRANSACTION_FAILED on putNode failure", async () => {
+    const failCtx = makeFailingDrizzleCtx();
+
+    let caughtError: unknown;
+    try {
+      await handleWriteArtifact(failCtx, {
+        type: "domain_policy",
+        id: "P-PUT-TEST",
+        content: { domain: "workflow", description: "Test" },
+      });
+    } catch (err) {
+      caughtError = err;
+    }
+
+    expect(caughtError).toBeInstanceOf(ValidationError);
+    const error = caughtError as ValidationError;
+    expect(error.code).toBe("TRANSACTION_FAILED");
+    expect(error.details?.operation).toBe("putNode");
+  });
+});
+
+// -----------------------------------------------------------------------------
+// Tests: LocalAdapter.deleteNode transaction failure
+// -----------------------------------------------------------------------------
+
+describe("LocalAdapter.deleteNode — transaction failure", () => {
+  it("throws ValidationError with code TRANSACTION_FAILED on deleteNode failure", async () => {
+    // Create a LocalAdapter with a patched transaction method that will fail
+    const testDir = fs.mkdtempSync(path.join(os.tmpdir(), "ideate-delete-test-"));
+    const testArtifactDir = path.join(testDir, "artifact");
+
+    // Minimal directory structure
+    for (const sub of ["work-items", "domains", "principles"]) {
+      fs.mkdirSync(path.join(testArtifactDir, sub), { recursive: true });
+    }
+    fs.writeFileSync(
+      path.join(testArtifactDir, "domains", "index.yaml"),
+      "current_cycle: 1\n",
+      "utf8"
+    );
+
+    const testDbPath = path.join(testDir, "test.db");
+    const testDb = new Database(testDbPath);
+    createSchema(testDb);
+
+    const testDrizzleDb = drizzle(testDb, { schema: dbSchema });
+    const adapter = new LocalAdapter({ db: testDb, drizzleDb: testDrizzleDb, ideateDir: testArtifactDir });
+    await adapter.initialize();
+
+    // Create a node first
+    await adapter.putNode({
+      id: "GP-DELETE-TEST",
+      type: "guiding_principle",
+      properties: { name: "Test for deletion", description: "Will be deleted" },
+    });
+
+    // Patch the db.transaction method to throw an error
+    const originalTransaction = testDb.transaction.bind(testDb);
+    testDb.transaction = ((fn: () => void) => {
+      return () => {
+        throw new Error("simulated SQLite transaction failure");
+      };
+    }) as any;
+
+    // Attempt deleteNode — should throw ValidationError with TRANSACTION_FAILED
+    let caughtError: unknown;
+    try {
+      await adapter.deleteNode("GP-DELETE-TEST");
+    } catch (err) {
+      caughtError = err;
+    }
+
+    // Restore original transaction method
+    testDb.transaction = originalTransaction;
+
+    // Cleanup
+    try {
+      testDb.close();
+      fs.rmSync(testDir, { recursive: true, force: true });
+    } catch {
+      // ignore cleanup errors
+    }
+
+    expect(caughtError).toBeInstanceOf(ValidationError);
+    const error = caughtError as ValidationError;
+    expect(error.code).toBe("TRANSACTION_FAILED");
+    expect(error.details?.operation).toBe("deleteNode");
+    expect(error.details?.id).toBe("GP-DELETE-TEST");
   });
 });

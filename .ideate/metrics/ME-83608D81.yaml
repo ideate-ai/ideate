@@ -1,0 +1,21 @@
+id: ME-83608D81
+type: metrics_event
+event_name: code-reviewer
+timestamp: 2026-04-04T12:05:00Z
+agent_type: code-reviewer
+context_files_read:
+  - /Users/dan/code/ideate-server/src/resolvers/queries/status.ts
+finding_count: 1
+finding_severities:
+  critical: 1
+  minor: 0
+  significant: 0
+first_pass_accepted: false
+mcp_tools_called: []
+model: sonnet
+outcome: rework
+phase: "7"
+rework_count: 1
+skill: execute
+wall_clock_ms: 67564
+work_item: WI-600

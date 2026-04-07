@@ -119,7 +119,7 @@ export function initServer(dir: string, state: ServerState): void {
   // They run against the artifact directory (dir), not the SQLite index.
   const migrationResult = runPendingMigrations(dir);
   if (migrationResult.migrationsRun > 0) {
-    console.error(`[ideate-artifact-server] ${migrationResult.migrationsRun} migration(s) applied (v${migrationResult.fromVersion} → v${migrationResult.toVersion})`);
+    console.log(`[ideate-artifact-server] ${migrationResult.migrationsRun} migration(s) applied (v${migrationResult.fromVersion} → v${migrationResult.toVersion})`);
   }
   if (migrationResult.errors.length > 0) {
     console.error(`[ideate-artifact-server] Migration errors: ${migrationResult.errors.join("; ")}`);
@@ -146,7 +146,7 @@ export function initServer(dir: string, state: ServerState): void {
   state.ctx = { db: newDb, drizzleDb: newDrizzle, ideateDir: dir, adapter };
 
   signalIndexReady();
-  console.error(`[ideate-artifact-server] initialized, ${stats.files_scanned} files indexed`);
+  console.log(`[ideate-artifact-server] initialized, ${stats.files_scanned} files indexed`);
 
   // File watcher: incrementally index changed files (guard against duplicate listeners)
   artifactWatcher.watch(dir);
@@ -265,7 +265,7 @@ export async function routeToolCall(
     try {
       const dir = resolveArtifactDir({});
       initServer(dir, state);
-      console.error(`[ideate-artifact-server] Lazy initialization succeeded: ${dir}`);
+      console.log(`[ideate-artifact-server] Lazy initialization succeeded: ${dir}`);
       // Fall through to normal handling now that ctx is set
     } catch {
       const result = JSON.stringify({
@@ -283,7 +283,7 @@ export async function routeToolCall(
     try {
       const dir = resolveArtifactDir({});
       initServer(dir, state);
-      console.error(`[ideate-artifact-server] Lazy initialization succeeded: ${dir}`);
+      console.log(`[ideate-artifact-server] Lazy initialization succeeded: ${dir}`);
     } catch {
       return {
         content: [{ type: "text", text: "Error: Project not initialized. Run /ideate:init to set up the .ideate/ directory." }],

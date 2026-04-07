@@ -1,12 +1,13 @@
 id: D-133
 type: domain_decision
+cycle_created: 17
+description: hasColumn domainTypes array in LocalAdapter was missing interview_question, causing incomplete domain detection. Arrays that enumerate types must be kept synchronized with the actual type definitions.
 domain: artifact-structure
-title: assertRequiredFields as runtime guard before type casts
-decision: Use assertRequiredFields to fail loudly on missing required fields rather than silently inserting corrupt rows via type casts.
-rationale: Incremental review S2 flagged original type cast as runtime safety bypass. Guard restores safety guarantee. Currently covers 3 of 14 extension table types; coverage expansion tracked in Q-108.
-assumes: Guard currently checks undefined but not null (Q-106).
-source: cycle 1 decision-log D2; WI-397 rework
+rationale: CR-006 identified the missing type. This is a manifestation of P-59 (type arrays must stay synchronized with unions). The decision reinforces that domain detection arrays require the same maintenance as other type enumerations.
+references:
+  - CR-006
+  - P-59
 status: settled
-content_hash: 9c0f73c6ec2ff99e01b5794e401777b563cda6f85670620f0969c6bdadf268a1
+cycle: 17
+content_hash: b6386d94437a76b02d6eee46a7b43890bf7cb148f36d8c00c200a081a67c07dd
 token_count: 147
-file_path: .ideate/decisions/D-133.yaml

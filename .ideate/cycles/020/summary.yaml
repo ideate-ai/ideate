@@ -1,0 +1,59 @@
+id: summary
+type: cycle_summary
+content: |-
+  ## Cycle 20 Review Summary
+
+  **Overall Verdict**: Fail
+
+  **Work items**: 7 executed (WI-667 through WI-673), all passed incremental review. 4 required rework; 3 passed directly.
+  **Test suite**: 1015 tests, 0 failures (confirmed via incremental reviews; code-reviewer did not complete dynamic testing).
+
+  ### Critical Findings
+
+  - **[C1 — spec-adherence]** `src/adapters/local/writer.ts:474,481` — nextId() cycle validation uses raw field name `"cycle"` as second ValidationError argument → produces code `VALIDATION_ERROR` instead of `INVALID_CYCLE`. WI-667 fixed remote adapter and reader.ts but missed writer.ts. Corroborating test at `src/__tests__/nextid-cycle-validation.test.ts:232` asserts the wrong code. **P-64 violation.**
+
+  - **[G1 — gap-analyst]** deleteNode lacks input validation in both adapters (writer.ts:874, remote/index.ts:655). Empty string id silently returns not_found. Contradicts Validation-First principle.
+
+  - **[G2 — gap-analyst]** putEdge lacks input validation in both adapters (writer.ts:913, remote/index.ts:678). batchMutate validates edges with specific codes; putEdge bypasses all validation. adapter-contract.md lines 143-145 documents requirements that don't exist in code.
+
+  ### Significant Findings
+
+  - **[S1 — spec-adherence]** `docs/adapter-contract.md:104` — patchNode Validation section still states "type must be a valid NodeType if provided" despite UpdateNodeInput having no type field. WI-673 was supposed to remove this.
+  - **[G3 — gap-analyst]** removeEdges lacks input validation in both adapters.
+  - **[G4 — gap-analyst]** PARSE_ERROR code not documented in adapter-contract.md (added by WI-669).
+  - **[G5 — gap-analyst]** putEdge contract documents VALIDATION_ERROR generic code; should use specific codes matching batchMutate.
+  - **[G6 — gap-analyst]** No equivalence tests for batchMutate edge validation codes between adapters.
+
+  ### Minor Findings
+
+  - **[M1 — spec-adherence]** `src/ppr.ts:112,121,130,139` — four ValidationError calls use raw field names (alpha, maxIterations, etc.) → VALIDATION_ERROR instead of specific codes. Outside WI-667 scope.
+  - **[M2 — spec-adherence]** `tests/adapters/local-adapter-validation.test.ts:490` — test titled INVALID_CYCLE does not assert `.code`, masking the wrong behavior from C1.
+  - **[G7]** deleteNode absent from both validation test files.
+  - **[G8]** No equivalence tests for putNode/patchNode INVALID_NODE_ID.
+  - **[G9]** Q-122/Q-128 (server-side BFS/PPR alignment) unchanged.
+
+  ### Code Review Status
+
+  Code-reviewer hit turn budget (122/80 tool uses) before producing complete findings. No static review output and no npm test run. Known from incremental reviews: 1015 tests pass. Static review of validation layer is incomplete — C1 would likely have been caught if code-reviewer had completed.
+
+  ### Next Cycle Priorities
+
+  1. Fix writer.ts nextId() cycle validation (C1) + update nextid-cycle-validation.test.ts:232
+  2. Verify/fix adapter-contract.md:104 patchNode section (S1)
+  3. Add deleteNode input validation to both adapters + tests (G1/G7)
+  4. Add putEdge input validation to both adapters with specific codes + update contract (G2/G5)
+  5. Add removeEdges input validation (G3)
+  6. Document PARSE_ERROR in adapter-contract.md (G4)
+  7. Add batchMutate edge + putNode/patchNode equivalence tests (G6/G8)
+  8. Fix ppr.ts ValidationError codes (M1)
+
+  ### Process Notes
+
+  - Code-reviewer budget (80 turns) is insufficient for comprehensive coverage of the validation layer. Consider increasing to 120 for cycles with deep validation work.
+  - Validation-First remediation is proceeding method-by-method rather than uniformly. deleteNode, putEdge, removeEdges remain unguarded.
+  - Documentation work items catch up incompletely — PARSE_ERROR and putEdge codes missed in WI-673.
+content_hash: 1df851ae90ea3a3c2485d142619b2d55fc59e1278a8808d114253c316838d698
+token_count: 1009
+file_path: .ideate/cycles/068/summary.yaml
+cycle: 20
+cycle_modified: 19

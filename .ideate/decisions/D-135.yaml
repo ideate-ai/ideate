@@ -1,13 +1,17 @@
 id: D-135
 type: domain_decision
-domain: artifact-structure
-title: YAML-first two-phase write pattern with atomic SQLite transaction
-decision: "Phase 1 writes YAML files. Phase 2 wraps all SQLite upserts in a single transaction. On Phase 2 failure, Phase 1 is rolled back: new files deleted, modified files restored from captured originals."
-rationale: GP-08 — YAML is source of truth, SQLite is derived cache. On failure, YAML must remain consistent.
-assumes: Pattern applied to handleWriteWorkItems, handleWriteArtifact, handleUpdateWorkItems. handleAppendJournal and handleArchiveCycle not yet covered (Q-100, Q-101).
-policy: P-44
-source: cycle 1 decision-log D4; WI-398
+amendment_history:
+  - amended_at: 2026-04-05
+    amends: D-127
+    change: "Resolved: test file should be moved to match specification for consistency"
+    cycle: 5
+cycle_created: 5
+cycle_modified: 5
+decision: Move adapter-equivalence.test.ts from src/__tests__/ to tests/adapters/ to match WI-619 specification. Consistency between spec and implementation is the priority.
+domain: project-boundaries
+rationale: "User preference: consistency is key. Specified location in WI-619 takes precedence over historical location."
+source: CG1 (gap-analysis), Q-119 resolution
 status: settled
-content_hash: d7f77b55351e66ff7825c3e1d1d4d93bf54d0f36d681035a5e231acc050d0ed7
-token_count: 172
-file_path: .ideate/decisions/D-135.yaml
+title: "Test file location: prioritize spec consistency over existing location"
+content_hash: d14e60a9850552957f71e83c1092a6e760d40266a23709be3e4e2378476353b3
+token_count: 174

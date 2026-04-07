@@ -663,6 +663,9 @@ export function removeFiles(
   if (filePaths.length === 0) return { removed: 0 };
 
   let removed = 0;
+  // Pre-create prepared statement outside the file loop
+  const selectNodesStmt = db.prepare(`SELECT id FROM nodes WHERE file_path = ?`);
+
   // FK must be ON for CASCADE to work
   const fkWasOn = db.pragma('foreign_keys', { simple: true }) as number;
   if (!fkWasOn) db.pragma('foreign_keys = ON');
@@ -671,7 +674,7 @@ export function removeFiles(
     const deletePhase = db.transaction(() => {
       for (const filePath of filePaths) {
         // Find node ID(s) for this file path
-        const rows = db.prepare(`SELECT id FROM nodes WHERE file_path = ?`).all(filePath) as Array<{ id: string }>;
+        const rows = selectNodesStmt.all(filePath) as Array<{ id: string }>;
         for (const row of rows) {
           deleteNodeById(drizzleDb, row.id);
           removed++;
@@ -711,8 +714,9 @@ export function rebuildIndex(db: Database.Database, drizzleDb: DrizzleDb, ideate
   // Collect IDs of all rows that should be kept (their source file still exists)
   const keepIds: string[] = [];
 
-  // Single hash-check statement on nodes table
+  // Pre-create prepared statements outside the file loop
   const hashCheckStmt = db.prepare(`SELECT id, content_hash FROM nodes WHERE file_path = ?`);
+  const interviewEntryStmt = db.prepare(`SELECT id FROM nodes WHERE file_path = ? AND type = 'interview_question'`);
 
   // Phase 1: upsert all nodes, extension tables, edges, and file refs.
   // FK enforcement is turned OFF for this phase so that edges may reference
@@ -730,7 +734,7 @@ export function rebuildIndex(db: Database.Database, drizzleDb: DrizzleDb, ideate
         // For interview entries, also collect their IDs
         // (indexSingleFile handles entry upsert but we need their IDs for keepIds)
         // Re-query for any interview_question nodes with this file_path
-        const entryRows = db.prepare(`SELECT id FROM nodes WHERE file_path = ? AND type = 'interview_question'`).all(filePath) as Array<{ id: string }>;
+        const entryRows = interviewEntryStmt.all(filePath) as Array<{ id: string }>;
         for (const er of entryRows) {
           keepIds.push(er.id);
         }

@@ -1,0 +1,35 @@
+id: ME-AFD8C71F
+type: metrics_event
+event_name: unknown
+timestamp: 2026-04-04T13:10:00Z
+andon_events: 0
+cycle: 5
+event_type: quality_summary
+findings:
+  by_category:
+    bugs_introduced: 5
+    implementation_gaps: 11
+    other: 3
+    principles_violated: 3
+    requirements_missed: 4
+  by_reviewer:
+    code-reviewer:
+      critical: 1
+      minor: 5
+      significant: 4
+    gap-analyst:
+      critical: 3
+      minor: 5
+      significant: 6
+    spec-reviewer:
+      critical: 0
+      minor: 1
+      significant: 0
+  by_severity:
+    critical: 4
+    minor: 11
+    significant: 11
+    suggestion: 2
+  total: 26
+skill: review
+work_items_reviewed: 0

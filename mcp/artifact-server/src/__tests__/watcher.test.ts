@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, afterAll } from "vitest";
 import fs from "fs";
 import os from "os";
 import path from "path";
@@ -24,6 +24,10 @@ beforeEach(() => {
 afterEach(async () => {
   watcher.close();
   fs.rmSync(tmpDir, { recursive: true, force: true });
+});
+
+afterAll(() => {
+  watcher.close();
 });
 
 /**

@@ -1,0 +1,17 @@
+id: review-manifest
+type: cycle_summary
+content: |-
+  ## Cycle 26 Review Manifest
+
+  | WI | Title | Files | Verdict |
+  |---|---|---|---|
+  | WI-692 | patchNode IMMUTABLE_FIELD tests: equivalence, remote validation, local validation | tests/adapters/adapter-equivalence.test.ts, tests/adapters/remote-adapter-validation.test.ts, tests/adapters/local-adapter-validation.test.ts | Pass |
+
+  **Test suite**: 1072 passed, 295 skipped, 0 failed
+
+  **Summary**: Added 11 new tests across 3 test files. patchNode IMMUTABLE_FIELD now covered for LocalAdapter (AC-8 in local-adapter-validation.test.ts), RemoteAdapter (remote-adapter-validation.test.ts), and equivalence between both adapters (adapter-equivalence.test.ts).
+content_hash: b25e6d445e1ce29cb8ddea6f16f2635d55127e854e1d70615977e14500ab2ea8
+token_count: 222
+file_path: .ideate/cycles/068/review-manifest.yaml
+cycle: 26
+cycle_modified: 19

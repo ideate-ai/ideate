@@ -1,0 +1,28 @@
+id: gap-analysis
+type: cycle_summary
+reviewer: gap-analyst
+content: |-
+  ## Gap Analysis — Cycle 25
+
+  **Verdict**: Fail
+
+  ## Significant Gaps
+
+  - [SG1] `tests/adapters/adapter-equivalence.test.ts` has no tests for patchNode IMMUTABLE_FIELD equivalence between adapters. Both adapters now implement IMMUTABLE_FIELD rejection for id, type, cycle_created. adapter-contract.md:108 documents this as a required equivalence point. The equivalence suite covers INVALID_NODE_ID for patchNode but not IMMUTABLE_FIELD. 14 existing equivalence pairs establish the pattern; 3 new pairs needed (one per immutable field).
+
+  ## Minor Gaps
+
+  - [MG1] `tests/adapters/local-adapter-validation.test.ts` has no patchNode section. patchNode validation (INVALID_NODE_ID, IMMUTABLE_FIELD) is covered in adapter-contract.test.ts and adapter-equivalence.test.ts but not in the dedicated local adapter validation file. The file's coverage list (lines 7-8) doesn't mention patchNode.
+  - [MG2] `docs/adapter-contract.md` equivalence test list header comment doesn't note queryGraph validation equivalence (minor doc-only gap; underlying tests exist in separate files).
+
+  ## Resolved from Prior Cycles
+
+  - All validation gaps from cycles 21-23 resolved
+  - SG1 cycle 24 (putNode/patchNode/deleteNode TRANSACTION_FAILED wrapping): resolved cycle 25 WI-691
+  - SG2 cycle 24 (RemoteAdapter.patchNode IMMUTABLE_FIELD): resolved cycle 25 WI-691
+content_hash: 0dc2de2793d541e1098a81770d21e06fbfa5e32a59088e12661c30b3c2c29529
+token_count: 401
+file_path: .ideate/cycles/068/gap-analysis.yaml
+cycle: 25
+cycle_modified: 19
+verdict: Fail

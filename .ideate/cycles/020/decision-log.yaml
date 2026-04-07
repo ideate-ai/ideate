@@ -1,0 +1,45 @@
+id: decision-log
+type: cycle_summary
+reviewer: journal-keeper
+content: |-
+  ## Decision Log — Cycle 20
+
+  **D-C20-01 — Scope WI-667 cycle validation to local/index.ts, not writer.ts**
+  When: Execution — WI-667 planning
+  Decision: WI-667 listed `local/index.ts` as the file containing cycle validation call sites. The actual cycle validation for nextId() lives in `writer.ts`, not `index.ts`.
+  Rationale: Not recorded. The spec writer likely traced the public interface surface (local/index.ts) without following the delegation chain to the concrete implementation in writer.ts.
+  Implications: Two ValidationError calls at writer.ts:472-476 and 479-483 still use raw field name "cycle" as the second argument, producing `.code === "VALIDATION_ERROR"` instead of "INVALID_CYCLE". The test at nextid-cycle-validation.test.ts:232 was not updated to assert the specific code, and now corroborates the wrong behavior. This is the root of finding C1 in the spec-adherence review.
+
+  **D-C20-02 — Remove patchNode INVALID_NODE_TYPE guard as dead code**
+  When: Execution — WI-668 resolution
+  Decision: WI-668 acceptance criterion 5 included a patchNode INVALID_NODE_TYPE guard, but the executor removed it because `UpdateNodeInput` has no `type` field, making the guard unreachable.
+  Rationale: Recorded in WI-668 resolution: "Removed dead patchNode INVALID_NODE_TYPE guard (UpdateNodeInput has no type field)."
+  Implications: WI-673 correctly updated adapter-contract.md to remove the corresponding line. However, spec-reviewer S1 found that docs/adapter-contract.md:104 still states "type must be a valid NodeType if provided" under patchNode Validation, contradicting the code.
+
+  **D-C20-03 — Extract fetchCurrentCycle tests to isolated file (WI-670)**
+  When: Execution — WI-670
+  Decision: Rather than adding vi.mock scoping guards inside remote-adapter.test.ts, the fetchCurrentCycle describe block and its vi.mock were extracted to a new file remote-adapter-fetchcycle.test.ts.
+  Rationale: Vitest hoists vi.mock calls to the top of a file; the only reliable isolation is file-level separation.
+  Implications: P-65 isolation pattern is now established as a domain policy. Future tests requiring different mock configurations for the same module must use separate files.
+
+  **D-C20-04 — Run WI-669 scope change (remote/index.ts) during WI-668**
+  When: Execution — WI-669
+  Decision: The actual remote/index.ts change to StorageAdapterError for mapGqlNodeToNode was executed during WI-668 (which already had remote/index.ts in scope), not WI-669. WI-669's scope was reduced to the test file update only.
+  Rationale: WI-669 notes: "remote/index.ts is in WI-668's scope. Since WI-669 depends on WI-668, the executor of WI-669 only needs to update the test file."
+  Implications: WI-669 passed without rework, as the underlying fix had already been applied.
+
+  **D-C20-05 — LocalAdapter equivalence cases run unconditionally; RemoteAdapter cases use skipIf guard**
+  When: Execution — WI-672
+  Decision: Validation equivalence tests were split: LocalAdapter assertions run unconditionally, RemoteAdapter assertions under `it.skipIf(!remoteAvailable)`.
+  Rationale: Ensures local validation is always verified even in CI without a Neo4j instance.
+  Implications: This pattern should be applied to future equivalence tests.
+
+  **D-C20-06 — WI-673 removes dead INVALID_NODE_TYPE from patchNode section of adapter-contract.md**
+  When: Execution — WI-673 resolution
+  Decision: Documented that patchNode only validates INVALID_NODE_ID (not INVALID_NODE_TYPE), consistent with D-C20-02.
+  Implications: Spec-reviewer S1 still found "type must be a valid NodeType if provided" at line 104. This is a contradiction between the resolution note and the live file state — needs verification.
+content_hash: 8116effd26733ac46a29fac5b085d78765969e5575b6f44658c2398c570927ec
+token_count: 990
+file_path: .ideate/cycles/068/decision-log.yaml
+cycle: 20
+cycle_modified: 19

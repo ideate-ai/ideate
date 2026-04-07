@@ -1,13 +1,12 @@
 id: Q-120
 type: domain_question
-domain: artifact-structure
-title: document_artifacts.content format inconsistency between indexer and write path
-description: The indexer stores document_artifacts.content as the raw YAML content field string. handleWriteArtifact stores it as JSON.stringify(content) of the full content object. parsePrincipleVerdict Step 1 (bold-tag regex) works in both formats, but Step 2 (newline split + heading scan) only works for raw strings. D-153 proposes a JSON.parse unwrap as an immediate fix, but the underlying format divergence between two write paths into the same column remains unresolved.
-source: cycle 5 code-quality S1; gap-analysis EC1; decision-log OQ-5-04
-impact: Silent convergence failures for any spec-adherence artifact that lacks the explicit bold verdict tag and is read from the DB path rather than the file-path fallback. Future code reading document_artifacts.content must handle both formats defensively.
-status: resolved
-resolution: "Decision: Normalize to raw YAML content string in both paths. handleWriteArtifact (write.ts:927) should store the raw content field value (typeof content === 'string' ? content : content.content ?? '') instead of JSON.stringify(content). This aligns with the indexer behavior and ensures parsePrincipleVerdict Step 2 works consistently. The JSON.parse unwrap proposed in D-153 is a band-aid that adds complexity to every reader. Fix the writer to match the indexer, not the other way around. Track as moderate priority since it affects convergence reliability."
-resolved_date: 2026-03-31
-reexamination_trigger: When a work item normalizes the content format in one of the two write paths.
-content_hash: 1c9cc559d37a343e5593804ae0419028420ef05a5f7cd6daf7527a88d584eece
-token_count: 418
+description: Gap-analysis identified 7 testing gaps (GA-001 through GA-007) across adapter functionality. Critical gaps include PPR single-node regression tests, edge extraction coverage, max_nodes propagation verification, and getNextId shape verification. The test suite lacks systematic coverage of adapter equivalence.
+domain: workflow
+impact: Without systematic adapter equivalence tests, regressions in behavior consistency (P-56) and interface contracts (P-60) will not be caught. Future adapter implementations may diverge silently.
+reexamination_trigger: When new adapter methods are added or existing methods modified; when equivalence test coverage falls below threshold.
+source: cycle 17 gap-analysis GA-001 through GA-007
+status: open
+title: Adapter equivalence testing strategy incomplete
+cycle: 17
+content_hash: 9f9b0577b46008f15f91a0648e113eb34f176378e6711698d1e083ea1d414fe0
+token_count: 211

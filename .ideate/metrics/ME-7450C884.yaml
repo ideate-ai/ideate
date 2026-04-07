@@ -1,0 +1,26 @@
+id: ME-7450C884
+type: metrics_event
+event_name: spec-reviewer
+timestamp: 2026-04-05T00:00:00Z
+agent_type: spec-reviewer
+cache_read_tokens: null
+cache_write_tokens: null
+context_files_read: []
+cycle: 18
+finding_count: 0
+finding_severities:
+  critical: 0
+  minor: 0
+  significant: 0
+first_pass_accepted: null
+input_tokens: null
+mcp_tools_called:
+  - ideate_artifact_query
+model: sonnet
+outcome: null
+output_tokens: null
+phase: 6b
+rework_count: null
+turns_used: null
+wall_clock_ms: 50039
+work_item: null

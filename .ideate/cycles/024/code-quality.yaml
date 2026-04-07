@@ -1,0 +1,28 @@
+id: code-quality
+type: cycle_summary
+reviewer: code-reviewer
+content: |-
+  ## Code Quality Review — Cycle 24
+
+  **Verdict**: Fail
+
+  ## Significant Findings
+
+  - [S1] `tests/adapters/write-transaction.test.ts:283` — putEdge test mocks `drizzleDb.insert` to throw synchronously. The actual call chain in `insertEdge` (db-helpers.ts:449) is `db.insert(...).values(...).onConflictDoNothing().run()`. Real SQLite write failures occur at `.run()`, not at `.insert()`. The mock intercepts at the wrong point. While the try/catch in putEdge does catch the throw (test passes), the mock does not test the actual failure mode — a regression on the `.run()` path would not be caught.
+
+  ## Minor Findings
+
+  - [M1] `src/adapters/remote/index.ts:574,619,655` — putNode, patchNode, deleteNode all call `this.client.mutate()` with no try/catch, unlike putEdge/removeEdges (fixed by WI-687). Transport failures on these methods propagate as raw errors. Pre-existing; now visible by contrast.
+  - [M2] `tests/adapters/write-transaction.test.ts` — every TRANSACTION_FAILED test invokes the method twice (once via `rejects.toThrow`, once in try/catch to assert `.code`). Inherited pattern; redundant but not wrong.
+
+  ## Principle Adherence Confirmed
+
+  - P-002: All TRANSACTION_FAILED assertions use `.code === 'TRANSACTION_FAILED'` checks
+  - P-64: ValidationError second arg is code string in all remote adapter catch blocks
+  - Test suite: 1061 passed, 292 skipped, 0 failed
+content_hash: 0a11e97781334e7c57b30ebf274deae0c76b65736cd0be6fd0b7216ed8e89739
+token_count: 412
+file_path: .ideate/cycles/068/code-quality.yaml
+cycle: 24
+cycle_modified: 19
+verdict: Fail

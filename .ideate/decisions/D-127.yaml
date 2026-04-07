@@ -1,12 +1,11 @@
 id: D-127
 type: domain_decision
-cycle_created: 58
-description: "Beneficial scope expansion during review may be accepted when: (a) the expanded scope produces net-positive outcomes, (b) no new policy violations are introduced, and (c) the expanded work is self-contained and testable. WI-378 expanded from 3 to 22 tool descriptions; all became P-34 compliant with no new P-33 violations."
-domain: workflow
-rationale: "The worker fixed all 22 descriptions rather than the 3 in scope. Review accepted because descriptions became shorter, clearer, and fully compliant with P-33/P-34. Precedent: scope expansion that improves outcomes without violating policy can be accepted during review rather than requiring a new work item."
-source: cycle 058 decision-log D2; cycle 058 WI-378 review
-status: settled
-supersedes: null
-content_hash: 94b47d9c45d077dd1b66c108bdbfbc648f1deb38dd935b4f9983ff3c18f8caa2
-token_count: 204
-file_path: .ideate/decisions/D-127.yaml
+cycle: 16
+description: The fix for WI-610 (traverse() BFS not populating cycle_created, cycle_modified, content_hash, token_count) was accepted. The implementation uses a BFS traversal to populate metadata fields that were previously null.
+rationale: Context assembly now provides complete node metadata
+references:
+  - WI-610
+status: committed
+title: WI-610 traverse cycle metadata fix accepted
+content_hash: e10734034947fd17963d9e21df013b8e173daa3ee2f54b15bc1dba4f6ca4d33d
+token_count: 107

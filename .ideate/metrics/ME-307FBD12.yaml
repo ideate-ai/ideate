@@ -1,0 +1,10 @@
+id: ME-307FBD12
+type: metrics_event
+event_name: domain-curator
+timestamp: 2026-04-06T17:40:00Z
+agent_type: domain-curator
+cycle: 18
+mcp_tools_called:
+  - ideate_artifact_query
+phase: 6b
+work_item: null

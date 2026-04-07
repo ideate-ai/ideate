@@ -19,6 +19,7 @@ import type {
   QueryResult,
   NodeFilter,
 } from "../../adapter.js";
+import { ValidationError } from "../../adapter.js";
 import { LocalWriterAdapter, type LocalWriterConfig } from "./writer.js";
 import { LocalReaderAdapter } from "./reader.js";
 import { LocalContextAdapter } from "./context.js";
@@ -90,6 +91,12 @@ export class LocalAdapter extends LocalWriterAdapter implements StorageAdapter {
     limit: number,
     offset: number
   ): Promise<QueryResult> {
+    if (!Number.isInteger(limit) || limit < 0) {
+      throw new ValidationError("Limit must be a non-negative integer", "INVALID_LIMIT", { limit });
+    }
+    if (!Number.isInteger(offset) || offset < 0) {
+      throw new ValidationError("Offset must be a non-negative integer", "INVALID_OFFSET", { offset });
+    }
     return this.reader.queryGraph(query, limit, offset);
   }
 
@@ -102,6 +109,12 @@ export class LocalAdapter extends LocalWriterAdapter implements StorageAdapter {
     limit: number,
     offset: number
   ): Promise<QueryResult> {
+    if (!Number.isInteger(limit) || limit < 0) {
+      throw new ValidationError("Limit must be a non-negative integer", "INVALID_LIMIT", { limit });
+    }
+    if (!Number.isInteger(offset) || offset < 0) {
+      throw new ValidationError("Offset must be a non-negative integer", "INVALID_OFFSET", { offset });
+    }
     return this.reader.queryNodes(filter, limit, offset);
   }
 

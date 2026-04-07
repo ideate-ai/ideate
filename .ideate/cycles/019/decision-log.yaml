@@ -1,0 +1,51 @@
+id: decision-log
+type: cycle_summary
+reviewer: journal-keeper
+content: |-
+  # Decision Log — Cycle 19
+
+  ## Decisions Made
+
+  **D-C19-01**: Validation work scoped as discrete per-method items (WI-653/654/655). Each method had independent AC. Downside: systematic constructor error replicated without cross-item review.
+
+  **D-C19-02**: Both adapters in scope for all validation items. WI-655 positively deviated by also adding RemoteAdapter batchMutate validation beyond specified LocalAdapter scope.
+
+  **D-C19-03**: ValidationError constructor redesigned to accept field name OR code string (heuristic: strings matching INVALID_, MISSING_, EMPTY_, _ERROR, TRANSACTION_FAILED are treated as codes; everything else produces .code = VALIDATION_ERROR). Root cause of S2 — 'seed_ids' is a field name, not a code, so .code = VALIDATION_ERROR in all WI-653 call sites.
+
+  **D-C19-04**: adapter-contract.md placed at docs/adapter-contract.md (not docs/specs/). P-53 violation: lines 11, 18, 628-637 reference concrete storage formats.
+
+  **D-C19-05**: WI-660 research output specified at research/ppr-alignment.md but delivered at docs/ppr-alignment-research.md. Directory research/ not created.
+
+  **D-C19-06**: fetchCurrentCycle silent fallback replaced with explicit throw (WI-656). Test introduces vi.mock at module level — Vitest hoists it, breaking initialize() test in same file.
+
+  **D-C19-07**: mapGqlNodeToNode JSON parse failure throws ValidationError(PARSE_ERROR) while fetchCurrentCycle throws StorageAdapterError for same failure class. Inconsistency not resolved.
+
+  **D-C19-08**: TRANSACTION_FAILED test implemented as string literal comparison (always-passing placeholder) with comment delegating to write-transaction.test.ts.
+
+  **D-C19-09**: PPR alignment research concluded 'no fixes required'. Two optional enhancements (server-side PPR parameter validation, edge weight customization docs) not captured as work items.
+
+  ## Cross-References
+
+  **CR-C19-01 [SYSTEMIC]**: ValidationError constructor field-name vs. code-string misuse affects ALL new validation: seed_ids (WI-653, both adapters), always_include_types (both adapters), PPR parameters (5 paths, both adapters), cycle validation. Code-reviewer found seed_ids instance; spec-reviewer found always_include_types instance independently. Root: same heuristic failure.
+
+  **CR-C19-02**: putNode/patchNode validation gap (gap-analyst SG1/MG5) — batchMutate was protected by WI-655 but single-node writes are not, despite adapter-contract.md documenting they require validation. WI-659 documentation is more ambitious than implementation.
+
+  **CR-C19-03**: Test isolation failures — vi.mock hoisting (S1, regression) and tautological placeholder (M1/MG4). Both produced tests that either break others or test nothing.
+
+  ## Open Questions
+
+  OQ-C19-01: Fix ValidationError constructor call sites (field name → code string) — ~15 call sites affected
+  OQ-C19-02: Add validation to putNode/patchNode
+  OQ-C19-03: Create remote-adapter-validation.test.ts
+  OQ-C19-04: Add validation equivalence cases to adapter-equivalence.test.ts
+  OQ-C19-05: Fix vi.mock hoisting regression in remote-adapter.test.ts
+  OQ-C19-06: Remove P-53 violations from adapter-contract.md
+  OQ-C19-07: Resolve WI-660 file path mismatch (move or update scope)
+  OQ-C19-08: Re-run spec-adherence review (turn budget exceeded)
+  OQ-C19-09: Keep Q-120 open until validation equivalence cases added
+  OQ-C19-10: Capture WI-660 optional enhancements as work items or domain questions
+content_hash: 0caf768c1983a0eb694a5bc473cd56d7acc4cf21eff62f1cb504c05e4f5ba6ab
+token_count: 923
+file_path: .ideate/cycles/068/decision-log.yaml
+cycle: 19
+cycle_modified: 18

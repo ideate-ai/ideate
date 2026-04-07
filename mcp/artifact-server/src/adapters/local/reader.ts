@@ -23,6 +23,7 @@ import type {
   Edge,
   EdgeType,
 } from "../../adapter.js";
+import { ValidationError } from "../../adapter.js";
 
 // ---------------------------------------------------------------------------
 // Internal row shapes returned from SQLite
@@ -170,7 +171,7 @@ const TYPE_EXTENSION_INFO: Record<
 
 function hasColumn(type: string, column: string): boolean {
   const domainTypes = [
-    "domain_policy", "domain_decision", "domain_question", "work_item",
+    "domain_policy", "domain_decision", "domain_question", "work_item", "interview_question",
   ];
   const cycleTypes = ["finding", "domain_decision", "proxy_human_decision"];
   const workItemRefTypes = ["finding"];
@@ -231,11 +232,44 @@ function fetchExtensionProperties(
 // ---------------------------------------------------------------------------
 
 export class LocalReaderAdapter {
+  private currentCycle: number | null = null;
+
   constructor(
     private readonly db: Database.Database,
     private readonly _drizzleDb: DrizzleDb,
     private readonly ideateDir: string
   ) {}
+
+  /**
+   * Fetch the current cycle from domains/index.yaml.
+   * Caches the result for subsequent calls.
+   */
+  private fetchCurrentCycle(): number | null {
+    if (this.currentCycle !== null) {
+      return this.currentCycle;
+    }
+
+    try {
+      const indexYamlPath = path.join(this.ideateDir, "domains", "index.yaml");
+      const indexMdPath = path.join(this.ideateDir, "domains", "index.md");
+      let indexPath: string | null = null;
+      if (fs.existsSync(indexYamlPath)) {
+        indexPath = indexYamlPath;
+      } else if (fs.existsSync(indexMdPath)) {
+        indexPath = indexMdPath;
+      }
+      if (indexPath) {
+        const indexContent = fs.readFileSync(indexPath, "utf8");
+        const match = indexContent.match(/^current_cycle:\s*(\d+)/m);
+        const cycle = match ? parseInt(match[1], 10) : null;
+        this.currentCycle = cycle;
+        return cycle;
+      }
+    } catch {
+      // Failed to read domains/index — return null
+    }
+    return null;
+  }
 
   // -----------------------------------------------------------------------
   // getNode
@@ -250,6 +284,12 @@ export class LocalReaderAdapter {
       .get(id) as NodeRow | undefined;
 
     if (!row) return null;
+
+    // Apply current cycle as cycle_modified default (matches RemoteAdapter behavior)
+    const currentCycle = this.fetchCurrentCycle();
+    if (row.cycle_modified === null && currentCycle !== null) {
+      row.cycle_modified = currentCycle;
+    }
 
     const properties = fetchExtensionProperties(this.db, id, row.type);
     return { ...buildNodeMeta(row), properties };
@@ -271,7 +311,12 @@ export class LocalReaderAdapter {
       .all(...ids) as NodeRow[];
 
     const result = new Map<string, Node>();
+    const currentCycle = this.fetchCurrentCycle();
     for (const row of rows) {
+      // Apply current cycle as cycle_modified default (matches RemoteAdapter behavior)
+      if (row.cycle_modified === null && currentCycle !== null) {
+        row.cycle_modified = currentCycle;
+      }
       const properties = fetchExtensionProperties(this.db, row.id, row.type);
       result.set(row.id, { ...buildNodeMeta(row), properties });
     }
@@ -363,6 +408,10 @@ export class LocalReaderAdapter {
     if (filter.status) {
       whereClauses.push("n.status = ?");
       params.push(filter.status);
+    } else if (type === "work_item") {
+      // D-131: When querying work_item without explicit status filter, exclude terminal statuses
+      // This matches RemoteAdapter/Neo4j behavior: NOT n.status IN ['done', 'obsolete']
+      whereClauses.push("n.status NOT IN ('done', 'obsolete')");
     }
 
     let summaryExpr = "NULL";
@@ -385,7 +434,7 @@ export class LocalReaderAdapter {
         whereClauses.push("e.severity = ?");
         params.push(filter.severity);
       }
-      if (filter.phase && (type === "journal_entry" || type === "work_item")) {
+      if (filter.phase && hasColumn(type, "phase")) {
         whereClauses.push("e.phase = ?");
         params.push(filter.phase);
       }
@@ -398,16 +447,28 @@ export class LocalReaderAdapter {
         params.push(filter.work_item_type);
       }
     } else if (!type) {
-      // No type specified — apply cross-type filters via edges table or
-      // subqueries against all extension tables that have the column.
+      // No type specified — apply cross-type filters via subqueries
+      // against all extension tables that have the column.
+
+      // D-131: When doing cross-type queries without explicit status filter,
+      // exclude done/obsolete work_items from results
+      if (!filter.status) {
+        whereClauses.push(
+          "(n.type != 'work_item' OR n.status NOT IN ('done', 'obsolete'))"
+        );
+      }
+
       if (filter.domain) {
         // Filter by domain: node must appear in any extension table with a matching domain column
+        // Tables with domain: work_items, domain_policies, domain_decisions, domain_questions, interview_questions
         whereClauses.push(
-          `n.id IN (SELECT id FROM work_items WHERE domain = ? UNION SELECT id FROM domain_policies WHERE domain = ? UNION SELECT id FROM domain_decisions WHERE domain = ? UNION SELECT id FROM domain_questions WHERE domain = ?)`
+          `n.id IN (SELECT id FROM work_items WHERE domain = ? UNION SELECT id FROM domain_policies WHERE domain = ? UNION SELECT id FROM domain_decisions WHERE domain = ? UNION SELECT id FROM domain_questions WHERE domain = ? UNION SELECT id FROM interview_questions WHERE domain = ?)`
         );
-        params.push(filter.domain, filter.domain, filter.domain, filter.domain);
+        params.push(filter.domain, filter.domain, filter.domain, filter.domain, filter.domain);
       }
       if (filter.phase) {
+        // Filter by phase: node must appear in any extension table with a matching phase column
+        // Tables with phase: work_items, journal_entries
         whereClauses.push(
           `n.id IN (SELECT id FROM work_items WHERE phase = ? UNION SELECT id FROM journal_entries WHERE phase = ?)`
         );
@@ -442,7 +503,7 @@ export class LocalReaderAdapter {
       FROM nodes n
       ${extensionJoin}
       ${whereClause}
-      ORDER BY n.id
+      ORDER BY n.id ASC
       LIMIT ? OFFSET ?
     `;
     const rows = this.db
@@ -541,51 +602,52 @@ export class LocalReaderAdapter {
         baseParams = [origin_id, ...edgeTypeParams, ...containmentEdgeParams, origin_id, ...edgeTypeParams, ...containmentEdgeParams];
       }
     } else {
-      // Recursive CTE for depth > 1
+      // Recursive CTE for depth > 1 with visited-node tracking to prevent duplicates
       const edgeTypeFilter = buildEdgeFilter("e");
       const outgoingStep = `
-        SELECT e.target_id AS next_id, e.edge_type, 'outgoing' AS direction, t.depth + 1 AS depth
+        SELECT e.target_id AS next_id, e.edge_type, 'outgoing' AS direction, t.depth + 1 AS depth, t.visited || ',' || e.target_id AS visited
         FROM traversal t
         JOIN edges e ON e.source_id = t.node_id
         ${edgeTypeFilter}
-        WHERE t.depth < ?
+        WHERE t.depth < ? AND instr(t.visited, ',' || e.target_id || ',') = 0
       `;
       const incomingStep = `
-        SELECT e.source_id AS next_id, e.edge_type, 'incoming' AS direction, t.depth + 1 AS depth
+        SELECT e.source_id AS next_id, e.edge_type, 'incoming' AS direction, t.depth + 1 AS depth, t.visited || ',' || e.source_id AS visited
         FROM traversal t
         JOIN edges e ON e.target_id = t.node_id
         ${edgeTypeFilter}
-        WHERE t.depth < ?
+        WHERE t.depth < ? AND instr(t.visited, ',' || e.source_id || ',') = 0
       `;
 
       let recursiveBody: string;
+      const visitedInit = `',' || ? || ','`;
       if (direction === "outgoing") {
         recursiveBody = `
-          SELECT ? AS node_id, '' AS edge_type, '' AS direction, 0 AS depth
+          SELECT ? AS node_id, '' AS edge_type, '' AS direction, 0 AS depth, ${visitedInit} AS visited
           UNION
           ${outgoingStep}
         `;
-        baseParams = [origin_id, ...edgeTypeParams, ...containmentEdgeParams, depth];
+        baseParams = [origin_id, origin_id, ...edgeTypeParams, ...containmentEdgeParams, depth];
       } else if (direction === "incoming") {
         recursiveBody = `
-          SELECT ? AS node_id, '' AS edge_type, '' AS direction, 0 AS depth
+          SELECT ? AS node_id, '' AS edge_type, '' AS direction, 0 AS depth, ${visitedInit} AS visited
           UNION
           ${incomingStep}
         `;
-        baseParams = [origin_id, ...edgeTypeParams, ...containmentEdgeParams, depth];
+        baseParams = [origin_id, origin_id, ...edgeTypeParams, ...containmentEdgeParams, depth];
       } else {
         recursiveBody = `
-          SELECT ? AS node_id, '' AS edge_type, '' AS direction, 0 AS depth
+          SELECT ? AS node_id, '' AS edge_type, '' AS direction, 0 AS depth, ${visitedInit} AS visited
           UNION
           ${outgoingStep}
           UNION
           ${incomingStep}
         `;
-        baseParams = [origin_id, ...edgeTypeParams, ...containmentEdgeParams, depth, ...edgeTypeParams, ...containmentEdgeParams, depth];
+        baseParams = [origin_id, origin_id, ...edgeTypeParams, ...containmentEdgeParams, depth, ...edgeTypeParams, ...containmentEdgeParams, depth];
       }
 
       baseSql = `
-        WITH RECURSIVE traversal(node_id, edge_type, direction, depth) AS (
+        WITH RECURSIVE traversal(node_id, edge_type, direction, depth, visited) AS (
           ${recursiveBody}
         )
         SELECT n.id AS node_id, n.type, t.edge_type, t.direction, t.depth, n.status, n.cycle_created, n.cycle_modified, n.content_hash, n.token_count
@@ -699,7 +761,7 @@ export class LocalReaderAdapter {
         break;
       case "domain": {
         // domain lives on extension tables
-        if (filter.type && (filter.type.startsWith("domain_") || filter.type === "work_item")) {
+        if (filter.type && (filter.type.startsWith("domain_") || filter.type === "work_item" || filter.type === "interview_question")) {
           const info = TYPE_EXTENSION_INFO[filter.type];
           joinClause = `LEFT JOIN ${info.table} e ON e.id = n.id`;
           groupExpr = "e.domain";
@@ -710,6 +772,7 @@ export class LocalReaderAdapter {
             UNION ALL SELECT id, domain FROM domain_policies WHERE domain IS NOT NULL
             UNION ALL SELECT id, domain FROM domain_decisions WHERE domain IS NOT NULL
             UNION ALL SELECT id, domain FROM domain_questions WHERE domain IS NOT NULL
+            UNION ALL SELECT id, domain FROM interview_questions WHERE domain IS NOT NULL
           )`;
           joinClause = `INNER JOIN ${domainUnion} e ON e.id = n.id`;
           groupExpr = "e.domain";
@@ -916,6 +979,24 @@ export class LocalReaderAdapter {
   // -----------------------------------------------------------------------
 
   async nextId(type: NodeType, cycle?: number): Promise<string> {
+    // Validate cycle parameter: must be non-negative integer if provided
+    if (cycle !== undefined) {
+      if (!Number.isInteger(cycle)) {
+        throw new ValidationError(
+          `Cycle must be an integer, received ${typeof cycle}`,
+          "INVALID_CYCLE",
+          { value: cycle }
+        );
+      }
+      if (cycle < 0) {
+        throw new ValidationError(
+          `Cycle must be a non-negative integer, received ${cycle}`,
+          "INVALID_CYCLE",
+          { value: cycle }
+        );
+      }
+    }
+
     const TYPE_PREFIX_MAP: Record<string, { prefix: string; padWidth: number }> = {
       work_item: { prefix: "WI-", padWidth: 3 },
       guiding_principle: { prefix: "GP-", padWidth: 2 },

@@ -1,0 +1,20 @@
+id: ME-40BFDD7C
+type: metrics_event
+event_name: decomposer
+timestamp: 2026-04-04T13:20:00Z
+agent_type: decomposer
+context_files_read: []
+finding_count: 0
+finding_severities:
+  critical: 0
+  minor: 0
+  significant: 0
+first_pass_accepted: null
+mcp_tools_called: []
+model: opus
+outcome: null
+phase: 7h
+rework_count: 0
+skill: refine
+wall_clock_ms: 69756
+work_item: null

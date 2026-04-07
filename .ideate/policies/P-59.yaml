@@ -1,0 +1,13 @@
+id: P-59
+type: domain_policy
+cycle_created: 16
+description: |
+  When a type definition contains a union (e.g., `NodeType`), and there is a corresponding array constant (e.g., `ALL_NODE_TYPES`), the array must be kept in sync with the union. A CI check or unit test must verify this. Rationale: WI-613 added types to the `NodeType` union but did not update `ALL_NODE_TYPES`, causing the validation logic to reject valid node types. This is a systemic pattern that must be prevented.
+rationale: Prevents silent validation failures from mismatched type definitions
+references:
+  - WI-613
+  - finding-613-missing-types
+status: active
+title: Runtime type unions must stay synchronized with compile-time constant arrays
+content_hash: d760b1926625aebe3a1485563aa254b6ade61b57df2670fdb68f974acbed5ed8
+token_count: 178

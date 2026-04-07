@@ -1,0 +1,13 @@
+id: ME-1A415EFE
+type: metrics_event
+event_name: worker
+timestamp: 2026-04-04T03:15:00Z
+agent_type: worker
+cycle: 17
+mcp_tools_called: []
+model: sonnet
+outcome: null
+phase: 6a
+rework_count: 0
+wall_clock_ms: 58990
+work_item: WI-599

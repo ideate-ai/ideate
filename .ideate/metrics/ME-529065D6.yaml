@@ -1,0 +1,16 @@
+id: ME-529065D6
+type: metrics_event
+event_name: spec-reviewer
+timestamp: 2026-04-04T04:01:00Z
+agent_type: spec-reviewer
+cycle: 17
+finding_count: 1
+finding_severities:
+  critical: 0
+  minor: 0
+  significant: 1
+mcp_tools_called: []
+model: sonnet
+outcome: pass
+phase: 6b
+wall_clock_ms: 91246

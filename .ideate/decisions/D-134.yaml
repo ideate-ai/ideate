@@ -1,11 +1,13 @@
 id: D-134
 type: domain_decision
-domain: artifact-structure
-title: Public drizzle-orm API for table name resolution
-decision: Replace Symbol.for('drizzle:Name') internal accessor with the exported getTableName function from drizzle-orm.
-rationale: Symbol-based access was an undocumented internal detail; the public API is stable across versions.
-source: cycle 1 decision-log D3; WI-397
-status: settled
-content_hash: fedc81b676aca6da51471526e6447dd4c0f94d62e7dde1967c3d37ede247607f
-token_count: 100
-file_path: .ideate/decisions/D-134.yaml
+cycle_created: 18
+description: RemoteAdapter.queryNodes lacks the status exclusion filter that D-131 established for LocalAdapter. The buildFilterInput function in RemoteAdapter passes filters directly to the server without adding implicit status exclusion for work_item queries. This creates divergent behavior where RemoteAdapter returns done/obsolete items while LocalAdapter excludes them.
+domain: adapter-equivalence
+rationale: Code-quality review S1 identified the gap. Status exclusion was implemented only in LocalAdapter (D-131), leaving RemoteAdapter with inconsistent behavior. The decision is to require explicit status exclusion in both adapters to maintain equivalence.
+references:
+  - D-131
+  - S1-cycle-18-code-quality
+status: provisional
+cycle: 18
+content_hash: a4e46d41eadaf9ccae2e30518e1759107d39d3a9ca121614457dc087d4ab4905
+token_count: 199

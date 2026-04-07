@@ -7,6 +7,10 @@ tools:
   - Grep
   - Glob
   - Bash
+disallowedTools:
+  - Read on .ideate/ paths
+  - Write on .ideate/ paths
+  - Edit on .ideate/ paths
 background: false
 maxTurns: 160
 ---

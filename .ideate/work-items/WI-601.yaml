@@ -1,7 +1,7 @@
 id: WI-601
 type: work_item
 title: "Server: align queryGraph BFS and PPR to exclude containment edges consistently"
-status: pending
+status: done
 complexity: medium
 scope:
   - path: ideate-server/src/resolvers/queries/graph.ts
@@ -23,6 +23,6 @@ work_item_type: bug
 notes: Filter containment edges at the DataLoader level (loaders/index.ts) so BFS and PPR both benefit. Verify edge types are returned lowercase to match LocalAdapter. After WI-599 aligns edge extraction, PPR scores should converge since both backends have identical graph topology.
 resolution: null
 cycle_created: null
-cycle_modified: null
-content_hash: 36f3b50e5dcbeb2af86d089dc898018364caa922fb5edcd052d3465e530b5af2
-token_count: 237
+cycle_modified: 5
+content_hash: 66bff3728912e1ec3c42af4dd69276b0c0120e2ba7e7bdaa4190d18969846646
+token_count: 260

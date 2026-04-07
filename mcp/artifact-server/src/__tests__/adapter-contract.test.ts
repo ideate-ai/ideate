@@ -25,7 +25,7 @@ import type {
   MutateNodeInput,
   Edge,
 } from "../adapter.js";
-import { ImmutableFieldError } from "../adapter.js";
+import { ImmutableFieldError, ValidationError } from "../adapter.js";
 
 // ---------------------------------------------------------------------------
 // Contract test factory
@@ -225,6 +225,44 @@ export function runAdapterContractTests(
         await expect(
           adapter.patchNode({ id: "WI-004", properties: { cycle_created: 99 } })
         ).rejects.toThrow(ImmutableFieldError);
+      });
+
+      // Input validation — putNode
+      it("putNode throws INVALID_NODE_ID for empty string id", async () => {
+        await expect(
+          adapter.putNode({ id: "", type: "work_item", properties: { title: "x" } })
+        ).rejects.toMatchObject({ code: "INVALID_NODE_ID" });
+      });
+
+      it("putNode throws INVALID_NODE_ID for non-string id", async () => {
+        await expect(
+          adapter.putNode({ id: null as any, type: "work_item", properties: { title: "x" } })
+        ).rejects.toMatchObject({ code: "INVALID_NODE_ID" });
+      });
+
+      it("putNode throws INVALID_NODE_TYPE for unknown type", async () => {
+        await expect(
+          adapter.putNode({ id: "WI-V01", type: "bogus" as any, properties: { title: "x" } })
+        ).rejects.toMatchObject({ code: "INVALID_NODE_TYPE" });
+      });
+
+      it("putNode throws MISSING_NODE_PROPERTIES when properties is null", async () => {
+        await expect(
+          adapter.putNode({ id: "WI-V02", type: "work_item", properties: null as any })
+        ).rejects.toMatchObject({ code: "MISSING_NODE_PROPERTIES" });
+      });
+
+      // Input validation — patchNode
+      it("patchNode throws INVALID_NODE_ID for empty string id", async () => {
+        await expect(
+          adapter.patchNode({ id: "", properties: { title: "x" } })
+        ).rejects.toMatchObject({ code: "INVALID_NODE_ID" });
+      });
+
+      it("patchNode throws INVALID_NODE_ID for non-string id", async () => {
+        await expect(
+          adapter.patchNode({ id: null as any, properties: { title: "x" } })
+        ).rejects.toMatchObject({ code: "INVALID_NODE_ID" });
       });
 
       it("deleteNode removes an existing node (status: deleted)", async () => {
@@ -541,6 +579,48 @@ export function runAdapterContractTests(
         expect(result.total_count).toBe(0);
       });
 
+      it("queryNodes rejects negative limit with ValidationError (INVALID_LIMIT)", async () => {
+        await expect(
+          adapter.queryNodes({ type: "work_item" }, -1, 0)
+        ).rejects.toThrow(ValidationError);
+
+        try {
+          await adapter.queryNodes({ type: "work_item" }, -1, 0);
+          expect.fail("Should have thrown ValidationError");
+        } catch (err) {
+          expect(err).toBeInstanceOf(ValidationError);
+          expect((err as ValidationError).code).toBe("INVALID_LIMIT");
+          expect((err as Error).message).toContain("Limit must be a non-negative integer");
+        }
+      });
+
+      it("queryNodes rejects negative offset with ValidationError (INVALID_OFFSET)", async () => {
+        await expect(
+          adapter.queryNodes({ type: "work_item" }, 10, -1)
+        ).rejects.toThrow(ValidationError);
+
+        try {
+          await adapter.queryNodes({ type: "work_item" }, 10, -1);
+          expect.fail("Should have thrown ValidationError");
+        } catch (err) {
+          expect(err).toBeInstanceOf(ValidationError);
+          expect((err as ValidationError).code).toBe("INVALID_OFFSET");
+          expect((err as Error).message).toContain("Offset must be a non-negative integer");
+        }
+      });
+
+      it("queryNodes rejects non-integer limit with ValidationError", async () => {
+        await expect(
+          adapter.queryNodes({ type: "work_item" }, 1.5, 0)
+        ).rejects.toThrow(ValidationError);
+      });
+
+      it("queryNodes rejects non-integer offset with ValidationError", async () => {
+        await expect(
+          adapter.queryNodes({ type: "work_item" }, 10, 1.5)
+        ).rejects.toThrow(ValidationError);
+      });
+
       it("queryNodes filters by status", async () => {
         await adapter.putNode({
           id: "WI-QS01",
@@ -624,13 +704,42 @@ export function runAdapterContractTests(
         expect(Array.isArray(result.ranked_nodes)).toBe(true);
       });
 
-      itTraverse("traverse with empty seed_ids returns an empty result", async () => {
-        const result = await adapter.traverse({
-          seed_ids: [],
-          token_budget: 1000,
+      itTraverse("traverse with empty seed_ids throws ValidationError", async () => {
+        try {
+          await adapter.traverse({ seed_ids: [], token_budget: 1000 });
+          expect.fail("Should have thrown ValidationError");
+        } catch (err) {
+          expect(err).toBeInstanceOf(ValidationError);
+          expect((err as ValidationError).code).toBe("EMPTY_SEED_IDS");
+        }
+      });
+
+      itTraverse("traverse rejects negative token_budget with ValidationError", async () => {
+        await adapter.putNode({
+          id: "WI-TR02",
+          type: "work_item",
+          properties: { title: "Seed Node", status: "pending" },
         });
-        expect(result.ranked_nodes).toHaveLength(0);
-        expect(result.total_tokens).toBe(0);
+
+        await expect(
+          adapter.traverse({
+            seed_ids: ["WI-TR02"],
+            token_budget: -1,
+          })
+        ).rejects.toThrow(ValidationError);
+
+        try {
+          await adapter.traverse({
+            seed_ids: ["WI-TR02"],
+            token_budget: -100,
+          });
+          expect.fail("Should have thrown ValidationError");
+        } catch (err) {
+          expect(err).toBeInstanceOf(ValidationError);
+          expect((err as ValidationError).code).toBe("INVALID_TOKEN_BUDGET");
+          expect((err as ValidationError).details?.value).toBe(-100);
+          expect((err as Error).message).toContain("token_budget must be non-negative");
+        }
       });
 
       it("queryGraph returns nodes connected to the origin", async () => {
@@ -675,6 +784,72 @@ export function runAdapterContractTests(
         // An isolated node has no neighbors (though it may include itself depending on impl)
         const neighborIds = result.nodes.filter((n) => n.node.id !== "WI-QG03").map((n) => n.node.id);
         expect(neighborIds).toHaveLength(0);
+      });
+
+      it("queryGraph rejects negative limit with ValidationError (INVALID_LIMIT)", async () => {
+        await adapter.putNode({
+          id: "WI-QG04",
+          type: "work_item",
+          properties: { title: "Graph Origin", status: "pending" },
+        });
+
+        await expect(
+          adapter.queryGraph({ origin_id: "WI-QG04", depth: 1 }, -1, 0)
+        ).rejects.toThrow(ValidationError);
+
+        try {
+          await adapter.queryGraph({ origin_id: "WI-QG04", depth: 1 }, -5, 0);
+          expect.fail("Should have thrown ValidationError");
+        } catch (err) {
+          expect(err).toBeInstanceOf(ValidationError);
+          expect((err as ValidationError).code).toBe("INVALID_LIMIT");
+          expect((err as Error).message).toContain("Limit must be a non-negative integer");
+        }
+      });
+
+      it("queryGraph rejects negative offset with ValidationError (INVALID_OFFSET)", async () => {
+        await adapter.putNode({
+          id: "WI-QG05",
+          type: "work_item",
+          properties: { title: "Graph Origin", status: "pending" },
+        });
+
+        await expect(
+          adapter.queryGraph({ origin_id: "WI-QG05", depth: 1 }, 10, -1)
+        ).rejects.toThrow(ValidationError);
+
+        try {
+          await adapter.queryGraph({ origin_id: "WI-QG05", depth: 1 }, 10, -5);
+          expect.fail("Should have thrown ValidationError");
+        } catch (err) {
+          expect(err).toBeInstanceOf(ValidationError);
+          expect((err as ValidationError).code).toBe("INVALID_OFFSET");
+          expect((err as Error).message).toContain("Offset must be a non-negative integer");
+        }
+      });
+
+      it("queryGraph rejects non-integer limit with ValidationError", async () => {
+        await adapter.putNode({
+          id: "WI-QG06",
+          type: "work_item",
+          properties: { title: "Graph Origin", status: "pending" },
+        });
+
+        await expect(
+          adapter.queryGraph({ origin_id: "WI-QG06", depth: 1 }, 1.5, 0)
+        ).rejects.toThrow(ValidationError);
+      });
+
+      it("queryGraph rejects non-integer offset with ValidationError", async () => {
+        await adapter.putNode({
+          id: "WI-QG07",
+          type: "work_item",
+          properties: { title: "Graph Origin", status: "pending" },
+        });
+
+        await expect(
+          adapter.queryGraph({ origin_id: "WI-QG07", depth: 1 }, 10, 1.5)
+        ).rejects.toThrow(ValidationError);
       });
     });
 
@@ -774,10 +949,146 @@ export function runAdapterContractTests(
         expect(n2).toBeNull();
       });
 
-      it("batchMutate handles empty node list without error", async () => {
-        const result = await adapter.batchMutate({ nodes: [] });
-        expect(result.errors).toHaveLength(0);
-        expect(result.results).toHaveLength(0);
+      it("batchMutate throws ValidationError with EMPTY_BATCH for empty node list", async () => {
+        try {
+          await adapter.batchMutate({ nodes: [] });
+          expect.fail("Should have thrown ValidationError");
+        } catch (error: any) {
+          expect(error).toBeInstanceOf(ValidationError);
+          expect(error.code).toBe("EMPTY_BATCH");
+        }
+      });
+
+      // Batch validation tests
+      it("batchMutate throws MISSING_NODE_ID error when node has no id field", async () => {
+        const nodes = [
+          { type: "work_item", properties: { title: "Test" } },
+        ] as any[];
+        // Remove id field completely
+        delete (nodes[0] as any).id;
+        try {
+          await adapter.batchMutate({ nodes });
+          expect.fail("Should have thrown ValidationError");
+        } catch (error: any) {
+          expect(error).toBeInstanceOf(ValidationError);
+          expect(error.code).toBe("MISSING_NODE_ID");
+        }
+      });
+
+      it("batchMutate throws MISSING_NODE_TYPE error when node has no type", async () => {
+        const nodes = [{ id: "WI-TEST-001", properties: { title: "Test" } } as any];
+        try {
+          await adapter.batchMutate({ nodes });
+          expect.fail("Should have thrown ValidationError");
+        } catch (error: any) {
+          expect(error).toBeInstanceOf(ValidationError);
+          expect(error.code).toBe("MISSING_NODE_TYPE");
+        }
+      });
+
+      it("batchMutate throws MISSING_NODE_PROPERTIES error when node has no properties", async () => {
+        const nodes = [{ id: "WI-TEST-002", type: "work_item" } as any];
+        try {
+          await adapter.batchMutate({ nodes });
+          expect.fail("Should have thrown ValidationError");
+        } catch (error: any) {
+          expect(error).toBeInstanceOf(ValidationError);
+          expect(error.code).toBe("MISSING_NODE_PROPERTIES");
+        }
+      });
+
+      it("batchMutate throws INVALID_NODE_TYPE error for unknown type", async () => {
+        const nodes = [{
+          id: "WI-TEST-003",
+          type: "unknown_type",
+          properties: { title: "Test" },
+        } as any];
+        try {
+          await adapter.batchMutate({ nodes });
+          expect.fail("Should have thrown ValidationError");
+        } catch (error: any) {
+          expect(error).toBeInstanceOf(ValidationError);
+          expect(error.code).toBe("INVALID_NODE_TYPE");
+        }
+      });
+
+      it("batchMutate throws MISSING_EDGE_SOURCE error when edge has no source_id", async () => {
+        const nodes = [{
+          id: "WI-TEST-004",
+          type: "work_item",
+          properties: { title: "Test" },
+        }];
+        const edges = [{
+          target_id: "WI-TEST-004",
+          edge_type: "depends_on",
+          properties: {},
+        } as any];
+        try {
+          await adapter.batchMutate({ nodes, edges });
+          expect.fail("Should have thrown ValidationError");
+        } catch (error: any) {
+          expect(error).toBeInstanceOf(ValidationError);
+          expect(error.code).toBe("MISSING_EDGE_SOURCE");
+        }
+      });
+
+      it("batchMutate throws MISSING_EDGE_TARGET error when edge has no target_id", async () => {
+        const nodes = [{
+          id: "WI-TEST-005",
+          type: "work_item",
+          properties: { title: "Test" },
+        }];
+        const edges = [{
+          source_id: "WI-TEST-005",
+          edge_type: "depends_on",
+          properties: {},
+        } as any];
+        try {
+          await adapter.batchMutate({ nodes, edges });
+          expect.fail("Should have thrown ValidationError");
+        } catch (error: any) {
+          expect(error).toBeInstanceOf(ValidationError);
+          expect(error.code).toBe("MISSING_EDGE_TARGET");
+        }
+      });
+
+      it("batchMutate throws MISSING_EDGE_TYPE error when edge has no edge_type", async () => {
+        const nodes = [
+          { id: "WI-TEST-006", type: "work_item", properties: { title: "Test 1" } },
+          { id: "WI-TEST-007", type: "work_item", properties: { title: "Test 2" } },
+        ];
+        const edges = [{
+          source_id: "WI-TEST-006",
+          target_id: "WI-TEST-007",
+          properties: {},
+        } as any];
+        try {
+          await adapter.batchMutate({ nodes, edges });
+          expect.fail("Should have thrown ValidationError");
+        } catch (error: any) {
+          expect(error).toBeInstanceOf(ValidationError);
+          expect(error.code).toBe("MISSING_EDGE_TYPE");
+        }
+      });
+
+      it("batchMutate throws INVALID_EDGE_TYPE error for unknown edge type", async () => {
+        const nodes = [
+          { id: "WI-TEST-008", type: "work_item", properties: { title: "Test 1" } },
+          { id: "WI-TEST-009", type: "work_item", properties: { title: "Test 2" } },
+        ];
+        const edges = [{
+          source_id: "WI-TEST-008",
+          target_id: "WI-TEST-009",
+          edge_type: "invalid_edge_type",
+          properties: {},
+        } as any];
+        try {
+          await adapter.batchMutate({ nodes, edges });
+          expect.fail("Should have thrown ValidationError");
+        } catch (error: any) {
+          expect(error).toBeInstanceOf(ValidationError);
+          expect(error.code).toBe("INVALID_EDGE_TYPE");
+        }
       });
     });
 

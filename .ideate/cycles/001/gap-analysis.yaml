@@ -1,35 +1,58 @@
 id: gap-analysis
 type: cycle_summary
+content: |-
+  ## Verdict: Pass with Gaps
+
+  Cycle 1 addressed immediate validation gaps. Several gaps remain for future cycles.
+
+  ## Critical Gaps
+
+  ### CG1: WI-646 Incomplete — console.error Still Used in writer.ts
+  - **Work Item**: WI-646: console.error to console.log
+  - **Current State**: console.error still used in writer.ts for transaction failures
+  - **Gap**: Work item incomplete; remaining console.error calls not converted
+
+  ### CG2: Missing seed_ids Validation in traverse()
+  - **Component**: LocalAdapter and RemoteAdapter traverse()
+  - **Current State**: No validation for empty seed_ids array or invalid seed ID format
+  - **Impact**: Silent failures when invalid seed_ids provided
+
+  ## Significant Gaps
+
+  ### SG1: Missing LocalAdapter Validation Tests
+  - **Gap**: No dedicated test file for LocalAdapter traverse() validation
+  - **Impact**: Less test coverage than RemoteAdapter
+
+  ### SG2: Incomplete PPR Divergence Documentation
+  - **Gap**: WI-650 identified server-side root cause but no formal documentation
+  - **Impact**: Finding may be lost; future developers may re-investigate
+
+  ### SG3: Missing limit/offset Validation in query Methods
+  - **Component**: queryNodes(), queryGraph()
+  - **Gap**: No validation for negative or non-integer limit/offset values
+
+  ### SG4: Inconsistent Error Recovery in fetchCurrentCycle
+  - **Gap**: Parse failures silently fallback to cycle 1 without logging
+
+  ## Minor Gaps
+
+  ### MG1: mapGqlNodeToNode Silent JSON.parse Failures
+  - Inconsistent error handling pattern vs fetchCurrentCycle
+
+  ### MG2: Missing Validation for GraphQuery Parameters
+  - No validation for depth, origin_id in queryGraph()
+
+  ### MG3: batchMutate Input Validation Gaps
+  - No validation for empty nodes array, invalid types, malformed edges
+
+  ## Suggestions
+  1. Complete WI-646: Convert remaining console.error in writer.ts
+  2. Add seed_ids validation to traverse() methods
+  3. Document WI-650 findings formally
+  4. Create LocalAdapter validation tests
+  5. Consider shared validation module as validation logic grows
 cycle: 1
 reviewer: gap-analyst
-title: Gap Analysis — Cycle 1
-content: |-
-  ## Verdict: Fail
-
-  Two significant gaps remain.
-
-  ### Gap 1: Stale tool description on ideate_emit_metric
-  **Severity**: Minor
-  **Description**: The `payload` field description in the `ideate_emit_metric` tool definition (`tools/index.ts` lines 558–560) still reads “Will be stringified and appended as one line.” — describing the old JSONL behavior. The implementation now writes YAML + SQLite.
-  **Impact**: Agents reading this description will form a false mental model, affecting how they handle retries or interpret `ideate_artifact_query(type="metrics_event")` results.
-  **Suggested fix**: Update description to: “Written as a YAML file in metrics/ and indexed in SQLite. Queryable via ideate_artifact_query(type='metrics_event') or ideate_get_metrics.”
-
-  ### Gap 2: createIdeateDir test does not assert "metrics" subdirectory is created
-  **Severity**: Significant
-  **Description**: `IDEATE_SUBDIRS` was extended with `"metrics"` (MI1). The `createIdeateDir` test in `config.test.ts` (lines 194–205) has a hardcoded `expectedDirs` array that omits `"metrics"`. Test passes but does not verify the new subdir is actually created.
-  **Impact**: If `"metrics"` were accidentally dropped from `IDEATE_SUBDIRS`, the test suite would not catch it. `handleEmitMetric` has its own `mkdirSync` fallback so no immediate runtime failure, but the bootstrap structural invariant would be silently broken.
-  **Suggested fix**: Add `"metrics"` to `expectedDirs` in the `createIdeateDir` test. Optionally iterate `IDEATE_SUBDIRS` directly to make the test self-maintaining.
-
-  ### Gap 3: handleEmitMetric uses default transaction instead of exclusive
-  **Severity**: Significant
-  **Description**: `metrics.ts` uses `ctx.db.transaction(() => { ... })()` (deferred). `handleAppendJournal` in `write.ts` uses `.exclusive()` explicitly to prevent concurrent callers from interleaving their YAML+SQLite phases. The YAML write happens outside the transaction (Phase 1 at line 68), so concurrent metrics emissions can interleave: both write YAML, then both enter the SQLite phase. Under concurrent autopilot usage this is unlikely to cause failures (UUIDs prevent ID collision), but the P-44 consistency guarantee is not fully upheld.
-  **Suggested fix**: Change `ctx.db.transaction(() => { ... })()` to `ctx.db.transaction(() => { ... }).exclusive()` in `handleEmitMetric`.
-
-  ### Gap 4: Report scripts still target metrics.jsonl
-  **Severity**: Minor
-  **Description**: `scripts/report-executive.sh` and `scripts/report-cycle.sh` both read a `metrics.jsonl` file. This file is no longer written after the metrics unification. Scripts will get empty output on post-migration projects.
-  **Impact**: Broken scripts for users of the reporting tools.
-  **Suggested fix**: Defer to a separate work item or document scripts as deprecated pending rewrite against `ideate_get_metrics`. Add deprecation note in scripts or ARCHITECTURE.md.
-content_hash: 3c20b13d29aff7316026b3a496271d2f5aae1df31f5f447eb19e83ca46c9a70d
-token_count: 759
-file_path: .ideate/cycles/001/gap-analysis.yaml
+verdict: pass
+content_hash: 6f6661a295a874d4ee8b2d366cb47288450c164a44ed1678c2b26491f359d118
+token_count: 539

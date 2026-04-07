@@ -1,0 +1,16 @@
+id: interview-refine-021
+type: interview
+cycle: 21
+entries:
+  - question: Review findings exist from cycle 20. Are you here to address those findings, to make other changes, or both?
+    answer: "All findings. Group by parallelism. Also add a new work item: Vitest process stays open after tests finish, address this first."
+    domain: null
+  - question: "Triage: address all critical + significant + minor findings, and the Vitest hang?"
+    answer: All of the above.
+    domain: adapter-equivalence
+  - question: Grouping preference for G1/G2/G3 (deleteNode/putEdge/removeEdges)?
+    answer: Group by parallelism.
+    domain: adapter-equivalence
+cycle_modified: 19
+content_hash: 8c88f1e71125f0f8b746765bb21029314c058a7089ef3395f689e28b1fbfb72b
+token_count: 167

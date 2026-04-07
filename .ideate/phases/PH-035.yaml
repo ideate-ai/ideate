@@ -1,0 +1,12 @@
+id: PH-035
+type: phase
+name: Test Infrastructure
+phase_type: implementation
+status: active
+started_date: 2026-04-07
+work_items:
+  - WI-674
+success_criteria: Vitest process exits cleanly after test run with no open handles
+cycle_modified: 19
+content_hash: 03d63a849bfa0e9ab9e078e9d621600699be9ebf5171e8b2017899f3be03a112
+token_count: 60

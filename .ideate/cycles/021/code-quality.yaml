@@ -1,0 +1,40 @@
+id: code-quality
+type: cycle_summary
+reviewer: code-reviewer
+content: |-
+  ## Code Quality Review — Cycle 21
+
+  **Verdict**: Pass (minor findings only; reviewer issued Fail in error — no Critical or Significant findings)
+
+  ## Critical Findings
+  None.
+
+  ## Significant Findings
+  None.
+
+  ## Minor Findings
+
+  ### M1: `deleteNode` error codes missing from `adapter-contract.md`
+  - **File**: `docs/adapter-contract.md:112-126`
+  - **Issue**: The `deleteNode` section lists only `TRANSACTION_FAILED`. Both adapters throw `INVALID_NODE_ID` for empty/non-string id (writer.ts:876, remote/index.ts:656). Tests cover it but the contract doc omits it.
+
+  ### M2: `removeEdges` validation and error codes absent from `adapter-contract.md`
+  - **File**: `docs/adapter-contract.md:154-165`
+  - **Issue**: `removeEdges` section has no Validation or Error Codes subsections despite both adapters throwing `INVALID_NODE_ID` and `INVALID_EDGE_TYPE`.
+
+  ### M3: `batchMutate` uses hardcoded edge type lists instead of canonical constant
+  - **Files**: `src/adapters/local/writer.ts:1016-1031`, `src/adapters/remote/index.ts:1178-1197`
+  - **Issue**: Both `batchMutate` implementations build inline Sets of 15 hardcoded edge types instead of using `EDGE_TYPES`/`ALL_EDGE_TYPES`. All three declarations are currently identical — maintainability risk only.
+
+  ### M4: `ppr.ts` ValidationError code assertions absent from `ppr.test.ts`
+  - **File**: `src/__tests__/ppr.test.ts:1646-1660`
+  - **Issue**: Tests assert on error message text only, not `.code`. WI-678's fix is unverified by tests — reverting codes would still pass all tests.
+
+  ## Dynamic Test Results
+  28 passed | 6 skipped (34 test files). 1045 passed | 285 skipped (1330 total tests). 0 failures.
+content_hash: a82477ed68358db542c61335a85d5bcb44b4b7d597296a7204fab95c87bd3984
+token_count: 484
+file_path: .ideate/cycles/068/code-quality.yaml
+cycle: 21
+cycle_modified: 19
+verdict: Pass

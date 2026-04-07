@@ -1,0 +1,25 @@
+id: WI-656
+type: work_item
+title: Align fetchCurrentCycle Error Recovery
+status: completed
+complexity: null
+scope:
+  - mcp/artifact-server/src/adapters/remote/index.ts
+depends:
+  - WI-652
+blocks: []
+criteria:
+  - Silent fallback to cycle 1 in RemoteAdapter.fetchCurrentCycle() replaced with explicit error throw
+  - Error includes context about what failed (GraphQL error, parse error, missing domain_index)
+  - "Decision documented: either remove silent fallback or document as intentional divergence"
+  - If intentional divergence documented, both behaviors are tested and documented
+  - RemoteAdapter tests updated to expect error throw instead of silent fallback
+domain: null
+phase: null
+work_item_type: feature
+notes: "# WI-656: Align fetchCurrentCycle Error Recovery"
+resolution: Implemented decision comment and 6 new tests for fetchCurrentCycle error recovery. Explicit error throwing verified (no silent fallback). Code review passed with minor documentation note.
+cycle_created: null
+cycle_modified: 18
+content_hash: 1c1789a23fe41fe165429715435ad08d7464e3d439a44bc9a00c27556fa05f11
+token_count: 277

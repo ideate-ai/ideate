@@ -1,0 +1,28 @@
+id: spec-adherence
+type: cycle_summary
+reviewer: spec-reviewer
+content: |-
+  ## Spec Adherence Review — Cycle 25
+
+  **Verdict**: Pass
+
+  ## Findings
+
+  None.
+
+  ## Adherence Confirmed
+
+  - WI-690: putEdge mock throws at `.run()` level (line 287 in tests/adapters/write-transaction.test.ts). Mock chain: insert → values → onConflictDoNothing → run throws. Correct interception point.
+  - WI-691: putNode (line 620), patchNode (line 676), deleteNode (line 711), appendJournalEntry (line 1591) catch blocks all use 'TRANSACTION_FAILED' as second arg. IMMUTABLE_FIELD check in patchNode (lines 638-643): IMMUTABLE array ['id','type','cycle_created'] + for-of loop + ImmutableFieldError(field) matches LocalAdapter writer.ts:690-695 exactly. adapter-contract.md:108 documents IMMUTABLE_FIELD for patchNode.
+
+  ## Principle Adherence Confirmed
+
+  - P-002: write-transaction.test.ts tests assert .code === 'TRANSACTION_FAILED' specifically
+  - P-64: All new ValidationError calls use code string second arg
+  - P-65: No module-level vi.mock in modified files
+content_hash: ad1146588f5a2efeb2fc319c23e8da2aea77dc627313430bfc891d855b61cec4
+token_count: 310
+file_path: .ideate/cycles/068/spec-adherence.yaml
+cycle: 25
+cycle_modified: 19
+verdict: Pass

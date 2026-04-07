@@ -1,12 +1,7 @@
 id: PR-001
 type: project
-name: Ideate Platform Strategy
-intent: Strategic planning and bootstrapping for the ideate product platform — from Claude Code plugin to multi-user SaaS product with Neo4j knowledge graph backend, GraphQL API, web portal, and billing. Produces architecture specs, bootstrap guides, business setup checklists, and product decisions that feed into per-repo implementation projects.
-status: active
-appetite: 6
-current_phase_id: PH-018
+current_phase_id: PH-029
 horizon:
-  current: PH-018
   completed:
     - PH-001
     - PH-002
@@ -25,13 +20,11 @@ horizon:
     - PH-015
     - PH-016
     - PH-017
-  next:
-    - name: Server & Migration Planning
-      description: Detailed implementation specs for ideate-server, migration tool design, adapter refactor project bootstrap
-    - name: Product & Portal Planning
-      description: PM user personas, pricing model finalization, portal architecture, portal project bootstrap
-    - name: Go-to-Market
-      description: Branding, corporate site specs, launch strategy, sales materials, corporate project bootstrap
+    - PH-026
   later: []
-content_hash: 41c7585c54562610e3bb6c03011ae2ccc2e25f616f3436ce2bfc011322bd4237
-token_count: 297
+  next: []
+intent: Evolving ideate toward standalone PM platform with multi-stakeholder views
+name: Ideate Platform Strategy
+status: paused
+token_count: 118
+content_hash: 55a2bdb614e61be13f9abab7da5e7ec4422b734c0d767a3814374d0e4718d4a1

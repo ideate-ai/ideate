@@ -1,0 +1,30 @@
+id: spec-adherence
+type: cycle_summary
+reviewer: spec-reviewer
+content: |-
+  ## Spec Adherence Review — Cycle 23
+
+  **Verdict**: Fail
+
+  ## Significant Findings
+
+  - [S1] `src/adapters/local/writer.ts` putEdge (line ~930) and removeEdges (line ~963) have TRANSACTION_FAILED documented in adapter-contract.md and thrown in LocalAdapter. But `tests/adapters/write-transaction.test.ts` has no tests for these two methods under the TRANSACTION_FAILED path. P-002 requires specific error codes be tested. These are the only two methods in writer.ts with TRANSACTION_FAILED throws that lack test coverage.
+
+  - [S2] `src/adapters/remote/index.ts` putEdge and removeEdges do not wrap network/transport failures in try/catch → ValidationError(TRANSACTION_FAILED), unlike all other write methods. adapter-contract.md putEdge section (added WI-683) now documents TRANSACTION_FAILED for putEdge. The implementation does not produce it. Contract and code are out of sync for RemoteAdapter.
+
+  ## Minor Findings
+
+  - [M1] `docs/adapter-contract.md` patchNode section lists no error code for attempting to change an immutable field (e.g., attempting to change node `id`). putNode documents IMMUTABLE_FIELD_VIOLATION. The omission creates an incomplete cross-method story for immutable field handling.
+
+  ## Principle Adherence Confirmed
+
+  - P-53: adapter-contract.md no longer references concrete storage formats
+  - P-58: putNode/patchNode validation covered with error and happy-path tests
+  - P-64: All new ValidationError calls use correct code-string second arguments
+  - P-65: vi.mock isolation followed in all modified test files
+content_hash: 2a7c12a700674548b565966c21250a9149696307f7e7e1bb1de474489c9e155d
+token_count: 453
+file_path: .ideate/cycles/068/spec-adherence.yaml
+cycle: 23
+cycle_modified: 19
+verdict: Fail

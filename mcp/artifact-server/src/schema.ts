@@ -64,7 +64,7 @@ export const EDGE_TYPE_REGISTRY: Record<EdgeType, EdgeTypeSpec> = {
   },
   belongs_to_domain: {
     description: "Artifact belongs to a named domain. Target is the domain name string (e.g., 'workflow'), not a node ID. Empty target_types because validation is by domain name, not node type.",
-    source_types: ["work_item", "domain_policy", "domain_decision", "domain_question"],
+    source_types: ["work_item", "domain_policy", "domain_decision", "domain_question", "interview_question"],
     target_types: [], // Domain names are strings, not node IDs — no node type validation
     yaml_field: "domain",
   },
@@ -419,6 +419,7 @@ export function createSchema(db: Database.Database): void {
 
     db.exec(`CREATE INDEX IF NOT EXISTS idx_nodes_type ON nodes(type)`);
     db.exec(`CREATE INDEX IF NOT EXISTS idx_nodes_file_path ON nodes(file_path)`);
+    db.exec(`CREATE INDEX IF NOT EXISTS idx_nodes_type_file_path ON nodes(type, file_path)`);
 
     // ----- Extension tables (each references nodes(id) with ON DELETE CASCADE) -----
 

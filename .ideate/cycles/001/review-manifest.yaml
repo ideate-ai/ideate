@@ -1,24 +1,20 @@
 id: review-manifest
 type: cycle_summary
-cycle: 1
-title: Review Manifest — Cycle 1
 content: |-
-  ## Review Manifest — Cycle 1
+  ## Review Manifest (Cycle 1)
 
-  Full review (cycle 1 baseline).
+  | Work Item | Title | Incremental Verdict | Findings (C/S/M) |
+  |-----------|-------|---------------------|------------------|
+  | WI-644 | Add error handling for JSON.parse | Pass | 0/0/0 |
+  | WI-645 | Add input validation for cycle parameter | Pass | 0/0/0 |
+  | WI-646 | Replace console.error with console.log | Pass | 0/0/0 |
+  | WI-647 | Add validation for negative token_budget | Pass | 0/0/0 |
+  | WI-648 | Add validation for negative PPR parameters | Pass | 0/0/0 |
+  | WI-649 | Add validation for always_include_types | Pass | 0/0/0 |
+  | WI-650 | PPR divergence investigation | Pass | 0/0/2 |
+  | WI-651 | Move adapter-equivalence.test.ts | Pass | 0/0/0 |
 
-  | Work Item | Title | Incremental Review | Rework Cycles |
-  |-----------|-------|-------------------|---------------|
-  | WI-414 | Fix handleGetConvergenceStatus to query findings table | Pass (after 1 rework) | 1 |
-  | WI-415 | Unify metrics data path (emit → YAML + SQLite, deprecate JSONL) | Pass (after 1 rework) | 1 |
-  | WI-416 | Delete dead interviewFiles() helper from write-transaction.test.ts | Pass (first pass) | 0 |
-
-  ## Summary
-  - Items reviewed: 3
-  - First-pass accepted: 1 (WI-416)
-  - Required rework: 2 (WI-414, WI-415)
-  - Final verdict: All Pass
-  - Test suite: 492 passing, 0 failing
-content_hash: e5f5886a07a7b97d88d9126e900818200c6631b654962d530940139f93fc0043
-token_count: 193
-file_path: .ideate/cycles/001/review-manifest.yaml
+  **Summary**: 8 work items reviewed. All passed incremental review. Minor findings in WI-650 (inDegree initialization, formatting).
+cycle: 1
+content_hash: 1ccd4a2e215c5080c790d58562413783525ce6def24adbb676e4c35a33156eee
+token_count: 224

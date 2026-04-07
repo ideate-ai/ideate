@@ -1,0 +1,29 @@
+id: autopilot-state
+type: autopilot_state
+cycles_completed: 7
+convergence_achieved: true
+started_at: 2026-04-07T00:00:00Z
+last_phase: 6a-start
+last_cycle: 7
+deferred: false
+deferred_reason: null
+last_full_review_cycle: 0
+last_cycle_findings:
+  critical: 0
+  significant: 0
+  minor: 2
+total_items_executed: null
+full_review_interval: 3
+phases_completed: 0
+current_project: null
+workspace_label: null
+cycle_modified: 19
+content_hash: 965e036c17b5bdf07565c09a8c48fbab3464ed529384093a27b4816eb364ee06
+token_count: 238
+cycle_2_start_commit: cb564e380243e7d8f075721583aecfaaa1f2c016
+cycle_3_start_commit: cb564e380243e7d8f075721583aecfaaa1f2c016
+cycle_4_start_commit: cb564e380243e7d8f075721583aecfaaa1f2c016
+cycle_4_end_commit: cb564e380243e7d8f075721583aecfaaa1f2c016
+cycle_5_start_commit: cb564e380243e7d8f075721583aecfaaa1f2c016
+cycle_6_start_commit: cb564e380243e7d8f075721583aecfaaa1f2c016
+cycle_7_start_commit: cb564e380243e7d8f075721583aecfaaa1f2c016

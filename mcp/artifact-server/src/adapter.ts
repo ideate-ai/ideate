@@ -40,6 +40,37 @@ export type NodeType =
   | "interview"
   | "domain_index";
 
+/** All valid NodeType values for runtime validation. */
+export const ALL_NODE_TYPES: readonly NodeType[] = [
+  "work_item",
+  "finding",
+  "domain_policy",
+  "domain_decision",
+  "domain_question",
+  "guiding_principle",
+  "constraint",
+  "module_spec",
+  "research_finding",
+  "journal_entry",
+  "metrics_event",
+  "interview_question",
+  "proxy_human_decision",
+  "project",
+  "phase",
+  "decision_log",
+  "cycle_summary",
+  "review_manifest",
+  "review_output",
+  "architecture",
+  "overview",
+  "execution_strategy",
+  "guiding_principles",
+  "constraints",
+  "research",
+  "interview",
+  "domain_index",
+] as const;
+
 /** Metadata common to every node. */
 export interface NodeMeta {
   id: string;
@@ -60,21 +91,14 @@ export interface Node extends NodeMeta {
 // Edge types
 // ---------------------------------------------------------------------------
 
-export type EdgeType =
-  | "depends_on"
-  | "blocks"
-  | "belongs_to_module"
-  | "derived_from"
-  | "relates_to"
-  | "addressed_by"
-  | "references"
-  | "amended_by"
-  | "supersedes"
-  | "triggered_by"
-  | "governed_by"
-  | "informed_by"
-  | "belongs_to_project"
-  | "belongs_to_phase";
+// EdgeType and EDGE_TYPES are canonically defined in schema.ts.
+// Re-exported here for backwards compatibility with existing callers.
+export type { EdgeType } from "./schema.js";
+export { EDGE_TYPES } from "./schema.js";
+import { EDGE_TYPES } from "./schema.js";
+
+/** All valid EdgeType values for runtime validation. Canonical source: EDGE_TYPES in schema.ts. */
+export const ALL_EDGE_TYPES = EDGE_TYPES;
 
 export interface Edge {
   source_id: string;
@@ -548,6 +572,27 @@ export class MissingCycleError extends StorageAdapterError {
   }
 }
 
+/** Validation error for invalid input parameters or transaction failures. */
+export class ValidationError extends StorageAdapterError {
+  constructor(
+    message: string,
+    codeOrField: string,
+    detailsOrValue: Record<string, unknown> | unknown
+  ) {
+    const isCode = codeOrField === "TRANSACTION_FAILED"
+      || codeOrField.endsWith("_ERROR")
+      || codeOrField.startsWith("INVALID_")
+      || codeOrField.startsWith("MISSING_")
+      || codeOrField.startsWith("EMPTY_");
+    super(
+      message,
+      isCode ? codeOrField : "VALIDATION_ERROR",
+      isCode ? (detailsOrValue as Record<string, unknown>) : { field: codeOrField, value: detailsOrValue }
+    );
+    this.name = "ValidationError";
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Adapter factory
 // ---------------------------------------------------------------------------
@@ -568,7 +613,9 @@ export interface AdapterConfig {
     /** Codebase ID within the organization. */
     codebase_id: string;
     /** Auth token or token provider. */
-    auth_token?: string;
+    auth_token?: string | null;
+    /** Token provider function for automatic token rotation. Called when a request fails with 401. */
+    tokenProvider?: () => Promise<string | null>;
   };
 }
 

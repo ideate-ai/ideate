@@ -144,7 +144,7 @@ export function runPendingMigrations(ideateDir: string): MigrationResult {
     }
 
     const ts = new Date().toISOString();
-    console.error(`[${ts}] [migrations] Running: ${migration.description} (v${migration.fromVersion} → v${migration.toVersion})`);
+    console.log(`[${ts}] [migrations] Running: ${migration.description} (v${migration.fromVersion} → v${migration.toVersion})`);
 
     try {
       migration.migrate(ideateDir);

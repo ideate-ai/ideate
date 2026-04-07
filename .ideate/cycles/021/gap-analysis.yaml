@@ -1,0 +1,52 @@
+id: gap-analysis
+type: cycle_summary
+reviewer: gap-analyst
+content: |-
+  ## Gap Analysis — Cycle 21
+
+  **Verdict**: Fail
+
+  ## Critical Gaps
+  None.
+
+  ## Significant Gaps
+
+  ### SG1: `deleteNode` missing INVALID_NODE_ID in adapter-contract.md method section
+  - **File**: `docs/adapter-contract.md:112-126`
+  - **Gap**: The deleteNode section documents only TRANSACTION_FAILED. Both adapters throw INVALID_NODE_ID when id is empty/non-string. WI-677 updated contract doc but did not add this validation entry.
+
+  ### SG2: `removeEdges` missing Validation and Error Codes sections in adapter-contract.md
+  - **File**: `docs/adapter-contract.md:154-165`
+  - **Gap**: The removeEdges method section has no Validation or Error Codes block. Both adapters throw INVALID_NODE_ID (empty source_id) and INVALID_EDGE_TYPE (invalid edge type in array). WI-677 did not add these sections.
+
+  ### SG3: ppr.ts passes bare numeric values as details argument to ValidationError
+  - **File**: `src/ppr.ts:110-141`
+  - **Gap**: All four ValidationError calls pass a bare number as third argument (e.g., `new ValidationError(msg, 'INVALID_ALPHA', alpha)`). Convention and all other call sites use `{ value: alpha }`. WI-678 fixed the code strings but not the details structure.
+
+  ### SG4: ppr.ts ValidationError codes not verified by tests asserting `.code`
+  - **File**: `src/__tests__/ppr.test.ts:1539-1658`
+  - **Gap**: ppr.test.ts validates only error message text. No test asserts `.code`. WI-678's fixes are unverified — reverting to wrong codes would not break any test. Violates P-002 intent: tests must verify actual behavior, not just message strings.
+
+  ### SG5: Equivalence tests cover only 1 of 4 `putEdge` error codes
+  - **File**: `tests/adapters/adapter-equivalence.test.ts:740-757`
+  - **Gap**: WI-679 added one putEdge equivalence pair (MISSING_EDGE_SOURCE only). MISSING_EDGE_TARGET, MISSING_EDGE_TYPE, and INVALID_EDGE_TYPE have no cross-adapter equivalence assertion.
+
+  ### SG6: `removeEdges` equivalence test covers INVALID_NODE_ID only, not INVALID_EDGE_TYPE
+  - **File**: `tests/adapters/adapter-equivalence.test.ts:759-772`
+  - **Gap**: removeEdges equivalence only covers INVALID_NODE_ID (empty source_id). INVALID_EDGE_TYPE path (invalid edge type in array) has no equivalence test pair.
+
+  ## Minor Gaps
+
+  ### MG1: `batchMutate` uses hardcoded edge type set instead of canonical constant
+  - **Files**: `src/adapters/local/writer.ts:1016-1031`, `src/adapters/remote/index.ts:1178-1197`
+  - **Gap**: Three parallel declarations (EDGE_TYPES in schema.ts, ALL_EDGE_TYPES in adapter.ts, inline sets in batchMutate in both adapters). No runtime bug today; maintainability risk.
+
+  ### MG2: `deleteNode` adapter-contract.md missing Validation prose block
+  - **File**: `docs/adapter-contract.md:112-124`
+  - **Gap**: Section has no **Validation:** block (unlike putNode, patchNode, putEdge). Subsumed by SG1 fix.
+content_hash: 95abb655c5690caa0a68b9b5289e61ea3794a9a94981fb08729fb872580265cc
+token_count: 776
+file_path: .ideate/cycles/068/gap-analysis.yaml
+cycle: 21
+cycle_modified: 19
+verdict: Fail

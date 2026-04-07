@@ -1,0 +1,19 @@
+id: review-manifest
+type: cycle_summary
+content: |-
+  ## Review Manifest (Cycle 22)
+
+  | WI | Title | File Scope | Incremental Verdict | Findings (C/S/M) |
+  |----|-------|------------|---------------------|------------------|
+  | WI-680 | Fix adapter-contract.md: add deleteNode and removeEdges validation sections | docs/adapter-contract.md | Pass (after rework) | 0/1/0 |
+  | WI-681 | Fix ppr.ts ValidationError third arg + add .code assertions to ppr.test.ts | src/ppr.ts, src/__tests__/ppr.test.ts | Pass | 0/0/0 |
+  | WI-682 | Add missing putEdge and removeEdges equivalence test pairs | tests/adapters/adapter-equivalence.test.ts | Pass | 0/0/0 |
+
+  **Summary**: 3 work items, all passed (1 after rework). WI-680 rework: initial doc included TRANSACTION_FAILED for removeEdges but the implementation does not throw it — removed from doc.
+
+  **Test suite**: 1053 passed, 289 skipped, 0 failed (1342 total).
+content_hash: 188af8e763e203b16367660d71bc2beced90c056212b92a9f641649c4a63f60e
+token_count: 272
+file_path: .ideate/cycles/068/review-manifest.yaml
+cycle: 22
+cycle_modified: 19

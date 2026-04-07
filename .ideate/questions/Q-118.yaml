@@ -1,13 +1,11 @@
 id: Q-118
 type: domain_question
+description: Hash-check loop performs up to 13 unindexed table scans per file during index rebuild
 domain: artifact-structure
-title: No fallback in convergence query for null-cycle artifacts
-description: handleGetConvergenceStatus filtered document_artifacts.cycle = N. If document_artifacts.cycle was null, the artifact was invisible. No secondary lookup by ID prefix or directory path existed.
-source: cycle 4 gap-analysis-004 Gap 3
-impact: "Any cycle-summary artifact with null cycle was invisible to convergence checks, returning principle_verdict: unknown silently."
-status: resolved
-resolution: WI-424 implemented a three-branch WHERE clause (D-156) that includes a fallback for artifacts where da.id IS NOT NULL AND da.cycle IS NULL, using file_path LIKE pattern to match by directory.
-resolved_in: 5
-content_hash: 874b8044f47125820ea01532ce1f1b1e2fbe38551bdafa750dbbf44710a71f9d
-token_count: 185
-file_path: .ideate/questions/Q-118.yaml
+impact: Slow index rebuild times for large artifact repositories
+reexamination_trigger: When index rebuild time exceeds acceptable thresholds
+source: gap-analysis MI2
+status: open
+title: Database index performance for rebuildIndex
+content_hash: 721587bb2944da759187470f62d812c699d10dcce4853ca2aea2092902476d3e
+token_count: 97

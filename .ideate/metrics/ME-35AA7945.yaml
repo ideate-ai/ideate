@@ -1,0 +1,21 @@
+id: ME-35AA7945
+type: metrics_event
+event_name: gap-analyst
+timestamp: 2026-04-05T04:00:00Z
+agent_type: gap-analyst
+context_files_read: []
+finding_count: 8
+finding_severities:
+  critical: 2
+  minor: 3
+  significant: 4
+first_pass_accepted: null
+mcp_tools_called:
+  - ideate_get_config
+  - ideate_get_context_package
+model: claude-sonnet-4-6
+outcome: fail
+phase: 6b
+rework_count: null
+wall_clock_ms: 73455
+work_item: null

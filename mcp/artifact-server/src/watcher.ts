@@ -18,6 +18,7 @@ export class ArtifactWatcher extends EventEmitter {
   private debounceTimers: Map<string, ReturnType<typeof setTimeout>> = new Map();
   private pendingChanged: Map<string, Set<string>> = new Map();
   private pendingDeleted: Map<string, Set<string>> = new Map();
+  private flushCallbacks: Map<string, (() => void) | null> = new Map();
   private extraOptions: WatchOptions;
   readonly debounceMs: number;
 
@@ -48,27 +49,32 @@ export class ArtifactWatcher extends EventEmitter {
       if (existing) {
         clearTimeout(existing);
       }
-      const timer = setTimeout(() => {
+      // Store current batch state for the closure
+      const currentChanged = this.pendingChanged.get(artifactDir) ?? new Set<string>();
+      const currentDeleted = this.pendingDeleted.get(artifactDir) ?? new Set<string>();
+      const flushCallback = () => {
         this.debounceTimers.delete(artifactDir);
-        const changed = this.pendingChanged.get(artifactDir) ?? new Set();
-        const deleted = this.pendingDeleted.get(artifactDir) ?? new Set();
+        this.flushCallbacks.delete(artifactDir);
 
-        // If a file was changed then deleted, only process the delete
-        for (const f of deleted) {
-          changed.delete(f);
-        }
-
+        // Clear the pending sets before emitting (trailing debounce)
         this.pendingChanged.delete(artifactDir);
         this.pendingDeleted.delete(artifactDir);
 
-        if (changed.size > 0 || deleted.size > 0) {
+        // If a file was changed then deleted, only process the delete
+        for (const f of currentDeleted) {
+          currentChanged.delete(f);
+        }
+
+        if (currentChanged.size > 0 || currentDeleted.size > 0) {
           this.emit("change", {
             artifactDir,
-            changed: [...changed],
-            deleted: [...deleted],
+            changed: [...currentChanged],
+            deleted: [...currentDeleted],
           } satisfies BatchChangeEvent);
         }
-      }, this.debounceMs);
+      };
+      this.flushCallbacks.set(artifactDir, flushCallback);
+      const timer = setTimeout(flushCallback, this.debounceMs);
       this.debounceTimers.set(artifactDir, timer);
     };
 
@@ -107,6 +113,12 @@ export class ArtifactWatcher extends EventEmitter {
       clearTimeout(timer);
       this.debounceTimers.delete(artifactDir);
     }
+    // Flush any pending changes immediately when unwatching
+    const flushCallback = this.flushCallbacks.get(artifactDir);
+    if (flushCallback) {
+      flushCallback();
+    }
+    this.flushCallbacks.delete(artifactDir);
     this.pendingChanged.delete(artifactDir);
     this.pendingDeleted.delete(artifactDir);
     const watcher = this.watchers.get(artifactDir);

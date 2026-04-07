@@ -1,0 +1,21 @@
+id: ME-CE8753ED
+type: metrics_event
+event_name: spec-reviewer
+timestamp: 2026-04-05T04:00:00Z
+agent_type: spec-reviewer
+context_files_read: []
+finding_count: 1
+finding_severities:
+  critical: 0
+  minor: 1
+  significant: 0
+first_pass_accepted: null
+mcp_tools_called:
+  - ideate_get_config
+  - ideate_get_context_package
+model: claude-sonnet-4-6
+outcome: pass
+phase: 6b
+rework_count: null
+wall_clock_ms: 83430
+work_item: null

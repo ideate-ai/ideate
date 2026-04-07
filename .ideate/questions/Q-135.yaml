@@ -1,0 +1,11 @@
+id: Q-135
+type: domain_question
+title: removeEdges lacks input validation in both adapters
+domain: adapter-equivalence
+status: open
+body: "removeEdges accepts empty source_id or invalid edge_type strings without validation in both adapters, passing through silently. Consistent with the deleteNode/putEdge gap (Q-133/Q-134) — all three methods that were not explicitly targeted in WI-667/WI-668 remain unguarded. Fix: add source_id non-empty and edge_type validity guards to removeEdges in both adapters; add test cases."
+source: cycle 020 gap-analyst G3
+reexamination_trigger: next adapter validation work item
+cycle_modified: 19
+content_hash: f1381972461dfe6a00ef060f7b4e49f18c5d23cfd3f7356eed4771978ed95759
+token_count: 157

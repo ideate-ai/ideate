@@ -1,0 +1,26 @@
+id: WI-654
+type: work_item
+title: Add limit/offset Validation to Query Methods
+status: completed
+complexity: null
+scope:
+  - mcp/artifact-server/src/adapters/local/reader.ts
+  - mcp/artifact-server/src/adapters/remote/index.ts
+depends:
+  - WI-653
+blocks: []
+criteria:
+  - limit parameter validated as non-negative integer in LocalAdapter.queryNodes() and queryGraph()
+  - offset parameter validated as non-negative integer in both methods
+  - ValidationError thrown with code INVALID_LIMIT or INVALID_OFFSET for negative values
+  - RemoteAdapter updated with identical validation
+  - Existing tests pass; new test verifies validation error for negative limit and offset
+domain: null
+phase: null
+work_item_type: feature
+notes: "# WI-654: Add limit/offset Validation to Query Methods"
+resolution: limit/offset validation already implemented in both adapters. Validated with 8 tests. Code review passed.
+cycle_created: null
+cycle_modified: 18
+content_hash: cdbe2798bd630a940eb2d5ca6727e0c02057510a2ad69354646248ddfd6ebbcb
+token_count: 259

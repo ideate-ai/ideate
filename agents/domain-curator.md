@@ -4,6 +4,10 @@ description: Populates and maintains the domain knowledge layer from review arti
 tools:
   - Read
   - Glob
+disallowedTools:
+  - Read on .ideate/ paths
+  - Write on .ideate/ paths
+  - Edit on .ideate/ paths
 model: opus
 background: false
 maxTurns: 100

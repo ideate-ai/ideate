@@ -1,0 +1,15 @@
+id: ME-7FCC91C3
+type: metrics_event
+event_name: domain-curator
+timestamp: 2026-04-06T00:00:00Z
+agent_type: domain-curator
+cycle: 1
+finding_count: 0
+input_tokens: null
+model: opus
+outcome: null
+output_tokens: null
+phase: 6b
+turns_used: null
+wall_clock_ms: 35160
+work_item: null

@@ -1,0 +1,19 @@
+id: ME-BB1074FC
+type: metrics_event
+event_name: worker
+timestamp: 2026-04-06T00:00:00Z
+agent_type: worker
+context_files_read:
+  - /Users/dan/code/ideate/mcp/artifact-server/src/adapters/local/writer.ts
+  - /Users/dan/code/ideate/mcp/artifact-server/src/adapter.ts
+  - /Users/dan/code/ideate/mcp/artifact-server/src/__tests__/write-transaction.test.ts
+cycle: 2
+finding_count: 0
+mcp_tools_called: []
+model: sonnet
+outcome: null
+output_tokens: null
+phase: 6a
+turns_used: null
+wall_clock_ms: 494414
+work_item: WI-652

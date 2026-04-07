@@ -18,6 +18,7 @@
 import { BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
 import type * as dbSchema from "./db.js";
 import { edges } from "./db.js";
+import { ValidationError } from "./adapter.js";
 
 // ---------------------------------------------------------------------------
 // Public interfaces
@@ -53,11 +54,11 @@ const DEFAULT_MAX_ITERATIONS = 50;
 const DEFAULT_CONVERGENCE_THRESHOLD = 1e-6;
 
 const DEFAULT_EDGE_TYPE_WEIGHTS: Record<string, number> = {
-  depends_on: 1.0,
-  governed_by: 0.8,
-  informed_by: 0.6,
-  references: 0.4,
-  blocks: 0.3,
+  DEPENDS_ON: 1.0,
+  GOVERNED_BY: 0.8,
+  INFORMED_BY: 0.6,
+  REFERENCES: 0.4,
+  BLOCKS: 0.3,
 };
 
 /** Containment edge types excluded from PPR traversal. */
@@ -65,6 +66,14 @@ const CONTAINMENT_EDGE_TYPES = new Set([
   "owns_codebase", "owns_project", "has_phase", "has_work_item",
   "owns_knowledge", "references_codebase",
 ]);
+
+/**
+ * Normalize an edge type to UPPER_SNAKE_CASE for weight lookup.
+ * Handles snake_case (SQLite), UPPER_SNAKE_CASE (Neo4j), and mixed case.
+ */
+function normalizeEdgeType(edgeType: string): string {
+  return edgeType.toUpperCase();
+}
 
 // ---------------------------------------------------------------------------
 // computePPR
@@ -86,8 +95,51 @@ export function computePPR(
   const alpha = options?.alpha ?? DEFAULT_ALPHA;
   const maxIterations = options?.maxIterations ?? DEFAULT_MAX_ITERATIONS;
   const convergenceThreshold = options?.convergenceThreshold ?? DEFAULT_CONVERGENCE_THRESHOLD;
-  const edgeTypeWeights: Record<string, number> = options?.edgeTypeWeights ?? DEFAULT_EDGE_TYPE_WEIGHTS;
+
+  // Normalize edge type weight keys to UPPER_SNAKE_CASE for consistent lookup
+  const rawEdgeTypeWeights = options?.edgeTypeWeights ?? DEFAULT_EDGE_TYPE_WEIGHTS;
+  const edgeTypeWeights: Record<string, number> = {};
+  for (const [key, value] of Object.entries(rawEdgeTypeWeights)) {
+    edgeTypeWeights[normalizeEdgeType(key)] = value;
+  }
+
   const maxNodes = options?.maxNodes ?? 10000;
+
+  // Validate alpha: must be 0 < alpha <= 1
+  if (alpha <= 0 || alpha > 1) {
+    throw new ValidationError(
+      `alpha must be between 0 and 1 (exclusive of 0, inclusive of 1), received ${alpha}`,
+      "INVALID_ALPHA",
+      { value: alpha }
+    );
+  }
+
+  // Validate maxIterations: must be positive integer
+  if (!Number.isInteger(maxIterations) || maxIterations <= 0) {
+    throw new ValidationError(
+      `maxIterations must be a positive integer, received ${maxIterations}`,
+      "INVALID_MAX_ITERATIONS",
+      { value: maxIterations }
+    );
+  }
+
+  // Validate convergenceThreshold: must be positive number
+  if (convergenceThreshold <= 0) {
+    throw new ValidationError(
+      `convergenceThreshold must be a positive number, received ${convergenceThreshold}`,
+      "INVALID_CONVERGENCE_THRESHOLD",
+      { value: convergenceThreshold }
+    );
+  }
+
+  // Validate maxNodes: must be non-negative integer
+  if (!Number.isInteger(maxNodes) || maxNodes < 0) {
+    throw new ValidationError(
+      `maxNodes must be a non-negative integer, received ${maxNodes}`,
+      "INVALID_MAX_NODES",
+      { value: maxNodes }
+    );
+  }
 
   // Short-circuit: empty seeds → empty result
   if (seedNodeIds.length === 0) {
@@ -105,6 +157,7 @@ export function computePPR(
     })
     .from(edges)
     .all();
+
 
   // -------------------------------------------------------------------------
   // Step 2: Collect all node IDs and build adjacency structures
@@ -152,7 +205,9 @@ export function computePPR(
     // Skip containment edges (organizational hierarchy)
     if (CONTAINMENT_EDGE_TYPES.has(e.edge_type)) continue;
 
-    const w = edgeTypeWeights[e.edge_type] ?? 1.0;
+    // Normalize edge type to UPPER_SNAKE_CASE for weight lookup
+    const normalizedEdgeType = normalizeEdgeType(e.edge_type);
+    const w = edgeTypeWeights[normalizedEdgeType] ?? 1.0;
 
     // Skip edges with zero weight — they contribute nothing to score propagation
     if (w === 0) continue;
@@ -164,6 +219,14 @@ export function computePPR(
 
     // Update directed in-degree for target only
     inDegree.set(e.target_id, (inDegree.get(e.target_id) ?? 0) + 1);
+  }
+
+  // Initialize inDegree for isolated seeds to prevent specificity dampening from zeroing them out.
+  // This matches the server-side PPR behavior in ideate-server/src/services/ppr.ts
+  for (const seed of seedNodeIds) {
+    if (!inDegree.has(seed)) {
+      inDegree.set(seed, 1);
+    }
   }
 
   // -------------------------------------------------------------------------
@@ -187,9 +250,9 @@ export function computePPR(
   for (let iter = 0; iter < maxIterations; iter++) {
     const newScores = new Map<string, number>();
 
-    // Initialise new scores with the teleport (restart) component
+    // Initialize with 0 for all nodes.
     for (const id of allNodeIds) {
-      newScores.set(id, alpha * (seedSet.has(id) ? seedScore : 0.0));
+      newScores.set(id, 0.0);
     }
 
     // Propagate scores along edges
@@ -212,6 +275,13 @@ export function computePPR(
       for (const { neighbour, weight } of neighbours) {
         const contribution = (1.0 - alpha) * uScore * (weight / totalWeight);
         newScores.set(neighbour, newScores.get(neighbour)! + contribution);
+      }
+    }
+
+    // Add teleportation mass back to seed nodes.
+    if (seedNodeIds.length > 0) {
+      for (const seed of seedNodeIds) {
+        newScores.set(seed, (newScores.get(seed) ?? 0.0) + alpha * seedScore);
       }
     }
 

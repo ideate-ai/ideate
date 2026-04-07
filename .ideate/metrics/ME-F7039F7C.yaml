@@ -1,0 +1,58 @@
+id: ME-F7039F7C
+type: metrics_event
+event_name: unknown
+timestamp: 2026-04-04T04:06:00Z
+by_category:
+  bugs_introduced: 6
+  implementation_gaps: 4
+  other: 0
+  principles_violated: 1
+  requirements_missed: 1
+by_reviewer:
+  code-reviewer:
+    critical: 2
+    minor: 2
+    significant: 2
+  gap-analyst:
+    critical: 1
+    minor: 3
+    significant: 3
+  spec-reviewer:
+    critical: 0
+    minor: 0
+    significant: 1
+by_severity:
+  critical: 3
+  minor: 5
+  significant: 6
+  suggestion: 0
+cycle: 17
+event_type: quality_summary
+findings:
+  by_category:
+    bugs_introduced: 6
+    implementation_gaps: 4
+    other: 0
+    principles_violated: 1
+    requirements_missed: 1
+  by_reviewer:
+    code-reviewer:
+      critical: 2
+      minor: 2
+      significant: 2
+    gap-analyst:
+      critical: 1
+      minor: 3
+      significant: 3
+    spec-reviewer:
+      critical: 0
+      minor: 0
+      significant: 1
+  by_severity:
+    critical: 3
+    minor: 5
+    significant: 6
+    suggestion: 0
+  total: 14
+skill: autopilot
+work_items_reviewed: 6

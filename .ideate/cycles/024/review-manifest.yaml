@@ -1,0 +1,20 @@
+id: review-manifest
+type: cycle_summary
+content: |-
+  ## Cycle 24 Review Manifest
+
+  | WI | Title | Files | Verdict |
+  |---|---|---|---|
+  | WI-686 | TRANSACTION_FAILED tests for putEdge/removeEdges | tests/adapters/write-transaction.test.ts | Pass (after rework: mock target fixed) |
+  | WI-687 | Wrap RemoteAdapter putEdge/removeEdges as TRANSACTION_FAILED | src/adapters/remote/index.ts | Pass (after rework: redundant instanceof removed) |
+  | WI-688 | Unify EDGE_TYPES/ALL_EDGE_TYPES | src/schema.ts, src/adapter.ts | Pass (after rework: EDGE_TYPES re-exported) |
+  | WI-689 | patchNode doc + stale comment fix | docs/adapter-contract.md, tests/adapters/local-adapter-validation.test.ts | Pass |
+
+  **Test suite**: 1061 passed, 292 skipped, 0 failed
+
+  **Summary**: All 4 items address cycle 23 significant findings. WI-686/687 fix TRANSACTION_FAILED coverage gaps (SG1). WI-688 unifies duplicate edge type constants (SG2). WI-689 fixes doc and comment minor issues.
+content_hash: 93a65135c8c2a9a48beffcd53c7840516969a99a67ef4a8386a5214c0c085496
+token_count: 287
+file_path: .ideate/cycles/068/review-manifest.yaml
+cycle: 24
+cycle_modified: 19

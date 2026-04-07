@@ -1,0 +1,30 @@
+id: gap-analysis
+type: cycle_summary
+reviewer: gap-analyst
+content: |-
+  ## Gap Analysis — Cycle 26
+
+  **Verdict**: Fail
+
+  ## Significant Gaps
+
+  - [G1] `tests/adapters/adapter-equivalence.test.ts` batchMutate validation section covers only EMPTY_BATCH. Both adapter unit files cover 8 other codes (MISSING_NODE_ID, MISSING_NODE_TYPE, MISSING_NODE_PROPERTIES, INVALID_NODE_TYPE, MISSING_EDGE_SOURCE, MISSING_EDGE_TARGET, MISSING_EDGE_TYPE, INVALID_EDGE_TYPE) but the equivalence suite does not. The triangle is incomplete for batchMutate.
+
+  - [G2] `tests/adapters/adapter-equivalence.test.ts` has no queryGraph validation tests. Both adapter unit files cover INVALID_LIMIT and INVALID_OFFSET for queryGraph. No equivalence test exists.
+
+  ## Minor Gaps
+
+  - [G3] `tests/adapters/adapter-equivalence.test.ts` has `queryNodes: INVALID_LIMIT` equivalence test but no `queryNodes: INVALID_OFFSET` test.
+  - [G4] `tests/adapters/remote-adapter-validation.test.ts` has no `patchNode: INVALID_NODE_ID` test despite the local file having it in AC-8 and the equivalence file covering it behind `skipIf`.
+  - [G5] Neither adapter-specific validation file has a dedicated `putNode` validation section. Unit coverage comes indirectly via batchMutate tests; direct `putNode` validation unit tests are absent.
+  - [G6] `CYCLE_DETECTED` and `SCOPE_COLLISION` are listed in `adapter-contract.md` batchMutate Error Codes but have zero test coverage in any file. Unclear if they are implemented in the current codebase — verify before creating work items.
+
+  ## Note on G6
+
+  G6 requires verification: grep for CYCLE_DETECTED and SCOPE_COLLISION in src/adapters/ before treating as a test gap. If not implemented, remove from adapter-contract.md. If implemented, add tests.
+content_hash: dec52b77bdc189c7d367eb6c608544e15dab878cd4ba55332f91fe991b9e9750
+token_count: 486
+file_path: .ideate/cycles/068/gap-analysis.yaml
+cycle: 26
+cycle_modified: 19
+verdict: Fail
