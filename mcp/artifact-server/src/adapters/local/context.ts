@@ -228,19 +228,19 @@ export class LocalContextAdapter {
       );
     }
 
-    // alpha: must be 0 <= alpha <= 1
-    if (alpha !== undefined && (alpha < 0 || alpha > 1)) {
+    // alpha: must be > 0 and <= 1
+    if (alpha !== undefined && (alpha <= 0 || alpha > 1)) {
       throw new ValidationError(
-        `alpha must be between 0 and 1 inclusive (valid range: 0 to 1), received ${alpha}`,
+        `alpha must be > 0 (valid range: (0, 1]), received ${alpha}`,
         "INVALID_ALPHA",
         { value: alpha }
       );
     }
 
-    // max_iterations: must be non-negative integer
-    if (maxIterations !== undefined && (!Number.isInteger(maxIterations) || maxIterations < 0)) {
+    // max_iterations: must be a positive integer (> 0)
+    if (maxIterations !== undefined && (!Number.isInteger(maxIterations) || maxIterations <= 0)) {
       throw new ValidationError(
-        `max_iterations must be a non-negative integer (valid range: 0 to Infinity), received ${maxIterations}`,
+        `max_iterations must be > 0 (valid range: 1 to Infinity), received ${maxIterations}`,
         "INVALID_MAX_ITERATIONS",
         { value: maxIterations }
       );

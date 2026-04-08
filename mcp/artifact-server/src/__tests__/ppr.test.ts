@@ -21,6 +21,7 @@ import { createSchema } from "../schema.js";
 import * as dbSchema from "../db.js";
 import { computePPR, PPROptions } from "../ppr.js";
 import { ValidationError } from "../adapter.js";
+import { LocalContextAdapter } from "../adapters/local/context.js";
 
 // ---------------------------------------------------------------------------
 // Test database setup
@@ -1689,6 +1690,71 @@ describe("computePPR — parameter validation", () => {
     } catch (err) {
       expect(err).toBeInstanceOf(ValidationError);
       expect((err as ValidationError).code).toBe("INVALID_MAX_NODES");
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Test 11: LocalContextAdapter.traverse boundary validation (WI-697)
+// ---------------------------------------------------------------------------
+
+describe("LocalContextAdapter.traverse — boundary validation", () => {
+  it("throws ValidationError for alpha=0", async () => {
+    const drizzleDb = drizzle(db, { schema: dbSchema });
+    const adapter = new LocalContextAdapter(drizzleDb, db);
+    insertNode("SEED");
+
+    try {
+      await adapter.traverse({ seed_ids: ["SEED"], alpha: 0 });
+      expect.fail("Should have thrown ValidationError");
+    } catch (err) {
+      expect(err).toBeInstanceOf(ValidationError);
+      expect((err as ValidationError).code).toBe("INVALID_ALPHA");
+      expect((err as Error).message).toContain("must be > 0");
+      expect((err as Error).message).toContain("(0, 1]");
+    }
+  });
+
+  it("throws ValidationError for max_iterations=0", async () => {
+    const drizzleDb = drizzle(db, { schema: dbSchema });
+    const adapter = new LocalContextAdapter(drizzleDb, db);
+    insertNode("SEED");
+
+    try {
+      await adapter.traverse({ seed_ids: ["SEED"], max_iterations: 0 });
+      expect.fail("Should have thrown ValidationError");
+    } catch (err) {
+      expect(err).toBeInstanceOf(ValidationError);
+      expect((err as ValidationError).code).toBe("INVALID_MAX_ITERATIONS");
+      expect((err as Error).message).toContain("must be > 0");
+    }
+  });
+
+  it("throws ValidationError for alpha=-0.1 (existing boundary)", async () => {
+    const drizzleDb = drizzle(db, { schema: dbSchema });
+    const adapter = new LocalContextAdapter(drizzleDb, db);
+    insertNode("SEED");
+
+    try {
+      await adapter.traverse({ seed_ids: ["SEED"], alpha: -0.1 });
+      expect.fail("Should have thrown ValidationError");
+    } catch (err) {
+      expect(err).toBeInstanceOf(ValidationError);
+      expect((err as ValidationError).code).toBe("INVALID_ALPHA");
+    }
+  });
+
+  it("throws ValidationError for max_iterations=-1 (existing boundary)", async () => {
+    const drizzleDb = drizzle(db, { schema: dbSchema });
+    const adapter = new LocalContextAdapter(drizzleDb, db);
+    insertNode("SEED");
+
+    try {
+      await adapter.traverse({ seed_ids: ["SEED"], max_iterations: -1 });
+      expect.fail("Should have thrown ValidationError");
+    } catch (err) {
+      expect(err).toBeInstanceOf(ValidationError);
+      expect((err as ValidationError).code).toBe("INVALID_MAX_ITERATIONS");
     }
   });
 });
