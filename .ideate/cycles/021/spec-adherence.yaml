@@ -2,32 +2,38 @@ id: spec-adherence
 type: cycle_summary
 reviewer: spec-reviewer
 content: |-
-  ## Spec Adherence Review — Cycle 21
+  ## Verdict: Pass
 
-  **Verdict**: Pass
+  All acceptance criteria for WI-702, WI-703, WI-704 are met. No principle violations found.
 
   ## Critical Findings
   None.
 
   ## Significant Findings
-  None.
+  ### S1: FILESYSTEM_ERROR documented but never thrown (doc-impl gap)
+  - `docs/adapter-contract.md:129,567` documents FILESYSTEM_ERROR as a deleteNode error code. `src/adapters/local/writer.ts` Phase 1 catch re-throws raw NodeJS.ErrnoException, not wrapped as ValidationError FILESYSTEM_ERROR. Zero occurrences of FILESYSTEM_ERROR in src/. The contract specifies a code the implementation never emits.
+  - Note: WI-704 acceptance criteria required documentation only; all criteria technically met. But the documentation addition created a new spec/impl divergence.
 
   ## Minor Findings
+  None.
 
-  ### M1: ppr.ts ValidationError third argument is a raw scalar, not a Record
-  - **File**: `src/ppr.ts:113,122,131,140`
-  - **Issue**: All four ValidationError calls pass a raw number as third argument (e.g., `new ValidationError(..., 'INVALID_ALPHA', alpha)` where `alpha` is number). The convention is `{ value: alpha }`. P-64 is satisfied (second arg is correct code string). Minor inconsistency with how all other callers structure the details object.
+  ## Unmet Acceptance Criteria
+  None. All criteria verified:
+  - WI-702 AC1-5: restore on SQLite failure, double-failure message, null originalContent handling, 4 new tests, full suite passes
+  - WI-703 AC1-4: TRANSACTION_FAILED describe block, remoteAvailable at module level, rejects.toMatchObject usage, 5 pass/2 skip
+  - WI-704 AC1-6: FILESYSTEM_ERROR documented, INVALID_TOKEN_BUDGET/INVALID_MAX_NODES corrected, fetchCurrentCycle note added, P-53 compliance
 
-  ## Principle Adherence Confirmed
-  - **P-64**: All ValidationError second args use correct code strings (INVALID_CYCLE, INVALID_NODE_ID, MISSING_EDGE_SOURCE/TARGET/TYPE, INVALID_EDGE_TYPE, INVALID_ALPHA/MAX_ITERATIONS/CONVERGENCE_THRESHOLD/MAX_NODES). No raw field names.
-  - **P-65**: Module-level vi.mock only in new file (remote-adapter-validation.test.ts was created in WI-671). No vi.mock added to pre-existing files.
-  - **P-002**: deleteNode/putEdge/removeEdges validation covered by local-adapter-validation.test.ts AC-7, remote-adapter-validation.test.ts AC-676, and nextid-cycle-validation.test.ts.
-  - **P-58**: Input validation for all mutating methods (deleteNode, putEdge, removeEdges, putNode, patchNode, nextId) has test coverage.
-  - **D-177**: LocalAdapter equivalence tests run unconditionally; RemoteAdapter tests use `it.skipIf(!remoteAvailable)`. Verified in adapter-equivalence.test.ts.
-  - **P-53**: adapter-contract.md no longer references concrete storage formats.
-content_hash: ff4a1761fef4e22b5f1d06aa3106dad7f787a3fcfc52acd6616620eb3aa2cf3c
-token_count: 465
+  ## Principle/Policy Adherence
+  - P-44: Phase 0/1/2 pattern consistent with putNode. Compliant.
+  - P-64: FILESYSTEM_ERROR ends with _ERROR. All new codes compliant.
+  - D-177: remoteAvailable at module scope line 31. Compliant.
+  - P-002: rejects.toMatchObject({code}) used. Compliant.
+  - P-53: No storage format references in interface sections. Compliant.
+content_hash: fdcc7a6bc95f3f511ce80eaca53254f7763153203e710a314dfd78427eacca33
+token_count: 473
 file_path: .ideate/cycles/068/spec-adherence.yaml
 cycle: 21
 cycle_modified: 19
-verdict: Pass
+verdict: Fail
+scope: full-audit
+date: "20260407"

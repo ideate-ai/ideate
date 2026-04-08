@@ -2,15 +2,16 @@ id: interview-refine-021
 type: interview
 cycle: 21
 entries:
-  - question: Review findings exist from cycle 20. Are you here to address those findings, to make other changes, or both?
-    answer: "All findings. Group by parallelism. Also add a new work item: Vitest process stays open after tests finish, address this first."
+  - question: Review findings exist from cycle 20 full audit. Are you here to address those findings, to make other changes, or both?
+    answer: Address all findings.
     domain: null
-  - question: "Triage: address all critical + significant + minor findings, and the Vitest hang?"
-    answer: All of the above.
+  - question: "SG1 has two fix options: (a) add limit/offset guards directly to LocalReaderAdapter internals in reader.ts, or (b) document the layering constraint in adapter-contract.md. Which do you prefer?"
+    answer: Address all — proceeding with option (a), adding guards to reader.ts so the reader is safe regardless of call path.
     domain: adapter-equivalence
-  - question: Grouping preference for G1/G2/G3 (deleteNode/putEdge/removeEdges)?
-    answer: Group by parallelism.
-    domain: adapter-equivalence
+  - question: Do the existing guiding principles still apply, or do any need to change given what you're planning?
+    answer: Principles unchanged.
+    domain: null
 cycle_modified: 19
-content_hash: 8c88f1e71125f0f8b746765bb21029314c058a7089ef3395f689e28b1fbfb72b
-token_count: 167
+content_hash: 6fcfb6b2a320e2f48aa57601c3d3eead295d1b0aa79509683124633a490e1c72
+token_count: 231
+mode: post-review correction

@@ -799,4 +799,145 @@ describe("RemoteAdapter Validation Layer (WI-671)", () => {
       expect(err.code).toBe('INVALID_NODE_ID');
     });
   });
+
+  // =========================================================================
+  // WI-698: traverse() boundary validation — alpha and max_iterations
+  // =========================================================================
+
+  describe("traverse — alpha boundary validation (WI-698)", () => {
+    it("throws INVALID_ALPHA when alpha is 0 (must be > 0)", async () => {
+      const err = await adapter
+        .traverse({ seed_ids: ["GP-001"], alpha: 0 })
+        .catch((e) => e);
+      expect(err).toBeInstanceOf(ValidationError);
+      expect((err as ValidationError).code).toBe("INVALID_ALPHA");
+    });
+
+    it("throws INVALID_ALPHA when alpha is negative", async () => {
+      const err = await adapter
+        .traverse({ seed_ids: ["GP-001"], alpha: -0.1 })
+        .catch((e) => e);
+      expect(err).toBeInstanceOf(ValidationError);
+      expect((err as ValidationError).code).toBe("INVALID_ALPHA");
+    });
+
+    it("throws INVALID_ALPHA when alpha is greater than 1", async () => {
+      const err = await adapter
+        .traverse({ seed_ids: ["GP-001"], alpha: 1.1 })
+        .catch((e) => e);
+      expect(err).toBeInstanceOf(ValidationError);
+      expect((err as ValidationError).code).toBe("INVALID_ALPHA");
+    });
+
+    it("passes validation when alpha is 1 (boundary: valid)", async () => {
+      // Validation passes but network will fail — only check it's not INVALID_ALPHA
+      try {
+        await adapter.traverse({ seed_ids: ["GP-001"], alpha: 1 });
+      } catch (err) {
+        if (err instanceof ValidationError) {
+          expect((err as ValidationError).code).not.toBe("INVALID_ALPHA");
+        }
+      }
+    });
+
+    it("passes validation when alpha is 0.85 (typical value)", async () => {
+      try {
+        await adapter.traverse({ seed_ids: ["GP-001"], alpha: 0.85 });
+      } catch (err) {
+        if (err instanceof ValidationError) {
+          expect((err as ValidationError).code).not.toBe("INVALID_ALPHA");
+        }
+      }
+    });
+  });
+
+  describe("traverse — max_iterations boundary validation (WI-698)", () => {
+    it("throws INVALID_MAX_ITERATIONS when max_iterations is 0 (must be > 0)", async () => {
+      const err = await adapter
+        .traverse({ seed_ids: ["GP-001"], max_iterations: 0 })
+        .catch((e) => e);
+      expect(err).toBeInstanceOf(ValidationError);
+      expect((err as ValidationError).code).toBe("INVALID_MAX_ITERATIONS");
+    });
+
+    it("throws INVALID_MAX_ITERATIONS when max_iterations is negative", async () => {
+      const err = await adapter
+        .traverse({ seed_ids: ["GP-001"], max_iterations: -1 })
+        .catch((e) => e);
+      expect(err).toBeInstanceOf(ValidationError);
+      expect((err as ValidationError).code).toBe("INVALID_MAX_ITERATIONS");
+    });
+
+    it("throws INVALID_MAX_ITERATIONS when max_iterations is a float", async () => {
+      const err = await adapter
+        // @ts-expect-error Testing runtime behavior with non-integer
+        .traverse({ seed_ids: ["GP-001"], max_iterations: 1.5 })
+        .catch((e) => e);
+      expect(err).toBeInstanceOf(ValidationError);
+      expect((err as ValidationError).code).toBe("INVALID_MAX_ITERATIONS");
+    });
+
+    it("passes validation when max_iterations is 1 (minimum valid)", async () => {
+      try {
+        await adapter.traverse({ seed_ids: ["GP-001"], max_iterations: 1 });
+      } catch (err) {
+        if (err instanceof ValidationError) {
+          expect((err as ValidationError).code).not.toBe("INVALID_MAX_ITERATIONS");
+        }
+      }
+    });
+
+    it("passes validation when max_iterations is 100", async () => {
+      try {
+        await adapter.traverse({ seed_ids: ["GP-001"], max_iterations: 100 });
+      } catch (err) {
+        if (err instanceof ValidationError) {
+          expect((err as ValidationError).code).not.toBe("INVALID_MAX_ITERATIONS");
+        }
+      }
+    });
+  });
+
+  // =========================================================================
+  // WI-698: getNode() input validation
+  // =========================================================================
+
+  describe("getNode — input validation (WI-698)", () => {
+    it("throws INVALID_NODE_ID when id is empty string", async () => {
+      const err = await adapter.getNode("").catch((e) => e);
+      expect(err).toBeInstanceOf(ValidationError);
+      expect((err as ValidationError).code).toBe("INVALID_NODE_ID");
+    });
+
+    it("throws INVALID_NODE_ID when id is null", async () => {
+      // @ts-expect-error Testing runtime behavior with null
+      const err = await adapter.getNode(null).catch((e) => e);
+      expect(err).toBeInstanceOf(ValidationError);
+      expect((err as ValidationError).code).toBe("INVALID_NODE_ID");
+    });
+
+    it("throws INVALID_NODE_ID when id is undefined", async () => {
+      // @ts-expect-error Testing runtime behavior with undefined
+      const err = await adapter.getNode(undefined).catch((e) => e);
+      expect(err).toBeInstanceOf(ValidationError);
+      expect((err as ValidationError).code).toBe("INVALID_NODE_ID");
+    });
+
+    it("throws INVALID_NODE_ID when id is a number", async () => {
+      // @ts-expect-error Testing runtime behavior with wrong type
+      const err = await adapter.getNode(42).catch((e) => e);
+      expect(err).toBeInstanceOf(ValidationError);
+      expect((err as ValidationError).code).toBe("INVALID_NODE_ID");
+    });
+
+    it("passes validation for a non-empty string id (network error is expected)", async () => {
+      try {
+        await adapter.getNode("GP-001");
+      } catch (err) {
+        if (err instanceof ValidationError) {
+          expect((err as ValidationError).code).not.toBe("INVALID_NODE_ID");
+        }
+      }
+    });
+  });
 });

@@ -30,6 +30,12 @@ Retrieve a single node by ID.
 **Returns:**
 - The full node including properties, or `null` if not found
 
+**Validation:**
+- `id` must be a non-empty string
+
+**Error Codes:**
+- `INVALID_NODE_ID`: id is empty or not a string
+
 **Error Handling:**
 - Returns `null` for non-existent nodes (no error thrown)
 
@@ -126,6 +132,7 @@ Delete a node and its associated edges.
 **Error Codes:**
 - `INVALID_NODE_ID`: id is empty or not a string
 - `TRANSACTION_FAILED`: Database transaction failed
+- `FILESYSTEM_ERROR`: artifact removal failed
 
 ---
 
@@ -225,11 +232,11 @@ Execute a PPR-based graph traversal for context assembly.
 - `EMPTY_SEED_IDS`: seed_ids array is empty
 - `INVALID_SEED_ID`: seed_ids contains non-string element
 - `INVALID_ALWAYS_INCLUDE_TYPE`: always_include_types contains invalid node type
-- `INVALID_TOKEN_BUDGET`: token_budget is not a positive integer
+- `INVALID_TOKEN_BUDGET`: token_budget is negative (valid range: 0 or greater)
 - `INVALID_ALPHA`: alpha is not a number in range (0, 1)
 - `INVALID_MAX_ITERATIONS`: max_iterations is not a positive integer
 - `INVALID_CONVERGENCE_THRESHOLD`: convergence_threshold is not a positive number
-- `INVALID_MAX_NODES`: max_nodes is not a positive integer
+- `INVALID_MAX_NODES`: max_nodes is a negative integer (valid range: 0 or greater)
 
 **Implementation Note:**
 - LocalAdapter runs PPR in-process via `ppr.ts`
@@ -547,11 +554,11 @@ constructor(
 - `EMPTY_SEED_IDS`: seed_ids array is empty
 - `INVALID_SEED_ID`: seed_ids contains non-string element
 - `INVALID_ALWAYS_INCLUDE_TYPE`: always_include_types contains invalid type
-- `INVALID_TOKEN_BUDGET`: token_budget is not a positive integer
+- `INVALID_TOKEN_BUDGET`: token_budget is negative (valid range: 0 or greater)
 - `INVALID_ALPHA`: alpha is not a number in range (0, 1)
 - `INVALID_MAX_ITERATIONS`: max_iterations is not a positive integer
 - `INVALID_CONVERGENCE_THRESHOLD`: convergence_threshold is not a positive number
-- `INVALID_MAX_NODES`: max_nodes is not a positive integer
+- `INVALID_MAX_NODES`: max_nodes is a negative integer (valid range: 0 or greater)
 - `INVALID_LIMIT`: limit is invalid
 - `INVALID_OFFSET`: offset is invalid
 - `INVALID_CYCLE`: cycle is not a non-negative integer
@@ -563,6 +570,7 @@ constructor(
 - `MISSING_EDGE_TARGET`: edge missing target_id
 - `MISSING_EDGE_TYPE`: edge missing edge_type
 - `INVALID_EDGE_TYPE`: edge has invalid edge_type
+- `FILESYSTEM_ERROR`: artifact removal failed
 
 ---
 
@@ -673,6 +681,8 @@ LocalAdapter and RemoteAdapter must behave identically in the following aspects:
 - **Transport**: HTTP to a GraphQL endpoint
 - **Batching**: Uses per-request DataLoader batching for efficient node lookups
 - **Connection**: Supports token rotation for long-lived sessions
+
+> **Note (RemoteAdapter only)**: Methods that must fetch the current cycle before executing (putNode, patchNode, getNode, getNodes) may throw a plain `Error` (not a `StorageAdapterError` subclass) for infrastructure failures such as GraphQL network errors. Callers of RemoteAdapter should catch both `StorageAdapterError` and the base `Error` class.
 
 ---
 

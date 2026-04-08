@@ -2,9 +2,9 @@ id: gap-analysis
 type: cycle_summary
 reviewer: gap-analyst
 content: |-
-  ## Gap Analysis — Cycle 22
+  ## Verdict: Pass
 
-  **Verdict**: Pass
+  All cycle 21 significant gaps (SG1, MN1) are addressed. No new significant gaps.
 
   ## Critical Gaps
   None.
@@ -13,28 +13,17 @@ content: |-
   None.
 
   ## Minor Gaps
-
-  ### MG1: putEdge and removeEdges not documented with TRANSACTION_FAILED in adapter-contract.md
-  - **Gap**: Both methods touch SQLite without a try/catch TRANSACTION_FAILED wrapper (unlike putNode, patchNode, deleteNode, batchMutate). Contract correctly omits it since the code doesn't throw it, but inconsistency exists in protection coverage.
-  - **Recommendation**: Defer — low risk; document with a follow-up work item.
-
-  ### MG2: Equivalence tests for putNode INVALID_NODE_TYPE and MISSING_NODE_PROPERTIES absent
-  - **Gap**: adapter-equivalence.test.ts covers putNode INVALID_NODE_ID but not INVALID_NODE_TYPE or MISSING_NODE_PROPERTIES. Both codes are tested in adapter-specific validation test files.
-  - **Recommendation**: Defer.
-
-  ### MG3: No .code assertion for EMPTY_SEED_IDS equivalence
-  - **Gap**: seed-ids-validation.test.ts covers EMPTY_SEED_IDS for LocalAdapter; no RemoteAdapter equivalence pair.
-  - **Recommendation**: Defer.
-
-  ### MG4: queryGraph INVALID_LIMIT / INVALID_OFFSET has no equivalence pair
-  - **Gap**: queryNodes equivalence covers INVALID_LIMIT; queryGraph does not. Both adapters validate identically.
-  - **Recommendation**: Defer.
-
-  ## Summary
-  Cycles 21–22 completed their stated objectives. adapter-contract.md now has Validation + Error Codes for all validated methods. ppr.test.ts verifies .code for all four codes. Equivalence tests cover all WI-682 scope codes. Remaining gaps are all narrow, deferred, with single-adapter coverage in place.
-content_hash: 7e950c4baf8f32d104ebf91f9f1ebd23288c0080528f404ee0cdea7c211241e4
-token_count: 470
+  ### MG1: getNode INVALID_NODE_ID equivalence test missing
+  - No equivalence test pair for getNode('') throwing INVALID_NODE_ID. Per-adapter isolation tests exist. Defer to next validation sweep.
+  ### MG2: getNode whitespace-only ID passes validation silently (carry-forward F-706-1 M1)
+  - Both adapters use !id (not trim()). No test documents intent. Defer.
+  ### MG3: PARSE_ERROR description names internal functions
+  - `docs/adapter-contract.md:484` — 'mapGqlNodeToNode' and 'fetchCurrentCycle' are internal implementation names in interface spec. P-53 spirit. Pre-existing, not introduced by these WIs. Defer.
+content_hash: 9db61e85b33d1cc69e2d4faea393c2790eec88cf6f1763c77875cdbdc2350e09
+token_count: 272
 file_path: .ideate/cycles/068/gap-analysis.yaml
 cycle: 22
 cycle_modified: 19
-verdict: Pass
+verdict: Fail
+scope: full-audit
+date: "20260407"

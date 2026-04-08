@@ -2,44 +2,52 @@ id: decision-log
 type: cycle_summary
 reviewer: journal-keeper
 content: |-
-  ## Decision Log — Cycle 20
+  ## Decision Log — Full Audit (2026-04-07)
 
-  **D-C20-01 — Scope WI-667 cycle validation to local/index.ts, not writer.ts**
-  When: Execution — WI-667 planning
-  Decision: WI-667 listed `local/index.ts` as the file containing cycle validation call sites. The actual cycle validation for nextId() lives in `writer.ts`, not `index.ts`.
-  Rationale: Not recorded. The spec writer likely traced the public interface surface (local/index.ts) without following the delegation chain to the concrete implementation in writer.ts.
-  Implications: Two ValidationError calls at writer.ts:472-476 and 479-483 still use raw field name "cycle" as the second argument, producing `.code === "VALIDATION_ERROR"` instead of "INVALID_CYCLE". The test at nextid-cycle-validation.test.ts:232 was not updated to assert the specific code, and now corroborates the wrong behavior. This is the root of finding C1 in the spec-adherence review.
+  ### Context
 
-  **D-C20-02 — Remove patchNode INVALID_NODE_TYPE guard as dead code**
-  When: Execution — WI-668 resolution
-  Decision: WI-668 acceptance criterion 5 included a patchNode INVALID_NODE_TYPE guard, but the executor removed it because `UpdateNodeInput` has no `type` field, making the guard unreachable.
-  Rationale: Recorded in WI-668 resolution: "Removed dead patchNode INVALID_NODE_TYPE guard (UpdateNodeInput has no type field)."
-  Implications: WI-673 correctly updated adapter-contract.md to remove the corresponding line. However, spec-reviewer S1 found that docs/adapter-contract.md:104 still states "type must be a valid NodeType if provided" under patchNode Validation, contradicting the code.
+  Full audit of mcp/artifact-server (PR-002, Adapter Refactor) triggered after the StorageAdapter validation layer converged in logical cycle 27. Covers the entire adapter codebase holistically. Three review outputs incorporated: code-quality (Fail), spec-adherence (Pass), gap-analysis (Fail).
 
-  **D-C20-03 — Extract fetchCurrentCycle tests to isolated file (WI-670)**
-  When: Execution — WI-670
-  Decision: Rather than adding vi.mock scoping guards inside remote-adapter.test.ts, the fetchCurrentCycle describe block and its vi.mock were extracted to a new file remote-adapter-fetchcycle.test.ts.
-  Rationale: Vitest hoists vi.mock calls to the top of a file; the only reliable isolation is file-level separation.
-  Implications: P-65 isolation pattern is now established as a domain policy. Future tests requiring different mock configurations for the same module must use separate files.
+  ### Key Findings (Cross-Referenced)
 
-  **D-C20-04 — Run WI-669 scope change (remote/index.ts) during WI-668**
-  When: Execution — WI-669
-  Decision: The actual remote/index.ts change to StorageAdapterError for mapGqlNodeToNode was executed during WI-668 (which already had remote/index.ts in scope), not WI-669. WI-669's scope was reduced to the test file update only.
-  Rationale: WI-669 notes: "remote/index.ts is in WI-668's scope. Since WI-669 depends on WI-668, the executor of WI-669 only needs to update the test file."
-  Implications: WI-669 passed without rework, as the underlying fix had already been applied.
+  **Theme A: putNode rollback deletes instead of restores (code-reviewer S1)**
+  Code-reviewer identified that putNode's SQLite failure rollback deletes the original YAML file instead of restoring it. patchNode handles this correctly (saves and restores existingContent). Neither spec-reviewer nor gap-analyst flagged this — it is a new finding from the full audit not caught in incremental reviews. Impact: silent data corruption on failed updates.
 
-  **D-C20-05 — LocalAdapter equivalence cases run unconditionally; RemoteAdapter cases use skipIf guard**
-  When: Execution — WI-672
-  Decision: Validation equivalence tests were split: LocalAdapter assertions run unconditionally, RemoteAdapter assertions under `it.skipIf(!remoteAvailable)`.
-  Rationale: Ensures local validation is always verified even in CI without a Neo4j instance.
-  Implications: This pattern should be applied to future equivalence tests.
+  **Theme B: alpha=0 / max_iterations=0 validation boundary mismatch (code-reviewer S2)**
+  Adapter-layer validation allows alpha >= 0 but computePPR rejects alpha <= 0. Callers see an error from an internal function with a message contradicting the advertised valid range. A cross-cutting consistency issue not visible from per-method review.
 
-  **D-C20-06 — WI-673 removes dead INVALID_NODE_TYPE from patchNode section of adapter-contract.md**
-  When: Execution — WI-673 resolution
-  Decision: Documented that patchNode only validates INVALID_NODE_ID (not INVALID_NODE_TYPE), consistent with D-C20-02.
-  Implications: Spec-reviewer S1 still found "type must be a valid NodeType if provided" at line 104. This is a contradiction between the resolution note and the live file state — needs verification.
-content_hash: 8116effd26733ac46a29fac5b085d78765969e5575b6f44658c2398c570927ec
-token_count: 990
+  **Theme C: dispatchHook allowlist rejection untested (code-reviewer S3)**
+  P-58 violation: the primary security control against arbitrary command execution (allowlist enforcement in dispatchHook) has no unit test directly exercising the rejection path. Pre-existing gap not caught in validation layer cycles.
+
+  **Theme D: LocalAdapter queryNodes/queryGraph missing limit/offset validation (gap-analyst SG1)**
+  RemoteAdapter validates INVALID_LIMIT/INVALID_OFFSET; LocalAdapter silently passes negatives to SQLite. Contract documents both codes for both adapters. Equivalence tests exist for these codes but local path doesn't implement them — equivalence tests would fail against a real LocalAdapter for these cases.
+
+  **Theme E: getNode lacks id validation (gap-analyst SG2)**
+  All write methods validate INVALID_NODE_ID; getNode does not. Asymmetric validation-first coverage. Contract doc has no Validation section for getNode (MN1). Both reviewers (code and gap) independently converged on the adapter validation symmetry theme.
+
+  ### Confirmed Working
+
+  - Full validation layer: deleteNode, putEdge, removeEdges, patchNode IMMUTABLE_FIELD in both adapters
+  - TRANSACTION_FAILED try/catch for all six write methods in both adapters
+  - fetchCurrentCycle inside try block in RemoteAdapter.putNode and patchNode
+  - adapter-contract.md matches implementation for all documented error codes
+  - P-64 (ValidationError code strings), P-65 (vi.mock isolation), D-177 (Local unconditional / Remote skipIf), P-002 (specific code assertions) all confirmed adherent
+  - P-40 (hook security): spawnSync with explicit argument array, shell: false
+  - batchMutate equivalence: all 8 validation codes covered cross-adapter
+  - Test suite: 1,084 passed, 306 skipped, 0 failed
+
+  ### Open Questions for Next Refinement
+
+  1. Fix putNode rollback: save originalContent before overwrite, restore on catch instead of unlink
+  2. Fix alpha/max_iterations validation boundary: tighten adapter guards to match ppr.ts (alpha <= 0, max_iterations <= 0)
+  3. Add dispatchHook allowlist rejection test (P-58)
+  4. Add limit/offset validation to LocalAdapter queryNodes and queryGraph (INVALID_LIMIT, INVALID_OFFSET)
+  5. Decide: add INVALID_NODE_ID validation to getNode? Update contract doc either way (add validation or explicit note that callers are responsible)
+  6. Minor: MISSING_CYCLE in consolidated error code table; cycle_modified injection documented; adapter-contract.test.ts legacy IMMUTABLE_FIELD tests add .code; traverse/appendJournalEntry equivalence happy-path tests
+content_hash: 8a3570be2f70188c9d60009e871d6c87b2019889ddb660d4d7473cee59e1cec8
+token_count: 1011
 file_path: .ideate/cycles/068/decision-log.yaml
 cycle: 20
 cycle_modified: 19
+scope: full-audit
+date: "20260407"

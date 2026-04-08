@@ -276,6 +276,9 @@ export class LocalReaderAdapter {
   // -----------------------------------------------------------------------
 
   async getNode(id: string): Promise<Node | null> {
+    if (!id || typeof id !== "string") {
+      throw new ValidationError("Node ID must be a non-empty string", "INVALID_NODE_ID", { id });
+    }
     const row = this.db
       .prepare(
         `SELECT id, type, status, cycle_created, cycle_modified, content_hash, token_count, file_path
@@ -396,6 +399,12 @@ export class LocalReaderAdapter {
     limit: number,
     offset: number
   ): Promise<QueryResult> {
+    if (!Number.isInteger(limit) || limit < 0) {
+      throw new ValidationError("Limit must be a non-negative integer", "INVALID_LIMIT", { limit });
+    }
+    if (!Number.isInteger(offset) || offset < 0) {
+      throw new ValidationError("Offset must be a non-negative integer", "INVALID_OFFSET", { offset });
+    }
     const type = filter.type as string | undefined;
     const whereClauses: string[] = [];
     const params: (string | number)[] = [];
@@ -529,6 +538,12 @@ export class LocalReaderAdapter {
     limit: number,
     offset: number
   ): Promise<QueryResult> {
+    if (!Number.isInteger(limit) || limit < 0) {
+      throw new ValidationError("Limit must be a non-negative integer", "INVALID_LIMIT", { limit });
+    }
+    if (!Number.isInteger(offset) || offset < 0) {
+      throw new ValidationError("Offset must be a non-negative integer", "INVALID_OFFSET", { offset });
+    }
     const {
       origin_id,
       depth = 1,

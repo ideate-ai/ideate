@@ -1,22 +1,16 @@
 id: review-manifest
 type: cycle_summary
 content: |-
-  ## Review Manifest (Cycle 21)
+  ## Review Manifest (Cycle 21 — Autopilot Cycle 2)
 
-  | # | Title | File Scope | Incremental Verdict | Findings (C/S/M) |
-  |---|-------|------------|---------------------|------------------|
-  | WI-674 | Fix Vitest process hanging (forceExit + watcher cleanup) | mcp/artifact-server/vitest.config.ts, mcp/artifact-server/src/__tests__/watcher.test.ts | Pass | 0/0/0 |
-  | WI-675 | Fix writer.ts ValidationError codes + deleteNode/putEdge/removeEdges validation | mcp/artifact-server/src/adapters/local/writer.ts, mcp/artifact-server/src/__tests__/nextid-cycle-validation.test.ts, mcp/artifact-server/tests/adapters/local-adapter-validation.test.ts | Pass (0 rework) | 0/0/3 |
-  | WI-676 | Add deleteNode/putEdge/removeEdges validation to RemoteAdapter + ALL_EDGE_TYPES | mcp/artifact-server/src/adapter.ts, mcp/artifact-server/src/adapters/remote/index.ts, mcp/artifact-server/tests/adapters/remote-adapter-validation.test.ts | Pass (0 rework) | 0/0/3 |
-  | WI-677 | Fix adapter-contract.md: remove dead patchNode type constraint, fix PARSE_ERROR placement, fix putEdge codes | mcp/artifact-server/docs/adapter-contract.md | Pass (after rework) | 0/1/2 |
-  | WI-678 | Fix ppr.ts ValidationError field name codes | mcp/artifact-server/src/ppr.ts | Pass | 0/0/1 |
-  | WI-679 | Add equivalence tests for deleteNode/putEdge/removeEdges/putNode/patchNode validation | mcp/artifact-server/tests/adapters/adapter-equivalence.test.ts | Pass (after rework) | 0/2/1 |
-
-  **Summary**: 6 work items. All passed incremental review (2 after rework). Rework: WI-677 PARSE_ERROR placed in wrong section (moved to StorageAdapterError); WI-679 putEdge used wrong field name `type` instead of `edge_type` and removeEdges passed string instead of EdgeType[].
-
-  **Test suite**: 1045 passed, 0 failed, 285 skipped (1330 total). forceExit:true added — process no longer hangs after test run.
-content_hash: 58900eae57086f36d56a071a03e031f689c0d88e4bb140ece21d369d4c716a0f
-token_count: 520
+  | # | Work Item | Title | File Scope | Incremental Verdict | Findings (C/S/M) |
+  |---|-----------|-------|------------|---------------------|------------------|
+  | 1 | WI-702 | deleteNode YAML rollback on SQLite failure | mcp/artifact-server/src/adapters/local/writer.ts, mcp/artifact-server/src/__tests__/adapters/writer.test.ts | Pass (rework) | 0/2/1 |
+  | 2 | WI-703 | appendJournalEntry TRANSACTION_FAILED equivalence test | mcp/artifact-server/tests/adapters/equivalence-journal.test.ts | Pass (rework) | 0/1/1 |
+  | 3 | WI-704 | adapter-contract.md documentation fixes | mcp/artifact-server/docs/adapter-contract.md | Pass | 0/0/0 |
+content_hash: 7f7cb492539cc67da6209548bf2f466193a9d667a1a7ded4cbaa6af765ef475b
+token_count: 236
 file_path: .ideate/cycles/068/review-manifest.yaml
 cycle: 21
 cycle_modified: 19
+reviewer: autopilot

@@ -2,36 +2,31 @@ id: gap-analysis
 type: cycle_summary
 reviewer: gap-analyst
 content: |-
-  ## Gap Analysis — Cycle 23
+  ## Verdict: Pass
 
-  **Verdict**: Fail
+  No critical or significant gaps. All cycle 21/22 significant items resolved. Deferred minor items unchanged.
+
+  ## Critical Gaps
+  None.
 
   ## Significant Gaps
-
-  - [SG1] `tests/adapters/write-transaction.test.ts` covers TRANSACTION_FAILED for putNode, patchNode, deleteNode, batchMutate — but not putEdge or removeEdges. These two methods now throw ValidationError(TRANSACTION_FAILED) in LocalAdapter (added WI-683) but have no test coverage for that path. The transaction failure tests for other methods follow a clear pattern (mock `db.prepare` to throw, assert TRANSACTION_FAILED code). The same pattern must be applied to putEdge and removeEdges.
-
-  - [SG2] `src/schema.ts` exports `EDGE_TYPES` (15 values). `src/adapter.ts` exports `ALL_EDGE_TYPES` (15 values). Both are maintained independently. WI-683 fixed batchMutate to use these constants instead of inline Sets, but the two constants themselves are separate definitions. A divergence between them would produce silent bugs in validation vs batchMutate. No enforcement of equality exists (no test, no import relationship). One should import from the other or both should import from a shared source.
+  None.
 
   ## Minor Gaps
+  ### MG3 (carry-forward, deferred): PARSE_ERROR description names internal functions
+  - `docs/adapter-contract.md:484` — 'mapGqlNodeToNode' and 'fetchCurrentCycle' are internal names in interface spec. Pre-existing. Appropriate to defer.
+  ### Cosmetic: putNode Validation block missing 'a'
+  - `docs/adapter-contract.md:84` — pre-existing, outside WI-707 scope.
 
-  - [MG1] `tests/adapters/local-adapter-validation.test.ts` line ~490 AC-7 describe block has a stale comment referencing generic 'removes edges' language copied from a prior describe block. Cosmetic only.
-
-  - [MG2] `src/adapters/remote/index.ts` putEdge/removeEdges transport failures surface as ConnectionError (unhandled). LocalAdapter wraps them as ValidationError(TRANSACTION_FAILED). The class-level divergence (StorageAdapterError vs ValidationError) means callers cannot write uniform catch blocks. This is the same issue as spec-adherence S2 but framed as a missing integration.
-
-  - [MG3] `docs/adapter-contract.md` patchNode section omits IMMUTABLE_FIELD_VIOLATION error code despite putNode documenting it. If callers attempt to change `id` or `type` via patchNode, the error produced is not documented.
-
-  ## Resolved from Prior Cycles
-
-  - G1 (deleteNode validation) — resolved in cycle 21
-  - G2 (putEdge validation) — resolved in cycle 21
-  - G3 (removeEdges validation) — resolved in cycle 21
-  - G4 (PARSE_ERROR documentation) — resolved in cycle 21
-  - G6 (batchMutate edge validation equivalence) — resolved in cycle 22
-  - G7 (deleteNode absent from validation tests) — resolved in cycle 22
-  - G8 (putNode/patchNode INVALID_NODE_ID equivalence) — resolved in cycle 22
-content_hash: 3674a75f6a4d2ebc784b919ebb0e74eea37bd942690039fe69284f7049d576db
-token_count: 660
+  ## Prior Deferred Items (unchanged)
+  - MG1: getNode INVALID_NODE_ID equivalence test missing. Still deferred.
+  - MG2: getNode whitespace-only ID passes validation silently. Still deferred.
+  - MG3: PARSE_ERROR internal function names. Still deferred.
+content_hash: 410b672c77050057caaa7990cf25d2b0ae1947041af64ddfd7ef5fffd8a02c23
+token_count: 280
 file_path: .ideate/cycles/068/gap-analysis.yaml
 cycle: 23
 cycle_modified: 19
 verdict: Fail
+scope: full-audit
+date: "20260407"

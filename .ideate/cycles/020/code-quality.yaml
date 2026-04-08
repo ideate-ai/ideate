@@ -2,17 +2,57 @@ id: code-quality
 type: cycle_summary
 reviewer: code-reviewer
 content: |-
-  ## Code Quality Review — Cycle 20
+  ## Code Quality Review — Full Audit (2026-04-07)
 
-  **Verdict**: Incomplete (reviewer hit turn budget)
+  **Verdict**: Fail
 
-  The code-reviewer agent returned an incomplete response after exhausting its tool call budget (122 tool uses). The agent was mid-investigation when it terminated — verifying mapGqlNodeToNode for WI-669. No complete findings were produced.
+  ## Critical Findings
+  None.
 
-  **Impact on review**: The dynamic testing pillar (npm test run) was not completed by this reviewer. The spec-adherence and gap-analyst reviewers partially overlap in their coverage of the validation layer.
+  ## Significant Findings
 
-  **Known from incremental reviews**: npm test passed with 1015 tests, 0 failures after all cycle 20 work items completed.
-content_hash: 81b6136836479f4c4b582ede69f98a2d496072fd25199a319b0a6521b48963d3
-token_count: 227
+  ### S1: putNode update rollback deletes original file instead of restoring it
+  - **File**: `src/adapters/local/writer.ts:656-671`
+  - On a putNode call for an existing node, if the SQLite transaction fails, the rollback handler deletes `absoluteFilePath` rather than restoring original content. patchNode correctly saves and restores `existingContent`; putNode does not.
+  - **Impact**: Silent data corruption — SQLite index points to a non-existent YAML file after a failed update.
+  - **Fix**: Read and save `originalContent` before overwriting. Restore on catch instead of unlinking.
+
+  ### S2: alpha=0 and max_iterations=0 pass adapter-layer validation but fail in ppr.ts
+  - **Files**: `src/adapters/local/context.ts:231-232`, `src/ppr.ts:108-109,118-119`
+  - Adapters allow `alpha >= 0` but `computePPR` rejects `alpha <= 0`. Same for `max_iterations`. Callers receive an error from a function they never called, with a message contradicting the advertised valid range.
+  - **Fix**: Tighten adapter validation to match ppr.ts: `alpha <= 0` and `max_iterations <= 0`.
+
+  ### S3: No test for dispatchHook allowlist rejection (P-58 violation)
+  - **File**: `src/__tests__/hooks.test.ts`
+  - The primary security control (allowlist enforcement in dispatchHook) has no unit test exercising the rejection path for non-allowlisted commands.
+  - **Fix**: Add test: pass non-allowlisted command, assert throws with allowlist rejection message.
+
+  ## Minor Findings
+
+  ### M1: `_countNodesWithoutStatus` swallows all errors silently
+  - `src/adapters/remote/index.ts:1438-1443` — catches all errors, returns 0.
+
+  ### M2: fetchCurrentCycle wraps network errors as VALIDATION_ERROR
+  - `src/adapters/remote/index.ts:463-468` — infrastructure failure surfaces as ValidationError, semantically wrong.
+
+  ### M3: LocalWriterAdapter.nextId throws plain Error for unsupported types
+  - `src/adapters/local/writer.ts:520` — should throw ValidationError(INVALID_NODE_TYPE) per P-002.
+
+  ### M4: deleteNode reverses P-44 write order (SQLite before YAML)
+  - `src/adapters/local/writer.ts:887-908` — SQLite delete precedes YAML removal, violating YAML-first policy.
+
+  ## Principle Adherence Confirmed
+  - P-40: dispatchHook uses spawnSync with explicit argument array, shell: false
+  - P-64: All ValidationError throws use compliant code strings
+  - P-002: All validation test files assert .code specifically
+  - P-65: Module-level vi.mock only in new test files
+  - P-36: write-transaction.test.ts covers all six write methods
+  - Test suite: 1,084 passed, 306 skipped, 0 failed
+content_hash: bba5058481683e0183af2417d025b89d9c7d418b68083cc3e84fe87f1405323a
+token_count: 749
 file_path: .ideate/cycles/068/code-quality.yaml
 cycle: 20
 cycle_modified: 19
+verdict: Pass
+scope: full-audit
+date: "20260407"

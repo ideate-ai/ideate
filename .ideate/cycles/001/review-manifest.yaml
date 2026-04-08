@@ -1,20 +1,23 @@
 id: review-manifest
 type: cycle_summary
 content: |-
-  ## Review Manifest (Cycle 1)
+  ## Review Manifest (Cycle 1 — Autopilot Run, 2026-04-07)
 
-  | Work Item | Title | Incremental Verdict | Findings (C/S/M) |
-  |-----------|-------|---------------------|------------------|
-  | WI-644 | Add error handling for JSON.parse | Pass | 0/0/0 |
-  | WI-645 | Add input validation for cycle parameter | Pass | 0/0/0 |
-  | WI-646 | Replace console.error with console.log | Pass | 0/0/0 |
-  | WI-647 | Add validation for negative token_budget | Pass | 0/0/0 |
-  | WI-648 | Add validation for negative PPR parameters | Pass | 0/0/0 |
-  | WI-649 | Add validation for always_include_types | Pass | 0/0/0 |
-  | WI-650 | PPR divergence investigation | Pass | 0/0/2 |
-  | WI-651 | Move adapter-equivalence.test.ts | Pass | 0/0/0 |
+  | # | WI | Title | File Scope | Incremental Verdict | Findings (C/S/M) |
+  |---|----|----|----|----|----|
+  | 1 | WI-695 | Fix putNode rollback, deleteNode write order, nextId error type | mcp/artifact-server/src/adapters/local/writer.ts, src/__tests__/adapters/writer.test.ts | Pass (after rework) | 0/0/2 |
+  | 2 | WI-696 | Add INVALID_NODE_ID, INVALID_LIMIT, INVALID_OFFSET guards to LocalReaderAdapter | src/adapters/local/reader.ts, tests/adapters/local-adapter-validation.test.ts | Pass | 0/0/0 |
+  | 3 | WI-697 | Tighten alpha and max_iterations boundary validation in LocalContextAdapter | src/adapters/local/context.ts, src/__tests__/ppr.test.ts | Pass | 0/0/0 |
+  | 4 | WI-698 | Fix boundary validation, getNode validation, error semantics in RemoteAdapter | src/adapters/remote/index.ts, tests/adapters/remote-adapter-validation.test.ts | Pass | 0/0/0 |
+  | 5 | WI-699 | Add dispatchHook allowlist rejection test (P-58 compliance) | src/__tests__/hooks.test.ts | Pass | 0/0/0 |
+  | 6 | WI-700 | Update adapter-contract.md: getNode validation, MISSING_CYCLE, cycle_modified docs | docs/adapter-contract.md | Pass | 0/0/0 |
+  | 7 | WI-701 | Add equivalence tests for traverse happy path and appendJournalEntry | tests/adapters/equivalence-traverse.test.ts, tests/adapters/equivalence-journal.test.ts | Pass (after rework) | 0/0/0 |
 
-  **Summary**: 8 work items reviewed. All passed incremental review. Minor findings in WI-650 (inDegree initialization, formatting).
+  **Scope**: Addresses all 5 significant + 7 minor findings from the cycle 20 full-audit.
+  **Incremental finding files**: .ideate/cycles/001/findings/F-695-1.yaml through F-701-1.yaml
+content_hash: c114ea42cab89833a771e571522738943e65cd2c22f32ea9fafef88b8bfd37ed
+token_count: 459
+file_path: .ideate/cycles/068/review-manifest.yaml
 cycle: 1
-content_hash: 1ccd4a2e215c5080c790d58562413783525ce6def24adbb676e4c35a33156eee
-token_count: 224
+cycle_modified: 19
+reviewer: autopilot

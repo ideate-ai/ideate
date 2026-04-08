@@ -48,7 +48,7 @@ describe("RemoteAdapter — fetchCurrentCycle error recovery (WI-656)", () => {
     }));
   });
 
-  it("throws ValidationError with context on GraphQL/network errors", async () => {
+  it("throws a plain Error (not ValidationError) with context on GraphQL/network errors (WI-698)", async () => {
     const adapter = new RemoteAdapter({
       endpoint: "http://localhost:8080/graphql",
       org_id: "test-org",
@@ -76,13 +76,12 @@ describe("RemoteAdapter — fetchCurrentCycle error recovery (WI-656)", () => {
       })
       .mockRejectedValueOnce(new Error("Network timeout"));
 
-    // Should throw ValidationError with context about the failure
+    // Should throw a plain Error (not ValidationError) with context about the failure
     await expect(adapter.getNode("WI-001")).rejects.toSatisfy((err: Error) => {
       return (
-        err instanceof ValidationError &&
-        err.message.includes("Failed to fetch domain_index") &&
-        err.message.includes("Network timeout") &&
-        err.details?.codebaseId === "test-codebase"
+        !(err instanceof ValidationError) &&
+        err.message.includes("Failed to fetch current cycle") &&
+        err.message.includes("Network timeout")
       );
     });
   });
@@ -129,7 +128,7 @@ describe("RemoteAdapter — fetchCurrentCycle error recovery (WI-656)", () => {
     });
   });
 
-  it("error message includes context about what operation failed", async () => {
+  it("error message includes context about what operation failed (WI-698: plain Error, not ValidationError)", async () => {
     const adapter = new RemoteAdapter({
       endpoint: "http://localhost:8080/graphql",
       org_id: "test-org",
@@ -159,20 +158,19 @@ describe("RemoteAdapter — fetchCurrentCycle error recovery (WI-656)", () => {
 
     try {
       await adapter.getNode("WI-001");
-      expect.fail("Should have thrown ValidationError");
+      expect.fail("Should have thrown an Error");
     } catch (err) {
-      expect(err).toBeInstanceOf(ValidationError);
-      const validationErr = err as ValidationError;
-      // Error includes context about the operation that failed
-      expect(validationErr.message).toContain("Failed to fetch domain_index");
-      expect(validationErr.message).toContain("ECONNREFUSED");
-      expect(validationErr.details).toBeDefined();
-      expect(validationErr.details?.codebaseId).toBe("test-codebase");
-      expect(validationErr.details?.originalError).toBe("ECONNREFUSED");
+      // WI-698: network failures should throw a plain Error, not ValidationError
+      expect(err).not.toBeInstanceOf(ValidationError);
+      expect(err).toBeInstanceOf(Error);
+      const plainErr = err as Error;
+      // Error message includes context about what failed
+      expect(plainErr.message).toContain("Failed to fetch current cycle");
+      expect(plainErr.message).toContain("ECONNREFUSED");
     }
   });
 
-  it("does NOT silently fallback to cycle 1 on any error", async () => {
+  it("does NOT silently fallback to cycle 1 on any error (WI-698: plain Error for network failures)", async () => {
     const adapter = new RemoteAdapter({
       endpoint: "http://localhost:8080/graphql",
       org_id: "test-org",
@@ -210,10 +208,9 @@ describe("RemoteAdapter — fetchCurrentCycle error recovery (WI-656)", () => {
 
     // Verify we got an error (not a silent fallback to cycle 1)
     expect(caughtError).not.toBeNull();
-    // Error should be explicit ValidationError or StorageAdapterError
-    expect(
-      caughtError instanceof ValidationError || caughtError instanceof StorageAdapterError
-    ).toBe(true);
+    // WI-698: network/infrastructure errors throw a plain Error (not ValidationError)
+    expect(caughtError).toBeInstanceOf(Error);
+    expect(caughtError!.message).toContain("Failed to fetch current cycle");
   });
 
   it("propagates StorageAdapterError for PARSE_ERROR (not wrapped)", async () => {

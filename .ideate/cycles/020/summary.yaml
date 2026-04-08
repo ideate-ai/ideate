@@ -1,59 +1,70 @@
 id: summary
 type: cycle_summary
 content: |-
-  ## Cycle 20 Review Summary
+  # Review Summary — Full Audit (2026-04-07)
 
-  **Overall Verdict**: Fail
+  ## Overview
+  Full audit of mcp/artifact-server (PR-002) after StorageAdapter validation layer convergence. The validation layer itself is complete and correct. The audit surfaced three new significant findings — a data-corruption bug in putNode rollback, a validation boundary mismatch between adapters and ppr.ts, and a security test coverage gap in hook allowlist enforcement — plus two significant gaps in LocalAdapter read-method validation.
 
-  **Work items**: 7 executed (WI-667 through WI-673), all passed incremental review. 4 required rework; 3 passed directly.
-  **Test suite**: 1015 tests, 0 failures (confirmed via incremental reviews; code-reviewer did not complete dynamic testing).
+  ## Phase Convergence
+  Phase: PH-017 (Documentation & Cleanup)
+  Convergence status: Not converged — new significant findings from full audit
+  Trend: Validation layer converged at cycle 27; full audit reveals pre-existing issues outside the validation layer scope.
 
-  ### Critical Findings
+  ## Project Progress
 
-  - **[C1 — spec-adherence]** `src/adapters/local/writer.ts:474,481` — nextId() cycle validation uses raw field name `"cycle"` as second ValidationError argument → produces code `VALIDATION_ERROR` instead of `INVALID_CYCLE`. WI-667 fixed remote adapter and reader.ts but missed writer.ts. Corroborating test at `src/__tests__/nextid-cycle-validation.test.ts:232` asserts the wrong code. **P-64 violation.**
+  | Success Criterion | Status |
+  |---|---|
+  | LocalAdapter and RemoteAdapter have matching input validation for all write methods | pass |
+  | All validation errors use specific error codes (not generic VALIDATION_ERROR) | pass |
+  | adapter-contract.md accurately documents all error codes | partial (minor gaps: MISSING_CYCLE in consolidated list; cycle_modified injection undocumented) |
+  | TRANSACTION_FAILED wrapping on all write methods in both adapters | pass |
+  | Equivalence test suite covers all validation codes cross-adapter | pass |
+  | Test suite passes clean | pass (1084/0 fail) |
+  | putNode rollback handles update path correctly | fail (S1) |
+  | Validation consistent between adapter layer and ppr.ts | fail (S2) |
+  | Security-relevant code has test coverage (P-58) | partial (S3: allowlist rejection untested) |
+  | LocalAdapter read methods validate limit/offset | fail (SG1) |
 
-  - **[G1 — gap-analyst]** deleteNode lacks input validation in both adapters (writer.ts:874, remote/index.ts:655). Empty string id silently returns not_found. Contradicts Validation-First principle.
+  ## Critical Findings
+  None.
 
-  - **[G2 — gap-analyst]** putEdge lacks input validation in both adapters (writer.ts:913, remote/index.ts:678). batchMutate validates edges with specific codes; putEdge bypasses all validation. adapter-contract.md lines 143-145 documents requirements that don't exist in code.
+  ## Significant Findings
 
-  ### Significant Findings
+  - [code-reviewer] putNode update rollback deletes original file instead of restoring it — `src/adapters/local/writer.ts:656-671` — cross-cutting (not covered by any single work item)
+  - [code-reviewer] alpha=0/max_iterations=0 pass adapter validation but fail in ppr.ts with misleading error — `src/adapters/local/context.ts:231-232`, `src/ppr.ts:108-119` — cross-cutting
+  - [code-reviewer] dispatchHook allowlist rejection has no unit test (P-58 violation) — `src/__tests__/hooks.test.ts` — cross-cutting
+  - [gap-analyst] LocalAdapter queryNodes and queryGraph do not validate limit/offset (INVALID_LIMIT/INVALID_OFFSET missing from local path) — `src/adapters/local/reader.ts:394,527` — cross-cutting adapter equivalence
+  - [gap-analyst] Neither adapter validates getNode id as non-empty string — `src/adapters/local/reader.ts:278`, `src/adapters/remote/index.ts:509` — cross-cutting adapter validation
 
-  - **[S1 — spec-adherence]** `docs/adapter-contract.md:104` — patchNode Validation section still states "type must be a valid NodeType if provided" despite UpdateNodeInput having no type field. WI-673 was supposed to remove this.
-  - **[G3 — gap-analyst]** removeEdges lacks input validation in both adapters.
-  - **[G4 — gap-analyst]** PARSE_ERROR code not documented in adapter-contract.md (added by WI-669).
-  - **[G5 — gap-analyst]** putEdge contract documents VALIDATION_ERROR generic code; should use specific codes matching batchMutate.
-  - **[G6 — gap-analyst]** No equivalence tests for batchMutate edge validation codes between adapters.
+  ## Minor Findings
 
-  ### Minor Findings
+  - [code-reviewer] _countNodesWithoutStatus swallows all errors silently — `src/adapters/remote/index.ts:1438-1443` → carry-forward
+  - [code-reviewer] fetchCurrentCycle wraps network errors as VALIDATION_ERROR (semantically wrong) — `src/adapters/remote/index.ts:463-468` → carry-forward
+  - [code-reviewer] LocalWriterAdapter.nextId throws plain Error for unsupported types (should be ValidationError) — `src/adapters/local/writer.ts:520` → carry-forward
+  - [code-reviewer] deleteNode reverses P-44 write order (SQLite deleted before YAML) — `src/adapters/local/writer.ts:887-908` → carry-forward
+  - [spec-reviewer] MISSING_CYCLE absent from consolidated error code list in adapter-contract.md — `docs/adapter-contract.md:541-565` → carry-forward
+  - [spec-reviewer] putNode/patchNode cycle_modified auto-injection unspecified in contract — `docs/adapter-contract.md:60-110` → carry-forward
+  - [gap-analyst] adapter-contract.md getNode section has no Validation or Error Codes block — `docs/adapter-contract.md:23-36` → carry-forward
+  - [gap-analyst] No happy-path traverse equivalence test — tests/adapters/adapter-equivalence.test.ts → carry-forward
+  - [gap-analyst] No equivalence test for appendJournalEntry — tests/adapters/adapter-equivalence.test.ts → carry-forward
 
-  - **[M1 — spec-adherence]** `src/ppr.ts:112,121,130,139` — four ValidationError calls use raw field names (alpha, maxIterations, etc.) → VALIDATION_ERROR instead of specific codes. Outside WI-667 scope.
-  - **[M2 — spec-adherence]** `tests/adapters/local-adapter-validation.test.ts:490` — test titled INVALID_CYCLE does not assert `.code`, masking the wrong behavior from C1.
-  - **[G7]** deleteNode absent from both validation test files.
-  - **[G8]** No equivalence tests for putNode/patchNode INVALID_NODE_ID.
-  - **[G9]** Q-122/Q-128 (server-side BFS/PPR alignment) unchanged.
+  ## Findings Requiring User Input
+  None — all findings can be resolved from existing context.
 
-  ### Code Review Status
-
-  Code-reviewer hit turn budget (122/80 tool uses) before producing complete findings. No static review output and no npm test run. Known from incremental reviews: 1015 tests pass. Static review of validation layer is incomplete — C1 would likely have been caught if code-reviewer had completed.
-
-  ### Next Cycle Priorities
-
-  1. Fix writer.ts nextId() cycle validation (C1) + update nextid-cycle-validation.test.ts:232
-  2. Verify/fix adapter-contract.md:104 patchNode section (S1)
-  3. Add deleteNode input validation to both adapters + tests (G1/G7)
-  4. Add putEdge input validation to both adapters with specific codes + update contract (G2/G5)
-  5. Add removeEdges input validation (G3)
-  6. Document PARSE_ERROR in adapter-contract.md (G4)
-  7. Add batchMutate edge + putNode/patchNode equivalence tests (G6/G8)
-  8. Fix ppr.ts ValidationError codes (M1)
-
-  ### Process Notes
-
-  - Code-reviewer budget (80 turns) is insufficient for comprehensive coverage of the validation layer. Consider increasing to 120 for cycles with deep validation work.
-  - Validation-First remediation is proceeding method-by-method rather than uniformly. deleteNode, putEdge, removeEdges remain unguarded.
-  - Documentation work items catch up incompletely — PARSE_ERROR and putEdge codes missed in WI-673.
-content_hash: 1df851ae90ea3a3c2485d142619b2d55fc59e1278a8808d114253c316838d698
-token_count: 1009
+  ## Proposed Refinement Plan
+  5 significant findings require a refinement cycle. Recommended work items:
+  1. Fix putNode rollback to restore original content on SQLite failure (src/adapters/local/writer.ts)
+  2. Tighten adapter alpha/max_iterations validation to match ppr.ts boundaries (context.ts + remote/index.ts)
+  3. Add dispatchHook allowlist rejection test (src/__tests__/hooks.test.ts)
+  4. Add INVALID_LIMIT/INVALID_OFFSET validation to LocalAdapter.queryNodes and queryGraph (src/adapters/local/reader.ts)
+  5. Decide and implement getNode id validation; update adapter-contract.md getNode section accordingly
+  Minor doc and test gaps can be bundled into a single cleanup work item.
+content_hash: 0a186c277f5218fce27f5e0992f93f8485cfeb672414a46758c352b7673d9495
+token_count: 1256
 file_path: .ideate/cycles/068/summary.yaml
 cycle: 20
 cycle_modified: 19
+verdict: Pass
+scope: full-audit
+date: "20260407"

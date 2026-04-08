@@ -1,58 +1,46 @@
 id: gap-analysis
 type: cycle_summary
+reviewer: gap-analyst
 content: |-
-  ## Verdict: Pass with Gaps
+  ## Gap Analysis — Cycle 1 (2026-04-07)
 
-  Cycle 1 addressed immediate validation gaps. Several gaps remain for future cycles.
+  **Verdict**: Fail
 
   ## Critical Gaps
-
-  ### CG1: WI-646 Incomplete — console.error Still Used in writer.ts
-  - **Work Item**: WI-646: console.error to console.log
-  - **Current State**: console.error still used in writer.ts for transaction failures
-  - **Gap**: Work item incomplete; remaining console.error calls not converted
-
-  ### CG2: Missing seed_ids Validation in traverse()
-  - **Component**: LocalAdapter and RemoteAdapter traverse()
-  - **Current State**: No validation for empty seed_ids array or invalid seed ID format
-  - **Impact**: Silent failures when invalid seed_ids provided
+  None.
 
   ## Significant Gaps
 
-  ### SG1: Missing LocalAdapter Validation Tests
-  - **Gap**: No dedicated test file for LocalAdapter traverse() validation
-  - **Impact**: Less test coverage than RemoteAdapter
-
-  ### SG2: Incomplete PPR Divergence Documentation
-  - **Gap**: WI-650 identified server-side root cause but no formal documentation
-  - **Impact**: Finding may be lost; future developers may re-investigate
-
-  ### SG3: Missing limit/offset Validation in query Methods
-  - **Component**: queryNodes(), queryGraph()
-  - **Gap**: No validation for negative or non-integer limit/offset values
-
-  ### SG4: Inconsistent Error Recovery in fetchCurrentCycle
-  - **Gap**: Parse failures silently fallback to cycle 1 without logging
+  ### SG1: deleteNode YAML Rollback — Missing and No Follow-On Work Item Tracked
+  - **Component**: `src/adapters/local/writer.ts` lines 899-924
+  - **Scenario**: When Phase 1 succeeds (YAML removed at line 902) but Phase 2 fails (SQLite DELETE at lines 913-917), the YAML file is permanently gone and not restored. The SQLite index and filesystem are left inconsistent: node row still in SQLite but YAML file no longer exists.
+  - **Current state**: deleteNode throws TRANSACTION_FAILED on SQLite failure but performs no filesystem restore. Incremental review F-695-1 flagged this as 'tracked as follow-on' but no follow-on work item (WI-702 or similar) was created.
+  - **Impact**: SQLite failure during deleteNode leaves the artifact store in unrecoverable split-brain state: YAML file gone but SQLite row still present. Subsequent getNode calls return stale data from index while readNodeContent returns empty string.
+  - **Recommendation**: Address now — this is a P-44 data-integrity gap. Fix: save file content before fs.unlinkSync, restore it in the SQLite catch block.
 
   ## Minor Gaps
 
-  ### MG1: mapGqlNodeToNode Silent JSON.parse Failures
-  - Inconsistent error handling pattern vs fetchCurrentCycle
+  ### MN1: No Cross-Adapter Equivalence Test for getNode Empty-ID Rejection
+  - `tests/adapters/adapter-equivalence.test.ts` — both adapters now reject getNode('') with INVALID_NODE_ID but no equivalence test asserts this. Per-adapter isolation tests exist in local-adapter-validation.test.ts:797 and remote-adapter-validation.test.ts:906-909.
+  - Defer — covered in isolation in both adapter-specific test files.
 
-  ### MG2: Missing Validation for GraphQuery Parameters
-  - No validation for depth, origin_id in queryGraph()
+  ### MN2: fetchCurrentCycle Plain-Error Behavior Undocumented in adapter-contract.md
+  - Any RemoteAdapter method calling fetchCurrentCycle internally can throw plain Error (not StorageAdapterError) for GraphQL/network failures. adapter-contract.md Error Types section implies StorageAdapterError subclasses are the complete set.
+  - The JSDoc for fetchCurrentCycle in remote/index.ts:419 was updated by WI-698. Test file remote-adapter-fetchcycle.test.ts verifies it. Contract doc not updated.
+  - Defer — documented in source JSDoc and tested.
 
-  ### MG3: batchMutate Input Validation Gaps
-  - No validation for empty nodes array, invalid types, malformed edges
+  ### MN3: _countNodesWithoutStatus Graceful-Degradation Rationale Undocumented
+  - `src/adapters/remote/index.ts:1440-1442` — catches all errors, logs, returns 0. Design decision (preserve outer countNodes call) is not explained in code or docs.
+  - Defer — console.error was the substantive fix.
 
-  ## Suggestions
-  1. Complete WI-646: Convert remaining console.error in writer.ts
-  2. Add seed_ids validation to traverse() methods
-  3. Document WI-650 findings formally
-  4. Create LocalAdapter validation tests
-  5. Consider shared validation module as validation logic grows
+  ### MN4: fireEvent Path Lacks Test for Non-Allowlisted Command Rejection
+  - `src/__tests__/hooks.test.ts` — WI-699 tests dispatchHook directly. fireEvent wraps dispatchHook in try/catch; no test verifying fireEvent with non-allowlisted command (a) does not execute command and (b) logs+swallows rather than propagates.
+  - Defer — allowlist enforcement in dispatchHook is unit-tested directly. fireEvent catch-and-log behavior tested for other error scenarios.
+content_hash: 92d3d260cb195a6d2da8f376e985a8c977f6d33fae4f6a2a52a4757850d1cb4e
+token_count: 807
+file_path: .ideate/cycles/068/gap-analysis.yaml
 cycle: 1
-reviewer: gap-analyst
-verdict: pass
-content_hash: 6f6661a295a874d4ee8b2d366cb47288450c164a44ed1678c2b26491f359d118
-token_count: 539
+cycle_modified: 19
+verdict: Fail
+scope: full-audit
+date: "20260407"

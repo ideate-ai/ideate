@@ -1,8 +1,8 @@
 id: PH-033
-type: phase
+type: implementation
 name: Validation Correctness
 phase_type: implementation
-status: active
+status: completed
 started_date: 2026-04-07
 project_id: PR-002
 intent: Fix systemic ValidationError code misuse, add putNode/patchNode validation, fix error type inconsistency in mapGqlNodeToNode, and resolve vi.mock hoisting regression.
@@ -17,5 +17,6 @@ success_criteria:
   - initialize() unreachable-endpoint test passes again
   - npm test passes with zero failures
 cycle_modified: 19
-content_hash: 11a70cc871a2015f1b916fb6d466a302695fc2ef5a48ca7c596a3fa26f621027
-token_count: 175
+content_hash: 8c3556f9f49c6650cc9d5029fa957f4308c38a97cf3426c60b0c67464dab474c
+token_count: 209
+completed_at: 2026-04-07

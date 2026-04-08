@@ -1,19 +1,16 @@
 id: review-manifest
 type: cycle_summary
 content: |-
-  ## Review Manifest (Cycle 23)
+  ## Review Manifest (Cycle 23 — Autopilot Cycle 4)
 
-  | WI | Title | File Scope | Incremental Verdict | Findings (C/S/M) |
-  |----|-------|------------|---------------------|------------------|
-  | WI-683 | Adapter improvements: TRANSACTION_FAILED, batchMutate constants, removeEdges empty-array | src/adapters/local/writer.ts, src/adapters/remote/index.ts, docs/adapter-contract.md | Pass | 0/0/3 |
-  | WI-685 | ppr.test.ts cleanup: remove weak test, fix duplicate describe names | src/__tests__/ppr.test.ts | Pass | 0/0/0 |
-  | WI-684 | Equivalence tests: putNode INVALID_NODE_TYPE/MISSING_NODE_PROPERTIES, removeEdges empty-array | tests/adapters/adapter-equivalence.test.ts | Pass | 0/0/0 |
+  | # | Work Item | Title | File Scope | Incremental Verdict | Findings (C/S/M) |
+  |---|-----------|-------|------------|---------------------|------------------|
+  | 1 | WI-707 | Fix double-failure test assertion + doc/comment polish | src/__tests__/adapters/writer.test.ts, docs/adapter-contract.md | Pass | 0/0/0 |
 
-  **Summary**: 3 items, all passed incremental review. Key minor from WI-683: EDGE_TYPES and ALL_EDGE_TYPES are still duplicate arrays with no shared source; removeEdges uses raw db.prepare instead of transaction wrapper; stale comment references nonexistent write-transaction.test.ts.
-
-  **Test suite**: 1055 passed, 292 skipped, 0 failed (1347 total).
-content_hash: d76be474d7823451b7c296f2e808395a869ae84bfe2b2ea27d78189911b36730
-token_count: 314
+  Context: Micro-fix cycle. WI-707 adds SQLite assertion to double-failure test, fixes getNode Validation prose style, corrects FILESYSTEM_ERROR test comment. No logic changes.
+content_hash: dc021d4457b274dba9bfa84b6d40e5b5b7664f0ec98ba7546da2040977d7b5bb
+token_count: 199
 file_path: .ideate/cycles/068/review-manifest.yaml
 cycle: 23
 cycle_modified: 19
+reviewer: autopilot

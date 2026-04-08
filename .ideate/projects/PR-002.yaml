@@ -1,8 +1,9 @@
 id: PR-002
 type: project
-current_phase_id: PH-033
+current_phase_id: PH-037
 horizon:
   completed:
+    - PH-017
     - PH-018
     - PH-019
     - PH-020
@@ -15,19 +16,17 @@ horizon:
     - PH-027
     - PH-028
     - PH-029
-    - PH-017
+    - PH-033
+    - PH-034
   next:
-    - name: Tests and Documentation
-      id: PH-034
-      description: RemoteAdapter validation tests, equivalence cases, contract doc cleanup
-    - description: Comprehensive input validation layer for adapter methods
-      name: Input Validation Layer
-    - description: Deep investigation and resolution of PPR algorithm divergence
-      name: PPR Divergence Investigation
+    - name: Input Validation Layer
+      description: Comprehensive input validation layer for adapter methods
+    - name: PPR Divergence Investigation
+      description: Deep investigation and resolution of PPR algorithm divergence
   later: []
 intent: Refactor and harden the StorageAdapter implementations for production use
 name: Ideate Plugin - Adapter Refactor
 status: active
-content_hash: a7d1879b6a2b4fdac87f030e2110f2b35c8177d98ca5ebf30cb388330d33c9e6
-token_count: 222
+content_hash: 67be44f9fbd2059bdc623628683fd3173e4e48849e463403d240f624cd340f14
+token_count: 192
 cycle_modified: 19

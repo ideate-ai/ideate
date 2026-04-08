@@ -28,7 +28,7 @@ import path from "path";
 
 import { createSchema } from "../../src/schema.js";
 import * as dbSchema from "../../src/db.js";
-import { LocalAdapter } from "../../src/adapters/local/index.js";
+import { LocalAdapter, LocalReaderAdapter } from "../../src/adapters/local/index.js";
 import { ValidationError, ImmutableFieldError } from "../../src/adapter.js";
 import { ALL_NODE_TYPES } from "../../src/adapter.js";
 import type { StorageAdapter } from "../../src/adapter.js";
@@ -766,6 +766,75 @@ describe("LocalAdapter Validation Layer (WI-658)", () => {
   });
 
   // ===========================================================================
+  // AC-9: LocalReaderAdapter direct validation (WI-696)
+  // ===========================================================================
+
+  describe("AC-9: LocalReaderAdapter getNode/queryNodes/queryGraph validation", () => {
+    let readerAdapter: LocalReaderAdapter;
+
+    beforeAll(async () => {
+      await cleanupLocalAdapter(setup);
+      setup = await createLocalAdapter();
+
+      // Access LocalReaderAdapter directly (not through LocalAdapter facade)
+      const drizzleDb = drizzle(setup.db, { schema: dbSchema });
+      readerAdapter = new LocalReaderAdapter(
+        setup.db,
+        drizzleDb,
+        path.join(setup.tmpDir, ".ideate")
+      );
+
+      // Seed a node for queryGraph tests
+      await setup.adapter.putNode({
+        id: "GP-READER-001",
+        type: "guiding_principle",
+        properties: { name: "Reader Test Node" },
+      });
+    });
+
+    describe("getNode validation", () => {
+      it("throws INVALID_NODE_ID when id is empty string", async () => {
+        await expect(readerAdapter.getNode("")).rejects.toMatchObject({ code: "INVALID_NODE_ID" });
+      });
+
+      it("throws INVALID_NODE_ID when id is null", async () => {
+        await expect(
+          // @ts-expect-error Testing runtime behavior
+          readerAdapter.getNode(null)
+        ).rejects.toMatchObject({ code: "INVALID_NODE_ID" });
+      });
+    });
+
+    describe("queryNodes validation", () => {
+      it("throws INVALID_LIMIT when limit is -1", async () => {
+        await expect(
+          readerAdapter.queryNodes({ type: "guiding_principle" }, -1, 0)
+        ).rejects.toMatchObject({ code: "INVALID_LIMIT" });
+      });
+
+      it("throws INVALID_OFFSET when offset is -1", async () => {
+        await expect(
+          readerAdapter.queryNodes({ type: "guiding_principle" }, 10, -1)
+        ).rejects.toMatchObject({ code: "INVALID_OFFSET" });
+      });
+    });
+
+    describe("queryGraph validation", () => {
+      it("throws INVALID_LIMIT when limit is -1", async () => {
+        await expect(
+          readerAdapter.queryGraph({ origin_id: "GP-READER-001" }, -1, 0)
+        ).rejects.toMatchObject({ code: "INVALID_LIMIT" });
+      });
+
+      it("throws INVALID_OFFSET when offset is -1", async () => {
+        await expect(
+          readerAdapter.queryGraph({ origin_id: "GP-READER-001" }, 10, -1)
+        ).rejects.toMatchObject({ code: "INVALID_OFFSET" });
+      });
+    });
+  });
+
+  // ===========================================================================
   // Summary: All Validation Error Codes
   // ===========================================================================
 
@@ -791,10 +860,11 @@ describe("LocalAdapter Validation Layer (WI-658)", () => {
         "INVALID_CYCLE",       // Negative cycle number
         "INVALID_ALWAYS_INCLUDE_TYPE", // Invalid node type in always_include_types
         "IMMUTABLE_FIELD",     // patchNode: id, type, or cycle_created in properties
+        "INVALID_NODE_ID",     // getNode/queryNodes/queryGraph with empty or non-string id
       ];
 
       // Each code should be tested in the respective describe block above
-      expect(expectedCodes).toHaveLength(18);
+      expect(expectedCodes).toHaveLength(19);
     });
   });
 });

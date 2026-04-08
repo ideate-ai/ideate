@@ -2,35 +2,36 @@ id: gap-analysis
 type: cycle_summary
 reviewer: gap-analyst
 content: |-
-  ## Gap Analysis — Cycle 20
+  ## Gap Analysis — Full Audit (2026-04-07)
 
   **Verdict**: Fail
 
   ## Critical Gaps
-
-  - [G1] `deleteNode` lacks input validation in both adapters (writer.ts:874, remote/index.ts:655). An empty string id silently returns not_found. Contrast: putNode and patchNode both validate id. adapter-contract.md's "Validation-First" principle is unmet for deleteNode. No test in either validation file tests deleteNode with empty/invalid id.
-
-  - [G2] `putEdge` lacks input validation in both adapters (writer.ts:913, remote/index.ts:678). batchMutate validates edges with MISSING_EDGE_SOURCE, MISSING_EDGE_TARGET, MISSING_EDGE_TYPE, INVALID_EDGE_TYPE — but calling putEdge directly bypasses all of this. adapter-contract.md line 143-145 explicitly documents putEdge validation requirements that don't exist in code.
+  None.
 
   ## Significant Gaps
 
-  - [G3] `removeEdges` lacks input validation in both adapters. Empty source_id or invalid edge_type strings pass through silently.
+  ### SG1: LocalAdapter queryNodes and queryGraph do not validate limit/offset
+  - `src/adapters/local/reader.ts:394,527` — no guard on limit/offset. RemoteAdapter rejects negatives with INVALID_LIMIT/INVALID_OFFSET. Contract (lines 257-262, 285-290) requires both codes for both adapters. Negative limit passes silently into SQLite as LIMIT -1 (unlimited). Equivalence tests verify these codes but local path doesn't implement them.
 
-  - [G4] `PARSE_ERROR` code not documented in adapter-contract.md. WI-669 added StorageAdapterError("PARSE_ERROR") throws in mapGqlNodeToNode and fetchCurrentCycle, but neither the StorageAdapterError section nor the method sections mention this code.
-
-  - [G5] adapter-contract.md putEdge section documents `VALIDATION_ERROR: Invalid edge type or missing fields` (line 148) — a legacy generic code. The specific codes used in batchMutate for identical constraints (MISSING_EDGE_SOURCE, etc.) are not listed for putEdge. If putEdge validation is implemented, it should use specific codes, not VALIDATION_ERROR.
-
-  - [G6] No equivalence tests for batchMutate edge validation codes between adapters. Equivalence suite covers INVALID_LIMIT, INVALID_SEED_IDS, EMPTY_BATCH but not MISSING_EDGE_SOURCE, MISSING_EDGE_TARGET, MISSING_EDGE_TYPE, INVALID_EDGE_TYPE.
+  ### SG2: Neither adapter validates getNode id as non-empty string
+  - `src/adapters/local/reader.ts:278`, `src/adapters/remote/index.ts:509` — getNode("") or getNode(null) passes through silently. Local returns null. All write methods validate INVALID_NODE_ID; getNode does not. Asymmetric validation coverage. Contract doc has no Validation section for getNode (see MN1).
 
   ## Minor Gaps
 
-  - [G7] deleteNode absent from both validation test files (local-adapter-validation.test.ts, remote-adapter-validation.test.ts).
+  ### MN1: adapter-contract.md getNode section has no Validation or Error Codes block
+  - `docs/adapter-contract.md:23-36` — every mutating method documents validation; getNode is silent. Needs either INVALID_NODE_ID entry or explicit statement that validation is caller responsibility.
 
-  - [G8] No equivalence tests for putNode/patchNode INVALID_NODE_ID between adapters. Added in WI-668 but not represented in equivalence suite.
+  ### MN2: No happy-path traverse equivalence test
+  - `tests/adapters/adapter-equivalence.test.ts` — only error cases (INVALID_SEED_IDS). No test verifying both adapters return TraversalResult with expected shape for valid seed_ids.
 
-  - [G9] Q-122 and Q-128 (server-side BFS/PPR alignment) unchanged by cycle 20. Both remain open blocking questions for full adapter equivalence.
-content_hash: fcd5938b13fee8ad293d4ab65fd0eb53c036c4716434e2d2dd43c1fb55371a84
-token_count: 622
+  ### MN3: No equivalence test for appendJournalEntry
+  - `tests/adapters/adapter-equivalence.test.ts` — appendJournalEntry absent from equivalence suite. Contract documents TRANSACTION_FAILED as its error code but no cross-adapter coverage.
+content_hash: f37de1cc427c5d8b924fd8aea4f9c77338db0b20477d00944b233f59cc01b26e
+token_count: 500
 file_path: .ideate/cycles/068/gap-analysis.yaml
 cycle: 20
 cycle_modified: 19
+verdict: Pass
+scope: full-audit
+date: "20260407"

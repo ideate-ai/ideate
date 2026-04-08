@@ -416,7 +416,7 @@ export class RemoteAdapter implements StorageAdapter {
    *
    * Error handling:
    * - JSON parse errors throw StorageAdapterError (PARSE_ERROR)
-   * - GraphQL/network errors throw ValidationError with context
+   * - GraphQL/network errors throw plain Error (not ValidationError) with context
    * - Missing/empty domain_index returns null (no cycle data yet)
    */
   private async fetchCurrentCycle(): Promise<number | null> {
@@ -459,13 +459,8 @@ export class RemoteAdapter implements StorageAdapter {
       if (err instanceof StorageAdapterError) {
         throw err;
       }
-      // Wrap other errors (GraphQL errors, network issues) with context
-      const errorMessage = err instanceof Error ? err.message : String(err);
-      throw new ValidationError(
-        `Failed to fetch domain_index: ${errorMessage}`,
-        "VALIDATION_ERROR",
-        { codebaseId: this.codebaseId, originalError: errorMessage }
-      );
+      // Wrap other errors (GraphQL errors, network issues) with a plain Error
+      throw new Error("Failed to fetch current cycle: " + String(err));
     }
     // No artifact or empty content - return null (no cycle data yet)
     return null;
@@ -507,6 +502,13 @@ export class RemoteAdapter implements StorageAdapter {
   // -------------------------------------------------------------------------
 
   async getNode(id: string): Promise<Node | null> {
+    if (!id || typeof id !== "string") {
+      throw new ValidationError(
+        "Node ID must be a non-empty string",
+        "INVALID_NODE_ID",
+        { value: id }
+      );
+    }
     const data = await this.client.query<{
       artifact: GqlArtifactNode | null;
     }>(
@@ -875,21 +877,21 @@ export class RemoteAdapter implements StorageAdapter {
       );
     }
 
-    // alpha: must be 0 <= alpha <= 1
-    if (options.alpha !== undefined && (options.alpha < 0 || options.alpha > 1)) {
+    // alpha: must be in (0, 1] — strictly positive and at most 1
+    if (options.alpha !== undefined && (options.alpha <= 0 || options.alpha > 1)) {
       throw new ValidationError(
-        `alpha must be between 0 and 1 inclusive (valid range: 0 to 1), received ${options.alpha}`,
+        `alpha must be a positive number in (0, 1] (valid range: (0, 1]), received ${options.alpha}`,
         "INVALID_ALPHA",
-        { value: options.alpha, validRange: "0 to 1" }
+        { value: options.alpha, validRange: "(0, 1]" }
       );
     }
 
-    // max_iterations: must be non-negative integer
-    if (options.max_iterations !== undefined && (!Number.isInteger(options.max_iterations) || options.max_iterations < 0)) {
+    // max_iterations: must be a positive integer (> 0)
+    if (options.max_iterations !== undefined && (!Number.isInteger(options.max_iterations) || options.max_iterations <= 0)) {
       throw new ValidationError(
-        `max_iterations must be a non-negative integer (valid range: 0 to Infinity), received ${options.max_iterations}`,
+        `max_iterations must be a positive integer (valid range: > 0), received ${options.max_iterations}`,
         "INVALID_MAX_ITERATIONS",
-        { value: options.max_iterations, validRange: "0 to Infinity" }
+        { value: options.max_iterations, validRange: "> 0" }
       );
     }
 
@@ -1435,7 +1437,8 @@ export class RemoteAdapter implements StorageAdapter {
 
       // Count nodes where status is null
       return data.artifactQuery.edges.filter((edge) => edge.node.status === null).length;
-    } catch {
+    } catch (err) {
+      console.error("_countNodesWithoutStatus failed:", err);
       return 0;
     }
   }

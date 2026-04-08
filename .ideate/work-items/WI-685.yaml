@@ -28,9 +28,9 @@ notes: |-
   - Second 'computePPR — concurrent computation tests' (~line 1359) → 'computePPR — sequential computation isolation tests'
 
   Do not change any test logic or assertions — only describe block names and the one test that needs strengthening/removal.
-resolution: null
-status: pending
+resolution: "All scope absorbed by validation layer work. Weak test 'throws ValidationError with correct field and value' no longer present. Duplicate describe names already resolved: second high-alpha block renamed to 'computePPR — high alpha stability tests'; concurrent block is unique. Verified in code 2026-04-07."
+status: completed
 cycle_created: 22
-cycle_modified: null
-content_hash: 463ab65f3485b02900f4e3ba34ac36f55254996667c483af80eeb7ba2818b205
-token_count: 446
+cycle_modified: 19
+content_hash: 9bb3434bf6f4ccd4b14b56029e775f5310af0b359aa74bf5b32ff5ac4dcd3257
+token_count: 546

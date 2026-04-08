@@ -36,10 +36,10 @@ content: |-
                  └──→ WI-613 ──→ WI-616
   WI-614 ───┐
   WI-615 ───┘
-content_hash: 51ceb5b501192e6283351617110e5f1c2f00f2066c2763d0d01f2f39b3a3d882
-token_count: 662
+content_hash: 7f9ae615c55db76aa2c4d6fa5fe318846fafecfbc470b09171a06f160f7402e0
+token_count: 758
 title: Execution Strategy — Cycle 21
-mode: batched_parallel
+mode: Batched parallel
 phases:
   - phase_id: PH-033
     name: Validation Correctness
@@ -58,20 +58,34 @@ phases:
       - WI-673
     ordering: "All three depend on WI-667+WI-668 completing (Phase 1). Within Phase 2: WI-671, WI-672, WI-673 can run in parallel — non-overlapping file scope."
     dependency_graph: WI-671 | WI-672 | WI-673 (all parallel)
-review_cadence: per_item
+review_cadence: Incremental per work item; capstone after all items complete
 worktree_isolation: false
 notes: WI-684 depends on WI-683 because the removeEdges empty-array equivalence test requires both adapters to have the guard. WI-685 (ppr.test.ts cleanup) is fully independent.
 cycle_modified: 19
 max_parallelism: 3
-worktrees: false
+worktrees: true
 groups:
-  - id: G1
-    description: WI-683 and WI-685 are independent — run in parallel
+  - name: Group 1 — Implementation fixes
     items:
-      - WI-683
-      - WI-685
-  - id: G2
-    description: WI-684 depends on WI-683 (needs RemoteAdapter empty-array guard)
+      - WI-695
+      - WI-696
+      - WI-697
+      - WI-698
+      - WI-699
+      - WI-701
+    notes: All six items are independent — non-overlapping file scope. Run in parallel up to max_parallelism=3.
+  - name: Group 2 — Documentation
     items:
-      - WI-684
+      - WI-700
+    notes: Depends on WI-696 and WI-698 (documents INVALID_NODE_ID validation those items add). Run after Group 1 completes.
 dependency_notes: WI-674 blocks all others (group 1 must complete first). WI-675 and WI-676 block WI-679. WI-677 and WI-678 have no downstream dependencies.
+dependency_graph:
+  WI-695: []
+  WI-696: []
+  WI-697: []
+  WI-698: []
+  WI-699: []
+  WI-700:
+    - WI-696
+    - WI-698
+  WI-701: []

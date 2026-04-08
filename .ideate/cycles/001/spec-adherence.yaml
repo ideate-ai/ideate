@@ -1,32 +1,46 @@
 id: spec-adherence
 type: cycle_summary
-content: |-
-  ## Verdict: Pass
-
-  All 8 work items satisfy their acceptance criteria. No principle violations.
-
-  ## Architecture Deviations
-  None.
-
-  ## Unmet Acceptance Criteria
-  None. All work items meet their specified criteria.
-
-  ## Principle Violations
-  **Verdict**: Pass
-  None.
-
-  ## Principle Adherence Evidence
-  - **GP-14 (MCP Abstraction Boundary)**: Tool handlers use ctx.adapter methods exclusively
-  - **GP-11 (Honest and Critical Tone)**: Code reviews identify problems directly
-  - **GP-08 (Durable Knowledge Capture)**: Two-phase write pattern preserved (YAML first, then SQLite)
-
-  ## Undocumented Additions
-  None identified.
-
-  ## Naming/Pattern Inconsistencies
-  None in Cycle 1 scope.
-cycle: 1
 reviewer: spec-reviewer
-verdict: pass
-content_hash: 7ce7a2fe9c5d00959b5119c932fa42c1084484fea1dd52ff8fa343e62218c2f8
-token_count: 199
+content: |-
+  ## Spec Adherence Review — Cycle 1 (2026-04-07)
+
+  **Verdict**: Fail
+
+  ## Critical Findings
+  None.
+
+  ## Significant Findings
+
+  ### S1: WI-701 AC2 — TRANSACTION_FAILED for appendJournalEntry not in equivalence-journal.test.ts
+  - **Expected (AC)**: 'A test in equivalence-journal.test.ts verifies appendJournalEntry succeeds on both adapters and that TRANSACTION_FAILED is the error code for a failed append.'
+  - **Actual**: equivalence-journal.test.ts explicitly delegates TRANSACTION_FAILED testing to src/__tests__/write-transaction.test.ts. Line 12 comment: 'Note: TRANSACTION_FAILED error code handling is covered in write-transaction.test.ts. This file covers the success path only.'
+  - **Coverage exists**: write-transaction.test.ts:558 tests appendJournal TRANSACTION_FAILED.
+  - **Gap**: The AC explicitly names equivalence-journal.test.ts as required location. The intent (coverage exists) is met but the criterion (coverage in specified file) is not.
+
+  ## Minor Findings
+
+  ### M1: WI-701 AC1 — field names in acceptance criterion are wrong
+  - **Expected (AC)**: 'return a TraversalResult containing nodes and edges arrays'
+  - **Actual**: TraversalResult (src/adapter.ts:133) uses ranked_nodes and ppr_scores. Test correctly asserts Array.isArray(result.ranked_nodes) and Array.isArray(result.ppr_scores).
+  - **Assessment**: AC wording wrong, implementation correct. Not a code defect.
+
+  ### M2: WI-698 implementation notes say to follow skipIf pattern but implementation uses unconditional+mocked
+  - **File**: tests/adapters/remote-adapter-validation.test.ts
+  - Implementation notes (not ACs) mentioned skipIf; file's pre-existing documented pattern uses mocked GraphQLClient. No AC is violated. Consistent with established pattern.
+
+  ## Principle Adherence Confirmed
+  - P-44: Confirmed — putNode YAML write at writer.ts:626 before SQLite; rollback saves/restores at :665-670. deleteNode unlinks YAML at :902 before SQLite DELETE at :914-917. Verified by writer.test.ts:253 YAML-first assertion.
+  - P-64: All new ValidationError throws use compliant codes — INVALID_NODE_TYPE (:522), INVALID_NODE_ID (:280, :507), INVALID_LIMIT/INVALID_OFFSET (:403,406,542,545; :1039,1042), INVALID_ALPHA/INVALID_MAX_ITERATIONS (:235,243; :884,893), TRANSACTION_FAILED (:675,681), FILESYSTEM_ERROR (:907).
+  - P-002: All new validation tests assert .code specifically via rejects.toMatchObject({code:'...'}) or (err as ValidationError).code.
+  - P-40: hooks.ts:223 calls spawnSync(allowedCommand, substitutedArgs, {shell:false}) with explicit argument array. No execSync/string interpolation.
+  - P-53: adapter-contract.md contains no references to YAML, SQLite, file extensions, filesystem paths, or ORM objects.
+  - P-58: hooks.test.ts:212 adds test covering allowlist rejection path with non-allowlisted command.
+  - D-177: equivalence-traverse.test.ts:605 and equivalence-journal.test.ts:33 declare const remoteAvailable at module level. skipIf used correctly for remote tests; local tests unconditional.
+content_hash: 985766684aadc329afe41a041f165802e9aa3275878eebdfd35900e3deb7ec1c
+token_count: 830
+file_path: .ideate/cycles/068/spec-adherence.yaml
+cycle: 1
+cycle_modified: 19
+verdict: Fail
+scope: full-audit
+date: "20260407"

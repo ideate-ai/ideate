@@ -23,13 +23,13 @@ content: |-
 
   **Phase 1**: WI-608, WI-609, WI-610, WI-611 (Foundation & Security)
   **Phase 2**: WI-612, WI-613, WI-614, WI-615, WI-616 (Equivalence & Reliability)
-content_hash: 4dc9fc3b17f2b452bab316e032b9581bf4d457f47fa6cd4dbfec0789e4f9d786
-token_count: 707
-title: Cycle 21 Change Plan
+content_hash: 5c6371e32edd8c983274b6d33352dc78b173a6be8c893110501bc75036879ef2
+token_count: 998
+title: Cycle 21 Change Plan — Full Audit Finding Fixes
 trigger: "Cycle 20 capstone review findings (C1, S1, G1-G5, M1, M2) + new: Vitest process hang"
 what_is_changing: "1. Vitest forceExit + watcher cleanup (WI-674). 2. LocalAdapter validation: nextId INVALID_CYCLE fix, deleteNode/putEdge/removeEdges validation added (WI-675). 3. RemoteAdapter validation: same three methods (WI-676). 4. adapter-contract.md: remove dead patchNode type constraint, add PARSE_ERROR, fix putEdge codes (WI-677). 5. ppr.ts: four ValidationError calls use specific codes instead of raw field names (WI-678). 6. Equivalence tests for all new validation codes (WI-679)."
 what_is_not_changing: StorageAdapter interface definition (adapter.ts). All existing validation logic (batchMutate, putNode, patchNode, traverse, queryNodes, queryGraph). Test suite structure. SQLite schema. All non-adapter source files.
-scope_boundary: mcp/artifact-server only. No skill files, no agent files, no other packages.
+scope_boundary: "Changes are scoped to: src/adapters/local/writer.ts, src/adapters/local/reader.ts, src/adapters/local/context.ts, src/adapters/remote/index.ts, src/__tests__/hooks.test.ts, docs/adapter-contract.md, and test files under tests/adapters/. No architectural changes. No new interfaces. No changes to adapter.ts, server.ts, or tools/."
 findings_addressed:
   - "S2: ValidationError code always VALIDATION_ERROR due to field-name args — WI-667"
   - "SG1: putNode/patchNode lack validation — WI-668"
@@ -41,13 +41,13 @@ findings_addressed:
   - "P-53: adapter-contract.md references concrete storage formats — WI-673"
   - "Q4: Edge weight customization gap documented — WI-673"
 work_items:
-  - WI-667
-  - WI-668
-  - WI-669
-  - WI-670
-  - WI-671
-  - WI-672
-  - WI-673
+  - WI-695
+  - WI-696
+  - WI-697
+  - WI-698
+  - WI-699
+  - WI-700
+  - WI-701
 cycle_modified: 19
 new_work_items:
   - WI-674
@@ -56,3 +56,6 @@ new_work_items:
   - WI-677
   - WI-678
   - WI-679
+what_changing: "Addressing all 5 significant findings and 7 minor findings from the full audit (cycle 20). Fixes span: LocalWriterAdapter rollback safety, LocalReaderAdapter input validation, LocalContextAdapter/RemoteAdapter boundary alignment, dispatchHook security test, and adapter-contract.md documentation."
+triggering_context: Full audit (cycle 20) produced 3 significant findings from code-reviewer (S1 putNode rollback, S2 alpha/max_iterations boundary, S3 hook allowlist test) and 2 significant gaps from gap-analyst (SG1 reader limit/offset, SG2 getNode validation). All are addressed in this cycle.
+expected_impact: Eliminates data-corruption risk on putNode failures. Aligns validation boundaries between adapter layer and ppr.ts. Achieves P-58 compliance for hook security. Adds defensive validation to reader internals. Closes documentation gaps in adapter-contract.md.

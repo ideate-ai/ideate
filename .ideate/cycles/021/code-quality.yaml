@@ -2,39 +2,30 @@ id: code-quality
 type: cycle_summary
 reviewer: code-reviewer
 content: |-
-  ## Code Quality Review — Cycle 21
+  ## Verdict: Fail
 
-  **Verdict**: Pass (minor findings only; reviewer issued Fail in error — no Critical or Significant findings)
+  All 1131 tests pass. Rollback logic is functionally correct. However, WI-704 introduces a doc-impl contract discrepancy that justifies fail.
 
   ## Critical Findings
   None.
 
   ## Significant Findings
-  None.
+  ### S1: FILESYSTEM_ERROR documented but never thrown
+  - `docs/adapter-contract.md:129,567` — FILESYSTEM_ERROR listed as deleteNode error code in two places. `src/adapters/local/writer.ts` Phase 1 catch re-throws raw NodeJS.ErrnoException (not wrapped as ValidationError FILESYSTEM_ERROR) when unlinkSync fails with non-ENOENT. Callers catching StorageAdapterError miss this entirely.
+  - Fix: wrap non-ENOENT rethrow as ValidationError(FILESYSTEM_ERROR) OR remove FILESYSTEM_ERROR from docs.
 
   ## Minor Findings
-
-  ### M1: `deleteNode` error codes missing from `adapter-contract.md`
-  - **File**: `docs/adapter-contract.md:112-126`
-  - **Issue**: The `deleteNode` section lists only `TRANSACTION_FAILED`. Both adapters throw `INVALID_NODE_ID` for empty/non-string id (writer.ts:876, remote/index.ts:656). Tests cover it but the contract doc omits it.
-
-  ### M2: `removeEdges` validation and error codes absent from `adapter-contract.md`
-  - **File**: `docs/adapter-contract.md:154-165`
-  - **Issue**: `removeEdges` section has no Validation or Error Codes subsections despite both adapters throwing `INVALID_NODE_ID` and `INVALID_EDGE_TYPE`.
-
-  ### M3: `batchMutate` uses hardcoded edge type lists instead of canonical constant
-  - **Files**: `src/adapters/local/writer.ts:1016-1031`, `src/adapters/remote/index.ts:1178-1197`
-  - **Issue**: Both `batchMutate` implementations build inline Sets of 15 hardcoded edge types instead of using `EDGE_TYPES`/`ALL_EDGE_TYPES`. All three declarations are currently identical — maintainability risk only.
-
-  ### M4: `ppr.ts` ValidationError code assertions absent from `ppr.test.ts`
-  - **File**: `src/__tests__/ppr.test.ts:1646-1660`
-  - **Issue**: Tests assert on error message text only, not `.code`. WI-678's fix is unverified by tests — reverting codes would still pass all tests.
-
-  ## Dynamic Test Results
-  28 passed | 6 skipped (34 test files). 1045 passed | 285 skipped (1330 total tests). 0 failures.
-content_hash: a82477ed68358db542c61335a85d5bcb44b4b7d597296a7204fab95c87bd3984
-token_count: 484
+  ### M1: P-53 violation — "filesystem" and "unlink" in interface contract
+  - `docs/adapter-contract.md:129,567` — FILESYSTEM_ERROR description reads "artifact file removal failed (filesystem error during node deletion unlink)". "filesystem" and "unlink" are storage-format/syscall details. Replace with: "artifact removal failed".
+  ### M2: Double-failure error loses original messages
+  - `src/adapters/local/writer.ts:927` — When both SQLite and restore fail, catch {} discards both underlying errors. putNode at line 672 preserves both. Fix: include both error.message values in thrown message.
+  ### M3: FILESYSTEM_ERROR not covered by any test
+  - No test exercises Phase 1 non-ENOENT failure path. Add test patching fs.unlinkSync to throw code='EPERM', assert ValidationError with code FILESYSTEM_ERROR.
+content_hash: f3ee7d46891a41a160c26ef2c40468744c61d45bf99b9bafb620f6dc6b876dee
+token_count: 461
 file_path: .ideate/cycles/068/code-quality.yaml
 cycle: 21
 cycle_modified: 19
 verdict: Pass
+scope: full-audit
+date: "20260407"

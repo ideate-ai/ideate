@@ -2,32 +2,40 @@ id: spec-adherence
 type: cycle_summary
 reviewer: spec-reviewer
 content: |-
-  ## Spec Adherence Review — Cycle 20
+  ## Spec Adherence Review — Full Audit (2026-04-07)
 
-  **Verdict**: Fail
+  **Verdict**: Pass
 
   ## Critical Findings
-
-  - [C1] `src/adapters/local/writer.ts:474,481` — nextId() cycle validation still uses raw field name `"cycle"` as the second ValidationError argument (produces code `"VALIDATION_ERROR"` instead of `"INVALID_CYCLE"`). WI-667 scope listed `local/index.ts` for cycle validation fixes but the actual code is in `writer.ts`. Remote adapter was correctly fixed. P-64 violation.
-    Corroborating: `src/__tests__/nextid-cycle-validation.test.ts:232` still asserts `code === "VALIDATION_ERROR"` with `details.field === "cycle"`.
+  None.
 
   ## Significant Findings
-
-  - [S1] `docs/adapter-contract.md:104` — patchNode Validation section states "type must be a valid NodeType if provided (immutable fields cannot be changed)." `UpdateNodeInput` has no `type` field and no `INVALID_NODE_TYPE` guard exists in either adapter's patchNode. WI-668's resolution explicitly removed this as dead code. WI-673 criterion 5 requires the contract to accurately reflect WI-668 validation — this line is inaccurate and should be removed.
+  None.
 
   ## Minor Findings
 
-  - [M1] `src/ppr.ts:112,121,130,139` — four ValidationError calls use raw field names ("alpha", "maxIterations", "convergenceThreshold", "maxNodes") producing `VALIDATION_ERROR` code. Outside cycle 20 file scope; callers via adapter always hit `context.ts` validation first. Tests calling computePPR directly observe wrong codes.
-  - [M2] `tests/adapters/local-adapter-validation.test.ts:490` — test titled "rejects negative cycle number with INVALID_CYCLE" only asserts `.rejects.toThrow(ValidationError)` without checking `.code`. The name is misleading — it does not verify the specific code, and because writer.ts produces VALIDATION_ERROR (not INVALID_CYCLE), the test passes while masking the wrong behavior.
+  ### M1: MISSING_CYCLE absent from consolidated error code list in adapter-contract.md
+  - `docs/adapter-contract.md:541-565` — MissingCycleError defined in Error Types section (line 519) but omitted from the consolidated list. Implementation correct.
+
+  ### M2: putNode/patchNode cycle_modified auto-injection unspecified in contract
+  - `docs/adapter-contract.md:60-110` — both adapters inject cycle_modified automatically but the method sections do not document this side effect.
 
   ## Principle Adherence Confirmed
-
-  - P-65: vi.mock isolation pattern followed correctly — module-level vi.mock only in new files
-  - P-53: adapter-contract.md no longer references concrete storage formats
-  - P-58: putNode/patchNode validation covered with both error and happy-path tests
-  - P-002: New test files assert specific error codes, not generic throws
-content_hash: 041443350bdbd3fc419f44ba6f58cad601db654b23f253fb8724a638445dbf04
-token_count: 611
+  - P-53: adapter.ts contains no concrete storage format references
+  - P-64: All throw sites use compliant code strings; adapter.ts:582-586 implements all four conditions
+  - P-65: Only new file remote-adapter-validation.test.ts adds module-level vi.mock
+  - P-002: All validation test files use .code assertions
+  - D-177: Local unconditional, Remote skipIf — confirmed across 35+ remote test cases
+  - P-44: YAML-first confirmed for putNode, patchNode, batchMutate, appendJournalEntry
+  - fetchCurrentCycle inside try block: Confirmed in remote/index.ts for putNode (line 589) and patchNode (line 648)
+  - patchNode IMMUTABLE_FIELD: Confirmed — remote/index.ts:637-643 checks id/type/cycle_created
+  - ppr.ts codes: INVALID_ALPHA, INVALID_MAX_ITERATIONS, INVALID_CONVERGENCE_THRESHOLD, INVALID_MAX_NODES all present and tested
+  - batchMutate: all 8 required validation codes present in both adapters
+content_hash: d467c4a8ee1225b42de42a586c05587b4ca619116f1bed29402354bba9772d9c
+token_count: 471
 file_path: .ideate/cycles/068/spec-adherence.yaml
 cycle: 20
 cycle_modified: 19
+verdict: Pass
+scope: full-audit
+date: "20260407"

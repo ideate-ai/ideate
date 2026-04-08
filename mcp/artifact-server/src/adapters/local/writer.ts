@@ -517,7 +517,11 @@ export class LocalWriterAdapter {
     }
 
     // For all other types, raise an error — ID generation is type-specific
-    throw new Error(`nextId: no ID format defined for type '${type}'`);
+    throw new ValidationError(
+      `nextId: no ID format defined for type '${type}'`,
+      "INVALID_NODE_TYPE",
+      { value: type }
+    );
   }
 
   // -------------------------------------------------------------------------
@@ -597,9 +601,11 @@ export class LocalWriterAdapter {
 
     // For updates: read existing YAML and merge with new properties
     let finalYamlObj = yamlObj;
+    let originalContent: string | null = null;
     if (isUpdate && fs.existsSync(existingRow.file_path)) {
       try {
         const existingContent = fs.readFileSync(existingRow.file_path, "utf8");
+        originalContent = existingContent;
         const existingObj = parseYaml(existingContent) as Record<string, unknown>;
         // Merge: existing values + new values (new wins for provided fields)
         finalYamlObj = { ...existingObj, ...yamlObj };
@@ -654,9 +660,15 @@ export class LocalWriterAdapter {
       });
       upsertPhase.exclusive();
     } catch (dbErr) {
-      // SQLite transaction failed — clean up the YAML file
+      // SQLite transaction failed — roll back the YAML file
       try {
-        if (fs.existsSync(absoluteFilePath)) fs.unlinkSync(absoluteFilePath);
+        if (isUpdate && originalContent !== null) {
+          // Restore the original content for updates
+          fs.writeFileSync(absoluteFilePath, originalContent, "utf8");
+        } else {
+          // New insert, or update where original read failed — remove newly written file
+          if (fs.existsSync(absoluteFilePath)) fs.unlinkSync(absoluteFilePath);
+        }
       } catch (cleanupErr) {
         throw new ValidationError(
           `SQLite transaction failed: ${(dbErr as Error).message}; cleanup also failed: ${(cleanupErr as Error).message}`,
@@ -884,27 +896,56 @@ export class LocalWriterAdapter {
       return { id, status: "not_found" };
     }
 
-    // Delete from SQLite (edges cascade or are deleted separately)
+    const absoluteFilePath = nodeRow.file_path;
+
+    // Phase 0 — Save file content so we can restore on rollback
+    let originalContent: string | null = null;
+    try {
+      originalContent = fs.readFileSync(absoluteFilePath, 'utf-8');
+    } catch {
+      // File may already be missing; proceed, but rollback won't be able to restore
+    }
+
+    // Phase 1 — Remove YAML file first (YAML-first per P-44)
+    try {
+      fs.unlinkSync(absoluteFilePath);
+    } catch (e: unknown) {
+      if ((e as NodeJS.ErrnoException).code === 'ENOENT') {
+        // File already absent — nothing to unlink, proceed
+      } else {
+        throw new ValidationError(
+          `deleteNode failed: artifact removal failed: ${(e as Error).message}`,
+          "FILESYSTEM_ERROR",
+          { operation: "deleteNode", id }
+        );
+      }
+    }
+
+    // Phase 2 — Delete from SQLite (edges cascade or are deleted separately)
     try {
       this.db.transaction(() => {
         this.db.prepare(`DELETE FROM edges WHERE source_id = ? OR target_id = ?`).run(id, id);
         this.db.prepare(`DELETE FROM nodes WHERE id = ?`).run(id);
       })();
-    } catch (dbErr) {
+    } catch (err: unknown) {
+      // Restore the YAML file that was already unlinked
+      if (originalContent !== null) {
+        try {
+          fs.writeFileSync(absoluteFilePath, originalContent, 'utf-8');
+        } catch (restoreErr: unknown) {
+          throw new ValidationError(
+            `deleteNode failed: ${err instanceof Error ? err.message : String(err)}; YAML restore failed: ${restoreErr instanceof Error ? restoreErr.message : String(restoreErr)}`,
+            "TRANSACTION_FAILED",
+            { operation: "deleteNode", id }
+          );
+        }
+      }
+      if (err instanceof ValidationError) throw err;
       throw new ValidationError(
-        `SQLite transaction failed: ${(dbErr as Error).message}`,
+        `deleteNode failed: ${err instanceof Error ? err.message : String(err)}`,
         "TRANSACTION_FAILED",
         { operation: "deleteNode", id }
       );
-    }
-
-    // Best-effort: remove YAML file
-    try {
-      if (fs.existsSync(nodeRow.file_path)) {
-        fs.unlinkSync(nodeRow.file_path);
-      }
-    } catch {
-      // ignore filesystem errors
     }
 
     return { id, status: "deleted" };

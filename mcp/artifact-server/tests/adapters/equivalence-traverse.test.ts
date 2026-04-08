@@ -14,11 +14,20 @@
  */
 
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
+import Database from "better-sqlite3";
+import { drizzle } from "drizzle-orm/better-sqlite3";
+import fs from "fs";
+import os from "os";
+import path from "path";
 import {
   createDualAdapters,
   isTestServerAvailable,
   type DualAdapters,
 } from "./equivalence-helpers.js";
+import { createSchema } from "../../src/schema.js";
+import * as dbSchema from "../../src/db.js";
+import { LocalAdapter } from "../../src/adapters/local/index.js";
+import { RemoteAdapter } from "../../src/adapters/remote/index.js";
 import type { TraversalOptions, TraversalResult, NodeType } from "../../src/adapter.js";
 
 // ---------------------------------------------------------------------------
@@ -576,4 +585,225 @@ suite("Equivalence — traverse() PPR score divergence reporting", () => {
     }
     expect(divergences).toHaveLength(0);
   });
+});
+
+// ---------------------------------------------------------------------------
+// Suite: traverse happy path with seeded node (D-177 convention)
+//
+// This suite follows the D-177 pattern:
+//   - LocalAdapter tests use unconditional it(...)
+//   - RemoteAdapter tests use it.skipIf(!remoteAvailable) with early return guard
+//
+// The test creates a node via putNode in setup, then calls traverse with that
+// node's ID as the seed. It verifies the result has the required shape:
+//   - ranked_nodes (array of { node, score } entries)
+//   - ppr_scores (array of { id, score } entries)
+//   - total_tokens (number)
+// ---------------------------------------------------------------------------
+
+// Evaluated at module level (collection time) so it.skipIf resolves correctly.
+const remoteAvailable = isTestServerAvailable();
+
+interface HappyPathSetup {
+  localAdapter: LocalAdapter;
+  remoteAdapter: RemoteAdapter | null;
+  tmpDir: string;
+  db: Database.Database;
+}
+
+async function createHappyPathSetup(): Promise<HappyPathSetup> {
+  const tmpDir = fs.mkdtempSync(
+    path.join(os.tmpdir(), "ideate-traverse-happy-")
+  );
+  const ideateDir = path.join(tmpDir, ".ideate");
+
+  for (const sub of [
+    "work-items",
+    "policies",
+    "decisions",
+    "questions",
+    "principles",
+    "constraints",
+    "modules",
+    "research",
+    "metrics",
+    "interviews",
+    "projects",
+    "phases",
+    "plan",
+    "steering",
+    "domains",
+    "archive/cycles",
+    "archive/incremental",
+  ]) {
+    fs.mkdirSync(path.join(ideateDir, sub), { recursive: true });
+  }
+
+  fs.writeFileSync(
+    path.join(ideateDir, "domains", "index.yaml"),
+    "current_cycle: 1\n",
+    "utf8"
+  );
+
+  const dbPath = path.join(tmpDir, "test.db");
+  const db = new Database(dbPath);
+  createSchema(db);
+  const drizzleDb = drizzle(db, { schema: dbSchema });
+
+  const localAdapter = new LocalAdapter({ db, drizzleDb, ideateDir });
+  await localAdapter.initialize();
+
+  return { localAdapter, remoteAdapter: null, tmpDir, db };
+}
+
+async function teardownHappyPathSetup(setup: HappyPathSetup): Promise<void> {
+  try {
+    await setup.localAdapter.shutdown();
+  } catch {
+    // ignore
+  }
+  try {
+    setup.db.close();
+  } catch {
+    // ignore
+  }
+  if (setup.remoteAdapter) {
+    try {
+      await setup.remoteAdapter.shutdown();
+    } catch {
+      // ignore
+    }
+  }
+  try {
+    fs.rmSync(setup.tmpDir, { recursive: true, force: true });
+  } catch {
+    // ignore
+  }
+}
+
+describe("Equivalence — traverse() happy path with seeded node (D-177)", () => {
+  let setup: HappyPathSetup;
+
+  beforeAll(async () => {
+    setup = await createHappyPathSetup();
+
+    // Wire up RemoteAdapter if the server is available (checked at module level).
+    if (remoteAvailable) {
+      const remote = new RemoteAdapter({
+        endpoint: "http://localhost:4001/graphql",
+        org_id: "equivalence-test-org",
+        codebase_id: "equivalence-happy-cb",
+      });
+      try {
+        await remote.initialize();
+        setup.remoteAdapter = remote;
+      } catch {
+        // initialize() failed despite server appearing available; tests with
+        // it.skipIf(!remoteAvailable) will still run (server was reachable at
+        // collection time), but the early-return guard in each test body
+        // (if (!setup.remoteAdapter) return) will abort gracefully.
+      }
+    }
+
+    // Seed a node in LocalAdapter. If remote is available, seed it there too.
+    await setup.localAdapter.putNode({
+      id: "GP-HAPPY-SEED-01",
+      type: "guiding_principle",
+      properties: {
+        name: "Happy path traverse seed",
+        description: "Used by the traverse happy-path equivalence test.",
+        status: "active",
+      },
+    });
+
+    if (setup.remoteAdapter) {
+      await setup.remoteAdapter.putNode({
+        id: "GP-HAPPY-SEED-01",
+        type: "guiding_principle",
+        properties: {
+          name: "Happy path traverse seed",
+          description: "Used by the traverse happy-path equivalence test.",
+          status: "active",
+        },
+      });
+    }
+  }, 60_000);
+
+  afterAll(async () => {
+    if (setup) await teardownHappyPathSetup(setup);
+  });
+
+  // -------------------------------------------------------------------------
+  // Local adapter — unconditional it() per D-177
+  // -------------------------------------------------------------------------
+
+  it("LocalAdapter traverse({seed_ids: [seeded node]}) returns ranked_nodes and ppr_scores arrays", async () => {
+    const result = await setup.localAdapter.traverse({
+      seed_ids: ["GP-HAPPY-SEED-01"],
+    });
+
+    // TraversalResult shape: .ranked_nodes (array), .ppr_scores (array), .total_tokens (number)
+    expect(Array.isArray(result.ranked_nodes)).toBe(true);
+    expect(Array.isArray(result.ppr_scores)).toBe(true);
+    // The seed node must always appear in ranked_nodes
+    expect(result.ranked_nodes.length).toBeGreaterThan(0);
+  });
+
+  it("LocalAdapter TraversalResult has required shape: ranked_nodes and ppr_scores arrays", async () => {
+    const result = await setup.localAdapter.traverse({
+      seed_ids: ["GP-HAPPY-SEED-01"],
+    });
+
+    // Verify the result has the documented TraversalResult shape
+    expect(result).toHaveProperty("ranked_nodes");
+    expect(result).toHaveProperty("ppr_scores");
+    expect(result).toHaveProperty("total_tokens");
+    expect(Array.isArray(result.ranked_nodes)).toBe(true);
+    expect(Array.isArray(result.ppr_scores)).toBe(true);
+    expect(typeof result.total_tokens).toBe("number");
+  });
+
+  // -------------------------------------------------------------------------
+  // Remote adapter — it.skipIf(!remoteAvailable) per D-177
+  //
+  // Note: TRANSACTION_FAILED error code is covered in write-transaction.test.ts.
+  // This suite tests the success path only (contract test for shape equivalence).
+  // -------------------------------------------------------------------------
+
+  it.skipIf(!remoteAvailable)(
+    "RemoteAdapter traverse({seed_ids: [seeded node]}) returns ranked_nodes and ppr_scores arrays",
+    async () => {
+      if (!setup.remoteAdapter) return;
+
+      const result = await setup.remoteAdapter.traverse({
+        seed_ids: ["GP-HAPPY-SEED-01"],
+      });
+
+      expect(Array.isArray(result.ranked_nodes)).toBe(true);
+      expect(Array.isArray(result.ppr_scores)).toBe(true);
+      expect(result.ranked_nodes.length).toBeGreaterThan(0);
+    }
+  );
+
+  it.skipIf(!remoteAvailable)(
+    "both adapters return TraversalResult with ranked_nodes and ppr_scores arrays for the same seed",
+    async () => {
+      if (!setup.remoteAdapter) return;
+
+      const [local, remote] = await Promise.all([
+        setup.localAdapter.traverse({ seed_ids: ["GP-HAPPY-SEED-01"] }),
+        setup.remoteAdapter.traverse({ seed_ids: ["GP-HAPPY-SEED-01"] }),
+      ]);
+
+      // Both must return the required TraversalResult shape
+      expect(Array.isArray(local.ranked_nodes)).toBe(true);
+      expect(Array.isArray(remote.ranked_nodes)).toBe(true);
+      expect(Array.isArray(local.ppr_scores)).toBe(true);
+      expect(Array.isArray(remote.ppr_scores)).toBe(true);
+
+      // The seed node must appear in both results
+      expect(local.ranked_nodes.length).toBeGreaterThan(0);
+      expect(remote.ranked_nodes.length).toBeGreaterThan(0);
+    }
+  );
 });

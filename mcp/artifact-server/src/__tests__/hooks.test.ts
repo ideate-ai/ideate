@@ -208,6 +208,18 @@ describe("dispatchHook — command type", () => {
     const result = dispatchHook(hook, { WORK_ITEM: "WI-007" });
     expect(result.trim()).toBe("WI-007");
   });
+
+  it("throws when the command is not in the allowlist", () => {
+    const hook: HookConfig = {
+      event: "plan.complete",
+      type: "command",
+      value: "rm -rf /",
+      enabled: true,
+    };
+    expect(() => dispatchHook(hook, {})).toThrow(
+      'Command "rm" is not allowlisted for hook execution'
+    );
+  });
 });
 
 describe("dispatchHook — disabled hooks", () => {
