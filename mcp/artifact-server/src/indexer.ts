@@ -1,6 +1,6 @@
 import Database from "better-sqlite3";
 import { BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import * as fs from "fs";
 import * as path from "path";
 import { parse as parseYaml } from "yaml";
@@ -24,6 +24,16 @@ import {
   getTableName,
   computeArtifactHash,
 } from "./db-helpers.js";
+
+// ---------------------------------------------------------------------------
+// Constants
+// ---------------------------------------------------------------------------
+
+/**
+ * Matches journal entry IDs of the form J-NNN-MMM and captures the cycle
+ * number NNN.  Example: "J-024-001" → cycleNum = 24.
+ */
+const JOURNAL_ID_CYCLE = /^J-(\d+)-/;
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -690,6 +700,77 @@ export function removeFiles(
 }
 
 // ---------------------------------------------------------------------------
+// Derived edge: journal_entry → cycle_summary (belongs_to_cycle)
+// ---------------------------------------------------------------------------
+
+/**
+ * Derives `belongs_to_cycle` edges for all journal entries.
+ *
+ * For each journal entry whose ID matches the pattern J-NNN-*, finds all
+ * cycle_summary nodes with `cycle = NNN` and inserts a `belongs_to_cycle`
+ * edge from the journal entry to each matching summary.
+ *
+ * Uses delete-before-insert so that calling this function multiple times on
+ * the same data is idempotent (P-67).  Only the `belongs_to_cycle` edges are
+ * deleted — `relates_to` and other edges inserted by earlier phases are
+ * preserved.
+ *
+ * @returns number of edges created
+ */
+export function deriveJournalEntryCycleEdges(drizzleDb: DrizzleDb): number {
+  let edgesCreated = 0;
+
+  // Fetch all journal_entry nodes
+  const entries = drizzleDb
+    .select({ id: dbSchema.nodes.id })
+    .from(dbSchema.nodes)
+    .where(eq(dbSchema.nodes.type, "journal_entry"))
+    .all();
+
+  for (const entry of entries) {
+    const m = JOURNAL_ID_CYCLE.exec(entry.id);
+    if (!m) continue;
+    const cycleNum = parseInt(m[1], 10);
+
+    // Delete stale belongs_to_cycle edges before re-deriving (P-67).
+    drizzleDb
+      .delete(dbSchema.edges)
+      .where(
+        and(
+          eq(dbSchema.edges.source_id, entry.id),
+          eq(dbSchema.edges.edge_type, "belongs_to_cycle")
+        )
+      )
+      .run();
+
+    // Find all cycle_summary nodes for this cycle number
+    const summaries = drizzleDb
+      .select({ id: dbSchema.documentArtifacts.id })
+      .from(dbSchema.documentArtifacts)
+      .innerJoin(dbSchema.nodes, eq(dbSchema.nodes.id, dbSchema.documentArtifacts.id))
+      .where(
+        and(
+          eq(dbSchema.nodes.type, "cycle_summary"),
+          eq(dbSchema.documentArtifacts.cycle, cycleNum)
+        )
+      )
+      .all();
+
+    for (const summary of summaries) {
+      insertEdge(drizzleDb, {
+        source_id: entry.id,
+        target_id: summary.id,
+        edge_type: "belongs_to_cycle",
+        props: null,
+      });
+      edgesCreated++;
+    }
+  }
+
+  return edgesCreated;
+}
+
+// ---------------------------------------------------------------------------
 // Main rebuild function
 // ---------------------------------------------------------------------------
 
@@ -763,6 +844,11 @@ export function rebuildIndex(db: Database.Database, drizzleDb: DrizzleDb, ideate
   });
 
   deletePhase();
+
+  // Phase 3: derive cross-artifact edges that require a full graph view.
+  // Runs outside a transaction since it is read-heavy and self-contained.
+  const derivedEdges = deriveJournalEntryCycleEdges(drizzleDb);
+  stats.edges_created += derivedEdges;
 
   if (stats.files_failed > 0) {
     console.warn(`[indexer] ${stats.files_failed} file(s) failed to parse`);

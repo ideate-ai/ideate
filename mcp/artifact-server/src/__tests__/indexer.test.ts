@@ -7,8 +7,8 @@ import path from "path";
 import { createHash } from "crypto";
 import { stringify } from "yaml";
 import { createSchema } from "../schema.js";
-import { rebuildIndex, detectCycles, indexFiles, removeFiles, MAX_DEPENDENCY_NODES, MAX_DEPENDENCY_EDGES } from "../indexer.js";
-import { computeArtifactHash } from "../db-helpers.js";
+import { rebuildIndex, detectCycles, indexFiles, removeFiles, deriveJournalEntryCycleEdges, MAX_DEPENDENCY_NODES, MAX_DEPENDENCY_EDGES } from "../indexer.js";
+import { computeArtifactHash, upsertNode, upsertJournalEntry, upsertDocumentArtifact } from "../db-helpers.js";
 
 // ---------------------------------------------------------------------------
 // Setup helpers
@@ -1270,5 +1270,147 @@ describe("computeArtifactHash — direct unit test", () => {
     const clean = { id: "WI-001", title: "Test" };
     const expected = createHash("sha256").update(stringify(clean, { lineWidth: 0 })).digest("hex");
     expect(computeArtifactHash(obj)).toBe(expected);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// deriveJournalEntryCycleEdges — idempotency and stale-edge removal (WI-726)
+// ---------------------------------------------------------------------------
+
+/** Minimal journal_entry YAML */
+function journalEntryYaml(id: string, cycle: number): string {
+  return [
+    `id: "${id}"`,
+    `type: "journal_entry"`,
+    `cycle_created: ${cycle}`,
+    `cycle_modified: null`,
+    `content_hash: ""`,
+    `token_count: 0`,
+    `file_path: ""`,
+    `status: "active"`,
+    `phase: null`,
+    `date: "2026-01-01"`,
+    `title: "Journal entry ${id}"`,
+    `work_item: null`,
+    `content: "Some content"`,
+  ].join("\n") + "\n";
+}
+
+/** Minimal cycle_summary YAML */
+function cycleSummaryYaml(id: string, cycle: number): string {
+  return [
+    `id: "${id}"`,
+    `type: "cycle_summary"`,
+    `cycle_created: ${cycle}`,
+    `cycle_modified: null`,
+    `content_hash: ""`,
+    `token_count: 0`,
+    `file_path: ""`,
+    `status: "active"`,
+    `title: "Cycle ${cycle} summary"`,
+    `cycle: ${cycle}`,
+    `content: "Summary content"`,
+  ].join("\n") + "\n";
+}
+
+describe("deriveJournalEntryCycleEdges — idempotency (WI-726)", () => {
+  it("calling deriveJournalEntryCycleEdges directly twice does not duplicate belongs_to_cycle edges", () => {
+    const db = freshDb();
+    const drizzleDb = drizzle(db);
+
+    // Directly seed a journal_entry node (J-024-001 → cycle 24) without rebuildIndex.
+    // rebuildIndex's Phase 1 wipes all edges via deleteEdgesBySourceId before Phase 3 runs,
+    // which means calling rebuildIndex twice cannot test whether deriveJournalEntryCycleEdges
+    // itself contains a targeted delete. This test bypasses rebuildIndex entirely.
+    upsertNode(drizzleDb, {
+      id: "J-024-001",
+      type: "journal_entry",
+      cycle_created: 24,
+      cycle_modified: null,
+      content_hash: "",
+      token_count: 0,
+      file_path: "",
+      status: "active",
+    });
+    upsertJournalEntry(drizzleDb, {
+      id: "J-024-001",
+      phase: null,
+      date: "2026-01-01",
+      title: "Journal entry J-024-001",
+      work_item: null,
+      content: "Some content",
+    });
+
+    // Directly seed a cycle_summary node for cycle 24.
+    upsertNode(drizzleDb, {
+      id: "summary-024",
+      type: "cycle_summary",
+      cycle_created: 24,
+      cycle_modified: null,
+      content_hash: "",
+      token_count: 0,
+      file_path: "",
+      status: "active",
+    });
+    upsertDocumentArtifact(drizzleDb, {
+      id: "summary-024",
+      title: "Cycle 24 summary",
+      cycle: 24,
+      content: "Summary content",
+    });
+
+    // First call — should produce exactly 1 belongs_to_cycle edge.
+    deriveJournalEntryCycleEdges(drizzleDb);
+
+    const countAfterFirst = (db.prepare(
+      `SELECT COUNT(*) as cnt FROM edges WHERE source_id = 'J-024-001' AND edge_type = 'belongs_to_cycle'`
+    ).get() as { cnt: number }).cnt;
+
+    // Second call — the targeted delete inside deriveJournalEntryCycleEdges must prevent
+    // duplication. Without the targeted delete, this would return 2 instead of 1.
+    deriveJournalEntryCycleEdges(drizzleDb);
+
+    const countAfterSecond = (db.prepare(
+      `SELECT COUNT(*) as cnt FROM edges WHERE source_id = 'J-024-001' AND edge_type = 'belongs_to_cycle'`
+    ).get() as { cnt: number }).cnt;
+
+    expect(countAfterFirst).toBe(1);
+    expect(countAfterSecond).toBe(1);
+  });
+});
+
+describe("deriveJournalEntryCycleEdges — stale edge removal (WI-726)", () => {
+  it("removes the edge to the old cycle_summary when it is no longer indexed", () => {
+    const db = freshDb();
+    const drizzleDb = drizzle(db);
+    const ideateDir = makeIdeateDir(tmpDir);
+    const cycleDir = path.join(ideateDir, "cycles");
+
+    // Step 1: index a journal entry alone (no cycle_summary) → 0 belongs_to_cycle edges
+    writeYaml(cycleDir, "J-024-001.yaml", journalEntryYaml("J-024-001", 24));
+    rebuildIndex(db, drizzleDb, ideateDir);
+
+    const countNoSummary = (db.prepare(
+      `SELECT COUNT(*) as cnt FROM edges WHERE source_id = 'J-024-001' AND edge_type = 'belongs_to_cycle'`
+    ).get() as { cnt: number }).cnt;
+    expect(countNoSummary).toBe(0);
+
+    // Step 2: add a cycle_summary for cycle 24, rebuild → 1 edge
+    const summaryPath = writeYaml(cycleDir, "summary-024.yaml", cycleSummaryYaml("summary-024", 24));
+    rebuildIndex(db, drizzleDb, ideateDir);
+
+    const countWithSummary = (db.prepare(
+      `SELECT COUNT(*) as cnt FROM edges WHERE source_id = 'J-024-001' AND edge_type = 'belongs_to_cycle'`
+    ).get() as { cnt: number }).cnt;
+    expect(countWithSummary).toBe(1);
+
+    // Step 3: remove the cycle_summary file, rebuild → 0 edges (stale edge removed)
+    fs.unlinkSync(summaryPath);
+    rebuildIndex(db, drizzleDb, ideateDir);
+
+    const countAfterRemoval = (db.prepare(
+      `SELECT COUNT(*) as cnt FROM edges WHERE source_id = 'J-024-001' AND edge_type = 'belongs_to_cycle'`
+    ).get() as { cnt: number }).cnt;
+    expect(countAfterRemoval).toBe(0);
   });
 });
