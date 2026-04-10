@@ -2,27 +2,28 @@ id: spec-adherence
 type: cycle_summary
 reviewer: spec-reviewer
 content: |-
-  ## Spec Adherence Review — Cycle 25
+  ## Verdict: Pass
 
-  **Verdict**: Pass
+  ## Principle Adherence: Pass
+  - P-44: deleteNode two-phase write complete. Phase 0 saves content, Phase 1 unlinks (ENOENT-tolerant), Phase 2 exclusive transaction; catch restores YAML.
+  - P-53: No storage-format references in new contract entries.
+  - P-64: All ValidationError codes conform to recognized patterns.
+  - D-177: LocalAdapter tests unconditional throughout.
+  - P-002: No new validation logic without tests.
 
-  ## Findings
+  ## Minor Findings
 
-  None.
-
-  ## Adherence Confirmed
-
-  - WI-690: putEdge mock throws at `.run()` level (line 287 in tests/adapters/write-transaction.test.ts). Mock chain: insert → values → onConflictDoNothing → run throws. Correct interception point.
-  - WI-691: putNode (line 620), patchNode (line 676), deleteNode (line 711), appendJournalEntry (line 1591) catch blocks all use 'TRANSACTION_FAILED' as second arg. IMMUTABLE_FIELD check in patchNode (lines 638-643): IMMUTABLE array ['id','type','cycle_created'] + for-of loop + ImmutableFieldError(field) matches LocalAdapter writer.ts:690-695 exactly. adapter-contract.md:108 documents IMMUTABLE_FIELD for patchNode.
-
-  ## Principle Adherence Confirmed
-
-  - P-002: write-transaction.test.ts tests assert .code === 'TRANSACTION_FAILED' specifically
-  - P-64: All new ValidationError calls use code string second arg
-  - P-65: No module-level vi.mock in modified files
-content_hash: ad1146588f5a2efeb2fc319c23e8da2aea77dc627313430bfc891d855b61cec4
-token_count: 310
+  ### M1: nextId Validation entry lists only 3 types; WI-709 criterion specified more
+  - adapter-contract.md line 313: lists `journal_entry`, `work_item`, `finding`
+  - WI-709 criterion also listed `guiding_principle`, `constraint`, `phase`, `project`
+  - The worker verified from writer.ts that only 3 types are supported for ID generation, so the doc is correct; the criterion was overstated. Verify implementation supports only 3 types to close.
+content_hash: 4673e8cd81b58418b868a6831529518db6999b71baf6a4c67a654435396b47b5
+token_count: 390
 file_path: .ideate/cycles/068/spec-adherence.yaml
 cycle: 25
 cycle_modified: 19
 verdict: Pass
+scope: full-audit
+date: "20260407"
+findings: []
+summary: "All four WI-714 acceptance criteria met. P-53 runtime compliance confirmed: zero 'SQLite' in throw statements. Test description strings containing 'SQLite' are internal implementation detail, not public interface — not a P-53 violation. adapter-contract.md deleteNode Error Handling block complete with all four entries."

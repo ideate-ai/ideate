@@ -60,8 +60,8 @@ notes: |-
   - removeEdges Error Codes: add TRANSACTION_FAILED
   - removeEdges Validation: add 'If edge_types is empty, the method returns immediately without making changes'
 resolution: All scope absorbed by validation layer work (cycles 21-27). LocalAdapter putEdge/removeEdges TRANSACTION_FAILED wrapping done by WI-686+676. batchMutate already used EDGE_TYPES canonical constant. RemoteAdapter.removeEdges empty-array guard and ALL_EDGE_TYPES in batchMutate already present. Contract doc updates done by WI-689. Verified in code 2026-04-07.
-status: completed
+status: done
 cycle_created: 22
 cycle_modified: 19
-content_hash: ae1a5cdf585d566a66a43d94899330ba3a4be69ef8f96a0455a9e574dae27e53
-token_count: 895
+content_hash: 437aaa378df7eb45ceafb72aeacd60a681dcae84a04c55a74a8fda0e97f2f247
+token_count: 870

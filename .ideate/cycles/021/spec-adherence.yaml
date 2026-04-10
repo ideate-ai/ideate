@@ -4,36 +4,28 @@ reviewer: spec-reviewer
 content: |-
   ## Verdict: Pass
 
-  All acceptance criteria for WI-702, WI-703, WI-704 are met. No principle violations found.
-
-  ## Critical Findings
-  None.
-
-  ## Significant Findings
-  ### S1: FILESYSTEM_ERROR documented but never thrown (doc-impl gap)
-  - `docs/adapter-contract.md:129,567` documents FILESYSTEM_ERROR as a deleteNode error code. `src/adapters/local/writer.ts` Phase 1 catch re-throws raw NodeJS.ErrnoException, not wrapped as ValidationError FILESYSTEM_ERROR. Zero occurrences of FILESYSTEM_ERROR in src/. The contract specifies a code the implementation never emits.
-  - Note: WI-704 acceptance criteria required documentation only; all criteria technically met. But the documentation addition created a new spec/impl divergence.
+  ## Principle Adherence: Pass
+  - P-44: deleteNode two-phase write complete. Phase 0 saves content, Phase 1 unlinks (ENOENT-tolerant), Phase 2 exclusive transaction; catch restores YAML.
+  - P-53: No storage-format references in new contract entries.
+  - P-64: All ValidationError codes conform to recognized patterns.
+  - D-177: LocalAdapter tests unconditional throughout.
+  - P-002: No new validation logic without tests.
 
   ## Minor Findings
-  None.
 
-  ## Unmet Acceptance Criteria
-  None. All criteria verified:
-  - WI-702 AC1-5: restore on SQLite failure, double-failure message, null originalContent handling, 4 new tests, full suite passes
-  - WI-703 AC1-4: TRANSACTION_FAILED describe block, remoteAvailable at module level, rejects.toMatchObject usage, 5 pass/2 skip
-  - WI-704 AC1-6: FILESYSTEM_ERROR documented, INVALID_TOKEN_BUDGET/INVALID_MAX_NODES corrected, fetchCurrentCycle note added, P-53 compliance
-
-  ## Principle/Policy Adherence
-  - P-44: Phase 0/1/2 pattern consistent with putNode. Compliant.
-  - P-64: FILESYSTEM_ERROR ends with _ERROR. All new codes compliant.
-  - D-177: remoteAvailable at module scope line 31. Compliant.
-  - P-002: rejects.toMatchObject({code}) used. Compliant.
-  - P-53: No storage format references in interface sections. Compliant.
-content_hash: fdcc7a6bc95f3f511ce80eaca53254f7763153203e710a314dfd78427eacca33
-token_count: 473
+  ### M1: nextId Validation entry lists only 3 types; WI-709 criterion specified more
+  - adapter-contract.md line 313: lists `journal_entry`, `work_item`, `finding`
+  - WI-709 criterion also listed `guiding_principle`, `constraint`, `phase`, `project`
+  - The worker verified from writer.ts that only 3 types are supported for ID generation, so the doc is correct; the criterion was overstated. Verify implementation supports only 3 types to close.
+content_hash: 468e986a21824488dd47fbc730e9f0eef113507a60ad131de5e24ff6766fc072
+token_count: 317
 file_path: .ideate/cycles/068/spec-adherence.yaml
 cycle: 21
 cycle_modified: 19
-verdict: Fail
+verdict: Pass
 scope: full-audit
 date: "20260407"
+findings:
+  critical: 0
+  significant: 0
+  minor: 1

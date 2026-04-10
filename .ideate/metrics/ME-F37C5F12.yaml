@@ -1,0 +1,30 @@
+id: ME-F37C5F12
+type: metrics_event
+event_name: gap-analyst
+timestamp: 2026-04-07T00:00:00Z
+phase: 6b
+cycle: 1
+agent_type: gap-analyst
+model: claude-sonnet-4-6
+work_item: null
+wall_clock_ms: 247965
+context_files_read: []
+mcp_tools_called:
+  - ideate_get_context_package
+  - ideate_get_review_manifest
+outcome: null
+finding_count: 5
+finding_severities:
+  critical: 0
+  significant: 1
+  minor: 4
+first_pass_accepted: null
+rework_count: null
+turns_used: null
+input_tokens: null
+output_tokens: null
+cache_read_tokens: null
+cache_write_tokens: null
+cycle_modified: 19
+content_hash: 693d4caf1a5ba030b6c8e7fa9ad31dd29979aac66b3784430fcf1655a999ed94
+token_count: 140

@@ -2,27 +2,25 @@ id: code-quality
 type: cycle_summary
 reviewer: code-reviewer
 content: |-
-  ## Verdict: Fail
-
-  1132 tests pass. FILESYSTEM_ERROR implementation is correct. WI-706 has one unmet acceptance criterion: test does not fully verify both error messages.
-
-  ## Critical Findings
-  None.
-
-  ## Significant Findings
-  ### S1: Double-failure test does not assert SQLite error message
-  - `src/__tests__/adapters/writer.test.ts:380` — test asserts `toContain('YAML restore failed')` only. AC1 requires both SQLite error and restore error in message. Implementation at `writer.ts:937` includes both, but test cannot detect a regression that drops the SQLite half. Add: `expect(error.message).toContain('SQLite failure')`.
+  ## Verdict: Pass
 
   ## Minor Findings
-  ### M1: getNode Validation block colon-style vs prose-style
-  - `docs/adapter-contract.md:34` — reads `\`id\`: non-empty string` (colon). putNode/deleteNode use `\`id\` must be a non-empty string` (prose). WI-706 AC2 requires consistency with those formats. Change to prose.
-  ### M2: FILESYSTEM_ERROR test comment incorrectly says EISDIR
-  - `src/__tests__/adapters/writer.test.ts:415-416` — comment says 'throws EISDIR'. On macOS, unlinkSync on a directory throws EPERM. Test passes because both are non-ENOENT, but comment is inaccurate. Update to 'EPERM on macOS, EISDIR on Linux'.
-content_hash: f57394e9cce9066d5ec477e14c6a7476389cd55874d7accddae036918dff775d
-token_count: 385
+
+  ### M1: batchMutate restores foreign_keys pragma redundantly in both catch and finally
+  - File: mcp/artifact-server/src/adapters/local/writer.ts:1344
+  - On the error path: `if (fkWasOn) this.db.pragma("foreign_keys = ON")` runs in catch, then again in finally. The catch call is dead relative to finally. Remove line 1344 from catch; finally handles both paths correctly.
+content_hash: 708ce69c8f6a62c53f01e0a118d06add4e5090131d4bccc131ea3e53a6ee4065
+token_count: 381
 file_path: .ideate/cycles/068/code-quality.yaml
 cycle: 22
 cycle_modified: 19
-verdict: Pass
+verdict: Fail
 scope: full-audit
 date: "20260407"
+findings:
+  - id: F-022-S1
+    severity: significant
+    location: mcp/artifact-server/docs/adapter-contract.md:~137
+    description: "deleteNode Error Handling block documents only the double-failure message format ('SQLite transaction failed: <err>; cleanup also failed: <restore err>') but omits the single-failure format ('SQLite transaction failed: <err>'). Callers cannot distinguish which error format to expect when only the primary operation fails."
+    recommendation: Add single-failure message format to the Error Handling block alongside the existing double-failure entry.
+summary: "One significant finding: the deleteNode Error Handling block in adapter-contract.md is incomplete — single-failure message format is undocumented. All implementation code is correct; this is a documentation gap only."

@@ -1,70 +1,58 @@
 id: summary
 type: cycle_summary
+cycle: 20
 content: |-
-  # Review Summary — Full Audit (2026-04-07)
+  # Review Summary — Cycle 20
 
   ## Overview
-  Full audit of mcp/artifact-server (PR-002) after StorageAdapter validation layer convergence. The validation layer itself is complete and correct. The audit surfaced three new significant findings — a data-corruption bug in putNode rollback, a validation boundary mismatch between adapters and ppr.ts, and a security test coverage gap in hook allowlist enforcement — plus two significant gaps in LocalAdapter read-method validation.
+  Cycle 20 implemented four policy-compliance fixes to the indexer (P-66, P-67, P-68, and comma-split scope restriction). All four work items completed with acceptance criteria met. Post-review identified two significant merge artifacts from WI-727's rework pass: orphaned bare derivation calls in `rebuildIndex` and the old `hasJournalUpdate` guard left alongside the new `hasDerivedEdgeUpdate` guard in `indexFiles`. Both cause double-execution of derivation functions; data correctness is preserved by P-67 but `stats.edges_created` is inflated and incremental performance is degraded.
 
   ## Phase Convergence
-  Phase: PH-017 (Documentation & Cleanup)
-  Convergence status: Not converged — new significant findings from full audit
-  Trend: Validation layer converged at cycle 27; full audit reveals pre-existing issues outside the validation layer scope.
+  Phase: PH-039
+  Cycles completed in this phase: 1 / 5 (threshold)
+  Convergence status: First cycle — no trend data
+
+  Trend: First cycle in phase. Two significant findings, both merge cleanup artifacts from a single work item (WI-727). Addressable in one targeted commit.
 
   ## Project Progress
 
   | Success Criterion | Status |
   |---|---|
-  | LocalAdapter and RemoteAdapter have matching input validation for all write methods | pass |
-  | All validation errors use specific error codes (not generic VALIDATION_ERROR) | pass |
-  | adapter-contract.md accurately documents all error codes | partial (minor gaps: MISSING_CYCLE in consolidated list; cycle_modified injection undocumented) |
-  | TRANSACTION_FAILED wrapping on all write methods in both adapters | pass |
-  | Equivalence test suite covers all validation codes cross-adapter | pass |
-  | Test suite passes clean | pass (1084/0 fail) |
-  | putNode rollback handles update path correctly | fail (S1) |
-  | Validation consistent between adapter layer and ppr.ts | fail (S2) |
-  | Security-relevant code has test coverage (P-58) | partial (S3: allowlist rejection untested) |
-  | LocalAdapter read methods validate limit/offset | fail (SG1) |
+  | `belongs_to_cycle` edge type registered in all three required locations | pass |
+  | `deriveJournalEntryCycleEdges` implements delete-before-insert (P-67) | pass |
+  | `indexFiles` trigger guard covers all upstream artifact types (P-68) | partial — old guard not removed, causing double-trigger |
+  | Comma-split restricted to `derived_from` field only | pass |
+  | All tests pass (1162 tests) | pass |
 
   ## Critical Findings
   None.
 
   ## Significant Findings
-
-  - [code-reviewer] putNode update rollback deletes original file instead of restoring it — `src/adapters/local/writer.ts:656-671` — cross-cutting (not covered by any single work item)
-  - [code-reviewer] alpha=0/max_iterations=0 pass adapter validation but fail in ppr.ts with misleading error — `src/adapters/local/context.ts:231-232`, `src/ppr.ts:108-119` — cross-cutting
-  - [code-reviewer] dispatchHook allowlist rejection has no unit test (P-58 violation) — `src/__tests__/hooks.test.ts` — cross-cutting
-  - [gap-analyst] LocalAdapter queryNodes and queryGraph do not validate limit/offset (INVALID_LIMIT/INVALID_OFFSET missing from local path) — `src/adapters/local/reader.ts:394,527` — cross-cutting adapter equivalence
-  - [gap-analyst] Neither adapter validates getNode id as non-empty string — `src/adapters/local/reader.ts:278`, `src/adapters/remote/index.ts:509` — cross-cutting adapter validation
+  - [code-reviewer] Orphaned bare derivation calls in `rebuildIndex` lines 1013–1015 cause both `deriveJournalEntryEdges` and `deriveJournalEntryCycleEdges` to run twice per rebuild; `stats.edges_created` is inflated — relates to: WI-727, P-67
+  - [code-reviewer] `hasJournalUpdate` guard (lines 798–803) retained alongside `hasDerivedEdgeUpdate` in `indexFiles`; journal file changes trigger four derivation calls instead of two — relates to: WI-727, P-68
 
   ## Minor Findings
+  - [gap-analyst] No test asserts `stats.edges_created` accuracy when derived edges are present; inflated count went undetected by test suite — relates to: WI-727 → carry-forward
+  - [gap-analyst] WI-725 has no explicit P-49 backfill assessment; implicit conclusion (no backfill needed for runtime-derived edges) is correct but undocumented — relates to: WI-725, P-49 → carry-forward
+  - [spec-reviewer] Duplicate 'Phase 3' comment label at indexer.ts lines 1011 and 1021 — relates to: cross-cutting → carry-forward
+  - [gap-analyst] Pre-existing test coverage gap: `review_output` and `domain_index` types absent from document-type coverage test loop (indexer.test.ts:1154) — relates to: cross-cutting → carry-forward
 
-  - [code-reviewer] _countNodesWithoutStatus swallows all errors silently — `src/adapters/remote/index.ts:1438-1443` → carry-forward
-  - [code-reviewer] fetchCurrentCycle wraps network errors as VALIDATION_ERROR (semantically wrong) — `src/adapters/remote/index.ts:463-468` → carry-forward
-  - [code-reviewer] LocalWriterAdapter.nextId throws plain Error for unsupported types (should be ValidationError) — `src/adapters/local/writer.ts:520` → carry-forward
-  - [code-reviewer] deleteNode reverses P-44 write order (SQLite deleted before YAML) — `src/adapters/local/writer.ts:887-908` → carry-forward
-  - [spec-reviewer] MISSING_CYCLE absent from consolidated error code list in adapter-contract.md — `docs/adapter-contract.md:541-565` → carry-forward
-  - [spec-reviewer] putNode/patchNode cycle_modified auto-injection unspecified in contract — `docs/adapter-contract.md:60-110` → carry-forward
-  - [gap-analyst] adapter-contract.md getNode section has no Validation or Error Codes block — `docs/adapter-contract.md:23-36` → carry-forward
-  - [gap-analyst] No happy-path traverse equivalence test — tests/adapters/adapter-equivalence.test.ts → carry-forward
-  - [gap-analyst] No equivalence test for appendJournalEntry — tests/adapters/adapter-equivalence.test.ts → carry-forward
+  ## Suggestions
+  - [gap-analyst] Q-117 (burst writes) and Q-118 (hash-check table scans) unaffected by cycle 20; continue aging without new information unless explicitly scheduled
 
   ## Findings Requiring User Input
   None — all findings can be resolved from existing context.
 
   ## Proposed Refinement Plan
-  5 significant findings require a refinement cycle. Recommended work items:
-  1. Fix putNode rollback to restore original content on SQLite failure (src/adapters/local/writer.ts)
-  2. Tighten adapter alpha/max_iterations validation to match ppr.ts boundaries (context.ts + remote/index.ts)
-  3. Add dispatchHook allowlist rejection test (src/__tests__/hooks.test.ts)
-  4. Add INVALID_LIMIT/INVALID_OFFSET validation to LocalAdapter.queryNodes and queryGraph (src/adapters/local/reader.ts)
-  5. Decide and implement getNode id validation; update adapter-contract.md getNode section accordingly
-  Minor doc and test gaps can be bundled into a single cleanup work item.
-content_hash: 0a186c277f5218fce27f5e0992f93f8485cfeb672414a46758c352b7673d9495
-token_count: 1256
-file_path: .ideate/cycles/068/summary.yaml
-cycle: 20
-cycle_modified: 19
-verdict: Pass
-scope: full-audit
-date: "20260407"
+  Two significant findings require a refinement cycle. Both trace to a single root cause (WI-727 merge cleanup gap) and can be fixed in one targeted work item:
+
+  **Fix scope**:
+  - Remove bare derivation calls from `rebuildIndex` lines 1013–1015
+  - Remove `hasJournalUpdate` block from `indexFiles` lines 798–803
+  - Relabel Phase 3/4 comments consistently
+  - Add one `stats.edges_created` accuracy test (after bare-call removal)
+  - Add P-49 backfill assessment note to WI-725 resolution
+
+  Estimated scope: 1 work item, low complexity. No architecture changes needed.
+content_hash: c7341bbfdc44675c5e3f0883830133b831cfa64601ec0fe3a3a0f1293dc7cf7c
+token_count: 900

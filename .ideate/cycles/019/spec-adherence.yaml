@@ -1,30 +1,34 @@
 id: spec-adherence
 type: cycle_summary
 reviewer: spec-reviewer
+scope: full-audit
+date: "20260408"
 content: |-
-  # Spec Adherence Review — Cycle 19
+  ## Verdict: Fail (one architecture gap)
 
-  ## Verdict: Partial (Turn Budget Exceeded)
+  All PH-039 implementations functionally correct and covered by tests. Primary finding: belongs_to_cycle edge type introduced in WI-720 is not registered in EDGE_TYPES, EDGE_TYPE_REGISTRY, or adapter-contract.md EdgeType union.
 
-  The spec-reviewer reached its turn budget (108 tool calls) before producing a complete verdict section. Partial findings are recorded below.
+  ## Significant Findings
 
-  ## Findings Captured Before Truncation
+  ### D1: belongs_to_cycle not in EDGE_TYPES, EDGE_TYPE_REGISTRY, or adapter-contract.md
+  - indexer.ts:553 inserts belongs_to_cycle via insertEdge() (accepts string, bypassing TS type narrowing). schema.ts:15-31 EDGE_TYPES has 15 entries; belongs_to_cycle not one of them. writer.ts:968 putEdge validation would reject it. adapter-contract.md:623-638 EdgeType union incomplete.
+  - Principle: P-26 partial violation — edge exists in index but decoupled from schema contract.
+  - Fix: Add to EDGE_TYPES, EDGE_TYPE_REGISTRY, and adapter-contract.md.
 
-  ### P-53 Violation: adapter-contract.md references concrete storage formats
-  - **File**: mcp/artifact-server/docs/adapter-contract.md lines 11, 18, 628–637
-  - P-53 prohibits specification documents defining storage-agnostic interfaces from referencing concrete storage formats (YAML, JSON files, SQLite, file extensions). The adapter-contract.md produced by WI-659 contains references to concrete storage implementation details on the above lines.
-  - **Severity**: Significant (policy violation)
+  ## Minor Findings
 
-  ### WI-655 scope expansion beyond specification
-  - WI-655 scope listed only `mcp/artifact-server/src/adapters/local/writer.ts` but batchMutate validation was also implemented in RemoteAdapter. This is a positive deviation (comprehensive) but the scope declaration does not match implementation.
-  - **Severity**: Minor
+  ### WI-719 criterion wording deviation
+  - Criterion says 'In extractEdges()' but implementation uses post-upsert deriveJournalEntryEdges(). Architecturally justified; not a quality concern.
 
-  ## Note
+  ### N1: resolution: null on done work items WI-721, WI-722, WI-723
+  - Convention: done items should have resolution field populated. Data consistency gap.
 
-  This review is incomplete. The spec-reviewer did not assess: overall architecture adherence, GP-14/GP-08 compliance, P-59 compliance (NodeType/ALL_NODE_TYPES sync), P-58 compliance for WI-658, or cross-cutting principle adherence for all 8 work items. A full spec-adherence review should be re-run for this cycle.
-content_hash: 378e9f31a5699302747271677d2c952855be9292931ad29e42a558acd895b61c
-token_count: 437
-file_path: .ideate/cycles/068/spec-adherence.yaml
+  ## Principle Adherence
+  - P-26 Deterministic rebuild: derivation functions are pure, produce same edges on every rebuild.
+  - P-36 Unit tests: 23 new tests across WI-718 through WI-723.
+  - P-44 Atomic writes: PH-039 changes are indexer-only; write handlers not modified.
+  - P-37 MCP tools: Policy YAMLs show content_hash/token_count fields indicating MCP write handler used.
+  - P-49 Backfill: WI-723 explicitly assessed and corrected 4 policy files.
 cycle: 19
-verdict: Partial — reviewer hit turn budget before completing verdict section
-cycle_modified: 18
+content_hash: 0e4401ab05d67f49ec61063394b7c36f8a780af68e07d56cf67d7a30b0370059
+token_count: 450

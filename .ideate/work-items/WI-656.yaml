@@ -1,7 +1,7 @@
 id: WI-656
 type: work_item
 title: Align fetchCurrentCycle Error Recovery
-status: completed
+status: done
 complexity: null
 scope:
   - mcp/artifact-server/src/adapters/remote/index.ts
@@ -20,6 +20,6 @@ work_item_type: feature
 notes: "# WI-656: Align fetchCurrentCycle Error Recovery"
 resolution: Implemented decision comment and 6 new tests for fetchCurrentCycle error recovery. Explicit error throwing verified (no silent fallback). Code review passed with minor documentation note.
 cycle_created: null
-cycle_modified: 18
-content_hash: 1c1789a23fe41fe165429715435ad08d7464e3d439a44bc9a00c27556fa05f11
-token_count: 277
+cycle_modified: 19
+content_hash: 485c2c71b9fda414d5c2d6a838e59b1d4ecbc91f4b7885bd001873cf1256ec7a
+token_count: 252

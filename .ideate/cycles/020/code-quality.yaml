@@ -1,58 +1,37 @@
 id: code-quality
 type: cycle_summary
+cycle: 20
 reviewer: code-reviewer
 content: |-
-  ## Code Quality Review — Full Audit (2026-04-07)
+  ## Code Review — Cycle 20
 
   **Verdict**: Fail
 
-  ## Critical Findings
+  ### Critical Findings
   None.
 
-  ## Significant Findings
+  ### Significant Findings
 
-  ### S1: putNode update rollback deletes original file instead of restoring it
-  - **File**: `src/adapters/local/writer.ts:656-671`
-  - On a putNode call for an existing node, if the SQLite transaction fails, the rollback handler deletes `absoluteFilePath` rather than restoring original content. patchNode correctly saves and restores `existingContent`; putNode does not.
-  - **Impact**: Silent data corruption — SQLite index points to a non-existent YAML file after a failed update.
-  - **Fix**: Read and save `originalContent` before overwriting. Restore on catch instead of unlinking.
+  **S1: `deriveJournalEntryEdges` and `deriveJournalEntryCycleEdges` called twice each in `rebuildIndex`**
+  - File: `src/indexer.ts:1011–1036`
+  - Bare calls at lines 1013–1015 are leftover merge artifacts; the transactional Phase 3/4 blocks at lines 1024–1036 are the intended implementation. Both sets run on every rebuild. `stats.edges_created` is inflated (double-counted). No data corruption because P-67 delete-before-insert makes calls idempotent, but rebuild performance and stat accuracy are degraded.
+  - Fix: Remove lines 1013–1015. Relabel Phase 3/4 comments consistently.
 
-  ### S2: alpha=0 and max_iterations=0 pass adapter-layer validation but fail in ppr.ts
-  - **Files**: `src/adapters/local/context.ts:231-232`, `src/ppr.ts:108-109,118-119`
-  - Adapters allow `alpha >= 0` but `computePPR` rejects `alpha <= 0`. Same for `max_iterations`. Callers receive an error from a function they never called, with a message contradicting the advertised valid range.
-  - **Fix**: Tighten adapter validation to match ppr.ts: `alpha <= 0` and `max_iterations <= 0`.
+  **S2: `hasJournalUpdate` guard in `indexFiles` not removed — causes double derivation on journal file changes**
+  - File: `src/indexer.ts:798–803`
+  - WI-727 spec said "replace" the guard; implementation kept the old `hasJournalUpdate` block alongside the new `hasDerivedEdgeUpdate` block. For journal file changes both blocks fire, running derivation twice. Correctness preserved by P-67; performance doubled for incremental journal updates.
+  - Fix: Remove `hasJournalUpdate` block (lines 798–803). `hasDerivedEdgeUpdate` already covers journal files via its first regex clause.
 
-  ### S3: No test for dispatchHook allowlist rejection (P-58 violation)
-  - **File**: `src/__tests__/hooks.test.ts`
-  - The primary security control (allowlist enforcement in dispatchHook) has no unit test exercising the rejection path for non-allowlisted commands.
-  - **Fix**: Add test: pass non-allowlisted command, assert throws with allowlist rejection message.
+  ### Minor Findings
 
-  ## Minor Findings
+  **M1: Duplicate 'Phase 3' comment label in `rebuildIndex`**
+  - File: `src/indexer.ts:1011` and `1021`
+  - Both lines carry `// Phase 3:`. After removing the bare calls per S1, relabel the transactional blocks as Phase 3 and Phase 4 without collision.
 
-  ### M1: `_countNodesWithoutStatus` swallows all errors silently
-  - `src/adapters/remote/index.ts:1438-1443` — catches all errors, returns 0.
+  ### Suggestions
+  None.
 
-  ### M2: fetchCurrentCycle wraps network errors as VALIDATION_ERROR
-  - `src/adapters/remote/index.ts:463-468` — infrastructure failure surfaces as ValidationError, semantically wrong.
-
-  ### M3: LocalWriterAdapter.nextId throws plain Error for unsupported types
-  - `src/adapters/local/writer.ts:520` — should throw ValidationError(INVALID_NODE_TYPE) per P-002.
-
-  ### M4: deleteNode reverses P-44 write order (SQLite before YAML)
-  - `src/adapters/local/writer.ts:887-908` — SQLite delete precedes YAML removal, violating YAML-first policy.
-
-  ## Principle Adherence Confirmed
-  - P-40: dispatchHook uses spawnSync with explicit argument array, shell: false
-  - P-64: All ValidationError throws use compliant code strings
-  - P-002: All validation test files assert .code specifically
-  - P-65: Module-level vi.mock only in new test files
-  - P-36: write-transaction.test.ts covers all six write methods
-  - Test suite: 1,084 passed, 306 skipped, 0 failed
-content_hash: bba5058481683e0183af2417d025b89d9c7d418b68083cc3e84fe87f1405323a
-token_count: 749
-file_path: .ideate/cycles/068/code-quality.yaml
-cycle: 20
-cycle_modified: 19
-verdict: Pass
-scope: full-audit
-date: "20260407"
+  ### Test Result
+  1162 passed, 0 failed.
+content_hash: 0150e324fc5357273863809a9dc7e44e3003e1089672229fd12c8a696a69cfbb
+token_count: 428

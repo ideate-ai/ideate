@@ -2,31 +2,39 @@ id: gap-analysis
 type: cycle_summary
 reviewer: gap-analyst
 content: |-
-  ## Verdict: Pass
-
-  No critical or significant gaps. All cycle 21/22 significant items resolved. Deferred minor items unchanged.
-
-  ## Critical Gaps
-  None.
+  ## Verdict: Fail
 
   ## Significant Gaps
-  None.
 
-  ## Minor Gaps
-  ### MG3 (carry-forward, deferred): PARSE_ERROR description names internal functions
-  - `docs/adapter-contract.md:484` — 'mapGqlNodeToNode' and 'fetchCurrentCycle' are internal names in interface spec. Pre-existing. Appropriate to defer.
-  ### Cosmetic: putNode Validation block missing 'a'
-  - `docs/adapter-contract.md:84` — pre-existing, outside WI-707 scope.
+  ### IR1: deleteNode double-failure behavior not documented in adapter-contract.md
+  - The PH-037 success criterion states 'double-failure message includes both error contexts'. The implementation at writer.ts:938 correctly produces 'SQLite transaction failed: ...; cleanup also failed: ...' and the test at writer.test.ts:395 verifies this. But the contract doc deleteNode section (lines 119-136) has no Error Handling block documenting this behavior.
+  - Fix: Add an Error Handling block to the deleteNode contract entry: when TRANSACTION_FAILED is thrown because both the SQLite DELETE and YAML restore fail, the error message includes both the SQLite error context and the restore error context.
 
-  ## Prior Deferred Items (unchanged)
-  - MG1: getNode INVALID_NODE_ID equivalence test missing. Still deferred.
-  - MG2: getNode whitespace-only ID passes validation silently. Still deferred.
-  - MG3: PARSE_ERROR internal function names. Still deferred.
-content_hash: 410b672c77050057caaa7990cf25d2b0ae1947041af64ddfd7ef5fffd8a02c23
-token_count: 280
+  ## Other criteria: all met
+  - deleteNode YAML-first rollback: implemented
+  - FILESYSTEM_ERROR throw: implemented
+  - appendJournalEntry TRANSACTION_FAILED in equivalence-journal.test.ts: present
+  - getNode Validation block: present
+  - No P-53 violations: confirmed
+  - .exclusive() transaction: implemented
+  - nextId INVALID_NODE_TYPE: documented
+  - INVALID_TOKEN_BUDGET/INVALID_MAX_NODES wording: updated
+content_hash: c7b0a8274327c0bf893eaf178901d8b183157a2c370fe85e92366b44e45c76fa
+token_count: 630
 file_path: .ideate/cycles/068/gap-analysis.yaml
 cycle: 23
 cycle_modified: 19
 verdict: Fail
 scope: full-audit
 date: "20260407"
+findings:
+  - id: F-023-IR1
+    severity: significant
+    description: "deleteNode Error Handling block documents 'operation failed:' prefix but code throws 'SQLite transaction failed:'. Doc and code are contradictory. Fix: update writer.ts to throw 'operation failed:' to match the P-53-compliant contract."
+  - id: F-023-IR2
+    severity: minor
+    description: "deleteNode Error Handling block documents TRANSACTION_FAILED message formats but omits FILESYSTEM_ERROR message format. writer.ts line 917 throws 'deleteNode failed: artifact removal failed: <err>'. Add one line to the Error Handling block."
+  - id: F-023-IR3
+    severity: minor
+    description: putNode and patchNode have same two-phase rollback pattern with same 'SQLite transaction failed:' messages but no Error Handling blocks. Pre-existing, deferred.
+summary: "One significant gap (IR1): code/contract message prefix mismatch. One minor gap (IR2): FILESYSTEM_ERROR message format missing from Error Handling block. One deferred pre-existing gap (IR3): putNode/patchNode lack Error Handling blocks."

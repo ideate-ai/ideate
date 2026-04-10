@@ -2,27 +2,42 @@ id: gap-analysis
 type: cycle_summary
 reviewer: gap-analyst
 content: |-
-  ## Gap Analysis — Cycle 25
-
-  **Verdict**: Fail
+  ## Verdict: Fail
 
   ## Significant Gaps
 
-  - [SG1] `tests/adapters/adapter-equivalence.test.ts` has no tests for patchNode IMMUTABLE_FIELD equivalence between adapters. Both adapters now implement IMMUTABLE_FIELD rejection for id, type, cycle_created. adapter-contract.md:108 documents this as a required equivalence point. The equivalence suite covers INVALID_NODE_ID for patchNode but not IMMUTABLE_FIELD. 14 existing equivalence pairs establish the pattern; 3 new pairs needed (one per immutable field).
+  ### IR1: deleteNode double-failure behavior not documented in adapter-contract.md
+  - The PH-037 success criterion states 'double-failure message includes both error contexts'. The implementation at writer.ts:938 correctly produces 'SQLite transaction failed: ...; cleanup also failed: ...' and the test at writer.test.ts:395 verifies this. But the contract doc deleteNode section (lines 119-136) has no Error Handling block documenting this behavior.
+  - Fix: Add an Error Handling block to the deleteNode contract entry: when TRANSACTION_FAILED is thrown because both the SQLite DELETE and YAML restore fail, the error message includes both the SQLite error context and the restore error context.
 
-  ## Minor Gaps
-
-  - [MG1] `tests/adapters/local-adapter-validation.test.ts` has no patchNode section. patchNode validation (INVALID_NODE_ID, IMMUTABLE_FIELD) is covered in adapter-contract.test.ts and adapter-equivalence.test.ts but not in the dedicated local adapter validation file. The file's coverage list (lines 7-8) doesn't mention patchNode.
-  - [MG2] `docs/adapter-contract.md` equivalence test list header comment doesn't note queryGraph validation equivalence (minor doc-only gap; underlying tests exist in separate files).
-
-  ## Resolved from Prior Cycles
-
-  - All validation gaps from cycles 21-23 resolved
-  - SG1 cycle 24 (putNode/patchNode/deleteNode TRANSACTION_FAILED wrapping): resolved cycle 25 WI-691
-  - SG2 cycle 24 (RemoteAdapter.patchNode IMMUTABLE_FIELD): resolved cycle 25 WI-691
-content_hash: 0dc2de2793d541e1098a81770d21e06fbfa5e32a59088e12661c30b3c2c29529
-token_count: 401
+  ## Other criteria: all met
+  - deleteNode YAML-first rollback: implemented
+  - FILESYSTEM_ERROR throw: implemented
+  - appendJournalEntry TRANSACTION_FAILED in equivalence-journal.test.ts: present
+  - getNode Validation block: present
+  - No P-53 violations: confirmed
+  - .exclusive() transaction: implemented
+  - nextId INVALID_NODE_TYPE: documented
+  - INVALID_TOKEN_BUDGET/INVALID_MAX_NODES wording: updated
+content_hash: def824a94bae85344e6128a373d9a0cb95979c5f5ef69bbee93f2004b3f2e70b
+token_count: 654
 file_path: .ideate/cycles/068/gap-analysis.yaml
 cycle: 25
 cycle_modified: 19
-verdict: Fail
+verdict: Pass
+scope: full-audit
+date: "20260407"
+findings:
+  - id: F-025-MI1
+    severity: minor
+    deferred: true
+    description: RemoteAdapter TRANSACTION_FAILED messages use 'Transport error in <method>:' prefix — different from LocalAdapter's 'operation failed:'. Contract says messages 'need not be identical'. No known caller parses message text. Document the divergence in a future doc pass.
+  - id: F-025-IR1
+    severity: minor
+    deferred: true
+    description: putNode, patchNode, appendJournalEntry have TRANSACTION_FAILED in Error Codes but no Error Handling blocks. Consistent 'operation failed:' prefix makes format inferrable from deleteNode. Batch into a future documentation work item.
+  - id: F-025-IR2
+    severity: minor
+    deferred: true
+    description: message assertion (toContain 'operation failed') exists only for batchMutate test; putNode, patchNode, appendJournalEntry tests check only code and details. Test coverage gap, not runtime failure.
+summary: "No significant or critical gaps. Three minor deferred items: RemoteAdapter message format divergence, missing Error Handling blocks for peer write methods, incomplete message assertion test coverage. All explicitly deferred."

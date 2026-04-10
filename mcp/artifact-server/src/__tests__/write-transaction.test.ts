@@ -531,7 +531,7 @@ describe("Transaction failure error type", () => {
     const error = caughtError as ValidationError;
     expect(error.code).toBe("TRANSACTION_FAILED");
     expect(error.details?.operation).toBe("batchMutate");
-    expect(error.message).toContain("SQLite transaction failed");
+    expect(error.message).toContain("operation failed");
   });
 
   it("throws ValidationError with code TRANSACTION_FAILED on patchNode failure", async () => {

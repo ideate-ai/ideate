@@ -4,25 +4,30 @@ reviewer: gap-analyst
 content: |-
   ## Verdict: Fail
 
-  ## Critical Gaps
-  None.
-
   ## Significant Gaps
-  ### SG1: FILESYSTEM_ERROR documented but never thrown by deleteNode
-  - `src/adapters/local/writer.ts` Phase 1 catch (lines 909-914) re-throws raw NodeJS.ErrnoException on non-ENOENT unlink failure. `docs/adapter-contract.md:128-129,566-567` documents FILESYSTEM_ERROR as the code thrown. Zero occurrences of FILESYSTEM_ERROR in src/. WI-704 added the documentation without WI-702 implementing the throw, creating a spec/impl divergence.
-  - Callers catching ValidationError will receive an untyped ErrnoException for filesystem failures.
-  - Fix: wrap `throw e` in Phase 1 as `throw new ValidationError('deleteNode failed: filesystem error during unlink: ' + e.message, 'FILESYSTEM_ERROR', {operation: 'deleteNode', id})`.
 
-  ## Minor Gaps
-  ### MN1: getNode has no Validation or Error Codes block in adapter-contract.md
-  - `docs/adapter-contract.md:23-36` — getNode has no Validation block and no Error Codes block. All other CRUD methods have both. Implementation validates and throws INVALID_NODE_ID for empty/null id. Doc gap persists from cycle 20 MN1 — WI-704 did not address it.
-  ### MN2: No automated test for FILESYSTEM_ERROR code path
-  - `src/__tests__/adapters/writer.test.ts` — No test mocks fs.unlinkSync to throw non-ENOENT and asserts ValidationError FILESYSTEM_ERROR. Contingent on SG1 fix. Should ship as a unit with the fix.
-content_hash: 3fa05318bb32f32c0d5e6d1c0474c266d905232eb14f13157b2b4c46a5758894
-token_count: 428
+  ### IR1: deleteNode double-failure behavior not documented in adapter-contract.md
+  - The PH-037 success criterion states 'double-failure message includes both error contexts'. The implementation at writer.ts:938 correctly produces 'SQLite transaction failed: ...; cleanup also failed: ...' and the test at writer.test.ts:395 verifies this. But the contract doc deleteNode section (lines 119-136) has no Error Handling block documenting this behavior.
+  - Fix: Add an Error Handling block to the deleteNode contract entry: when TRANSACTION_FAILED is thrown because both the SQLite DELETE and YAML restore fail, the error message includes both the SQLite error context and the restore error context.
+
+  ## Other criteria: all met
+  - deleteNode YAML-first rollback: implemented
+  - FILESYSTEM_ERROR throw: implemented
+  - appendJournalEntry TRANSACTION_FAILED in equivalence-journal.test.ts: present
+  - getNode Validation block: present
+  - No P-53 violations: confirmed
+  - .exclusive() transaction: implemented
+  - nextId INVALID_NODE_TYPE: documented
+  - INVALID_TOKEN_BUDGET/INVALID_MAX_NODES wording: updated
+content_hash: 572ffc2745b2c2f662a0f9bc70ee0f6eea8bb831c73d3db01a9af2edd56613f3
+token_count: 376
 file_path: .ideate/cycles/068/gap-analysis.yaml
 cycle: 21
 cycle_modified: 19
 verdict: Fail
 scope: full-audit
 date: "20260407"
+findings:
+  critical: 0
+  significant: 1
+  minor: 0

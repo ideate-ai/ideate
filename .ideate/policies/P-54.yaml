@@ -3,8 +3,10 @@ type: domain_policy
 domain: workflow
 title: Spec summary tables must have corresponding detail sections
 description: When a specification document includes a summary table, mapping table, or index listing operations, types, or components, every entry in that table must have a corresponding detail section in the same document or an explicit cross-reference to the detail in another document. A table entry without a detail section signals an incomplete spec.
-derived_from: D-164, GP-01
+derived_from:
+  - D-164
+  - GP-01
 established: cycle 6
 status: active
-content_hash: 5abd4e826b94178f6e546f8c91f202f92db8db6b3f45e10f065b53f912ca91ed
-token_count: 133
+content_hash: b632f99c9be88b6be360ea376f0c0e1d3b3b38f38455926bb712983c653ce1f1
+token_count: 134

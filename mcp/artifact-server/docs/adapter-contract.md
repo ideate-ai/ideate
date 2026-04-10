@@ -134,6 +134,12 @@ Delete a node and its associated edges.
 - `TRANSACTION_FAILED`: Database transaction failed
 - `FILESYSTEM_ERROR`: artifact removal failed
 
+**Error Handling:**
+- When id is empty or not a string: `INVALID_NODE_ID` with message `'Node id must be a non-empty string'`
+- When artifact removal fails: `FILESYSTEM_ERROR` with message `'deleteNode failed: artifact removal failed: <err>'`
+- When the primary delete operation fails and artifact restore succeeds: `TRANSACTION_FAILED` with message `'operation failed: <primary err>'`
+- When both the primary delete operation and artifact restore fail: `TRANSACTION_FAILED` with message `'operation failed: <primary err>; cleanup also failed: <restore err>'`
+
 ---
 
 ### Edge CRUD Operations
@@ -232,11 +238,11 @@ Execute a PPR-based graph traversal for context assembly.
 - `EMPTY_SEED_IDS`: seed_ids array is empty
 - `INVALID_SEED_ID`: seed_ids contains non-string element
 - `INVALID_ALWAYS_INCLUDE_TYPE`: always_include_types contains invalid node type
-- `INVALID_TOKEN_BUDGET`: token_budget is negative (valid range: 0 or greater)
+- `INVALID_TOKEN_BUDGET`: token_budget is negative (valid range: 0 to Infinity)
 - `INVALID_ALPHA`: alpha is not a number in range (0, 1)
 - `INVALID_MAX_ITERATIONS`: max_iterations is not a positive integer
 - `INVALID_CONVERGENCE_THRESHOLD`: convergence_threshold is not a positive number
-- `INVALID_MAX_NODES`: max_nodes is a negative integer (valid range: 0 or greater)
+- `INVALID_MAX_NODES`: max_nodes is a negative integer (valid range: 0 to Infinity)
 
 **Implementation Note:**
 - LocalAdapter runs PPR in-process via `ppr.ts`
@@ -310,9 +316,11 @@ Generate the next available ID for a given node type.
 - Formatted ID string (e.g., "WI-001", "J-001-001")
 
 **Validation:**
+- `type` must be one of the supported ID-generation types: `journal_entry`, `work_item`, `finding`
 - `cycle` must be a non-negative integer if provided
 
 **Error Codes:**
+- `INVALID_NODE_TYPE`: type is not a supported ID-generation type
 - `INVALID_CYCLE`: cycle is not a non-negative integer
 
 ---
@@ -481,7 +489,7 @@ Base error class for all adapter failures.
 - `details`: Additional error context
 
 **Codes:**
-- `PARSE_ERROR`: Node content field could not be parsed as JSON. Thrown by mapGqlNodeToNode when a server-returned node has invalid JSON content, and by fetchCurrentCycle when the cycle index response cannot be parsed. This is a data integrity error (stored data corrupt), not a caller input error.
+- `PARSE_ERROR`: Node content or cycle index data could not be parsed as JSON. This is a data integrity error (stored data is corrupt), not a caller input error.
 
 ### `NotFoundError extends StorageAdapterError`
 
@@ -554,11 +562,11 @@ constructor(
 - `EMPTY_SEED_IDS`: seed_ids array is empty
 - `INVALID_SEED_ID`: seed_ids contains non-string element
 - `INVALID_ALWAYS_INCLUDE_TYPE`: always_include_types contains invalid type
-- `INVALID_TOKEN_BUDGET`: token_budget is negative (valid range: 0 or greater)
+- `INVALID_TOKEN_BUDGET`: token_budget is negative (valid range: 0 to Infinity)
 - `INVALID_ALPHA`: alpha is not a number in range (0, 1)
 - `INVALID_MAX_ITERATIONS`: max_iterations is not a positive integer
 - `INVALID_CONVERGENCE_THRESHOLD`: convergence_threshold is not a positive number
-- `INVALID_MAX_NODES`: max_nodes is a negative integer (valid range: 0 or greater)
+- `INVALID_MAX_NODES`: max_nodes is a negative integer (valid range: 0 to Infinity)
 - `INVALID_LIMIT`: limit is invalid
 - `INVALID_OFFSET`: offset is invalid
 - `INVALID_CYCLE`: cycle is not a non-negative integer

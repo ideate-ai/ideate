@@ -1,0 +1,35 @@
+id: ME-4A71F2AF
+type: metrics_event
+event_name: unknown
+timestamp: 2026-04-09T00:00:00Z
+event_type: quality_summary
+skill: review
+cycle: 20
+findings:
+  total: 6
+  by_severity:
+    critical: 0
+    significant: 2
+    minor: 4
+    suggestion: 1
+  by_reviewer:
+    code-reviewer:
+      critical: 0
+      significant: 2
+      minor: 1
+    spec-reviewer:
+      critical: 0
+      significant: 2
+      minor: 2
+    gap-analyst:
+      critical: 0
+      significant: 2
+      minor: 2
+  by_category:
+    requirements_missed: 0
+    bugs_introduced: 2
+    principles_violated: 0
+    implementation_gaps: 2
+    other: 2
+work_items_reviewed: 4
+andon_events: 0

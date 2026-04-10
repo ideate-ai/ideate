@@ -1,53 +1,44 @@
 id: decision-log
 type: cycle_summary
+cycle: 20
 reviewer: journal-keeper
 content: |-
-  ## Decision Log — Full Audit (2026-04-07)
+  ## Decision Log — Cycle 20
 
-  ### Context
+  ### Decisions Made
 
-  Full audit of mcp/artifact-server (PR-002, Adapter Refactor) triggered after the StorageAdapter validation layer converged in logical cycle 27. Covers the entire adapter codebase holistically. Three review outputs incorporated: code-quality (Fail), spec-adherence (Pass), gap-analysis (Fail).
+  **D1 — Register `belongs_to_cycle` in the edge type system (WI-725)**
+  `belongs_to_cycle` added to EDGE_TYPES, EDGE_TYPE_REGISTRY, and adapter-contract.md. P-66 compliance. No rework.
 
-  ### Key Findings (Cross-Referenced)
+  **D2 — Apply delete-before-insert in `deriveJournalEntryCycleEdges` (WI-726)**
+  Function made idempotent per P-67. One rework pass to correct scoping of delete step.
 
-  **Theme A: putNode rollback deletes instead of restores (code-reviewer S1)**
-  Code-reviewer identified that putNode's SQLite failure rollback deletes the original YAML file instead of restoring it. patchNode handles this correctly (saves and restores existingContent). Neither spec-reviewer nor gap-analyst flagged this — it is a new finding from the full audit not caught in incremental reviews. Impact: silent data corruption on failed updates.
+  **D3 — Expand `hasDerivedEdgeUpdate` trigger guard in `indexFiles` (WI-727)**
+  Replaced narrow `hasJournalUpdate` with broader guard covering journal, cycle_summary, and work_item files. P-68 compliance. One rework pass plus merge cleanup gap that left dead code in place.
 
-  **Theme B: alpha=0 / max_iterations=0 validation boundary mismatch (code-reviewer S2)**
-  Adapter-layer validation allows alpha >= 0 but computePPR rejects alpha <= 0. Callers see an error from an internal function with a message contradicting the advertised valid range. A cross-cutting consistency issue not visible from per-method review.
+  **D4 — Restrict comma-split to `derived_from` only (WI-728)**
+  Comma-split path in `extractEdges` gated on `spec.yaml_field === 'derived_from'`. No rework.
 
-  **Theme C: dispatchHook allowlist rejection untested (code-reviewer S3)**
-  P-58 violation: the primary security control against arbitrary command execution (allowlist enforcement in dispatchHook) has no unit test directly exercising the rejection path. Pre-existing gap not caught in validation layer cycles.
+  ### Execution Notes
 
-  **Theme D: LocalAdapter queryNodes/queryGraph missing limit/offset validation (gap-analyst SG1)**
-  RemoteAdapter validates INVALID_LIMIT/INVALID_OFFSET; LocalAdapter silently passes negatives to SQLite. Contract documents both codes for both adapters. Equivalence tests exist for these codes but local path doesn't implement them — equivalence tests would fail against a real LocalAdapter for these cases.
+  WI-727 rework that resolved a duplicate `deriveJournalEntryEdges` definition left two merge artifacts: (1) bare calls at rebuildIndex lines 1013–1015, (2) old `hasJournalUpdate` block at indexFiles lines 798–803. These are the root cause of both post-review significant findings.
 
-  **Theme E: getNode lacks id validation (gap-analyst SG2)**
-  All write methods validate INVALID_NODE_ID; getNode does not. Asymmetric validation-first coverage. Contract doc has no Validation section for getNode (MN1). Both reviewers (code and gap) independently converged on the adapter validation symmetry theme.
+  ### Review Findings Summary
 
-  ### Confirmed Working
+  All three reviewers independently converged on the same two significant issues:
+  - **S1**: Orphaned bare derivation calls in `rebuildIndex` (lines 1013–1015) — double execution, inflated `stats.edges_created`
+  - **S2**: `hasJournalUpdate` guard retained alongside `hasDerivedEdgeUpdate` in `indexFiles` (lines 798–803) — double derivation on journal file changes
 
-  - Full validation layer: deleteNode, putEdge, removeEdges, patchNode IMMUTABLE_FIELD in both adapters
-  - TRANSACTION_FAILED try/catch for all six write methods in both adapters
-  - fetchCurrentCycle inside try block in RemoteAdapter.putNode and patchNode
-  - adapter-contract.md matches implementation for all documented error codes
-  - P-64 (ValidationError code strings), P-65 (vi.mock isolation), D-177 (Local unconditional / Remote skipIf), P-002 (specific code assertions) all confirmed adherent
-  - P-40 (hook security): spawnSync with explicit argument array, shell: false
-  - batchMutate equivalence: all 8 validation codes covered cross-adapter
-  - Test suite: 1,084 passed, 306 skipped, 0 failed
+  P-67 prevents data corruption in both cases. Fix: delete lines 1013–1015 and lines 798–803, relabel Phase 3/4 comments.
 
-  ### Open Questions for Next Refinement
+  ### Connections to Prior Cycles
 
-  1. Fix putNode rollback: save originalContent before overwrite, restore on catch instead of unlink
-  2. Fix alpha/max_iterations validation boundary: tighten adapter guards to match ppr.ts (alpha <= 0, max_iterations <= 0)
-  3. Add dispatchHook allowlist rejection test (P-58)
-  4. Add limit/offset validation to LocalAdapter queryNodes and queryGraph (INVALID_LIMIT, INVALID_OFFSET)
-  5. Decide: add INVALID_NODE_ID validation to getNode? Update contract doc either way (add validation or explicit note that callers are responsible)
-  6. Minor: MISSING_CYCLE in consolidated error code table; cycle_modified injection documented; adapter-contract.test.ts legacy IMMUTABLE_FIELD tests add .code; traverse/appendJournalEntry equivalence happy-path tests
-content_hash: 8a3570be2f70188c9d60009e871d6c87b2019889ddb660d4d7473cee59e1cec8
-token_count: 1011
-file_path: .ideate/cycles/068/decision-log.yaml
-cycle: 20
-cycle_modified: 19
-scope: full-audit
-date: "20260407"
+  Cycle 20 is the first implementation cycle for P-66, P-67, P-68 (all established in cycle 19). P-67 acted as a safety net — without it, S1 and S2 would be data-corruption bugs rather than stats/performance issues. The policies are working as a system.
+
+  ### Open Questions
+  - **OQ-1**: Cleanup of lines 1013–1015 and 798–803 required before cycle closes
+  - **OQ-2**: Add `stats.edges_created` accuracy test after S1 is fixed (not before — would assert inflated value)
+  - **OQ-3**: Add formal P-49 backfill assessment note to WI-725 record
+  - **OQ-4**: Q-117 and Q-118 remain open, unaffected by cycle 20 work
+content_hash: d4bedd791636ce831d5675003cd13451a40e89e3f75beecc7fd21da212478b2a
+token_count: 602

@@ -2,28 +2,35 @@ id: gap-analysis
 type: cycle_summary
 reviewer: gap-analyst
 content: |-
-  ## Verdict: Pass
-
-  All cycle 21 significant gaps (SG1, MN1) are addressed. No new significant gaps.
-
-  ## Critical Gaps
-  None.
+  ## Verdict: Fail
 
   ## Significant Gaps
-  None.
 
-  ## Minor Gaps
-  ### MG1: getNode INVALID_NODE_ID equivalence test missing
-  - No equivalence test pair for getNode('') throwing INVALID_NODE_ID. Per-adapter isolation tests exist. Defer to next validation sweep.
-  ### MG2: getNode whitespace-only ID passes validation silently (carry-forward F-706-1 M1)
-  - Both adapters use !id (not trim()). No test documents intent. Defer.
-  ### MG3: PARSE_ERROR description names internal functions
-  - `docs/adapter-contract.md:484` — 'mapGqlNodeToNode' and 'fetchCurrentCycle' are internal implementation names in interface spec. P-53 spirit. Pre-existing, not introduced by these WIs. Defer.
-content_hash: 9db61e85b33d1cc69e2d4faea393c2790eec88cf6f1763c77875cdbdc2350e09
-token_count: 272
+  ### IR1: deleteNode double-failure behavior not documented in adapter-contract.md
+  - The PH-037 success criterion states 'double-failure message includes both error contexts'. The implementation at writer.ts:938 correctly produces 'SQLite transaction failed: ...; cleanup also failed: ...' and the test at writer.test.ts:395 verifies this. But the contract doc deleteNode section (lines 119-136) has no Error Handling block documenting this behavior.
+  - Fix: Add an Error Handling block to the deleteNode contract entry: when TRANSACTION_FAILED is thrown because both the SQLite DELETE and YAML restore fail, the error message includes both the SQLite error context and the restore error context.
+
+  ## Other criteria: all met
+  - deleteNode YAML-first rollback: implemented
+  - FILESYSTEM_ERROR throw: implemented
+  - appendJournalEntry TRANSACTION_FAILED in equivalence-journal.test.ts: present
+  - getNode Validation block: present
+  - No P-53 violations: confirmed
+  - .exclusive() transaction: implemented
+  - nextId INVALID_NODE_TYPE: documented
+  - INVALID_TOKEN_BUDGET/INVALID_MAX_NODES wording: updated
+content_hash: 09a8cc194e28f68fbf375111c469a140b9c220da8f749cdd552f387f11acc1e2
+token_count: 573
 file_path: .ideate/cycles/068/gap-analysis.yaml
 cycle: 22
 cycle_modified: 19
 verdict: Fail
 scope: full-audit
 date: "20260407"
+findings:
+  - id: F-022-G1
+    severity: significant
+    location: mcp/artifact-server/docs/adapter-contract.md:~138
+    description: deleteNode Error Handling block uses concrete storage-layer terms ('SQLite DELETE', 'YAML restore', 'SQLite transaction failed') in an interface specification, violating P-53. Additionally, the single-failure message format is absent — only the double-failure case ('...cleanup also failed...') is documented.
+    recommendation: "Fix in one pass: (1) rewrite prose to storage-neutral language, (2) add separate single-failure entry documenting message format 'operation failed: <primary err>' alongside the double-failure entry."
+summary: "One significant gap: deleteNode Error Handling block needs P-53 language cleanup and addition of single-failure message format. No missing features or integrations."

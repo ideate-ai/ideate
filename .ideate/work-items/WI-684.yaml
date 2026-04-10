@@ -29,8 +29,8 @@ notes: |-
 
   Follow D-177 pattern throughout. Update file header comment to list new coverage.
 resolution: All scope absorbed. putNode INVALID_NODE_TYPE + MISSING_NODE_PROPERTIES equivalence pairs added by WI-693 in adapter-equivalence.test.ts (lines 1230-1266). removeEdges empty-array no-op equivalence added (lines 1268-1274). Verified in code 2026-04-07.
-status: completed
+status: done
 cycle_created: 22
 cycle_modified: 19
-content_hash: a4c1d9b9f33366881fd0e000a732a3bfc0fdeeaeca24cdd9ca14f4df1d8cdecb
-token_count: 540
+content_hash: 49daeee830d6bc5ed57757bab06ce6c9ea768d116a018af0ed3871e698e4fa6b
+token_count: 514

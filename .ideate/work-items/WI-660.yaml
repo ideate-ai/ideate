@@ -1,7 +1,7 @@
 id: WI-660
 type: work_item
 title: Research Spike - Server-Side PPR Alignment
-status: completed
+status: done
 complexity: null
 scope:
   - mcp/artifact-server/research/ppr-alignment.md
@@ -32,6 +32,6 @@ notes: |-
   **Recommendation:** Proceed with implementation. No fixes required.
 resolution: null
 cycle_created: null
-cycle_modified: 5
-content_hash: 1a85e9b0a607a238ae1be112563071e22e1cdea59da961b3fb1c863fac6bf572
-token_count: 409
+cycle_modified: 19
+content_hash: db032d41a20e752a9e5e92971b19976c13e42b846f65af09cc6f11fb0ee5d254
+token_count: 384

@@ -1,7 +1,7 @@
 id: WI-655
 type: work_item
 title: Add batchMutate Input Validation
-status: completed
+status: done
 complexity: null
 scope:
   - mcp/artifact-server/src/adapters/local/writer.ts
@@ -22,6 +22,6 @@ work_item_type: feature
 notes: "# WI-655: Add batchMutate Input Validation"
 resolution: batchMutate validation implemented to throw ValidationError with appropriate codes in both adapters. Updated adapter-contract.test.ts to expect thrown errors. Fixed ValidationError class to recognize MISSING_* and EMPTY_* codes. All 69 adapter-contract tests pass.
 cycle_created: null
-cycle_modified: 18
-content_hash: 59d8b498c7e1884ada612e1705ff6d0dbbbbc43c03c67502849de5c63a8ce133
-token_count: 278
+cycle_modified: 19
+content_hash: 8b83a2b699d2cf814b883b6296afba8f6df99d4da9b8e96715b0f1cc9f9f64ec
+token_count: 252

@@ -1,37 +1,43 @@
 id: gap-analysis
 type: cycle_summary
+cycle: 20
 reviewer: gap-analyst
 content: |-
-  ## Gap Analysis — Full Audit (2026-04-07)
+  ## Gap Analysis — Cycle 20
 
   **Verdict**: Fail
 
-  ## Critical Gaps
+  ### Critical Findings
   None.
 
-  ## Significant Gaps
+  ### Significant Findings
 
-  ### SG1: LocalAdapter queryNodes and queryGraph do not validate limit/offset
-  - `src/adapters/local/reader.ts:394,527` — no guard on limit/offset. RemoteAdapter rejects negatives with INVALID_LIMIT/INVALID_OFFSET. Contract (lines 257-262, 285-290) requires both codes for both adapters. Negative limit passes silently into SQLite as LIMIT -1 (unlimited). Equivalence tests verify these codes but local path doesn't implement them.
+  **SF1: Dead code in `rebuildIndex` causes double-call of both derivation functions and inflated `edges_created` stat**
+  - File: `src/indexer.ts:1011–1015`
+  - Merge artifact from WI-727 rework. Bare calls at lines 1013–1015 precede transactional Phase 3/4 blocks at lines 1024–1036. Every `rebuildIndex` runs both derivation functions twice. DB correctness preserved by P-67; `stats.edges_created` over-reports (counts derived edges twice). Comment label 'Phase 3' appears on both line 1011 and 1021.
+  - Fix: Remove lines 1011–1015 bare calls. Retain and correctly label transactional blocks.
 
-  ### SG2: Neither adapter validates getNode id as non-empty string
-  - `src/adapters/local/reader.ts:278`, `src/adapters/remote/index.ts:509` — getNode("") or getNode(null) passes through silently. Local returns null. All write methods validate INVALID_NODE_ID; getNode does not. Asymmetric validation coverage. Contract doc has no Validation section for getNode (see MN1).
+  **SF2: `indexFiles` `hasJournalUpdate` guard not removed — WI-727 spec said replace, implementation added alongside**
+  - File: `src/indexer.ts:798–803`
+  - Journal file changes trigger four derivation calls (two functions × two guards). Work item resolution note confirms intent was replacement. Double work on incremental journal updates.
+  - Fix: Remove lines 798–803. `hasDerivedEdgeUpdate` already covers journal files.
 
-  ## Minor Gaps
+  ### Minor Findings
 
-  ### MN1: adapter-contract.md getNode section has no Validation or Error Codes block
-  - `docs/adapter-contract.md:23-36` — every mutating method documents validation; getNode is silent. Needs either INVALID_NODE_ID entry or explicit statement that validation is caller responsibility.
+  **MF1: No test verifies `stats.edges_created` is accurate when derived edges are present**
+  - File: `src/__tests__/indexer.test.ts`
+  - The double-counting in SF1 went undetected because no test asserts a specific `edges_created` value in a scenario with journal entries + cycle summaries. Add one test asserting exact `edges_created` count after rebuildIndex with a known fixture.
 
-  ### MN2: No happy-path traverse equivalence test
-  - `tests/adapters/adapter-equivalence.test.ts` — only error cases (INVALID_SEED_IDS). No test verifying both adapters return TraversalResult with expected shape for valid seed_ids.
+  **MF2: No P-49 backfill assessment documented for WI-725**
+  - `belongs_to_cycle` edges are runtime-derived and no YAML backfill is needed (correct behavior). But WI-725 notes contain no P-49 statement, leaving the reasoning implicit. A future reviewer cannot confirm P-49 was considered.
+  - Recommendation: Add to WI-725 resolution: 'No on-disk backfill needed — belongs_to_cycle edges are runtime-derived and regenerated on every rebuildIndex.'
 
-  ### MN3: No equivalence test for appendJournalEntry
-  - `tests/adapters/adapter-equivalence.test.ts` — appendJournalEntry absent from equivalence suite. Contract documents TRANSACTION_FAILED as its error code but no cross-adapter coverage.
-content_hash: f37de1cc427c5d8b924fd8aea4f9c77338db0b20477d00944b233f59cc01b26e
-token_count: 500
-file_path: .ideate/cycles/068/gap-analysis.yaml
-cycle: 20
-cycle_modified: 19
-verdict: Pass
-scope: full-audit
-date: "20260407"
+  ### Suggestions
+
+  **S1: Q-117 and Q-118 unaffected by cycle 20 changes.**
+  SF2's double-trigger slightly worsens Q-117 concern (more work per journal file change) but the fundamental debounce question is unchanged.
+
+  **S2: Pre-existing test coverage gap — `review_output` and `domain_index` types absent from document-type coverage test loop (indexer.test.ts:1154).**
+  Not introduced by cycle 20. Pre-existing gap.
+content_hash: fa2d0c8656c029a6a5363518c6bb13e994e2794642e6400795228283feecc696
+token_count: 624

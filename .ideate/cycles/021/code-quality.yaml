@@ -2,30 +2,22 @@ id: code-quality
 type: cycle_summary
 reviewer: code-reviewer
 content: |-
-  ## Verdict: Fail
-
-  All 1131 tests pass. Rollback logic is functionally correct. However, WI-704 introduces a doc-impl contract discrepancy that justifies fail.
-
-  ## Critical Findings
-  None.
-
-  ## Significant Findings
-  ### S1: FILESYSTEM_ERROR documented but never thrown
-  - `docs/adapter-contract.md:129,567` — FILESYSTEM_ERROR listed as deleteNode error code in two places. `src/adapters/local/writer.ts` Phase 1 catch re-throws raw NodeJS.ErrnoException (not wrapped as ValidationError FILESYSTEM_ERROR) when unlinkSync fails with non-ENOENT. Callers catching StorageAdapterError miss this entirely.
-  - Fix: wrap non-ENOENT rethrow as ValidationError(FILESYSTEM_ERROR) OR remove FILESYSTEM_ERROR from docs.
+  ## Verdict: Pass
 
   ## Minor Findings
-  ### M1: P-53 violation — "filesystem" and "unlink" in interface contract
-  - `docs/adapter-contract.md:129,567` — FILESYSTEM_ERROR description reads "artifact file removal failed (filesystem error during node deletion unlink)". "filesystem" and "unlink" are storage-format/syscall details. Replace with: "artifact removal failed".
-  ### M2: Double-failure error loses original messages
-  - `src/adapters/local/writer.ts:927` — When both SQLite and restore fail, catch {} discards both underlying errors. putNode at line 672 preserves both. Fix: include both error.message values in thrown message.
-  ### M3: FILESYSTEM_ERROR not covered by any test
-  - No test exercises Phase 1 non-ENOENT failure path. Add test patching fs.unlinkSync to throw code='EPERM', assert ValidationError with code FILESYSTEM_ERROR.
-content_hash: f3ee7d46891a41a160c26ef2c40468744c61d45bf99b9bafb620f6dc6b876dee
-token_count: 461
+
+  ### M1: batchMutate restores foreign_keys pragma redundantly in both catch and finally
+  - File: mcp/artifact-server/src/adapters/local/writer.ts:1344
+  - On the error path: `if (fkWasOn) this.db.pragma("foreign_keys = ON")` runs in catch, then again in finally. The catch call is dead relative to finally. Remove line 1344 from catch; finally handles both paths correctly.
+content_hash: 2226c3267aec6a69112e83e504a1fddcccbf99da71bc9685bf62ce4ddbd5aec3
+token_count: 191
 file_path: .ideate/cycles/068/code-quality.yaml
 cycle: 21
 cycle_modified: 19
 verdict: Pass
 scope: full-audit
 date: "20260407"
+findings:
+  critical: 0
+  significant: 0
+  minor: 1

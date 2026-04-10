@@ -1,0 +1,30 @@
+id: ME-2FE1B266
+type: metrics_event
+event_name: spec-reviewer
+timestamp: 2026-04-07T00:00:00Z
+phase: 6b
+cycle: 1
+agent_type: spec-reviewer
+model: claude-sonnet-4-6
+work_item: null
+wall_clock_ms: 304617
+context_files_read: []
+mcp_tools_called:
+  - ideate_get_context_package
+  - ideate_get_review_manifest
+outcome: null
+finding_count: 3
+finding_severities:
+  critical: 0
+  significant: 1
+  minor: 2
+first_pass_accepted: null
+rework_count: null
+turns_used: null
+input_tokens: null
+output_tokens: null
+cache_read_tokens: null
+cache_write_tokens: null
+cycle_modified: 19
+content_hash: a4821f51ce7e046ded7b3dec143c6367ed9e7af0b00a5b9bed5ae83506a9e4f8
+token_count: 141

@@ -1,79 +1,67 @@
 id: summary
 type: cycle_summary
+scope: full-audit
+date: "20260408"
 content: |-
-  # Review Summary — Cycle 19
+  # Review Summary — PH-039 Full Audit (Cycle 19)
 
   ## Overview
-
-  Cycle 19 added input validation to five adapter methods (traverse(), queryNodes(), queryGraph(), batchMutate()), documented the adapter interface contract, and concluded a PPR alignment research spike with a 'no fixes required' verdict. Two of three capstone reviewers returned Fail. A systematic defect in ValidationError constructor call patterns causes all new validation code to emit .code = 'VALIDATION_ERROR' instead of the specific codes documented in the contract. The test suite has two integrity failures: a Vitest hoisting regression and a tautological placeholder test.
+  PH-039 (Graph Curation Improvements) implemented 6 indexer edge-derivation fixes and 1 data hygiene item across WI-718 through WI-724. The `rebuildIndex()` path is functionally correct and all 1152 tests pass. Two recurring findings emerged independently from multiple reviewers: (1) the `belongs_to_cycle` edge type introduced in WI-720 was not registered in the schema contract, and (2) the incremental watcher path (`indexFiles`) does not trigger derivation passes for all relevant triggering events, partially undermining PH-039's PPR quality improvement intent.
 
   ## Phase Convergence
-
   Phase: PH-017
-  Cycles completed in this phase: unknown (work item phase metadata not populated)
-  Convergence status: Not assessed (phase metadata unavailable)
-
-  Trend: Two reviewers Fail; one reviewer truncated before verdict. The systematic ValidationError constructor issue and the incomplete putNode/patchNode validation layer indicate the validation work is not yet production-ready.
+  Cycles completed in this phase: not assessed (full audit)
+  Convergence status: Not assessed (ad-hoc review)
+  Trend: N/A — full audit scope
 
   ## Project Progress
 
   | Success Criterion | Status |
   |---|---|
-  | StorageAdapter interface hardened with input validation | partial |
-  | LocalAdapter and RemoteAdapter validation parity | partial |
-  | Adapter interface contract documented | partial (P-53 violation) |
-  | Test coverage for validation layer | partial (RemoteAdapter tests missing, placeholder test) |
-  | Server-side PPR alignment assessed | pass |
-
-  ## Critical Findings
-
-  None.
+  | addressed_by edge coverage for findings with passing verdict | pass |
+  | relates_to edges from journal entry titles | pass (rebuildIndex); partial (indexFiles) |
+  | belongs_to_cycle edges from journal entries to cycle_summary | pass (rebuildIndex); partial (indexFiles) |
+  | interview_question belongs_to_domain edges extracted | pass |
+  | triggered_by object-array items produce edges | pass |
+  | derived_from comma-string normalization | pass |
+  | belongs_to_cycle registered in EDGE_TYPES and adapter contract | not-started |
+  | All test suite passing | pass (1152 tests) |
 
   ## Significant Findings
 
-  - [code-reviewer] S1: WI-656 vi.mock at module level breaks pre-existing initialize() test via Vitest hoisting. File: mcp/artifact-server/src/__tests__/remote-adapter.test.ts:22 — relates to: WI-656 → carry-forward to current phase
-  - [code-reviewer] S2: ValidationError.code is 'VALIDATION_ERROR' not 'INVALID_SEED_IDS' across all WI-653 call sites. Constructor receives field name 'seed_ids' not code string. Affects ~15 call sites across seed_ids, always_include_types, PPR parameters, cycle validation in both adapters. WI-653 AC unmet. — relates to: WI-653, WI-654, WI-655, cross-cutting
-  - [code-reviewer] S3: WI-660 research output at wrong path (docs/ppr-alignment-research.md vs. specified research/ppr-alignment.md). — relates to: WI-660
-  - [spec-reviewer] P-53 violation: adapter-contract.md lines 11, 18, 628–637 reference concrete storage formats (SQLite, YAML, two-phase write) in a storage-agnostic interface spec. — relates to: WI-659
-  - [gap-analyst] SG1: putNode and patchNode lack upfront input validation despite batchMutate gaining it and adapter-contract.md documenting validation for all write methods. — relates to: WI-655, WI-659, cross-cutting
-  - [gap-analyst] SG2: No remote-adapter-validation.test.ts. WI-658 AC 'Coverage matches RemoteAdapter' unmet. — relates to: WI-658
-  - [gap-analyst] SG3: adapter-equivalence.test.ts has no validation equivalence cases. Validation parity (WI-653–655 major deliverable) has no equivalence test surface. — relates to: WI-653, WI-654, WI-655, cross-cutting
+  - [code-reviewer + spec-reviewer] `belongs_to_cycle` edge type written by `deriveJournalEntryCycleEdges()` (indexer.ts:553) is absent from `EDGE_TYPES` array (schema.ts:15-31), absent from `EDGE_TYPE_REGISTRY`, and absent from the `EdgeType` union in `docs/adapter-contract.md`. `putEdge()` in writer.ts validates against `EDGE_TYPES` and would throw `INVALID_EDGE_TYPE` if any caller attempted to use this type via the adapter API. The edge exists in the SQLite database but is invisible to the schema contract. — relates to: P-26 (partial violation), cross-cutting
+
+  - [code-reviewer] `deriveJournalEntryCycleEdges` (Phase 4) has no stale-edge deletion before re-derivation, unlike Phase 3 which deletes before re-inserting. Stale `belongs_to_cycle` edges would accumulate if a journal entry's cycle association changed. Also causes `edgesCreated` stat to be inflated on repeated `rebuildIndex` calls (onConflictDoNothing means insertions don't actually write, but counter always increments). — relates to: WI-720
+
+  - [gap-analyst] `indexFiles()` watcher does not trigger `deriveJournalEntryCycleEdges` when a `cycle_summary` is added. The `hasJournalUpdate` guard checks only for `/\/cycles\/\d+\/journal\/` paths. A cycle_summary file path does not match, so journal entries for that cycle gain no `belongs_to_cycle` edges until next `rebuildIndex`. This is exactly the PPR quality gap PH-039 was designed to close, left open in the incremental path. — relates to: WI-720, cross-cutting
+
+  - [gap-analyst] `indexFiles()` watcher does not trigger `deriveJournalEntryEdges` when a new work item is added. Journal entries whose titles reference a not-yet-existing work item never get `relates_to` edges in the incremental path throughout active development. — relates to: WI-719, cross-cutting
+
+  - [gap-analyst + code-reviewer] No incremental test for `relates_to` derivation via `indexFiles`. The `hasJournalUpdate` condition at `indexer.ts:841` gating `deriveJournalEntryEdges` in the watcher path is untested. If broken, all `rebuildIndex` tests still pass — the regression would be invisible. — relates to: WI-719
 
   ## Minor Findings
 
-  - [code-reviewer] M1: TRANSACTION_FAILED test is string literal comparison — always passes, tests nothing → carry-forward
-  - [code-reviewer] M2: INVALID_CYCLE and INVALID_ALWAYS_INCLUDE_TYPE documented in adapter-contract.md but won't surface as .code → carry-forward
-  - [code-reviewer] M3: Non-array always_include_types iterates characters, produces misleading error → carry-forward
-  - [code-reviewer] M4: mapGqlNodeToNode throws ValidationError(PARSE_ERROR); fetchCurrentCycle throws StorageAdapterError for same failure class. Inconsistency. → carry-forward
-  - [gap-analyst] MG1: WI-660 wrong path — traceability only → carry-forward
-  - [gap-analyst] MG2: Q-120 marked open despite GA-001–007 addressed; keep open until SG3 resolved → carry-forward
-  - [gap-analyst] MG3: WI-660 optional enhancements not captured as work items or domain questions → carry-forward
-  - [gap-analyst] MG4: Placeholder transaction test in local-adapter-validation.test.ts → carry-forward
-  - [gap-analyst] MG5: putNode/patchNode contract violation (same root as SG1) → carry-forward
+  - [code-reviewer] Comma-splitting guard at `indexer.ts:374-385` applies to all single-value string yaml_fields, not only `derived_from`. A malformed value like `'workflow, artifact-structure'` in a `domain` field would silently split into two `belongs_to_domain` edges. Should be restricted to `derived_from` only. → carry-forward
+
+  - [spec-reviewer] `resolution: null` on done work items WI-721, WI-722, WI-723. Convention is that done items have resolution populated (WI-718/719/720/724 all have it). Data consistency gap in artifact corpus. → carry-forward
+
+  - [gap-analyst] No tests for `governed_by` and `informed_by` edge extraction (covered indirectly by registry loop tests for other types). → carry-forward
+
+  - [gap-analyst] No test for `domain_question.addressed_by` edge extraction. → carry-forward
 
   ## Findings Requiring User Input
-
-  1. **Spec-adherence review incomplete** — The spec-reviewer hit its turn budget (108 tool calls) before completing. GP-14, GP-08, P-58, P-59 adherence for WI-653–658 not assessed. Options: accept partial result and proceed to refinement, or re-run spec-adherence review. Impact: unknown principle violations may exist.
-
-  2. **WI-660 file path resolution** — Research output at docs/ppr-alignment-research.md vs. specified research/ppr-alignment.md. Move file, update WI-660 scope, or accept docs/ as canonical location. Low urgency but affects traceability.
-
-  3. **WI-660 optional enhancements** — Research report identifies two enhancements (server-side PPR validation for defense-in-depth; edge weight customization not exposed in RemoteAdapter docs). Capture as work items now or defer. Medium priority per report.
+  None — all findings can be resolved from existing context.
 
   ## Proposed Refinement Plan
+  The review identified 5 significant findings requiring a focused refinement cycle:
 
-  7 significant findings require a refinement cycle. Recommended scope:
+  1. **Register `belongs_to_cycle` in schema** (schema.ts EDGE_TYPES, EDGE_TYPE_REGISTRY, adapter-contract.md) — 1 work item, small
+  2. **Add stale-edge deletion to `deriveJournalEntryCycleEdges`** (indexer.ts) — 1 work item, small
+  3. **Extend `indexFiles` derivation triggers** — add `hasCycleSummaryUpdate` and `hasWorkItemUpdate` conditions to call both derivation passes (indexer.ts) — 1 work item, small
+  4. **Add incremental test for `relates_to` via `indexFiles`** (indexer.test.ts) — included in item 3
+  5. **Restrict comma-split guard to `derived_from` only** (indexer.ts) — 1 work item, small
 
-  1. **Fix ValidationError constructor call sites** (S2, systemic) — ~15 call sites in adapter.ts, local/context.ts, local/reader.ts, local/writer.ts, remote/index.ts. Replace field name args with code strings.
-  2. **Fix vi.mock hoisting regression** (S1) — mcp/artifact-server/src/__tests__/remote-adapter.test.ts. Scope to or extract WI-656 describe block.
-  3. **Add putNode/patchNode validation** (SG1) — local/writer.ts and remote/index.ts. Extend batchMutate pattern.
-  4. **Create remote-adapter-validation.test.ts** (SG2) — tests/adapters/ with same paths as local version.
-  5. **Add validation equivalence cases to adapter-equivalence.test.ts** (SG3) — covers limit/offset and batchMutate validation parity.
-  6. **Remove P-53 violations from adapter-contract.md** (spec-reviewer) — lines 11, 18, 628–637.
-  7. **Fix WI-660 file path** (S3/MG1) — move or update scope.
-
-  Minor items (M1–M4, MG2–MG5) can be addressed in the same cycle.
-content_hash: 52c12062f13f8ae19fd6499d39a288e0e74b0e34f92a4ffadb7875b0c4216f95
-token_count: 1571
-file_path: .ideate/cycles/068/summary.yaml
+  Estimated scope: 3-4 small work items. All changes confined to `src/indexer.ts`, `src/schema.ts`, `src/__tests__/indexer.test.ts`, and `docs/adapter-contract.md`.
 cycle: 19
-cycle_modified: 18
+content_hash: c37622a604913dc7dcac7e952512a837da4d2d9d2b238b910acfc971c33872e0
+token_count: 1385

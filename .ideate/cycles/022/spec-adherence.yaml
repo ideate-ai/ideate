@@ -4,31 +4,32 @@ reviewer: spec-reviewer
 content: |-
   ## Verdict: Pass
 
-  All acceptance criteria met at implementation level. One minor test coverage gap (same as code-reviewer S1 but rated minor: implementation correct, test incomplete).
-
-  ## Critical Findings
-  None.
-
-  ## Significant Findings
-  None.
+  ## Principle Adherence: Pass
+  - P-44: deleteNode two-phase write complete. Phase 0 saves content, Phase 1 unlinks (ENOENT-tolerant), Phase 2 exclusive transaction; catch restores YAML.
+  - P-53: No storage-format references in new contract entries.
+  - P-64: All ValidationError codes conform to recognized patterns.
+  - D-177: LocalAdapter tests unconditional throughout.
+  - P-002: No new validation logic without tests.
 
   ## Minor Findings
-  ### M1: Double-failure test partially verifies AC1
-  - `writer.test.ts:380` asserts `toContain('YAML restore failed')` only, not the SQLite error. Implementation at `writer.ts:937` includes both. AC1 is met at runtime but not fully verified by tests.
 
-  ## Unmet Acceptance Criteria
-  None (all criteria satisfied at implementation level).
-
-  ## Principle Adherence
-  - P-44: Phase 1 FILESYSTEM_ERROR correctly surfaces non-ENOENT. Phase 2 TRANSACTION_FAILED handles SQLite + restore. Compliant.
-  - P-64: FILESYSTEM_ERROR ends with _ERROR. Compliant.
-  - P-53: 'artifact removal failed' — no storage format terms. Compliant.
-  - P-002: rejects.toMatchObject({code}) used for both new tests. Compliant.
-content_hash: d26fc016c2291208174e5287874f0b3a46b3e35b3ab44c632ca0c2711cf6e25b
-token_count: 320
+  ### M1: nextId Validation entry lists only 3 types; WI-709 criterion specified more
+  - adapter-contract.md line 313: lists `journal_entry`, `work_item`, `finding`
+  - WI-709 criterion also listed `guiding_principle`, `constraint`, `phase`, `project`
+  - The worker verified from writer.ts that only 3 types are supported for ID generation, so the doc is correct; the criterion was overstated. Verify implementation supports only 3 types to close.
+content_hash: 6fb124b2efcdc84a604874145cf795503294eedfb08767f1ab78786e567980af
+token_count: 515
 file_path: .ideate/cycles/068/spec-adherence.yaml
 cycle: 22
 cycle_modified: 19
 verdict: Fail
 scope: full-audit
 date: "20260407"
+findings:
+  - id: F-022-P1
+    severity: significant
+    principle: P-53
+    location: mcp/artifact-server/docs/adapter-contract.md:~138
+    description: "deleteNode Error Handling block violates P-53 (no implementation details in public specs). The prose uses concrete storage terms: 'SQLite DELETE', 'YAML restore', and 'SQLite transaction failed'. Interface specifications must not reference storage layer implementation."
+    recommendation: Rewrite deleteNode Error Handling block with storage-neutral language. Replace 'SQLite DELETE' with 'primary delete operation', 'YAML restore' with 'artifact restore', and 'SQLite transaction failed' with 'operation failed'.
+summary: "One P-53 violation: deleteNode Error Handling block in adapter-contract.md exposes concrete storage implementation details in an interface specification section."

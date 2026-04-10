@@ -1,14 +1,19 @@
 id: review-manifest
 type: cycle_summary
 content: |-
-  ## Review Manifest (Cycle 22 — Autopilot Cycle 3)
+  ## Review Manifest — Cycle 22
 
-  | # | Work Item | Title | File Scope | Incremental Verdict | Findings (C/S/M) |
-  |---|-----------|-------|------------|---------------------|------------------|
-  | 1 | WI-705 | Implement FILESYSTEM_ERROR throw in deleteNode + P-53 doc fix + test | src/adapters/local/writer.ts, docs/adapter-contract.md, src/__tests__/adapters/writer.test.ts | Pass | 0/0/0 |
-  | 2 | WI-706 | Fix double-failure error message and add getNode Validation block | src/adapters/local/writer.ts, docs/adapter-contract.md | Pass | 0/0/2 (pre-existing, not regressions) |
-content_hash: b43ee4988ce21610cc43a47be1752602557272cd243a5ff09d21757351ec33e6
-token_count: 213
+  | WI | Title | Incremental Verdict | Findings |
+  |----|-------|--------------------|---------|
+  | WI-711 | Document deleteNode double-failure behavior + remove batchMutate redundant FK restore | Pass (verified directly) | 0 |
+
+  ## Files in Scope
+  - mcp/artifact-server/docs/adapter-contract.md
+  - mcp/artifact-server/src/adapters/local/writer.ts
+
+  ## Test Suite: 1132 pass, 0 fail
+content_hash: 4295adc9cea4d5776fbe8a1b422738a58d0cef36a0d26a7a859b18f097f6e477
+token_count: 167
 file_path: .ideate/cycles/068/review-manifest.yaml
 cycle: 22
 cycle_modified: 19

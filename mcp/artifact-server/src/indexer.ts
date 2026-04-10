@@ -364,16 +364,154 @@ function extractEdges(
 
     if (Array.isArray(fieldValue)) {
       // Multi-value field (e.g. depends, blocks, derived_from)
+      // Items may be plain strings or objects with an `id` property (e.g. triggered_by entries).
       for (const item of fieldValue) {
+        let targetId: string | null = null;
         if (typeof item === "string" && item.trim()) {
-          insertEdge(drizzleDb, { source_id: nodeId, target_id: item.trim(), edge_type: edgeType, props: null });
+          targetId = item.trim();
+        } else if (typeof item === "object" && item !== null && typeof (item as Record<string, unknown>).id === "string") {
+          targetId = ((item as Record<string, unknown>).id as string).trim();
+        }
+        if (targetId) {
+          insertEdge(drizzleDb, { source_id: nodeId, target_id: targetId, edge_type: edgeType, props: null });
           edgesCreated++;
         }
       }
     } else if (typeof fieldValue === "string" && fieldValue.trim()) {
-      // Single-value field (e.g. supersedes, work_item, module, domain)
-      insertEdge(drizzleDb, { source_id: nodeId, target_id: fieldValue.trim(), edge_type: edgeType, props: null });
+      // Single-value field (e.g. supersedes, work_item, module, domain).
+      // Comma-split is a backwards-compatibility shim for legacy derived_from values
+      // like "D-142, GP-08" (should be an array but stored as a comma string).
+      // Only applies to derived_from — do not apply to other fields.
+      if (spec.yaml_field === "derived_from" && fieldValue.includes(",")) {
+        for (const part of fieldValue.split(",")) {
+          const targetId = part.trim();
+          if (targetId) {
+            insertEdge(drizzleDb, { source_id: nodeId, target_id: targetId, edge_type: edgeType, props: null });
+            edgesCreated++;
+          }
+        }
+      } else {
+        insertEdge(drizzleDb, { source_id: nodeId, target_id: fieldValue.trim(), edge_type: edgeType, props: null });
+        edgesCreated++;
+      }
+    }
+  }
+
+  // Derivation: addressed_by from finding verdict + work_item
+  // When a finding has a passing verdict and a valid work_item reference,
+  // emit an addressed_by edge from the finding to the work item.
+  // Skip if the yaml_field path already emitted an addressed_by edge to the
+  // same target (prevents double-counting in edgesCreated stats).
+  if (nodeType === "finding") {
+    const verdict = doc.verdict as string | undefined;
+    const workItem = doc.work_item as string | undefined;
+    const explicitAddressedBy =
+      typeof doc.addressed_by === "string" ? doc.addressed_by.trim() : null;
+    if (
+      verdict &&
+      /^pass/i.test(verdict) &&
+      workItem &&
+      /^WI-\d+$/.test(workItem) &&
+      workItem !== explicitAddressedBy
+    ) {
+      insertEdge(drizzleDb, {
+        source_id: nodeId,
+        target_id: workItem,
+        edge_type: "addressed_by",
+        props: null,
+      });
       edgesCreated++;
+    }
+  }
+
+  return edgesCreated;
+}
+
+// ---------------------------------------------------------------------------
+// Journal entry relates_to derivation — post-upsert pass
+// ---------------------------------------------------------------------------
+
+/**
+ * Derive relates_to edges from journal entry titles.
+ * Must run after all nodes are indexed so existence checks are reliable.
+ * Also re-inserts the yaml_field-derived relates_to edge (from the work_item
+ * field) so the delete-and-rederive pattern doesn't clobber edges that the
+ * EDGE_TYPE_REGISTRY already emitted during Phase 1.
+ * Returns the number of edges inserted.
+ */
+export function deriveJournalEntryEdges(drizzleDb: DrizzleDb): number {
+  // Include work_item so we can re-insert the yaml_field edge after the delete.
+  const entries = drizzleDb
+    .select({
+      id: dbSchema.journalEntries.id,
+      title: dbSchema.journalEntries.title,
+      work_item: dbSchema.journalEntries.work_item,
+    })
+    .from(dbSchema.journalEntries)
+    .all();
+
+  let edgesCreated = 0;
+
+  for (const entry of entries) {
+    // Delete existing relates_to edges from this journal entry (re-derive fresh).
+    // Must happen even when title is absent so stale edges are cleaned up.
+    drizzleDb
+      .delete(dbSchema.edges)
+      .where(
+        and(
+          eq(dbSchema.edges.source_id, entry.id),
+          eq(dbSchema.edges.edge_type, "relates_to")
+        )
+      )
+      .run();
+
+    // Re-insert the yaml_field edge (work_item → relates_to) if present.
+    // This preserves the edge that extractEdges() would have emitted via
+    // EDGE_TYPE_REGISTRY before it was deleted above.
+    if (entry.work_item && /^WI-\d+$/.test(entry.work_item)) {
+      const targetExists = drizzleDb
+        .select({ id: dbSchema.nodes.id })
+        .from(dbSchema.nodes)
+        .where(eq(dbSchema.nodes.id, entry.work_item))
+        .get();
+      if (targetExists) {
+        insertEdge(drizzleDb, {
+          source_id: entry.id,
+          target_id: entry.work_item,
+          edge_type: "relates_to",
+          props: null,
+        });
+        edgesCreated++;
+      }
+    }
+
+    if (!entry.title) continue;
+
+    // Title-derived edges: extract WI references from both "WI-NNN" and
+    // "Work item NNN" patterns. Create the regex fresh each iteration to
+    // avoid stale lastIndex state from a module-level stateful regex.
+    const pat = new RegExp(/(?:WI-(\d+)|[Ww]ork\s+item\s+(\d+))/g);
+    let match: RegExpExecArray | null;
+    while ((match = pat.exec(entry.title)) !== null) {
+      const numStr = match[1] ?? match[2];
+      const wiId = "WI-" + numStr.padStart(3, "0");
+      // Skip if this target was already emitted by the yaml_field path above.
+      if (wiId === entry.work_item) continue;
+      // Only emit edge if the target node exists.
+      const exists = drizzleDb
+        .select({ id: dbSchema.nodes.id })
+        .from(dbSchema.nodes)
+        .where(eq(dbSchema.nodes.id, wiId))
+        .get();
+      if (exists) {
+        insertEdge(drizzleDb, {
+          source_id: entry.id,
+          target_id: wiId,
+          edge_type: "relates_to",
+          props: null,
+        });
+        edgesCreated++;
+      }
     }
   }
 
@@ -604,6 +742,8 @@ function indexSingleFile(
 
       upsertNode(drizzleDb, entryNodeRow);
       upsertExtensionRow(drizzleDb, "interview_questions", entryId, entryExtRow);
+      deleteEdgesBySourceId(drizzleDb, entryId);
+      edgesCreated += extractEdges(drizzleDb, entryDoc, entryId, "interview_question");
       insertEdge(drizzleDb, { source_id: entryId, target_id: nodeId, edge_type: "references", props: null });
       edgesCreated++;
     }
@@ -654,6 +794,7 @@ export function indexFiles(
       }
     });
     upsertPhase();
+
   } finally {
     if (fkWasOn) db.pragma('foreign_keys = ON');
   }
@@ -713,75 +854,6 @@ export function removeFiles(
   }
 
   return { removed };
-}
-
-// ---------------------------------------------------------------------------
-// Derived edge: journal_entry → work_item (relates_to)
-// ---------------------------------------------------------------------------
-
-/**
- * Derives `relates_to` edges for all journal entries that reference a work item.
- *
- * For each journal entry with a non-null `work_item` field, inserts a
- * `relates_to` edge from the journal entry to the work item, but only when
- * the target work_item node already exists in the graph.  This ensures that
- * when a work item is added incrementally (via indexFiles), any journal
- * entries that were indexed before it become properly connected.
- *
- * Uses delete-before-insert so that calling this function multiple times on
- * the same data is idempotent (P-67).  Only the `relates_to` edges whose
- * targets are work_item nodes are deleted — other edge types are preserved.
- *
- * @returns number of edges created
- */
-export function deriveJournalEntryEdges(drizzleDb: DrizzleDb): number {
-  let edgesCreated = 0;
-
-  // Fetch all journal_entry rows that have a work_item reference
-  const entries = drizzleDb
-    .select({ id: dbSchema.journalEntries.id, work_item: dbSchema.journalEntries.work_item })
-    .from(dbSchema.journalEntries)
-    .all()
-    .filter(e => e.work_item != null && e.work_item.trim() !== "");
-
-  for (const entry of entries) {
-    const workItemId = entry.work_item!.trim();
-
-    // Delete stale relates_to edges targeting a work_item before re-deriving (P-67).
-    drizzleDb
-      .delete(dbSchema.edges)
-      .where(
-        and(
-          eq(dbSchema.edges.source_id, entry.id),
-          eq(dbSchema.edges.edge_type, "relates_to")
-        )
-      )
-      .run();
-
-    // Only create the edge if the target work_item node exists in the graph.
-    const target = drizzleDb
-      .select({ id: dbSchema.nodes.id })
-      .from(dbSchema.nodes)
-      .where(
-        and(
-          eq(dbSchema.nodes.id, workItemId),
-          eq(dbSchema.nodes.type, "work_item")
-        )
-      )
-      .get();
-
-    if (target) {
-      insertEdge(drizzleDb, {
-        source_id: entry.id,
-        target_id: workItemId,
-        edge_type: "relates_to",
-        props: null,
-      });
-      edgesCreated++;
-    }
-  }
-
-  return edgesCreated;
 }
 
 // ---------------------------------------------------------------------------
@@ -930,15 +1002,26 @@ export function rebuildIndex(db: Database.Database, drizzleDb: DrizzleDb, ideate
 
   deletePhase();
 
-  // Phase 3: derive cross-artifact edges that require a full graph view.
-  // Runs outside a transaction since it is read-heavy and self-contained.
-  const derivedEdges = deriveJournalEntryCycleEdges(drizzleDb);
-  stats.edges_created += derivedEdges;
-  stats.edges_created += deriveJournalEntryEdges(drizzleDb);
-
   if (stats.files_failed > 0) {
     console.warn(`[indexer] ${stats.files_failed} file(s) failed to parse`);
   }
+
+  // Phase 3: Derive relates_to edges from journal entry titles.
+  // This runs after all nodes are in the index so existence checks are reliable,
+  // resolving the ordering issue where cycles/ is walked before work-items/.
+  const journalEdgePhase = db.transaction(() => {
+    const count = deriveJournalEntryEdges(drizzleDb);
+    stats.edges_created += count;
+  });
+  journalEdgePhase();
+
+  // Phase 4: Derive belongs_to_cycle edges from journal entry IDs.
+  // Runs after all nodes are indexed so cycle_summary existence checks work.
+  const journalCyclePhase = db.transaction(() => {
+    const count = deriveJournalEntryCycleEdges(drizzleDb);
+    stats.edges_created += count;
+  });
+  journalCyclePhase();
 
   // Note: cycle detection runs after the transaction commits. A concurrent write during detection could produce a false positive. This window is accepted as low-risk for single-writer workloads.
   // Detect cycles (outside transaction — read-only)

@@ -671,13 +671,13 @@ export class LocalWriterAdapter {
         }
       } catch (cleanupErr) {
         throw new ValidationError(
-          `SQLite transaction failed: ${(dbErr as Error).message}; cleanup also failed: ${(cleanupErr as Error).message}`,
+          `operation failed: ${(dbErr as Error).message}; cleanup also failed: ${(cleanupErr as Error).message}`,
           "TRANSACTION_FAILED",
           { operation: "putNode", id, filePath: absoluteFilePath }
         );
       }
       throw new ValidationError(
-        `SQLite transaction failed: ${(dbErr as Error).message}`,
+        `operation failed: ${(dbErr as Error).message}`,
         "TRANSACTION_FAILED",
         { operation: "putNode", id, filePath: absoluteFilePath }
       );
@@ -863,13 +863,13 @@ export class LocalWriterAdapter {
         fs.writeFileSync(filePath, existingContent, "utf8");
       } catch (cleanupErr) {
         throw new ValidationError(
-          `SQLite transaction failed: ${(dbErr as Error).message}; cleanup also failed: ${(cleanupErr as Error).message}`,
+          `operation failed: ${(dbErr as Error).message}; cleanup also failed: ${(cleanupErr as Error).message}`,
           "TRANSACTION_FAILED",
           { operation: "patchNode", id, filePath }
         );
       }
       throw new ValidationError(
-        `SQLite transaction failed: ${(dbErr as Error).message}`,
+        `operation failed: ${(dbErr as Error).message}`,
         "TRANSACTION_FAILED",
         { operation: "patchNode", id, filePath }
       );
@@ -923,10 +923,11 @@ export class LocalWriterAdapter {
 
     // Phase 2 — Delete from SQLite (edges cascade or are deleted separately)
     try {
-      this.db.transaction(() => {
+      const deleteTransaction = this.db.transaction(() => {
         this.db.prepare(`DELETE FROM edges WHERE source_id = ? OR target_id = ?`).run(id, id);
         this.db.prepare(`DELETE FROM nodes WHERE id = ?`).run(id);
-      })();
+      });
+      deleteTransaction.exclusive();
     } catch (err: unknown) {
       // Restore the YAML file that was already unlinked
       if (originalContent !== null) {
@@ -934,15 +935,14 @@ export class LocalWriterAdapter {
           fs.writeFileSync(absoluteFilePath, originalContent, 'utf-8');
         } catch (restoreErr: unknown) {
           throw new ValidationError(
-            `deleteNode failed: ${err instanceof Error ? err.message : String(err)}; YAML restore failed: ${restoreErr instanceof Error ? restoreErr.message : String(restoreErr)}`,
+            `operation failed: ${(err as Error).message}; cleanup also failed: ${(restoreErr as Error).message}`,
             "TRANSACTION_FAILED",
             { operation: "deleteNode", id }
           );
         }
       }
-      if (err instanceof ValidationError) throw err;
       throw new ValidationError(
-        `deleteNode failed: ${err instanceof Error ? err.message : String(err)}`,
+        `operation failed: ${(err as Error).message}`,
         "TRANSACTION_FAILED",
         { operation: "deleteNode", id }
       );
@@ -979,7 +979,7 @@ export class LocalWriterAdapter {
       });
     } catch (dbErr) {
       throw new ValidationError(
-        `SQLite transaction failed: ${(dbErr as Error).message}`,
+        `operation failed: ${(dbErr as Error).message}`,
         "TRANSACTION_FAILED",
         { operation: "putEdge" }
       );
@@ -1007,7 +1007,7 @@ export class LocalWriterAdapter {
       ).run(source_id, ...edge_types);
     } catch (dbErr) {
       throw new ValidationError(
-        `SQLite transaction failed: ${(dbErr as Error).message}`,
+        `operation failed: ${(dbErr as Error).message}`,
         "TRANSACTION_FAILED",
         { operation: "removeEdges" }
       );
@@ -1341,9 +1341,8 @@ export class LocalWriterAdapter {
       for (const fp of writtenFilePaths) {
         try { if (fs.existsSync(fp)) fs.unlinkSync(fp); } catch { /* ignore */ }
       }
-      if (fkWasOn) this.db.pragma("foreign_keys = ON");
       throw new ValidationError(
-        `SQLite transaction failed: ${(dbErr as Error).message}`,
+        `operation failed: ${(dbErr as Error).message}`,
         "TRANSACTION_FAILED",
         { operation: "batchMutate", filePaths: writtenFilePaths }
       );
@@ -1639,14 +1638,14 @@ export class LocalWriterAdapter {
           if (fs.existsSync(writtenYamlPath)) fs.unlinkSync(writtenYamlPath);
         } catch (cleanupErr) {
           throw new ValidationError(
-            `SQLite transaction failed: ${(txErr as Error).message}; cleanup also failed: ${(cleanupErr as Error).message}`,
+            `operation failed: ${(txErr as Error).message}; cleanup also failed: ${(cleanupErr as Error).message}`,
             "TRANSACTION_FAILED",
             { operation: "appendJournalEntry", id, filePath: writtenYamlPath }
           );
         }
       }
       throw new ValidationError(
-        `SQLite transaction failed: ${(txErr as Error).message}`,
+        `operation failed: ${(txErr as Error).message}`,
         "TRANSACTION_FAILED",
         { operation: "appendJournalEntry", id, filePath: writtenYamlPath || undefined }
       );

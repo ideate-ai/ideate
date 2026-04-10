@@ -1,17 +1,19 @@
 id: interview-refine-021
 type: interview
 cycle: 21
-entries:
-  - question: Review findings exist from cycle 20 full audit. Are you here to address those findings, to make other changes, or both?
-    answer: Address all findings.
-    domain: null
-  - question: "SG1 has two fix options: (a) add limit/offset guards directly to LocalReaderAdapter internals in reader.ts, or (b) document the layering constraint in adapter-contract.md. Which do you prefer?"
-    answer: Address all — proceeding with option (a), adding guards to reader.ts so the reader is safe regardless of call path.
-    domain: adapter-equivalence
-  - question: Do the existing guiding principles still apply, or do any need to change given what you're planning?
-    answer: Principles unchanged.
-    domain: null
-cycle_modified: 19
-content_hash: 6fcfb6b2a320e2f48aa57601c3d3eead295d1b0aa79509683124633a490e1c72
-token_count: 231
 mode: post-review correction
+entries:
+  - question: Are you here to address cycle 20 findings, make other changes, or both?
+    answer: Address cycle 20 findings and triage everything. Will commit after work is done.
+    domain: null
+  - question: "Scope confirmation: the two significant findings (orphaned bare derivation calls in rebuildIndex, stale hasJournalUpdate guard in indexFiles) are the primary drivers. Do the minor findings (MF1 accuracy test, MF2 P-49 note) also need to be addressed this cycle?"
+    answer: Yes, triage everything.
+    domain: artifact-structure
+  - question: Do the guiding principles still hold?
+    answer: Yes.
+    domain: null
+  - question: Should the execution strategy change for this cycle?
+    answer: No change needed. Batched parallel with max-parallelism 2 is appropriate for 4 small work items.
+    domain: null
+content_hash: 157b3d5fd98a66b388dca4d5551a8cc697f6bf0170c340c90979b54610fe41ed
+token_count: 227

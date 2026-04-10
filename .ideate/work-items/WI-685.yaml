@@ -29,8 +29,8 @@ notes: |-
 
   Do not change any test logic or assertions — only describe block names and the one test that needs strengthening/removal.
 resolution: "All scope absorbed by validation layer work. Weak test 'throws ValidationError with correct field and value' no longer present. Duplicate describe names already resolved: second high-alpha block renamed to 'computePPR — high alpha stability tests'; concurrent block is unique. Verified in code 2026-04-07."
-status: completed
+status: done
 cycle_created: 22
 cycle_modified: 19
-content_hash: 9bb3434bf6f4ccd4b14b56029e775f5310af0b359aa74bf5b32ff5ac4dcd3257
-token_count: 546
+content_hash: 871f0da83682125adf5b1b56062dcbf7db4cd01a95569e2d3986d323d2551e69
+token_count: 520

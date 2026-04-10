@@ -1,23 +1,30 @@
 id: review-manifest
 type: cycle_summary
-content: |-
-  ## Review Manifest (Cycle 20)
-
-  Work items executed in this cycle: 7
-
-  | WI | Title | File Scope | Incremental Verdict | Findings (C/S/M) |
-  |-----|-------|------------|---------------------|------------------|
-  | WI-667 | Fix ValidationError call sites — field names to code strings | mcp/artifact-server/src/adapters/local/context.ts, mcp/artifact-server/src/adapters/local/reader.ts, mcp/artifact-server/src/adapters/remote/index.ts, mcp/artifact-server/src/__tests__/adapter-contract.test.ts, mcp/artifact-server/tests/adapters/local-adapter-validation.test.ts | Rework → Pass | 0/1/1 |
-  | WI-668 | Add putNode and patchNode input validation | mcp/artifact-server/src/adapters/local/writer.ts, mcp/artifact-server/src/adapters/remote/index.ts, mcp/artifact-server/src/__tests__/adapter-contract.test.ts | Rework → Pass | 0/1/1 |
-  | WI-669 | Fix mapGqlNodeToNode to throw StorageAdapterError not ValidationError for parse failures | mcp/artifact-server/src/adapters/remote/index.ts, mcp/artifact-server/src/__tests__/adapters/remote-json-parse.test.ts | Pass | 0/0/0 |
-  | WI-670 | Fix vi.mock hoisting regression in remote-adapter.test.ts | mcp/artifact-server/src/__tests__/remote-adapter.test.ts, mcp/artifact-server/src/__tests__/remote-adapter-fetchcycle.test.ts | Rework → Pass | 0/0/1 |
-  | WI-671 | Create remote-adapter-validation.test.ts and replace TRANSACTION_FAILED placeholder | mcp/artifact-server/tests/adapters/remote-adapter-validation.test.ts, mcp/artifact-server/tests/adapters/local-adapter-validation.test.ts | Rework → Pass | 0/1/0 |
-  | WI-672 | Add validation equivalence cases to adapter-equivalence.test.ts | mcp/artifact-server/tests/adapters/adapter-equivalence.test.ts | Rework → Pass | 0/1/0 |
-  | WI-673 | Update adapter-contract.md — remove P-53 violations, fix error code table, document edge weight gap | mcp/artifact-server/docs/adapter-contract.md | Rework → Pass | 0/1/2 |
-
-  **Summary**: 7 work items, all passed incremental review (4 after rework, 3 direct pass). Rework themes: missing test assertions (WI-667 S1), missing tests for added validation (WI-668 S1), vi.mock isolation (WI-670 minor), test skip guard too broad (WI-672 S1), documentation inaccuracies (WI-673 S1).
-content_hash: 1d0f272306a115ddf581b4736c1ee2b04fa6ea81d24650a625b9da7e945f02ce
-token_count: 614
-file_path: .ideate/cycles/068/review-manifest.yaml
 cycle: 20
-cycle_modified: 19
+content: |-
+  ## Cycle 20 Review Manifest
+
+  Phase: PH-039 — Indexer improvements and data quality fixes
+
+  | Work Item | Title | Verdict | Findings (C/S/M) |
+  |-----------|-------|---------|------------------|
+  | WI-725 | Register belongs_to_cycle edge type in EDGE_TYPES and EDGE_TYPE_REGISTRY | Pass | 0/0/0 |
+  | WI-726 | Add delete-before-insert to deriveJournalEntryCycleEdges (P-67 compliance) | Rework | 0/1/0 |
+  | WI-727 | Expand hasDerivedEdgeUpdate trigger guard to include work_item and cycle_summary | Rework | 0/1/0 |
+  | WI-728 | Restrict comma-split normalization to derived_from field only | Pass | 0/0/0 |
+
+  ### Rework Notes
+  - WI-726: First pass modified schema.ts (out of scope) and idempotency test did not exercise targeted delete. Fixed by reverting schema.ts and rewriting test to seed DB directly then call deriveJournalEntryCycleEdges twice.
+  - WI-727: First pass missing rebuildIndex Phase 3 wire-up for deriveJournalEntryEdges. Post-merge, duplicate function definition caused esbuild failure; resolved by keeping richer stash version (includes title-derived edges) and removing WI-727 duplicate.
+
+  ### Files Modified
+  - mcp/artifact-server/src/schema.ts
+  - mcp/artifact-server/src/indexer.ts
+  - mcp/artifact-server/src/__tests__/indexer.test.ts
+  - mcp/artifact-server/src/__tests__/schema.test.ts
+  - mcp/artifact-server/docs/adapter-contract.md
+
+  ### Test Result
+  1162 tests pass, 310 skipped, 0 failures.
+content_hash: 4df6b7eae149e0f5ce49da668e395c51d555848d6ca59cc093dc542649c61eb4
+token_count: 374

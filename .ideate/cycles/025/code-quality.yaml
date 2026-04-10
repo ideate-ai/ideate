@@ -2,27 +2,20 @@ id: code-quality
 type: cycle_summary
 reviewer: code-reviewer
 content: |-
-  ## Code Quality Review — Cycle 25
-
-  **Verdict**: Fail
-
-  ## Significant Findings
-
-  - [S1] `src/adapters/remote/index.ts:637-643` / `tests/adapters/remote-adapter-validation.test.ts` — RemoteAdapter.patchNode IMMUTABLE_FIELD guard (new in WI-691) has no test coverage. remote-adapter-validation.test.ts contains zero tests for patchNode, ImmutableFieldError, or IMMUTABLE_FIELD. adapter-contract.test.ts tests immutable-field rejection only against LocalAdapter. P-002 requires specific error codes to be tested.
+  ## Verdict: Pass
 
   ## Minor Findings
 
-  - [M1] `src/adapters/remote/index.ts` — fetchCurrentCycle() can throw ValidationError(VALIDATION_ERROR) (a StorageAdapterError subclass) when a network error occurs. Inside the try block, the catch guard `if (err instanceof StorageAdapterError) throw err` re-throws it unchanged. A fetchCurrentCycle network failure propagates from putNode/patchNode as VALIDATION_ERROR rather than TRANSACTION_FAILED. Minor: fetchCurrentCycle is a prerequisite step; callers primarily care about mutation failures.
-  - [M2] All TRANSACTION_FAILED tests in write-transaction.test.ts invoke the method twice (pre-existing pattern, not introduced this cycle).
-
-  ## Principle Adherence
-
-  - P-64: All new catch blocks use 'TRANSACTION_FAILED' as code string
-  - P-65: No new vi.mock at module level
-  - Test suite: 1061 passed, 292 skipped, 0 failed
-content_hash: e9b4eedbf5c4c685165fd5957b005bb465be6858e6157438f568eb8e389e71f4
-token_count: 407
+  ### M1: batchMutate restores foreign_keys pragma redundantly in both catch and finally
+  - File: mcp/artifact-server/src/adapters/local/writer.ts:1344
+  - On the error path: `if (fkWasOn) this.db.pragma("foreign_keys = ON")` runs in catch, then again in finally. The catch call is dead relative to finally. Remove line 1344 from catch; finally handles both paths correctly.
+content_hash: 9cf30339fa2b9716057679c7974430ae7cf0aa74ca5ce39c5236901e9fed2231
+token_count: 245
 file_path: .ideate/cycles/068/code-quality.yaml
 cycle: 25
 cycle_modified: 19
-verdict: Fail
+verdict: Pass
+scope: full-audit
+date: "20260407"
+findings: []
+summary: All 11 TRANSACTION_FAILED throw sites use 'operation failed:' prefix with correct spacing. Zero 'SQLite transaction failed' in throw statements. INVALID_NODE_ID entry present in adapter-contract.md deleteNode Error Handling block. 1132 tests pass.

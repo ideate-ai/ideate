@@ -1,55 +1,36 @@
 id: gap-analysis
 type: cycle_summary
 reviewer: gap-analyst
+scope: full-audit
+date: "20260408"
 content: |-
-  # Gap Analysis — Cycle 19
+  ## Verdict: Significant gaps in incremental watcher path
 
-  ## Verdict: Fail
-
-  Three significant gaps: putNode/patchNode lack validation despite batchMutate gaining it, no RemoteAdapter validation test file, and adapter-equivalence.test.ts has no validation equivalence cases.
-
-  ## Critical Findings
-
-  None.
+  rebuildIndex() path is comprehensive. indexFiles() watcher path has two significant gaps where derivation passes are not triggered, leaving the graph stale between artifact writes and the next full rebuild.
 
   ## Significant Findings
 
-  ### SG1: putNode and patchNode lack upfront input validation
-  - **Files**: mcp/artifact-server/src/adapters/local/writer.ts, mcp/artifact-server/src/adapters/remote/index.ts
-  - WI-655 added validation to `batchMutate` only. Direct calls to `putNode` or `patchNode` with invalid `id` (empty string), null `type`, or missing `properties` proceed to persistence without rejection. LocalAdapter will attempt to write to a garbage path; RemoteAdapter will submit a malformed mutation. adapter-contract.md documents that these methods require validated inputs.
-  - **Fix**: Extend the validation pattern from batchMutate to putNode and patchNode in both adapters.
+  ### EC1: indexFiles does not re-derive belongs_to_cycle when a cycle_summary is added
+  - Scenario: New cycle_summary written, watcher fires. hasJournalUpdate checks /\/cycles\/\d+\/journal\// — cycle_summary is not under journal/, guard is false. deriveJournalEntryCycleEdges never called.
+  - Impact: Journal entries for that cycle don't gain belongs_to_cycle edges until next rebuildIndex. Exactly the PPR gap PH-039 was meant to close, left open in the incremental path.
+  - Fix: Add const hasCycleSummaryUpdate = yamlPaths.some(p => /\/cycles\/\d+\//.test(p)); call deriveJournalEntryCycleEdges when either condition true.
 
-  ### SG2: No remote-adapter-validation.test.ts
-  - **File**: mcp/artifact-server/tests/adapters/ (missing)
-  - WI-658 created `local-adapter-validation.test.ts` covering limit/offset and batchMutate for LocalAdapter only. No equivalent test file exists for RemoteAdapter. The pattern established by `seed-ids-validation.test.ts` and `always-include-types-validation.test.ts` tests both adapters. WI-658's acceptance criterion "Coverage matches RemoteAdapter" is unmet.
-  - **Fix**: Create `remote-adapter-validation.test.ts` with the same validation paths, using `it.skipIf(!remoteAvailable)` for server-required cases.
+  ### EC2: indexFiles does not re-derive relates_to edges when a new work item is added
+  - Scenario: Journal entry title references WI-800 but WI-800 doesn't exist. WI-800 later added via watcher. hasJournalUpdate is false for work-items path. deriveJournalEntryEdges never called.
+  - Impact: Journal entries referencing future work items never get relates_to edges in the incremental path throughout the active development period.
+  - Fix: Also call deriveJournalEntryEdges when any work-item path is updated.
 
-  ### SG3: adapter-equivalence.test.ts has no validation equivalence cases
-  - **File**: mcp/artifact-server/tests/adapters/adapter-equivalence.test.ts
-  - Q-123 is resolved (file now exists). However, the file covers shape equivalence (`nextId`, `getNode`, `queryNodes`) but contains zero `ValidationError` imports and zero tests for validation parity between adapters. Validation parity was a major deliverable of WI-653–655 but the equivalence surface for it is absent.
-  - **Fix**: Add validation equivalence cases (e.g., both adapters throw INVALID_LIMIT for negative limit).
+  ### IR1: No incremental test for relates_to derivation via indexFiles
+  - The hasJournalUpdate guard at indexer.ts:841 is untested. If broken, all rebuildIndex tests still pass. Incremental watcher is the hot production path.
+  - Fix: Add test: seed WI via rebuildIndex, add journal entry via indexFiles with WI in title, assert relates_to edge exists.
 
   ## Minor Findings
 
-  ### MG1: WI-660 output at wrong path
-  - Actual: mcp/artifact-server/docs/ppr-alignment-research.md
-  - Specified: mcp/artifact-server/research/ppr-alignment.md
-  - Traceability gap only; content is correct.
+  ### IR2: No tests for governed_by and informed_by edge extraction (defer)
+  ### IR3: No test for domain_question.addressed_by extraction (defer)
 
-  ### MG2: Q-120 still marked open despite all 7 underlying gaps addressed
-  - .ideate/questions/Q-120.yaml has status: open. All GA-001 through GA-007 testing gaps were addressed in prior cycles. Stale artifact inflates open questions count.
-
-  ### MG3: No follow-up work items for WI-660 optional enhancements
-  - Research report section 4.2 identifies two enhancements: (1) server-side PPR parameter validation for defense-in-depth, (2) edge weight customization not exposed in RemoteAdapter.traverse() docs. Neither captured as work item or domain question.
-
-  ### MG4: WI-658 transaction failure test is placeholder
-  - local-adapter-validation.test.ts AC-1 test is a string literal comparison that always passes. Actual coverage exists in write-transaction.test.ts but the placeholder is misleading.
-
-  ### MG5: putNode/patchNode validation gap also implicit contract violation
-  - adapter-contract.md (WI-659) specifies validation requirements for putNode/patchNode. Code does not enforce them. Documentation and implementation disagree.
-content_hash: 6f6194cdd397c37e4d1895603f4a8bc69f7a899d3c1fb85ec3dc4745b9f608c5
-token_count: 928
-file_path: .ideate/cycles/068/gap-analysis.yaml
+  ## Backfill Completeness
+  No other artifact types with comma-string legacy values identified. Normalization guard in extractEdges() covers future occurrences.
 cycle: 19
-verdict: Fail
-cycle_modified: 18
+content_hash: 8ec6cf622f6f4710f002cc93c647580eaa2545dd6d1a0b769e441a07961a52c3
+token_count: 561

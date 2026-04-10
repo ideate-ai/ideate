@@ -1,59 +1,41 @@
 id: code-quality
 type: cycle_summary
 reviewer: code-reviewer
+scope: full-audit
+date: "20260408"
 content: |-
-  # Code Quality Review — Cycle 19
-
   ## Verdict: Fail
 
-  One test failure introduced by WI-656, documentation-implementation mismatches in error codes across multiple work items, a missing output file at the specified path for WI-660, and a tautological acceptance criterion in WI-658.
-
-  ## Critical Findings
-
-  None.
+  PH-039 indexer changes introduce working edge derivation but WI-720's belongs_to_cycle edge type was not registered in EDGE_TYPES or EDGE_TYPE_REGISTRY, creating a split-brain: the indexer writes edges the adapter API cannot reference, query, or remove.
 
   ## Significant Findings
 
-  ### S1: WI-656 test addition breaks pre-existing `initialize()` test
-  - **File**: mcp/artifact-server/src/__tests__/remote-adapter.test.ts:22
-  - The module-level `vi.mock("../adapters/remote/client.js", ...)` added by WI-656 is hoisted by Vitest, replacing the real GraphQLClient for all tests in the file. The pre-existing test at line 153 (`initialize() throws ConnectionError for unreachable endpoint`) now fails: `client.query` returns `undefined` instead of throwing, so the promise resolves instead of rejecting.
-  - **Fix**: Move vi.mock inside the describe block using `vi.doMock`, or extract WI-656 tests into their own file.
+  ### S1: belongs_to_cycle not registered in EDGE_TYPES or EDGE_TYPE_REGISTRY
+  - File: src/schema.ts:15-31 and src/indexer.ts:553
+  - belongs_to_cycle written by deriveJournalEntryCycleEdges() but absent from EDGE_TYPES array. putEdge() in writer.ts validates against EDGE_TYPES and throws INVALID_EDGE_TYPE. TypeScript callers cannot use belongs_to_cycle as an EdgeType value.
+  - Fix: Add to EDGE_TYPES array, add EDGE_TYPE_REGISTRY entry (yaml_field: null, source_types: [journal_entry], target_types: [cycle_summary]), add schema.test.ts coverage.
 
-  ### S2: WI-653 AC not met — ValidationError.code is 'VALIDATION_ERROR' not 'INVALID_SEED_IDS'
-  - **File**: mcp/artifact-server/src/adapters/local/context.ts:178, mcp/artifact-server/src/adapters/remote/index.ts:735
-  - Both adapters call `new ValidationError("seed_ids must be an array", "seed_ids", { code: "INVALID_SEED_IDS" ... })`. Because `"seed_ids"` is a field name, not a recognized code prefix, the thrown error's `.code` is `"VALIDATION_ERROR"`. The sub-code appears only in `details.code`. Tests only assert `instanceof ValidationError`, missing this.
-  - **Fix**: Change second argument from field name to error code: `new ValidationError("seed_ids must be an array", "INVALID_SEED_IDS", { value: seedNodeIds })`
+  ### S2: deriveJournalEntryCycleEdges has no stale-edge deletion before re-derivation
+  - File: src/indexer.ts:521-561
+  - Phase 3 (deriveJournalEntryEdges) deletes relates_to before re-inserting. Phase 4 (deriveJournalEntryCycleEdges) has no delete step. Stale belongs_to_cycle edges accumulate if journal entry cycle numbers change.
+  - Fix: Add delete inside entries loop before insertEdge.
 
-  ### S3: WI-660 output file at wrong location
-  - **Actual**: mcp/artifact-server/docs/ppr-alignment-research.md
-  - **Specified**: mcp/artifact-server/research/ppr-alignment.md (directory does not exist)
-  - The review manifest and WI-660 scope both point to the wrong path. Tooling looking for the file will not find it.
-  - **Fix**: Move to specified path or update WI-660 scope via MCP tools.
+  ### S3: edges_created stat inflated by Phase 4 on repeated rebuildIndex calls
+  - File: src/indexer.ts:529-557
+  - edgesCreated incremented before insertEdge which uses onConflictDoNothing. After first build, every subsequent rebuild reports non-zero edges_created even when no new edges written.
+  - Fix: Delete-before-rederive (S2 fix) also resolves S3.
 
   ## Minor Findings
 
-  ### M1: WI-658 TRANSACTION_FAILED test is tautological
-  - **File**: mcp/artifact-server/tests/adapters/local-adapter-validation.test.ts:117
-  - The AC-1 test is `expect("TRANSACTION_FAILED").toBe("TRANSACTION_FAILED")` — a literal comparison that always passes and tests nothing about the actual code path.
+  ### M1: No incremental test for relates_to derivation via indexFiles
+  - WI-720 has incremental test; WI-719 does not. The hasJournalUpdate condition at indexer.ts:841 gating deriveJournalEntryEdges is untested for the indexFiles path.
 
-  ### M2: INVALID_CYCLE and INVALID_ALWAYS_INCLUDE_TYPE documented as codes but won't appear as `.code`
-  - **File**: mcp/artifact-server/docs/adapter-contract.md:518-519
-  - The "Summary: ValidationError codes coverage" test only checks `expectedCodes.length === 15`, never calls any adapter method.
+  ### M2: Comma-splitting guard applies to all single-value string fields, not just derived_from
+  - src/indexer.ts:374-385. Guard applies to domain, work_item, supersedes, module etc. Malformed domain like 'workflow, artifact-structure' would silently split into two edges.
+  - Fix: Restrict to derived_from only.
 
-  ### M3: Non-array always_include_types produces misleading error
-  - **File**: mcp/artifact-server/src/adapters/local/context.ts:172
-  - Passing a string iterates characters, producing `"Invalid NodeType: g"` rather than `"always_include_types must be an array"`.
-
-  ### M4: mapGqlNodeToNode throws ValidationError(PARSE_ERROR) but should throw StorageAdapterError
-  - **File**: mcp/artifact-server/docs/adapter-contract.md:508
-  - `mapGqlNodeToNode` at line 291 throws `ValidationError` for parse failure while `fetchCurrentCycle` throws `StorageAdapterError` for the same class. Inconsistency for callers.
-
-  ## Unmet Acceptance Criteria
-
-  - WI-653: 'ValidationError thrown with code INVALID_SEED_IDS' — thrown `.code` is `VALIDATION_ERROR` because constructor receives field name not code string.
-content_hash: f46bf82edc7f788b77a1347a7ef5d8d93ee5104f54f3349fa616ca8974a28513
-token_count: 953
-file_path: .ideate/cycles/068/code-quality.yaml
+  ## Test Run
+  1152 tests pass, 310 skipped — no failures.
 cycle: 19
-verdict: Fail
-cycle_modified: 18
+content_hash: 05911f2e5d0b326db0c864c29e8c8409f52c74a747c53ebec3a2be3721ac0ebe
+token_count: 591

@@ -1,7 +1,7 @@
 id: WI-659
 type: work_item
 title: Document Adapter Interface Contract
-status: completed
+status: done
 complexity: null
 scope:
   - mcp/artifact-server/docs/adapter-contract.md
@@ -32,6 +32,6 @@ notes: |-
   Document includes 17 error codes, 27 NodeTypes, 15 EdgeTypes, and full method specifications.
 resolution: null
 cycle_created: null
-cycle_modified: 5
-content_hash: 877201bdf57adcc5348b9ad6af4c6d354e0efaec547619ea05d687fb59f08ea1
-token_count: 352
+cycle_modified: 19
+content_hash: 14b7fe78462db56ff5d78f537a28c8d36346c597ef61e1c2cad483d23d6de98d
+token_count: 327

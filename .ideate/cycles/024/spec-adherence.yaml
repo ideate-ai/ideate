@@ -2,29 +2,33 @@ id: spec-adherence
 type: cycle_summary
 reviewer: spec-reviewer
 content: |-
-  ## Spec Adherence Review — Cycle 24
+  ## Verdict: Pass
 
-  **Verdict**: Pass
+  ## Principle Adherence: Pass
+  - P-44: deleteNode two-phase write complete. Phase 0 saves content, Phase 1 unlinks (ENOENT-tolerant), Phase 2 exclusive transaction; catch restores YAML.
+  - P-53: No storage-format references in new contract entries.
+  - P-64: All ValidationError codes conform to recognized patterns.
+  - D-177: LocalAdapter tests unconditional throughout.
+  - P-002: No new validation logic without tests.
 
-  ## Findings
+  ## Minor Findings
 
-  None.
-
-  ## Acceptance Criteria Verification
-
-  - WI-686: putEdge test at tests/adapters/write-transaction.test.ts:277 asserts `.code === 'TRANSACTION_FAILED'`. removeEdges test at :317. Both follow spy-throw-assert-finally-restore pattern.
-  - WI-687: putEdge catch block (lines 708-718) and removeEdges catch block (lines 744-754) in remote/index.ts correctly re-throw StorageAdapterError, wrap others as ValidationError('TRANSACTION_FAILED').
-  - WI-688: EDGE_TYPES defined only in schema.ts:15. adapter.ts:97 re-exports EDGE_TYPES; line 101 defines ALL_EDGE_TYPES = EDGE_TYPES. Both names exported.
-  - WI-689: adapter-contract.md:108 has IMMUTABLE_FIELD matching ImmutableFieldError code at src/adapter.ts:512. Stale comment in local-adapter-validation.test.ts corrected at lines 12-15, 583.
-
-  ## Principle Adherence Confirmed
-
-  - P-002: Specific error codes asserted in all new tests
-  - P-64: ValidationError second arguments are code strings in all modified files
-  - P-65: vi.mock isolation followed — write-transaction.test.ts uses only vi.spyOn, no module-level vi.mock
-content_hash: 4d994b78a43fdf1843bbd0214805135587508e1a14154cf536eb525bb74bf774
-token_count: 356
+  ### M1: nextId Validation entry lists only 3 types; WI-709 criterion specified more
+  - adapter-contract.md line 313: lists `journal_entry`, `work_item`, `finding`
+  - WI-709 criterion also listed `guiding_principle`, `constraint`, `phase`, `project`
+  - The worker verified from writer.ts that only 3 types are supported for ID generation, so the doc is correct; the criterion was overstated. Verify implementation supports only 3 types to close.
+content_hash: 1787946f2b9063785efbd70ce315f8c8c8a969e969b25f393c41a91b01b5f763
+token_count: 527
 file_path: .ideate/cycles/068/spec-adherence.yaml
 cycle: 24
 cycle_modified: 19
-verdict: Pass
+verdict: Fail
+scope: full-audit
+date: "20260407"
+findings:
+  - id: F-024-P1
+    severity: significant
+    principle: P-53
+    description: WI-713 fixed deleteNode to use 'operation failed:' prefix. P-53 applies equally to all public TRANSACTION_FAILED messages. 8 remaining throw sites in writer.ts (putNode lines 674/680, patchNode lines 866/872, putEdge line 982, removeEdges line 1010, batchMutate line 1345, appendJournalEntry lines 1641/1648) still use 'SQLite transaction failed:'. One test (write-transaction.test.ts:534) asserts the old string for batchMutate.
+    recommendation: Update all remaining TRANSACTION_FAILED throws to use 'operation failed:' prefix. Update the write-transaction.test.ts:534 assertion.
+summary: "WI-713 acceptance criteria all met. One P-53 principle violation: deleteNode fix created an inconsistency — 8 other TRANSACTION_FAILED throws across 6 methods still expose 'SQLite' in their error messages."

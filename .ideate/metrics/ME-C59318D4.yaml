@@ -1,0 +1,27 @@
+id: ME-C59318D4
+type: metrics_event
+event_name: unknown
+timestamp: 2026-04-08T05:00:00Z
+skill: review
+phase: 4a
+cycle: null
+agent_type: code-reviewer
+model: sonnet
+work_item: null
+wall_clock_ms: 289278
+turns_used: 61
+context_files_read:
+  - /Users/dan/code/ideate/mcp/artifact-server/src/indexer.ts
+  - /Users/dan/code/ideate/mcp/artifact-server/src/__tests__/indexer.test.ts
+  - /Users/dan/code/ideate/mcp/artifact-server/src/schema.ts
+input_tokens: null
+output_tokens: null
+cache_read_tokens: null
+cache_write_tokens: null
+mcp_tools_called:
+  - ideate_get_context_package
+finding_count: 6
+finding_severities:
+  critical: 0
+  significant: 3
+  minor: 3

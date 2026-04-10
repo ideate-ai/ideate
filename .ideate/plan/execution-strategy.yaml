@@ -1,91 +1,26 @@
 id: execution-strategy
 type: execution_strategy
-content: |-
-  ## Execution Strategy
-
-  **Mode**: Sequential groups
-  **Max parallelism**: 2
-  **Worktrees**: disabled
-  **Review cadence**: per_item
-
-  ### Work Item Groups
-
-  **Group 1: Foundation** (can run in parallel)
-  - WI-608: Remove hardcoded Neo4j password
-  - WI-609: Add archiveCycle to StorageAdapter interface
-  - WI-611: Resolve BELONGS_TO_DOMAIN contradiction
-
-  **Group 2: Core Implementation** (after Group 1)
-  - WI-610: Implement archiveCycle in LocalAdapter (depends on WI-609)
-
-  **Group 3: Equivalence** (after Group 2, sequential)
-  - WI-612: Fix queryNodes filtering (depends on WI-611)
-  - WI-613: Fix PPR algorithm (depends on WI-611)
-
-  **Group 4: Reliability** (can run parallel with Group 3)
-  - WI-614: Add retry logic to RemoteAdapter
-  - WI-615: Add hook command validation
-  - WI-616: Add PPR resource limits (depends on WI-613)
-
-  ### Dependency Graph
-
-  WI-608 ───┐
-  WI-609 ───┼──→ WI-610
-  WI-611 ───┘    │
-                 ├──→ WI-612
-                 └──→ WI-613 ──→ WI-616
-  WI-614 ───┐
-  WI-615 ───┘
-content_hash: 7f9ae615c55db76aa2c4d6fa5fe318846fafecfbc470b09171a06f160f7402e0
-token_count: 758
-title: Execution Strategy — Cycle 21
-mode: Batched parallel
-phases:
-  - phase_id: PH-033
-    name: Validation Correctness
-    work_items:
-      - WI-667
-      - WI-668
-      - WI-669
-      - WI-670
-    ordering: WI-667 first (blocks WI-668, WI-669). WI-670 independent — run parallel with WI-667. WI-668 after WI-667. WI-669 after WI-668 (both modify remote/index.ts sequentially).
-    dependency_graph: WI-670 (parallel) | WI-667 → WI-668 → WI-669
-  - phase_id: PH-034
-    name: Tests & Docs
-    work_items:
-      - WI-671
-      - WI-672
-      - WI-673
-    ordering: "All three depend on WI-667+WI-668 completing (Phase 1). Within Phase 2: WI-671, WI-672, WI-673 can run in parallel — non-overlapping file scope."
-    dependency_graph: WI-671 | WI-672 | WI-673 (all parallel)
-review_cadence: Incremental per work item; capstone after all items complete
-worktree_isolation: false
-notes: WI-684 depends on WI-683 because the removeEdges empty-array equivalence test requires both adapters to have the guard. WI-685 (ppr.test.ts cleanup) is fully independent.
-cycle_modified: 19
-max_parallelism: 3
-worktrees: true
+mode: batched_parallel
+max_parallelism: 2
+worktrees: false
+review_cadence: per_item
 groups:
-  - name: Group 1 — Implementation fixes
+  - name: Batch 1 — Independent fixes
     items:
-      - WI-695
-      - WI-696
-      - WI-697
-      - WI-698
-      - WI-699
-      - WI-701
-    notes: All six items are independent — non-overlapping file scope. Run in parallel up to max_parallelism=3.
-  - name: Group 2 — Documentation
+      - WI-729
+      - WI-732
+    notes: WI-729 (indexer dead-code removal) and WI-732 (WI-725 P-49 note) touch different files and can run in parallel.
+  - name: Batch 2 — Dependent follow-ons
     items:
-      - WI-700
-    notes: Depends on WI-696 and WI-698 (documents INVALID_NODE_ID validation those items add). Run after Group 1 completes.
-dependency_notes: WI-674 blocks all others (group 1 must complete first). WI-675 and WI-676 block WI-679. WI-677 and WI-678 have no downstream dependencies.
+      - WI-730
+      - WI-731
+    notes: WI-730 (second dead-code removal from indexer.ts) and WI-731 (accuracy test) both depend on WI-729 completing first. They touch different files and can run in parallel within this batch.
 dependency_graph:
-  WI-695: []
-  WI-696: []
-  WI-697: []
-  WI-698: []
-  WI-699: []
-  WI-700:
-    - WI-696
-    - WI-698
-  WI-701: []
+  WI-729: []
+  WI-732: []
+  WI-730:
+    - WI-729
+  WI-731:
+    - WI-729
+content_hash: f1c3db58f951df391f25a6be725e2fe2d3a980027a45a4392b4b40b453b31eb9
+token_count: 178

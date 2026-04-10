@@ -1,61 +1,20 @@
 id: overview
 type: overview
-content: |-
-  This refinement addresses 4 critical and 11 significant findings from the Full Audit (Cycle 5).
-
-  ## Scope
-
-  **Security**: Remove hardcoded Neo4j password fallback
-  **Interface Contracts**: Add archiveCycle to StorageAdapter; implement in LocalAdapter
-  **Schema Consistency**: Resolve BELONGS_TO_DOMAIN contradiction; align complexity enum
-  **Adapter Equivalence**: Fix 16 equivalence test failures (queryNodes, queryGraph, PPR)
-  **Reliability**: Add retry logic, hook validation, PPR resource limits
-
-  ## Changes
-
-  **Principles**: No changes — all existing principles apply
-  **Constraints**: No changes
-  **Architecture**: No structural changes — fixes within existing architecture
-
-  ## New Work Items
-
-  WI-608 through WI-616 (9 work items across 2 phases)
-
-  **Phase 1**: WI-608, WI-609, WI-610, WI-611 (Foundation & Security)
-  **Phase 2**: WI-612, WI-613, WI-614, WI-615, WI-616 (Equivalence & Reliability)
-content_hash: 5c6371e32edd8c983274b6d33352dc78b173a6be8c893110501bc75036879ef2
-token_count: 998
-title: Cycle 21 Change Plan — Full Audit Finding Fixes
-trigger: "Cycle 20 capstone review findings (C1, S1, G1-G5, M1, M2) + new: Vitest process hang"
-what_is_changing: "1. Vitest forceExit + watcher cleanup (WI-674). 2. LocalAdapter validation: nextId INVALID_CYCLE fix, deleteNode/putEdge/removeEdges validation added (WI-675). 3. RemoteAdapter validation: same three methods (WI-676). 4. adapter-contract.md: remove dead patchNode type constraint, add PARSE_ERROR, fix putEdge codes (WI-677). 5. ppr.ts: four ValidationError calls use specific codes instead of raw field names (WI-678). 6. Equivalence tests for all new validation codes (WI-679)."
-what_is_not_changing: StorageAdapter interface definition (adapter.ts). All existing validation logic (batchMutate, putNode, patchNode, traverse, queryNodes, queryGraph). Test suite structure. SQLite schema. All non-adapter source files.
-scope_boundary: "Changes are scoped to: src/adapters/local/writer.ts, src/adapters/local/reader.ts, src/adapters/local/context.ts, src/adapters/remote/index.ts, src/__tests__/hooks.test.ts, docs/adapter-contract.md, and test files under tests/adapters/. No architectural changes. No new interfaces. No changes to adapter.ts, server.ts, or tools/."
+title: Cycle 21 Change Plan — Dead-code removal and test coverage for indexer derivation
+change_summary: Remove two dead-code blocks in indexer.ts left over from WI-727's merge resolution, add a stats.edges_created accuracy regression test, and add a P-49 no-backfill assessment to WI-725 resolution notes.
+trigger: Cycle 20 capstone review (code-quality, gap-analysis, and spec-adherence all returned Fail or Significant findings). All three reviewers independently identified the same two dead-code issues as significant.
 findings_addressed:
-  - "S2: ValidationError code always VALIDATION_ERROR due to field-name args — WI-667"
-  - "SG1: putNode/patchNode lack validation — WI-668"
-  - "M4: mapGqlNodeToNode error type inconsistency — WI-668+WI-669"
-  - "S1: vi.mock hoisting breaks initialize() test — WI-670"
-  - "SG2: No remote-adapter-validation.test.ts / P-58 gap — WI-671"
-  - "M1: Tautological TRANSACTION_FAILED test — WI-671"
-  - "SG3: adapter-equivalence.test.ts has no validation cases — WI-672"
-  - "P-53: adapter-contract.md references concrete storage formats — WI-673"
-  - "Q4: Edge weight customization gap documented — WI-673"
+  - "S1/SF1 (code-quality + gap-analysis): Orphaned bare calls to deriveJournalEntryCycleEdges and deriveJournalEntryEdges at rebuildIndex lines 1011-1015 — double execution, inflated stats.edges_created"
+  - "S2/SF2 (code-quality + gap-analysis + spec-adherence): Stale hasJournalUpdate block at indexFiles lines 798-803 — journal file changes trigger derivation twice"
+  - "M1/M2 (code-quality + spec-adherence): Duplicate 'Phase 3' comment label at lines 1011 and 1021 — resolved as a side-effect of S1 fix"
+  - "MF1 (gap-analysis): No test asserts stats.edges_created accuracy with derived edges present — Q-138"
+  - "MF2 (gap-analysis): WI-725 missing explicit P-49 no-backfill assessment"
+scope_boundary: Changes are confined to mcp/artifact-server/src/indexer.ts, mcp/artifact-server/src/__tests__/indexer.test.ts, and the WI-725 artifact notes. No architecture changes, no new edge types, no schema changes.
+expected_impact: "After these changes: stats.edges_created will reflect each derived edge exactly once; journal file changes will trigger derivation exactly once; the accuracy regression test will catch any future double-count regression; WI-725 will be P-49 compliant."
 work_items:
-  - WI-695
-  - WI-696
-  - WI-697
-  - WI-698
-  - WI-699
-  - WI-700
-  - WI-701
-cycle_modified: 19
-new_work_items:
-  - WI-674
-  - WI-675
-  - WI-676
-  - WI-677
-  - WI-678
-  - WI-679
-what_changing: "Addressing all 5 significant findings and 7 minor findings from the full audit (cycle 20). Fixes span: LocalWriterAdapter rollback safety, LocalReaderAdapter input validation, LocalContextAdapter/RemoteAdapter boundary alignment, dispatchHook security test, and adapter-contract.md documentation."
-triggering_context: Full audit (cycle 20) produced 3 significant findings from code-reviewer (S1 putNode rollback, S2 alpha/max_iterations boundary, S3 hook allowlist test) and 2 significant gaps from gap-analyst (SG1 reader limit/offset, SG2 getNode validation). All are addressed in this cycle.
-expected_impact: Eliminates data-corruption risk on putNode failures. Aligns validation boundaries between adapter layer and ppr.ts. Achieves P-58 compliance for hook security. Adds defensive validation to reader internals. Closes documentation gaps in adapter-contract.md.
+  - WI-729
+  - WI-730
+  - WI-731
+  - WI-732
+content_hash: 2be5df8a96052ddf10fee15872549d4ee30ef4fa53d640ce2a8fa59572b7fbc9
+token_count: 453

@@ -397,6 +397,91 @@ describe("rebuildIndex — derived_from edge extracted", () => {
     expect(edge).toBeDefined();
     expect(edge!.edge_type).toBe("derived_from");
   });
+
+  it("splits comma-separated derived_from string into individual edges", () => {
+    const db = freshDb();
+    const ideateDir = makeIdeateDir(tmpDir);
+    const policiesDir = path.join(ideateDir, "policies");
+
+    const yaml = [
+      `id: "DP-002"`,
+      `type: "domain_policy"`,
+      `cycle_created: 1`,
+      `cycle_modified: null`,
+      `content_hash: ""`,
+      `token_count: 0`,
+      `file_path: ""`,
+      `status: "active"`,
+      `domain: "workflow"`,
+      `derived_from: "D-142, GP-08"`,
+      `established: "2026-01-01"`,
+      `amended: null`,
+      `amended_by: null`,
+      `description: "Legacy policy with comma-string derived_from"`,
+    ].join("\n") + "\n";
+
+    writeYaml(policiesDir, "DP-002.yaml", yaml);
+
+    rebuildIndex(db, drizzle(db), ideateDir);
+
+    // Should create two separate edges, not one edge to the whole string
+    const edge1 = db
+      .prepare(
+        `SELECT * FROM edges WHERE source_id = 'DP-002' AND target_id = 'D-142' AND edge_type = 'derived_from'`
+      )
+      .get() as { edge_type: string } | undefined;
+    expect(edge1).toBeDefined();
+
+    const edge2 = db
+      .prepare(
+        `SELECT * FROM edges WHERE source_id = 'DP-002' AND target_id = 'GP-08' AND edge_type = 'derived_from'`
+      )
+      .get() as { edge_type: string } | undefined;
+    expect(edge2).toBeDefined();
+
+    // No edge to the raw comma-string
+    const badEdge = db
+      .prepare(
+        `SELECT * FROM edges WHERE source_id = 'DP-002' AND target_id = 'D-142, GP-08'`
+      )
+      .get() as { edge_type: string } | undefined;
+    expect(badEdge).toBeUndefined();
+  });
+});
+
+describe("rebuildIndex — comma-split restricted to derived_from", () => {
+  it("does not split a comma-containing supersedes value into multiple edges", () => {
+    const db = freshDb();
+    const ideateDir = makeIdeateDir(tmpDir);
+    const decisionsDir = path.join(ideateDir, "decisions");
+
+    // A decision whose supersedes field contains a comma — must NOT be split.
+    const yaml = [
+      `id: "D-099"`,
+      `type: "domain_decision"`,
+      `cycle_created: 1`,
+      `cycle_modified: null`,
+      `content_hash: ""`,
+      `token_count: 0`,
+      `file_path: ""`,
+      `status: "active"`,
+      `domain: "workflow"`,
+      `supersedes: "D-001,D-002"`,
+      `title: "Test decision"`,
+      `description: "Tests comma-split guard"`,
+    ].join("\n") + "\n";
+
+    writeYaml(decisionsDir, "D-099.yaml", yaml);
+
+    rebuildIndex(db, drizzle(db), ideateDir);
+
+    // Should produce exactly one supersedes edge targeting the literal "D-001,D-002"
+    const edges = db
+      .prepare(`SELECT * FROM edges WHERE source_id = 'D-099' AND edge_type = 'supersedes'`)
+      .all() as { source_id: string; target_id: string; edge_type: string }[];
+    expect(edges).toHaveLength(1);
+    expect(edges[0].target_id).toBe("D-001,D-002");
+  });
 });
 
 describe("rebuildIndex — relates_to edge extracted", () => {
@@ -508,6 +593,184 @@ describe("rebuildIndex — addressed_by edge extracted", () => {
       .get() as { source_id: string; target_id: string; edge_type: string } | undefined;
     expect(edge).toBeDefined();
     expect(edge!.edge_type).toBe("addressed_by");
+  });
+
+  it("derives addressed_by edge from passing verdict + work_item (no explicit addressed_by field)", () => {
+    const db = freshDb();
+    const ideateDir = makeIdeateDir(tmpDir);
+    const archiveDir = path.join(ideateDir, "cycles");
+
+    const yaml = [
+      `id: "FIND-010"`,
+      `type: "finding"`,
+      `cycle_created: 5`,
+      `cycle_modified: null`,
+      `content_hash: ""`,
+      `token_count: 0`,
+      `file_path: ""`,
+      `status: "resolved"`,
+      `severity: "minor"`,
+      `work_item: "WI-042"`,
+      `file_refs: []`,
+      `verdict: "pass"`,
+      `cycle: 5`,
+      `reviewer: "test-reviewer"`,
+      `addressed_by: null`,
+    ].join("\n") + "\n";
+
+    writeYaml(archiveDir, "FIND-010.yaml", yaml);
+
+    rebuildIndex(db, drizzle(db), ideateDir);
+
+    const edge = db
+      .prepare(
+        `SELECT * FROM edges WHERE source_id = 'FIND-010' AND target_id = 'WI-042' AND edge_type = 'addressed_by'`
+      )
+      .get() as { source_id: string; target_id: string; edge_type: string } | undefined;
+    expect(edge).toBeDefined();
+    expect(edge!.edge_type).toBe("addressed_by");
+  });
+
+  it("does NOT derive addressed_by edge when verdict is fail", () => {
+    const db = freshDb();
+    const ideateDir = makeIdeateDir(tmpDir);
+    const archiveDir = path.join(ideateDir, "cycles");
+
+    const yaml = [
+      `id: "FIND-011"`,
+      `type: "finding"`,
+      `cycle_created: 5`,
+      `cycle_modified: null`,
+      `content_hash: ""`,
+      `token_count: 0`,
+      `file_path: ""`,
+      `status: "open"`,
+      `severity: "significant"`,
+      `work_item: "WI-043"`,
+      `file_refs: []`,
+      `verdict: "fail"`,
+      `cycle: 5`,
+      `reviewer: "test-reviewer"`,
+      `addressed_by: null`,
+    ].join("\n") + "\n";
+
+    writeYaml(archiveDir, "FIND-011.yaml", yaml);
+
+    rebuildIndex(db, drizzle(db), ideateDir);
+
+    const edge = db
+      .prepare(
+        `SELECT * FROM edges WHERE source_id = 'FIND-011' AND target_id = 'WI-043' AND edge_type = 'addressed_by'`
+      )
+      .get() as { source_id: string; target_id: string; edge_type: string } | undefined;
+    expect(edge).toBeUndefined();
+  });
+
+  it("does NOT derive addressed_by edge when work_item is free-text (not WI-NNN pattern)", () => {
+    const db = freshDb();
+    const ideateDir = makeIdeateDir(tmpDir);
+    const archiveDir = path.join(ideateDir, "cycles");
+
+    const yaml = [
+      `id: "FIND-012"`,
+      `type: "finding"`,
+      `cycle_created: 5`,
+      `cycle_modified: null`,
+      `content_hash: ""`,
+      `token_count: 0`,
+      `file_path: ""`,
+      `status: "resolved"`,
+      `severity: "minor"`,
+      `work_item: "some free-text value"`,
+      `file_refs: []`,
+      `verdict: "pass"`,
+      `cycle: 5`,
+      `reviewer: "test-reviewer"`,
+      `addressed_by: null`,
+    ].join("\n") + "\n";
+
+    writeYaml(archiveDir, "FIND-012.yaml", yaml);
+
+    rebuildIndex(db, drizzle(db), ideateDir);
+
+    const edge = db
+      .prepare(
+        `SELECT * FROM edges WHERE source_id = 'FIND-012' AND edge_type = 'addressed_by'`
+      )
+      .get() as { source_id: string; target_id: string; edge_type: string } | undefined;
+    expect(edge).toBeUndefined();
+  });
+
+  it("accepts pass_with_notes verdict (case-insensitive /^pass/i match)", () => {
+    const db = freshDb();
+    const ideateDir = makeIdeateDir(tmpDir);
+    const archiveDir = path.join(ideateDir, "cycles");
+
+    const yaml = [
+      `id: "FIND-013"`,
+      `type: "finding"`,
+      `cycle_created: 6`,
+      `cycle_modified: null`,
+      `content_hash: ""`,
+      `token_count: 0`,
+      `file_path: ""`,
+      `status: "resolved"`,
+      `severity: "minor"`,
+      `work_item: "WI-099"`,
+      `file_refs: []`,
+      `verdict: "pass_with_notes"`,
+      `cycle: 6`,
+      `reviewer: "test-reviewer"`,
+      `addressed_by: null`,
+    ].join("\n") + "\n";
+
+    writeYaml(archiveDir, "FIND-013.yaml", yaml);
+
+    rebuildIndex(db, drizzle(db), ideateDir);
+
+    const edge = db
+      .prepare(
+        `SELECT * FROM edges WHERE source_id = 'FIND-013' AND target_id = 'WI-099' AND edge_type = 'addressed_by'`
+      )
+      .get() as { source_id: string; target_id: string; edge_type: string } | undefined;
+    expect(edge).toBeDefined();
+    expect(edge!.edge_type).toBe("addressed_by");
+  });
+
+  it("emits exactly one addressed_by edge when yaml_field and derivation both point to the same work item", () => {
+    const db = freshDb();
+    const ideateDir = makeIdeateDir(tmpDir);
+    const archiveDir = path.join(ideateDir, "cycles");
+
+    // Both addressed_by (yaml_field path) and work_item+verdict (derivation path) point to WI-001
+    const yaml = [
+      `id: "FIND-014"`,
+      `type: "finding"`,
+      `cycle_created: 6`,
+      `cycle_modified: null`,
+      `content_hash: ""`,
+      `token_count: 0`,
+      `file_path: ""`,
+      `status: "resolved"`,
+      `severity: "minor"`,
+      `work_item: "WI-001"`,
+      `file_refs: []`,
+      `verdict: "pass"`,
+      `cycle: 6`,
+      `reviewer: "test-reviewer"`,
+      `addressed_by: "WI-001"`,
+    ].join("\n") + "\n";
+
+    writeYaml(archiveDir, "FIND-014.yaml", yaml);
+
+    rebuildIndex(db, drizzle(db), ideateDir);
+
+    const edges = db
+      .prepare(
+        `SELECT * FROM edges WHERE source_id = 'FIND-014' AND target_id = 'WI-001' AND edge_type = 'addressed_by'`
+      )
+      .all() as { source_id: string; target_id: string; edge_type: string }[];
+    expect(edges).toHaveLength(1);
   });
 });
 
@@ -663,6 +926,142 @@ describe("rebuildIndex — interview entries create interview_question nodes", (
     expect(questionCount).toBe(0);
 
     expect(stats.parse_errors.filter((e) => e.includes("INT-001"))).toHaveLength(0);
+  });
+
+  it("creates belongs_to_domain edge for interview_question with domain field", () => {
+    const db = freshDb();
+    const ideateDir = makeIdeateDir(tmpDir);
+    const interviewsDir = path.join(ideateDir, "interviews");
+    fs.mkdirSync(interviewsDir, { recursive: true });
+
+    const yaml = [
+      `id: "INT-030"`,
+      `type: "interview"`,
+      `cycle_created: 30`,
+      `cycle_modified: null`,
+      `content_hash: ""`,
+      `token_count: 0`,
+      `file_path: ""`,
+      `status: "active"`,
+      `title: "Refine 030"`,
+      `cycle: 30`,
+      `content: null`,
+      `entries:`,
+      `  - id: IQ-030-001`,
+      `    question: "Domain question?"`,
+      `    answer: "Yes."`,
+      `    domain: workflow`,
+      `    seq: 1`,
+      `  - id: IQ-030-002`,
+      `    question: "No domain question?"`,
+      `    answer: "Correct."`,
+      `    domain: null`,
+      `    seq: 2`,
+    ].join("\n") + "\n";
+
+    writeYaml(interviewsDir, "INT-030.yaml", yaml);
+
+    rebuildIndex(db, drizzle(db), ideateDir);
+
+    // IQ-030-001 with domain=workflow should have a belongs_to_domain edge
+    const domainEdge = db
+      .prepare(
+        `SELECT * FROM edges WHERE source_id = 'IQ-030-001' AND target_id = 'workflow' AND edge_type = 'belongs_to_domain'`
+      )
+      .get() as { source_id: string; target_id: string; edge_type: string } | undefined;
+    expect(domainEdge).toBeDefined();
+    expect(domainEdge!.edge_type).toBe("belongs_to_domain");
+
+    // IQ-030-002 with domain=null should have no belongs_to_domain edge
+    const noDomainEdge = db
+      .prepare(
+        `SELECT * FROM edges WHERE source_id = 'IQ-030-002' AND edge_type = 'belongs_to_domain'`
+      )
+      .get() as { source_id: string } | undefined;
+    expect(noDomainEdge).toBeUndefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// rebuildIndex — triggered_by object-array items produce triggered_by edges
+// ---------------------------------------------------------------------------
+
+describe("rebuildIndex — triggered_by object-array items produce edges", () => {
+  it("creates triggered_by edge for proxy_human_decision with object-array triggered_by", () => {
+    const db = freshDb();
+    const ideateDir = makeIdeateDir(tmpDir);
+    const proxyDir = path.join(ideateDir, "cycles", "005", "proxy-human");
+    fs.mkdirSync(proxyDir, { recursive: true });
+
+    const yaml = [
+      `id: "PHD-005-001"`,
+      `type: "proxy_human_decision"`,
+      `cycle: 5`,
+      `trigger: "andon"`,
+      `triggered_by:`,
+      `  - type: work_item`,
+      `    id: "WI-100"`,
+      `decision: "approved"`,
+      `rationale: "Looks good."`,
+      `timestamp: "2026-04-08T00:00:00Z"`,
+      `status: "resolved"`,
+    ].join("\n") + "\n";
+
+    writeYaml(proxyDir, "PHD-005-001.yaml", yaml);
+
+    rebuildIndex(db, drizzle(db), ideateDir);
+
+    const edge = db
+      .prepare(
+        `SELECT * FROM edges WHERE source_id = 'PHD-005-001' AND target_id = 'WI-100' AND edge_type = 'triggered_by'`
+      )
+      .get() as { source_id: string; target_id: string; edge_type: string } | undefined;
+    expect(edge).toBeDefined();
+    expect(edge!.edge_type).toBe("triggered_by");
+  });
+
+  it("does not create triggered_by edges for string-array yaml_fields when items are objects", () => {
+    // Verify generic fix doesn't break plain string arrays (depends_on etc.)
+    const db = freshDb();
+    const ideateDir = makeIdeateDir(tmpDir);
+    const wiDir = path.join(ideateDir, "work-items");
+    fs.mkdirSync(wiDir, { recursive: true });
+
+    const yaml = [
+      `id: "WI-200"`,
+      `type: "work_item"`,
+      `title: "Parent"`,
+      `status: "pending"`,
+      `depends: []`,
+      `blocks: []`,
+      `scope: []`,
+      `criteria: []`,
+    ].join("\n") + "\n";
+
+    const yaml2 = [
+      `id: "WI-201"`,
+      `type: "work_item"`,
+      `title: "Child"`,
+      `status: "pending"`,
+      `depends:`,
+      `  - "WI-200"`,
+      `blocks: []`,
+      `scope: []`,
+      `criteria: []`,
+    ].join("\n") + "\n";
+
+    writeYaml(wiDir, "WI-200.yaml", yaml);
+    writeYaml(wiDir, "WI-201.yaml", yaml2);
+
+    rebuildIndex(db, drizzle(db), ideateDir);
+
+    const edge = db
+      .prepare(
+        `SELECT * FROM edges WHERE source_id = 'WI-201' AND target_id = 'WI-200' AND edge_type = 'depends_on'`
+      )
+      .get() as { edge_type: string } | undefined;
+    expect(edge).toBeDefined();
+    expect(edge!.edge_type).toBe("depends_on");
   });
 });
 
@@ -1275,14 +1674,19 @@ describe("computeArtifactHash — direct unit test", () => {
 
 // ---------------------------------------------------------------------------
 // deriveJournalEntryCycleEdges — idempotency and stale-edge removal (WI-726)
+// rebuildIndex — journal entry title extraction for relates_to edges (WI-719)
 // ---------------------------------------------------------------------------
 
 /** Minimal journal_entry YAML */
-function journalEntryYaml(id: string, cycle: number): string {
+function journalEntryYaml(
+  id: string,
+  title: string = `Journal entry ${id}`,
+  workItem: string | null = null
+): string {
   return [
     `id: "${id}"`,
     `type: "journal_entry"`,
-    `cycle_created: ${cycle}`,
+    `cycle_created: 1`,
     `cycle_modified: null`,
     `content_hash: ""`,
     `token_count: 0`,
@@ -1290,11 +1694,156 @@ function journalEntryYaml(id: string, cycle: number): string {
     `status: "active"`,
     `phase: null`,
     `date: "2026-01-01"`,
-    `title: "Journal entry ${id}"`,
-    `work_item: null`,
+    `title: "${title}"`,
+    `work_item: ${workItem ? `"${workItem}"` : "null"}`,
     `content: "Some content"`,
   ].join("\n") + "\n";
 }
+
+describe("rebuildIndex — journal entry relates_to edges from title (WI-719)", () => {
+  it("emits relates_to edge for 'Work item NNN:' format when target WI exists", () => {
+    const db = freshDb();
+    const ideateDir = makeIdeateDir(tmpDir);
+    const wiDir = path.join(ideateDir, "work-items");
+    const cyclesDir = path.join(ideateDir, "cycles");
+
+    writeYaml(wiDir, "WI-117.yaml", minimalWorkItem({ id: "WI-117", title: "Some work item" }));
+    writeYaml(cyclesDir, "J-001.yaml", journalEntryYaml("J-001", "Work item 117: Implement feature"));
+
+    rebuildIndex(db, drizzle(db), ideateDir);
+
+    const edge = db
+      .prepare(
+        `SELECT * FROM edges WHERE source_id = 'J-001' AND target_id = 'WI-117' AND edge_type = 'relates_to'`
+      )
+      .get() as { source_id: string; target_id: string; edge_type: string } | undefined;
+    expect(edge).toBeDefined();
+    expect(edge!.edge_type).toBe("relates_to");
+  });
+
+  it("emits relates_to edge for 'WI-NNN' format when target WI exists", () => {
+    const db = freshDb();
+    const ideateDir = makeIdeateDir(tmpDir);
+    const wiDir = path.join(ideateDir, "work-items");
+    const cyclesDir = path.join(ideateDir, "cycles");
+
+    writeYaml(wiDir, "WI-683.yaml", minimalWorkItem({ id: "WI-683", title: "Another work item" }));
+    writeYaml(cyclesDir, "J-002.yaml", journalEntryYaml("J-002", "WI-683: Fix the bug"));
+
+    rebuildIndex(db, drizzle(db), ideateDir);
+
+    const edge = db
+      .prepare(
+        `SELECT * FROM edges WHERE source_id = 'J-002' AND target_id = 'WI-683' AND edge_type = 'relates_to'`
+      )
+      .get() as { source_id: string; target_id: string; edge_type: string } | undefined;
+    expect(edge).toBeDefined();
+    expect(edge!.edge_type).toBe("relates_to");
+  });
+
+  it("does NOT emit relates_to edge when target WI-NNN does not exist (existence check)", () => {
+    const db = freshDb();
+    const ideateDir = makeIdeateDir(tmpDir);
+    const cyclesDir = path.join(ideateDir, "cycles");
+
+    // No WI-999 in the index
+    writeYaml(cyclesDir, "J-003.yaml", journalEntryYaml("J-003", "Work item 999: Non-existent WI"));
+
+    rebuildIndex(db, drizzle(db), ideateDir);
+
+    const edge = db
+      .prepare(
+        `SELECT * FROM edges WHERE source_id = 'J-003' AND edge_type = 'relates_to'`
+      )
+      .get() as { source_id: string } | undefined;
+    expect(edge).toBeUndefined();
+  });
+
+  it("emits multiple relates_to edges when title references multiple work items", () => {
+    const db = freshDb();
+    const ideateDir = makeIdeateDir(tmpDir);
+    const wiDir = path.join(ideateDir, "work-items");
+    const cyclesDir = path.join(ideateDir, "cycles");
+
+    writeYaml(wiDir, "WI-010.yaml", minimalWorkItem({ id: "WI-010", title: "First WI" }));
+    writeYaml(wiDir, "WI-020.yaml", minimalWorkItem({ id: "WI-020", title: "Second WI" }));
+    writeYaml(cyclesDir, "J-004.yaml", journalEntryYaml("J-004", "Work item 10 and WI-020 both updated"));
+
+    rebuildIndex(db, drizzle(db), ideateDir);
+
+    const edges = db
+      .prepare(
+        `SELECT * FROM edges WHERE source_id = 'J-004' AND edge_type = 'relates_to' ORDER BY target_id`
+      )
+      .all() as { source_id: string; target_id: string; edge_type: string }[];
+    expect(edges).toHaveLength(2);
+    expect(edges.map(e => e.target_id).sort()).toEqual(["WI-010", "WI-020"]);
+  });
+
+  it("zero-pads single-digit work item numbers to 3 digits", () => {
+    const db = freshDb();
+    const ideateDir = makeIdeateDir(tmpDir);
+    const wiDir = path.join(ideateDir, "work-items");
+    const cyclesDir = path.join(ideateDir, "cycles");
+
+    writeYaml(wiDir, "WI-005.yaml", minimalWorkItem({ id: "WI-005", title: "Padded WI" }));
+    writeYaml(cyclesDir, "J-005.yaml", journalEntryYaml("J-005", "Work item 5: Short number"));
+
+    rebuildIndex(db, drizzle(db), ideateDir);
+
+    const edge = db
+      .prepare(
+        `SELECT * FROM edges WHERE source_id = 'J-005' AND target_id = 'WI-005' AND edge_type = 'relates_to'`
+      )
+      .get() as { source_id: string; target_id: string; edge_type: string } | undefined;
+    expect(edge).toBeDefined();
+    expect(edge!.target_id).toBe("WI-005");
+  });
+
+  it("preserves yaml_field relates_to edge (work_item field) when title has no WI reference", () => {
+    const db = freshDb();
+    const ideateDir = makeIdeateDir(tmpDir);
+    const wiDir = path.join(ideateDir, "work-items");
+    const cyclesDir = path.join(ideateDir, "cycles");
+
+    writeYaml(wiDir, "WI-200.yaml", minimalWorkItem({ id: "WI-200", title: "A work item" }));
+    // Journal entry with work_item set but title has no WI pattern
+    writeYaml(cyclesDir, "J-006.yaml", journalEntryYaml("J-006", "Daily standup notes", "WI-200"));
+
+    rebuildIndex(db, drizzle(db), ideateDir);
+
+    const edge = db
+      .prepare(
+        `SELECT * FROM edges WHERE source_id = 'J-006' AND target_id = 'WI-200' AND edge_type = 'relates_to'`
+      )
+      .get() as { source_id: string; target_id: string; edge_type: string } | undefined;
+    expect(edge).toBeDefined();
+    expect(edge!.target_id).toBe("WI-200");
+  });
+
+  it("emits exactly one relates_to edge when work_item field and title both reference the same WI", () => {
+    const db = freshDb();
+    const ideateDir = makeIdeateDir(tmpDir);
+    const wiDir = path.join(ideateDir, "work-items");
+    const cyclesDir = path.join(ideateDir, "cycles");
+
+    writeYaml(wiDir, "WI-300.yaml", minimalWorkItem({ id: "WI-300", title: "A work item" }));
+    writeYaml(cyclesDir, "J-007.yaml", journalEntryYaml("J-007", "WI-300: Implemented feature", "WI-300"));
+
+    rebuildIndex(db, drizzle(db), ideateDir);
+
+    const edges = db
+      .prepare(
+        `SELECT * FROM edges WHERE source_id = 'J-007' AND target_id = 'WI-300' AND edge_type = 'relates_to'`
+      )
+      .all() as { source_id: string; target_id: string; edge_type: string }[];
+    expect(edges).toHaveLength(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// WI-720: Journal entry → belongs_to_cycle derivation
+// ---------------------------------------------------------------------------
 
 /** Minimal cycle_summary YAML */
 function cycleSummaryYaml(id: string, cycle: number): string {
@@ -1387,7 +1936,7 @@ describe("deriveJournalEntryCycleEdges — stale edge removal (WI-726)", () => {
     const cycleDir = path.join(ideateDir, "cycles");
 
     // Step 1: index a journal entry alone (no cycle_summary) → 0 belongs_to_cycle edges
-    writeYaml(cycleDir, "J-024-001.yaml", journalEntryYaml("J-024-001", 24));
+    writeYaml(cycleDir, "J-024-001.yaml", journalEntryYaml("J-024-001"));
     rebuildIndex(db, drizzleDb, ideateDir);
 
     const countNoSummary = (db.prepare(
@@ -1512,5 +2061,125 @@ describe("indexFiles — derivation triggered by cycle_summary change (WI-727)",
       `SELECT COUNT(*) as cnt FROM edges WHERE source_id = 'J-001-001' AND target_id = 'summary-001' AND edge_type = 'belongs_to_cycle'`
     ).get() as { cnt: number }).cnt;
     expect(countAfter).toBe(1);
+  });
+});
+
+describe("rebuildIndex — journal entry belongs_to_cycle edges (WI-720)", () => {
+  it("emits belongs_to_cycle edge when matching cycle_summary exists", () => {
+    const db = freshDb();
+    const ideateDir = makeIdeateDir(tmpDir);
+    const cyclesDir = path.join(ideateDir, "cycles");
+
+    writeYaml(cyclesDir, "CS-019.yaml", cycleSummaryYaml("CS-019", 19));
+    writeYaml(cyclesDir, "J-019-001.yaml", journalEntryYaml("J-019-001", "Some entry"));
+
+    rebuildIndex(db, drizzle(db), ideateDir);
+
+    const edge = db
+      .prepare(
+        `SELECT * FROM edges WHERE source_id = 'J-019-001' AND target_id = 'CS-019' AND edge_type = 'belongs_to_cycle'`
+      )
+      .get() as { source_id: string; target_id: string; edge_type: string } | undefined;
+    expect(edge).toBeDefined();
+    expect(edge!.edge_type).toBe("belongs_to_cycle");
+  });
+
+  it("does not emit belongs_to_cycle edge when no cycle_summary exists for the cycle", () => {
+    const db = freshDb();
+    const ideateDir = makeIdeateDir(tmpDir);
+    const cyclesDir = path.join(ideateDir, "cycles");
+
+    writeYaml(cyclesDir, "J-042-001.yaml", journalEntryYaml("J-042-001", "Orphan entry"));
+
+    rebuildIndex(db, drizzle(db), ideateDir);
+
+    const edge = db
+      .prepare(`SELECT * FROM edges WHERE source_id = 'J-042-001' AND edge_type = 'belongs_to_cycle'`)
+      .get();
+    expect(edge).toBeUndefined();
+  });
+
+  it("emits belongs_to_cycle edges to multiple cycle_summaries sharing the same cycle number", () => {
+    const db = freshDb();
+    const ideateDir = makeIdeateDir(tmpDir);
+    const cyclesDir = path.join(ideateDir, "cycles");
+
+    writeYaml(cyclesDir, "CS-005a.yaml", cycleSummaryYaml("CS-005", 5));
+    writeYaml(cyclesDir, "CQ-005a.yaml", cycleSummaryYaml("CQ-005", 5));
+    writeYaml(cyclesDir, "J-005-001.yaml", journalEntryYaml("J-005-001", "Cycle 5 entry"));
+
+    rebuildIndex(db, drizzle(db), ideateDir);
+
+    const edges = db
+      .prepare(
+        `SELECT target_id FROM edges WHERE source_id = 'J-005-001' AND edge_type = 'belongs_to_cycle' ORDER BY target_id`
+      )
+      .all() as { target_id: string }[];
+    expect(edges).toHaveLength(2);
+    expect(edges.map(e => e.target_id)).toEqual(["CQ-005", "CS-005"]);
+  });
+});
+
+describe("rebuildIndex — stats.edges_created accuracy (Q-138, WI-731)", () => {
+  it("counts derived edges exactly once — not double-counted — regression test for Q-138", () => {
+    // Regression test for Q-138 — verifies stats.edges_created is not double-counted after WI-729 fix.
+    // Pre-fix: bare calls alongside transactional wrappers ran each derivation function twice,
+    // inflating stats.edges_created to 2x the actual derived edge count.
+    // Post-fix: each function runs exactly once via the transactional wrappers only.
+    const db = freshDb();
+    const drizzleDb = drizzle(db);
+    const ideateDir = makeIdeateDir(tmpDir);
+    const cyclesDir = path.join(ideateDir, "cycles");
+
+    // Fixture: one cycle_summary + one journal entry matching that cycle.
+    // deriveJournalEntryCycleEdges produces 1 belongs_to_cycle edge (J-055-001 → CS-055).
+    // deriveJournalEntryEdges produces 0 relates_to edges (title has no WI-NNN reference).
+    // Neither file has YAML-field inter-artifact edges, so r.edgesCreated from the upsert phase is 0.
+    // Expected stats.edges_created = 1.
+    writeYaml(cyclesDir, "CS-055.yaml", cycleSummaryYaml("CS-055", 55));
+    writeYaml(cyclesDir, "J-055-001.yaml", journalEntryYaml("J-055-001", "No work item reference here"));
+
+    const stats = rebuildIndex(db, drizzleDb, ideateDir);
+
+    // Count actual derived edges in the DB (only belongs_to_cycle and title-derived relates_to)
+    const derivedEdgeCount = (
+      db
+        .prepare(`SELECT COUNT(*) as cnt FROM edges WHERE edge_type IN ('belongs_to_cycle', 'relates_to')`)
+        .get() as { cnt: number }
+    ).cnt;
+
+    // stats.edges_created must equal the actual derived edge count, not 2x.
+    // If the double-count bug were re-introduced, stats would be 2 while the DB has 1 edge.
+    expect(stats.edges_created).toBe(derivedEdgeCount);
+    // Assert the exact expected count so re-introduction of the bug fails loudly.
+    expect(stats.edges_created).toBe(1);
+  });
+});
+
+describe("indexFiles — journal entry belongs_to_cycle derivation (WI-720 incremental)", () => {
+  it("emits belongs_to_cycle edge when a journal entry is added via indexFiles", () => {
+    const db = freshDb();
+    const ideateDir = makeIdeateDir(tmpDir);
+    const cyclesDir = path.join(ideateDir, "cycles");
+
+    // Seed: index the cycle_summary first via rebuildIndex
+    writeYaml(cyclesDir, "CS-007.yaml", cycleSummaryYaml("CS-007", 7));
+    rebuildIndex(db, drizzle(db), ideateDir);
+
+    // Now add a journal entry incrementally using the canonical path structure
+    // (cycles/{NNN}/journal/) so the hasJournalUpdate condition fires in indexFiles
+    const journalDir = path.join(cyclesDir, "007", "journal");
+    fs.mkdirSync(journalDir, { recursive: true });
+    const journalPath = path.join(journalDir, "J-007-001.yaml");
+    fs.writeFileSync(journalPath, journalEntryYaml("J-007-001", "Incremental entry"), "utf8");
+    indexFiles(db, drizzle(db), [journalPath]);
+
+    const edge = db
+      .prepare(
+        `SELECT * FROM edges WHERE source_id = 'J-007-001' AND target_id = 'CS-007' AND edge_type = 'belongs_to_cycle'`
+      )
+      .get() as { source_id: string; target_id: string; edge_type: string } | undefined;
+    expect(edge).toBeDefined();
+    expect(edge!.edge_type).toBe("belongs_to_cycle");
   });
 });

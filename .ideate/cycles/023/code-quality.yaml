@@ -4,25 +4,23 @@ reviewer: code-reviewer
 content: |-
   ## Verdict: Pass
 
-  1132 tests pass. All WI-707 acceptance criteria met. No regressions across WI-702–707 change set.
-
-  ## Critical Findings
-  None.
-
-  ## Significant Findings
-  None.
-
   ## Minor Findings
-  ### M1: putNode Validation block missing article 'a'
-  - `docs/adapter-contract.md:84` — reads '\`id\` must be non-empty string' (missing 'a'). All other Validation blocks (getNode, patchNode, deleteNode) read 'must be a non-empty string'. Pre-existing, not introduced by WI-707.
 
-  ## Unmet Acceptance Criteria
-  None.
-content_hash: 41c204475b461aeb1a7422e051549bebc5926d8b20394984a66335ae909080f2
-token_count: 206
+  ### M1: batchMutate restores foreign_keys pragma redundantly in both catch and finally
+  - File: mcp/artifact-server/src/adapters/local/writer.ts:1344
+  - On the error path: `if (fkWasOn) this.db.pragma("foreign_keys = ON")` runs in catch, then again in finally. The catch call is dead relative to finally. Remove line 1344 from catch; finally handles both paths correctly.
+content_hash: e3dcf2449c3f61549feb2ca6ee1ae94ec11f9820a96db18090560476774cc4d0
+token_count: 360
 file_path: .ideate/cycles/068/code-quality.yaml
 cycle: 23
 cycle_modified: 19
-verdict: Pass
+verdict: Fail
 scope: full-audit
 date: "20260407"
+findings:
+  - id: F-023-S1
+    severity: significant
+    location: mcp/artifact-server/src/adapters/local/writer.ts:938,945 vs docs/adapter-contract.md:138-139
+    description: Contract documents TRANSACTION_FAILED message prefix 'operation failed:' but code throws 'SQLite transaction failed:'. Message format mismatch between specification and implementation.
+    recommendation: Update writer.ts deleteNode throw statements to use 'operation failed:' prefix, matching the contract.
+summary: "One significant finding: deleteNode TRANSACTION_FAILED message prefix in writer.ts ('SQLite transaction failed:') does not match the contract ('operation failed:'). Tests pass. Documentation change from WI-712 was otherwise correct."

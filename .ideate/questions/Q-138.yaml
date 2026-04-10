@@ -1,0 +1,11 @@
+id: Q-138
+type: domain_question
+domain: artifact-structure
+title: No test asserts stats.edges_created accuracy when derived edges are present
+body: "src/__tests__/indexer.test.ts has no test that asserts a specific stats.edges_created value in a scenario containing journal entries plus cycle summaries with derived edges. The cycle 20 double-counting in rebuildIndex (orphaned bare derivation calls) inflated stats.edges_created and went completely undetected by the 1162-test suite. Fix: add a test that builds a known fixture and asserts the exact stats.edges_created value after rebuildIndex. The assertion catches both double-counting regressions and any future drift in derivation counting."
+source: cycle 20 gap-analysis MF1
+impact: Stat-counting regressions in derivation phases are not caught by the test suite; reviewers must spot them by reading code rather than test failures
+reexamination_trigger: next derivation-phase work item or stats-related refactor
+status: open
+content_hash: d615be6b346c99da47450e3da7294d7fa3cff9bca9c4d74f92ec8affbbc0b5af
+token_count: 245
