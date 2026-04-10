@@ -71,6 +71,18 @@ export const ALL_NODE_TYPES = [
   "domain_index",
 ] as const;
 
+// Compile-time exhaustiveness: every NodeType must appear in ALL_NODE_TYPES.
+// If a new NodeType member is added without updating ALL_NODE_TYPES, tsc emits:
+// "Type 'true' is not assignable to type 'false'"
+type _ExhaustiveNodeTypeCheck = Exclude<
+  NodeType,
+  typeof ALL_NODE_TYPES[number]
+> extends never
+  ? true
+  : false;
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+const _nodeTypesExhaustive: _ExhaustiveNodeTypeCheck = true;
+
 /** Metadata common to every node. */
 export interface NodeMeta {
   id: string;
