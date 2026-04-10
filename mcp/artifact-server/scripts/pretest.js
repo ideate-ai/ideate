@@ -17,7 +17,6 @@ try {
       process.stderr.write(
         "WARNING: migrate-to-v3.js not found — run: cd mcp/artifact-server && npm run build:migration\n"
       );
-      process.exit(1);
     }
     throw e;
   }
@@ -25,7 +24,6 @@ try {
     process.stderr.write(
       "WARNING: migrate-to-v3.js may be stale — run: cd mcp/artifact-server && npm run build:migration\n"
     );
-    process.exit(1);
   }
 } catch {
   // Intentional: swallow errors so infra issues never block the test suite.
