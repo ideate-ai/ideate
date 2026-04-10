@@ -1,20 +1,26 @@
 id: overview
 type: overview
-title: Cycle 21 Change Plan — Dead-code removal and test coverage for indexer derivation
-change_summary: Remove two dead-code blocks in indexer.ts left over from WI-727's merge resolution, add a stats.edges_created accuracy regression test, and add a P-49 no-backfill assessment to WI-725 resolution notes.
-trigger: Cycle 20 capstone review (code-quality, gap-analysis, and spec-adherence all returned Fail or Significant findings). All three reviewers independently identified the same two dead-code issues as significant.
-findings_addressed:
-  - "S1/SF1 (code-quality + gap-analysis): Orphaned bare calls to deriveJournalEntryCycleEdges and deriveJournalEntryEdges at rebuildIndex lines 1011-1015 — double execution, inflated stats.edges_created"
-  - "S2/SF2 (code-quality + gap-analysis + spec-adherence): Stale hasJournalUpdate block at indexFiles lines 798-803 — journal file changes trigger derivation twice"
-  - "M1/M2 (code-quality + spec-adherence): Duplicate 'Phase 3' comment label at lines 1011 and 1021 — resolved as a side-effect of S1 fix"
-  - "MF1 (gap-analysis): No test asserts stats.edges_created accuracy with derived edges present — Q-138"
-  - "MF2 (gap-analysis): WI-725 missing explicit P-49 no-backfill assessment"
-scope_boundary: Changes are confined to mcp/artifact-server/src/indexer.ts, mcp/artifact-server/src/__tests__/indexer.test.ts, and the WI-725 artifact notes. No architecture changes, no new edge types, no schema changes.
-expected_impact: "After these changes: stats.edges_created will reflect each derived edge exactly once; journal file changes will trigger derivation exactly once; the accuracy regression test will catch any future double-count regression; WI-725 will be P-49 compliant."
-work_items:
-  - WI-729
-  - WI-730
-  - WI-731
-  - WI-732
-content_hash: 2be5df8a96052ddf10fee15872549d4ee30ef4fa53d640ce2a8fa59572b7fbc9
-token_count: 453
+title: Cycle 22 — Open Question Resolution
+change_plan:
+  what_is_changing: "Three targeted improvements driven by open domain questions: (1) remove the heuristic from the ValidationError constructor to make incorrect usage a deterministic compile-time concern rather than a silent runtime surprise; (2) add the two remaining genuine testing gaps from Q-120 (nextId unsupported-type error and deprecated/superseded policy exclusion); (3) close 11 stale open questions whose underlying issues were resolved in prior cycles."
+  triggering_context: "Review of all open domain questions revealed that the bulk of Q-117 through Q-138 were silently resolved in cycles 17–21 but never closed. Three items remain genuinely unresolved: Q-130 (ValidationError heuristic), the two live gaps in Q-120, and the stale-question backlog itself."
+  scope_boundary:
+    in_scope:
+      - src/adapter.ts — ValidationError constructor simplification
+      - Call-site audit across src/adapters/ and src/ppr.ts to verify all sites pass explicit codes
+      - src/__tests__/nextid-cycle-validation.test.ts — unsupported-type test
+      - src/__tests__/tools.test.ts or new test file — deprecated policy exclusion test
+      - MCP artifact updates to close stale questions Q-117, Q-118, Q-120, Q-124, Q-131, Q-132, Q-133, Q-134, Q-135, Q-136, Q-137, Q-138
+    out_of_scope:
+      - Q-122 / Q-128 server-side BFS/PPR alignment (ideate-server, external project)
+      - Q-125 skills .gitkeep (ideate plugin, not mcp/artifact-server)
+      - Q-129 targeted spec compliance review (separate review task)
+      - StorageAdapter migration of remaining 7 direct-DB tool handlers
+      - Any indexer or watcher changes
+  expected_impact: ValidationError misuse becomes a deterministic failure (wrong code string no longer silently degrades to VALIDATION_ERROR). Two test regressions that were undetectable by the suite become detectable. Domain question list shrinks from 19 open to 8 genuinely open.
+  work_items:
+    - WI-733
+    - WI-734
+    - WI-735
+content_hash: d37dfffad9b9de51b0604492e2269cf0cf434220efefa8da10470bdeb88bbe7d
+token_count: 512

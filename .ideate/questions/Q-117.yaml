@@ -5,7 +5,8 @@ domain: artifact-structure
 impact: Performance degradation during bulk file operations
 reexamination_trigger: When file watcher performance becomes a measurable bottleneck
 source: gap-analysis MI1
-status: open
+status: closed
 title: Watcher debounce implementation
-content_hash: 7b4d9851b835b3da0a7a7bbb3280a5429537ae8edf346af8dc93266497edb446
-token_count: 89
+resolution: "Resolved: debounce implemented in watcher.ts — ArtifactWatcher with debounceMs=500 default, debounceTimers map, pendingChanged Set batching. watcher.test.ts has debounce coalescing tests."
+content_hash: 463a23666248d7b613f59cea22c47cf08938dd8b2d2104a2209750917b2a82b3
+token_count: 140

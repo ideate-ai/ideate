@@ -5,7 +5,8 @@ domain: artifact-structure
 impact: Slow index rebuild times for large artifact repositories
 reexamination_trigger: When index rebuild time exceeds acceptable thresholds
 source: gap-analysis MI2
-status: open
+status: closed
 title: Database index performance for rebuildIndex
-content_hash: 721587bb2944da759187470f62d812c699d10dcce4853ca2aea2092902476d3e
-token_count: 97
+resolution: "Resolved: idx_nodes_file_path index created in schema.ts line 428: `CREATE INDEX IF NOT EXISTS idx_nodes_file_path ON nodes(file_path)`. schema.test.ts:382 verifies the index exists."
+content_hash: 96464ed1d1f2b5e329d0dad713c2f5ffab86ca3508aff7739e7ab2cf6021fbe9
+token_count: 147

@@ -5,6 +5,7 @@ title: Should archiveCycle be on the StorageAdapter interface?
 description: GraphQL schema defines archiveCycle mutation. Adapter interface lacks the method. Either add to interface with per-adapter semantics or mark GraphQL mutation as not-yet-implemented.
 source: cycle 6 II2
 impact: GraphQL layer promises operation adapter cannot fulfill
-status: open
-content_hash: 6aa9f7bad9fb4c058e869e0a73ddc1aa6704aca395ffc5656c5e3b8e151405ef
-token_count: 103
+status: closed
+resolution: "Resolved: archiveCycle is on the StorageAdapter interface at adapter.ts:457, implemented in LocalWriterAdapter at writer.ts:1535 and RemoteAdapter at remote/index.ts:1545."
+content_hash: e94633fad6e298551e78f837655ef79845b96d840b797b6f8b3dcd6e730455f0
+token_count: 150

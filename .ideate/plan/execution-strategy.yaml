@@ -1,26 +1,21 @@
 id: execution-strategy
 type: execution_strategy
 mode: batched_parallel
-max_parallelism: 2
-worktrees: false
+max_parallelism: 3
+worktrees: true
 review_cadence: per_item
 groups:
-  - name: Batch 1 — Independent fixes
+  - id: G1
+    label: All items — no dependencies, run in parallel
     items:
-      - WI-729
-      - WI-732
-    notes: WI-729 (indexer dead-code removal) and WI-732 (WI-725 P-49 note) touch different files and can run in parallel.
-  - name: Batch 2 — Dependent follow-ons
-    items:
-      - WI-730
-      - WI-731
-    notes: WI-730 (second dead-code removal from indexer.ts) and WI-731 (accuracy test) both depend on WI-729 completing first. They touch different files and can run in parallel within this batch.
+      - WI-733
+      - WI-734
+      - WI-735
+    ordering: parallel
 dependency_graph:
-  WI-729: []
-  WI-732: []
-  WI-730:
-    - WI-729
-  WI-731:
-    - WI-729
-content_hash: f1c3db58f951df391f25a6be725e2fe2d3a980027a45a4392b4b40b453b31eb9
-token_count: 178
+  WI-733: []
+  WI-734: []
+  WI-735: []
+notes: All three work items touch non-overlapping files. WI-733 owns src/adapter.ts and adapter call-site files. WI-734 owns test files only. WI-735 makes MCP tool calls only (no file writes). Run all three in parallel in a single group.
+content_hash: 8c2ab85d9d4a602be4b7f52388c0caa6067531c86b591706849f43876e06a239
+token_count: 145

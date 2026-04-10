@@ -6,6 +6,7 @@ body: "src/__tests__/indexer.test.ts has no test that asserts a specific stats.e
 source: cycle 20 gap-analysis MF1
 impact: Stat-counting regressions in derivation phases are not caught by the test suite; reviewers must spot them by reading code rather than test failures
 reexamination_trigger: next derivation-phase work item or stats-related refactor
-status: open
-content_hash: d615be6b346c99da47450e3da7294d7fa3cff9bca9c4d74f92ec8affbbc0b5af
-token_count: 245
+status: closed
+resolution: "Resolved: WI-731 added stats.edges_created accuracy regression test in indexer.test.ts — asserts exact count after rebuildIndex with known fixture."
+content_hash: 53a7b7ce2380f468c07068446203cad308b9306725f746ab206676f9a7260ca5
+token_count: 286
