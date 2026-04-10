@@ -23,6 +23,7 @@ import { LocalAdapter } from "../adapters/local/index.js";
 import type {
   StorageAdapter,
   MutateNodeInput,
+  NodeType,
   Edge,
 } from "../adapter.js";
 import { ImmutableFieldError, ValidationError } from "../adapter.js";
@@ -1015,7 +1016,7 @@ export function runAdapterContractTests(
       it("batchMutate throws MISSING_EDGE_SOURCE error when edge has no source_id", async () => {
         const nodes = [{
           id: "WI-TEST-004",
-          type: "work_item",
+          type: "work_item" as NodeType,
           properties: { title: "Test" },
         }];
         const edges = [{
@@ -1035,7 +1036,7 @@ export function runAdapterContractTests(
       it("batchMutate throws MISSING_EDGE_TARGET error when edge has no target_id", async () => {
         const nodes = [{
           id: "WI-TEST-005",
-          type: "work_item",
+          type: "work_item" as NodeType,
           properties: { title: "Test" },
         }];
         const edges = [{
@@ -1054,8 +1055,8 @@ export function runAdapterContractTests(
 
       it("batchMutate throws MISSING_EDGE_TYPE error when edge has no edge_type", async () => {
         const nodes = [
-          { id: "WI-TEST-006", type: "work_item", properties: { title: "Test 1" } },
-          { id: "WI-TEST-007", type: "work_item", properties: { title: "Test 2" } },
+          { id: "WI-TEST-006", type: "work_item" as NodeType, properties: { title: "Test 1" } },
+          { id: "WI-TEST-007", type: "work_item" as NodeType, properties: { title: "Test 2" } },
         ];
         const edges = [{
           source_id: "WI-TEST-006",
@@ -1073,8 +1074,8 @@ export function runAdapterContractTests(
 
       it("batchMutate throws INVALID_EDGE_TYPE error for unknown edge type", async () => {
         const nodes = [
-          { id: "WI-TEST-008", type: "work_item", properties: { title: "Test 1" } },
-          { id: "WI-TEST-009", type: "work_item", properties: { title: "Test 2" } },
+          { id: "WI-TEST-008", type: "work_item" as NodeType, properties: { title: "Test 1" } },
+          { id: "WI-TEST-009", type: "work_item" as NodeType, properties: { title: "Test 2" } },
         ];
         const edges = [{
           source_id: "WI-TEST-008",
@@ -1151,6 +1152,44 @@ export function runAdapterContractTests(
         expect(Array.isArray(workflowState.policies)).toBe(true);
         const policyIds = workflowState.policies.map((p) => p.id);
         expect(policyIds).toContain("P-DS01");
+      });
+
+      it("excludes deprecated and superseded policies from getDomainState results", async () => {
+        await adapter.putNode({
+          id: "P-filter-active",
+          type: "domain_policy" as NodeType,
+          properties: {
+            domain: "filter-test",
+            description: "Active policy",
+            status: "active",
+          },
+        });
+        await adapter.putNode({
+          id: "P-filter-deprecated",
+          type: "domain_policy" as NodeType,
+          properties: {
+            domain: "filter-test",
+            description: "Deprecated policy",
+            status: "deprecated",
+          },
+        });
+        await adapter.putNode({
+          id: "P-filter-superseded",
+          type: "domain_policy" as NodeType,
+          properties: {
+            domain: "filter-test",
+            description: "Superseded policy",
+            status: "superseded",
+          },
+        });
+
+        const result = await adapter.getDomainState(["filter-test"]);
+        const entry = result.get("filter-test");
+        expect(entry).toBeDefined();
+        const policyIds = entry!.policies.map((p: any) => p.id);
+        expect(policyIds).toContain("P-filter-active");
+        expect(policyIds).not.toContain("P-filter-deprecated");
+        expect(policyIds).not.toContain("P-filter-superseded");
       });
 
       it("getConvergenceData returns findings_by_severity and cycle_summary_content", async () => {
