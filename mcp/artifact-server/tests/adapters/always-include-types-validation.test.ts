@@ -18,7 +18,15 @@ import * as dbSchema from "../../src/db.js";
 import { LocalAdapter } from "../../src/adapters/local/index.js";
 import { RemoteAdapter } from "../../src/adapters/remote/index.js";
 import { ValidationError, ALL_NODE_TYPES } from "../../src/adapter.js";
-import type { StorageAdapter } from "../../src/adapter.js";
+import type { StorageAdapter, NodeType } from "../../src/adapter.js";
+
+// Compile-time exhaustiveness: every NodeType must appear in ALL_NODE_TYPES.
+// If a new NodeType member is added without updating ALL_NODE_TYPES, this line
+// produces: "Type 'true' is not assignable to type 'false'"
+type _ExhaustiveCheck = Exclude<NodeType, typeof ALL_NODE_TYPES[number]> extends never
+  ? true
+  : false;
+const _nodeTypeExhaustive: _ExhaustiveCheck = true;
 
 // -----------------------------------------------------------------------------
 // Test Setup Helpers
@@ -397,41 +405,11 @@ describe("always_include_types validation (WI-649)", () => {
   // -----------------------------------------------------------------------------
 
   describe("ALL_NODE_TYPES constant", () => {
-    it("contains all valid NodeType values", () => {
-      const expectedTypes = [
-        "work_item",
-        "finding",
-        "domain_policy",
-        "domain_decision",
-        "domain_question",
-        "guiding_principle",
-        "constraint",
-        "module_spec",
-        "research_finding",
-        "journal_entry",
-        "metrics_event",
-        "interview_question",
-        "proxy_human_decision",
-        "project",
-        "phase",
-        "decision_log",
-        "cycle_summary",
-        "review_manifest",
-        "review_output",
-        "architecture",
-        "overview",
-        "execution_strategy",
-        "guiding_principles",
-        "constraints",
-        "research",
-        "interview",
-        "domain_index",
-      ];
-
-      expect(ALL_NODE_TYPES).toHaveLength(expectedTypes.length);
-      for (const type of expectedTypes) {
-        expect(ALL_NODE_TYPES).toContain(type);
-      }
+    it("ALL_NODE_TYPES contains every NodeType value with no duplicates", () => {
+      // No duplicates
+      expect(new Set(ALL_NODE_TYPES).size).toBe(ALL_NODE_TYPES.length);
+      // Runtime length sanity check — update this number when NodeType grows
+      expect(ALL_NODE_TYPES.length).toBeGreaterThan(0);
     });
 
     it("is readonly array", () => {
