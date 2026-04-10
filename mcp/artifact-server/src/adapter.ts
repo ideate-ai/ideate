@@ -576,19 +576,10 @@ export class MissingCycleError extends StorageAdapterError {
 export class ValidationError extends StorageAdapterError {
   constructor(
     message: string,
-    codeOrField: string,
-    detailsOrValue: Record<string, unknown> | unknown
+    code: string,
+    details?: Record<string, unknown>
   ) {
-    const isCode = codeOrField === "TRANSACTION_FAILED"
-      || codeOrField.endsWith("_ERROR")
-      || codeOrField.startsWith("INVALID_")
-      || codeOrField.startsWith("MISSING_")
-      || codeOrField.startsWith("EMPTY_");
-    super(
-      message,
-      isCode ? codeOrField : "VALIDATION_ERROR",
-      isCode ? (detailsOrValue as Record<string, unknown>) : { field: codeOrField, value: detailsOrValue }
-    );
+    super(message, code, details);
     this.name = "ValidationError";
   }
 }
