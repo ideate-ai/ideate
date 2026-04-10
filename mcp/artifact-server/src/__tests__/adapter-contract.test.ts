@@ -1157,7 +1157,7 @@ export function runAdapterContractTests(
       it("excludes deprecated and superseded policies from getDomainState results", async () => {
         await adapter.putNode({
           id: "P-filter-active",
-          type: "domain_policy" as NodeType,
+          type: "domain_policy",
           properties: {
             domain: "filter-test",
             description: "Active policy",
@@ -1166,7 +1166,7 @@ export function runAdapterContractTests(
         });
         await adapter.putNode({
           id: "P-filter-deprecated",
-          type: "domain_policy" as NodeType,
+          type: "domain_policy",
           properties: {
             domain: "filter-test",
             description: "Deprecated policy",
@@ -1175,7 +1175,7 @@ export function runAdapterContractTests(
         });
         await adapter.putNode({
           id: "P-filter-superseded",
-          type: "domain_policy" as NodeType,
+          type: "domain_policy",
           properties: {
             domain: "filter-test",
             description: "Superseded policy",
@@ -1190,6 +1190,23 @@ export function runAdapterContractTests(
         expect(policyIds).toContain("P-filter-active");
         expect(policyIds).not.toContain("P-filter-deprecated");
         expect(policyIds).not.toContain("P-filter-superseded");
+      });
+
+      it("includes policies with null/absent status in getDomainState results", async () => {
+        await adapter.putNode({
+          id: "P-null-status",
+          type: "domain_policy",
+          properties: {
+            domain: "null-status-test",
+            description: "Null status policy",
+            // No status field — defaults to null
+          },
+        });
+        const result = await adapter.getDomainState(["null-status-test"]);
+        const entry = result.get("null-status-test");
+        expect(entry).toBeDefined();
+        const policyIds = entry!.policies.map((p: any) => p.id);
+        expect(policyIds).toContain("P-null-status");
       });
 
       it("getConvergenceData returns findings_by_severity and cycle_summary_content", async () => {
