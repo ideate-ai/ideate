@@ -96,6 +96,7 @@ export interface Node extends NodeMeta {
 export type { EdgeType } from "./schema.js";
 export { EDGE_TYPES } from "./schema.js";
 import { EDGE_TYPES } from "./schema.js";
+import type { EdgeType } from "./schema.js";
 
 /** All valid EdgeType values for runtime validation. Canonical source: EDGE_TYPES in schema.ts. */
 export const ALL_EDGE_TYPES = EDGE_TYPES;
