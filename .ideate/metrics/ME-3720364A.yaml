@@ -1,0 +1,30 @@
+id: ME-3720364A
+type: metrics_event
+event_name: unknown
+timestamp: 2026-04-09T00:00:00Z
+skill: review
+phase: 4a
+cycle: 20
+agent_type: gap-analyst
+model: sonnet
+work_item: null
+wall_clock_ms: 317521
+turns_used: 74
+context_files_read:
+  - mcp/artifact-server/src/adapter.ts
+  - mcp/artifact-server/src/__tests__/adapter-contract.test.ts
+  - mcp/artifact-server/scripts/pretest.js
+  - mcp/artifact-server/src/db.ts
+  - mcp/artifact-server/src/schema.ts
+input_tokens: null
+output_tokens: null
+cache_read_tokens: null
+cache_write_tokens: null
+mcp_tools_called:
+  - ideate_get_context_package
+  - ideate_get_domain_state
+finding_count: 3
+finding_severities:
+  critical: 0
+  significant: 1
+  minor: 2

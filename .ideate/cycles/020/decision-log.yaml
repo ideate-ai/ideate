@@ -1,53 +1,35 @@
 id: decision-log
 type: cycle_summary
-reviewer: journal-keeper
-scope: full-audit
-date: "20260409"
-content: |-
-  ## Decision Log — Full Audit (2026-04-09)
-
-  ### Confirmed Issues
-
-  **C1 — Build-breaking: EdgeType not in scope in adapter.ts**
-  Line 96 uses `export type { EdgeType }` which does not bring `EdgeType` into local scope under NodeNext module resolution. Four interface definitions reference `EdgeType` directly. `npm run build` will fail with 4 TS2304 errors. Fix: add `import type { EdgeType } from "./schema.js"` to adapter.ts.
-
-  **S1 — TypeScript errors in test files (CI blocker)**
-  18 TypeScript errors across `adapter-contract.test.ts` and `indexer.test.ts` caught by `tsc --noEmit` but masked by vitest esbuild.
-
-  **S2-spec — Architecture doc stale counts**
-  12 extension tables (actual 16), 10 edge types (actual 16), Tools(17) (actual 22), Schema v1 (actual v5).
-
-  **S1-spec — Superseded tool name**
-  `ideate_get_work_item_context` in architecture doc (actual: `ideate_get_artifact_context`).
-
-  **SF3 — pretest.js blocks npm test**
-  `process.exit(1)` in pretest.js blocks fresh-checkout `npm test`.
-
-  ### Cross-Reviewer Correlations
-
-  **CR1: P-59 ALL_NODE_TYPES exhaustiveness** (code-reviewer S2 + gap-analyst SF1)
-  Both flag the same gap: the hardcoded `expectedTypes` list in the sync test cannot self-enforce P-59. A type-level exhaustiveness check would make the test self-maintaining.
-
-  **CR2: Architecture doc staleness as systemic pattern** (code-reviewer C1 + spec-reviewer S2)
-  Edge type count in architecture doc (10) matches the count when EdgeType was first defined; the actual count grew to 16 without a doc update. Both C1 and S2 trace to the same schema evolution event being incompletely propagated.
-
-  **CR3: getDomainState deprecation gap** (gap-analyst SF2 + adapter-contract.md)
-  Gap-analyst characterizes the deprecated/superseded filter as a contract-level gap; adapter-contract.md does not include a deprecation notice. Minor contradiction requires clarification.
-
-  ### Open Questions for User
-
-  1. EdgeType import omission — is `dist/` a pre-regression build? Mechanical fix (one line) but must be done before next merge.
-  2. Should ALL_NODE_TYPES use a type-level exhaustiveness check?
-  3. Are the 18 TypeScript errors in test files known? Is there a tsconfig exclusion plan?
-  4. Architecture doc update — work item now, or deferred maintenance pass?
-  5. Is getDomainState deprecated? If so, contract doc needs a deprecation notice.
-  6. How should pretest.js be fixed to not block fresh-checkout npm test?
-  7. What is the implementation timeline for the 9 merge-design decisions from WI-717?
-  8. What is the timeline for implementing graph edge coverage improvements from WI-715?
-
-  ### Project Health Assessment
-
-  The StorageAdapter validation layer is complete and correct. 1166 tests pass with 0 failures. Two items require immediate action before the next build: (1) EdgeType import omission in adapter.ts is build-breaking, and (2) architecture doc has diverged significantly from the actual system. The graph curation analysis (PH-038) surfaced three substantive deferred items: sparse edge connectivity, non-canonical legacy node types, and a multi-.ideate merge design blocked on 9 user decisions.
 cycle: 20
-content_hash: fe2dbe215705ee4b3e0b160c37832e03343727c45ad3ffb79c6564cc4a0a4d35
-token_count: 821
+reviewer: journal-keeper
+content: |-
+  ## Decision Log — Cycle 20 (WI-742/743/744)
+
+  ### Decision 1 — Move exhaustiveness sentinel from tests/ to adapter.ts src/
+  WI-742 incremental review found that `tests/` is excluded from tsconfig include glob (`src/**/*`), so the sentinel in `always-include-types-validation.test.ts` was never evaluated by `tsc --noEmit`. Resolution: added `_ExhaustiveNodeTypeCheck` sentinel inline in `adapter.ts:77-84`. This is evaluated on every `tsc --noEmit` run. The copy in tests/ is now redundant (deferred for removal).
+
+  ### Decision 2 — Remove : readonly NodeType[] widening annotation
+  The explicit type annotation on ALL_NODE_TYPES widened `typeof ALL_NODE_TYPES[number]` to the full `NodeType` union, making the exhaustiveness check tautological. Removed; `as const` retained. No call-site regressions (tsc clean, 1170 tests pass).
+
+  ### Decision 3 — Fix import ordering for EdgeType/EDGE_TYPES in adapter.ts
+  `import type { EdgeType }` moved to precede `export type { EdgeType }` re-export. Pattern is valid under NodeNext; comment retained explaining the dual import/re-export.
+
+  ### Decision 4 — Add null-status getDomainState test
+  New test in adapter-contract.test.ts guards `n.status IS NULL` clause in reader.ts:854. Confirms null-status policies appear in getDomainState results. Analogous paths for decisions/questions deferred (OQ-1).
+
+  ### Decision 5 — Remove three redundant as NodeType casts
+  Casts on `'domain_policy'` were redundant after WI-742 annotation removal. Removed for consistency with rest of test file.
+
+  ### Decision 6 — Correct stale handler names via MCP
+  architecture.yaml file registry: handleGetWorkItemContext→handleGetArtifactContext (context.ts:216), handleGetProjectStatus→handleGetWorkspaceStatus (analysis.ts:650). Used ideate_write_artifact only (P-37).
+
+  ### Deferred Items
+  - OQ-1: getDomainState null-status coverage for decisions/questions
+  - OQ-2: ALL_NODE_TYPES runtime length assertion too loose
+  - OQ-3: Remove redundant sentinel from always-include-types-validation.test.ts
+
+  ### Cross-References
+  - All three reviewers independently identified the dual-sentinel situation (code quality M1, spec M1, gap MN1) from different angles — all agree it is deferred.
+  - Spec reviewer confirmed P-59 compliance; gap analyst confirmed prior findings MI1/MI2/S1 all resolved.
+content_hash: 469a0c9e9f28124b38d4a6840494e709afef7fd62f80376bfc702d71d1f03203
+token_count: 604

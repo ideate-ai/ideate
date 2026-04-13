@@ -1,0 +1,17 @@
+id: ME-5D8C1D02
+type: metrics_event
+event_name: unknown
+timestamp: null
+event: agent_completed
+agent: worker
+work_item: WI-747
+skill: execute
+phase: 6b
+model: sonnet
+wall_clock_ms: 141511
+tool_uses: 18
+outcome: null
+rework_count: 0
+cycle_modified: 20
+content_hash: 88a20376cbb9df34d924b26bf49bf4ae5f05e61613fbcc2800b1e2f49dfe9217
+token_count: 62

@@ -20,6 +20,7 @@ import {
 import type { IdeateConfigJson } from "../config.js";
 import { handleUpdateConfig } from "../tools/config.js";
 import type { ToolContext } from "../types.js";
+import { CURRENT_SCHEMA_VERSION } from "../schema.js";
 
 let tmpDir: string;
 
@@ -35,6 +36,14 @@ beforeEach(() => {
 
 afterEach(() => {
   fs.rmSync(tmpDir, { recursive: true, force: true });
+});
+
+// -----------------------------------------------------------------------
+// CONFIG_SCHEMA_VERSION sync check
+// -----------------------------------------------------------------------
+
+it("CONFIG_SCHEMA_VERSION equals CURRENT_SCHEMA_VERSION", () => {
+  expect(CONFIG_SCHEMA_VERSION).toBe(CURRENT_SCHEMA_VERSION);
 });
 
 // -----------------------------------------------------------------------

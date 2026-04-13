@@ -1,40 +1,32 @@
 id: spec-adherence
 type: cycle_summary
+cycle: 20
 reviewer: spec-reviewer
-scope: full-audit
-date: "20260409"
 content: |-
-  ## Spec Review — Full Audit
+  ## Spec Review — Cycle 20 (WI-742/743/744)
 
-  **Verdict**: Fail
+  **Verdict**: Pass
 
   ### Significant Findings
 
-  **S1: Architecture doc lists superseded tool name `ideate_get_work_item_context` (P-38 violation)**
-  - **File**: `.ideate/plan/architecture.yaml:337`
-  - Architecture doc Section 5 tool table lists `ideate_get_work_item_context`. Actual registered tool name in `src/tools/index.ts` is `ideate_get_artifact_context` (renamed in WI-506). P-38 requires tool names to be verified from source, not derived docs.
-  - **Fix**: Update architecture.yaml Section 5 tool table to use `ideate_get_artifact_context`.
+  None.
 
-  **S2: Architecture doc reports stale component counts (P-35 violation)**
-  - **File**: `.ideate/plan/architecture.yaml:327,333`
-  - Says "12 extension tables" (actual: 16 — added `interview_questions`, `proxy_human_decisions`, `projects`, `phases`). Says "10 edge types" (actual: 16). Says "Tools (17)" (actual: 22, and the same document's own table lists 22 — the parenthetical contradicts the table). Schema section header says "Schema (v1)" (actual: v5).
-  - **Fix**: Update Section 5 counts — extension tables → 16, edge types → 16, Tools → 22, schema version → v5.
+  ### Minor Findings
 
-  ### Principle Adherence (Pass)
+  **M1: WI-742 criterion references a non-existent test file path**
 
-  - P-06: Skills use MCP tools only — confirmed across sampled skill files.
-  - P-26: SQLite is derived — YAML write precedes SQLite transaction in `writer.ts:625-661`.
-  - P-33: Tool descriptions have no file paths — 8 of 22 sampled, all clean.
-  - P-34: Tool descriptions under 50 words — all sampled compliant.
-  - P-42: `handleWriteArtifact` validates artifact type at `write.ts:227-231`.
-  - P-44: Atomic two-phase write pattern confirmed in `writer.ts`.
-  - P-47: Absolute paths via `resolveArtifactPath` using `path.join(ideateDir, ...)` at `writer.ts:546,654`.
-  - P-53: `adapter-contract.md` has no YAML/SQLite/file extension references.
-  - P-66: All 16 edge types in EDGE_TYPES, EDGE_TYPE_REGISTRY, and adapter-contract.md — in sync.
-  - P-67: Both derivation functions delete-before-insert.
-  - P-68: Trigger guards cover journal entries, cycle summaries, and work items.
-  - P-69: No stale `hasJournalUpdate` guard; `rebuildIndex` calls each derivation function exactly once.
-  - P-16: `plugin.json` and `marketplace.json` both at version `3.10.0`.
-cycle: 20
-content_hash: fb5b65f35437821a567c60b3764809f8357900b72d8904fb7abfac6d601ff0c1
-token_count: 594
+  The WI-742 acceptance criterion states the exhaustiveness check should function in `always-include-types-validation.test.ts`. The implementation placed the operative sentinel inline in `adapter.ts` instead (functionally superior — evaluated by every `tsc --noEmit`). The criterion intent is satisfied; the file-name reference in the criterion text is stale from the prior implementation.
+
+  ### Principle Adherence
+
+  - **P-59 (ALL_NODE_TYPES exhaustiveness)**: Pass — `adapter.ts:44` carries `as const` only; no `: readonly NodeType[]` annotation present. Sentinel at `adapter.ts:77-84` is structural and tautology-free.
+  - **P-35 (Architecture doc updated)**: Pass — `architecture.yaml:611` lists `handleGetArtifactContext` (matches `context.ts:216`); `:614` lists `handleGetWorkspaceStatus` (matches `analysis.ts:650`). Neither stale name present.
+  - **P-37 (No direct .ideate/ edits)**: Pass — WI-744 resolution attests MCP-only update; stale names absent from file confirms write occurred.
+
+  ### Work Item Cross-Check
+
+  - **WI-742**: Pass — all 6 criteria verified.
+  - **WI-743**: Pass — all 4 criteria verified (3 casts removed, null-status test present at line 1195).
+  - **WI-744**: Pass — both handler name corrections confirmed in architecture.yaml.
+content_hash: 31f28730acf673ae31bd0c7c08525bd07716794d3634ff7bbf58d0ec16f68e21
+token_count: 386

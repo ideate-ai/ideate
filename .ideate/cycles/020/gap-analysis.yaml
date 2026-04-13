@@ -1,42 +1,48 @@
 id: gap-analysis
 type: cycle_summary
+cycle: 20
 reviewer: gap-analyst
-scope: full-audit
-date: "20260409"
 content: |-
-  ## Gap Analysis — Full Audit
+  ## Gap Analysis — Cycle 20 (WI-742/743/744)
 
-  **Verdict**: Fail
+  **Verdict**: Pass
 
   ### Critical Findings
+
   None.
 
   ### Significant Findings
 
-  **SF1: No test verifying ALL_NODE_TYPES exhaustively covers the NodeType union (P-59)**
-  - P-59 requires a CI check or unit test. No test for `ALL_NODE_TYPES` exists in `src/__tests__/`. `NodeType` is a 27-member union; `ALL_NODE_TYPES` is a manually maintained parallel array. TypeScript does not enforce exhaustiveness of `readonly` arrays against union types at compile time. A missed type in `ALL_NODE_TYPES` causes silent `INVALID_NODE_TYPE` failures for valid types.
-  - **Recommendation**: Add test: verify `ALL_NODE_TYPES` length matches expected count and contains all known `NodeType` values.
-
-  **SF2: getDomainState deprecated/superseded filter tested only at tool level, not adapter-contract level**
-  - WI-734 verified the filter via `tools.test.ts` (`handleGetDomainState`). No test in `adapter-contract.test.ts` verifies `StorageAdapter.getDomainState` directly excludes deprecated/superseded policies. If the SQL filter is removed from the adapter, the tool-level test still passes. This is a contract gap — RemoteAdapter is not covered.
-  - **Recommendation**: Add test to `adapter-contract.test.ts`: insert active, deprecated, and superseded policies; call `adapter.getDomainState()`; assert deprecated and superseded are absent.
-
-  **SF3: `pretest.js` calls `process.exit(1)` blocking `npm test` in fresh checkouts**
-  - `scripts/pretest.js` calls `process.exit(1)` when `migrate-to-v3.js` is absent or stale. In a fresh checkout without the pre-built migration JS, `npm test` exits with code 1 and zero tests run. Comment says "advisory-only" but code contradicts this. No tracked work item.
-  - **Recommendation**: Replace `process.exit(1)` with `process.stderr.write(...)` only, consistent with stated intent.
+  None.
 
   ### Minor Findings
 
-  **MF1**: Equivalence test files listed in `adapter-contract.md:671-675` do not exist (`tests/adapters/` directory is absent).
-  **MF2**: ValidationError constructor change (WI-733) has no dedicated regression test; existing tests verify code/message but not constructor signature.
-  **MF3**: Q-125 ("skills directories contain only .gitkeep") is stale — `skills/` now has SKILL.md files for 10 skills.
-  **MF4**: Watcher→indexer integration test (`watcher.test.ts:200`) does not exercise derivation phase — P-24 gap (low severity; derivation has unit coverage).
-  **MF5**: No architecture document for artifact server's own component structure; `docs/` contains only `adapter-contract.md` and two supporting docs.
+  **MN1: Exhaustiveness sentinel in always-include-types-validation.test.ts is now redundant**
 
-  ### Suggestions
+  - **Component**: `tests/adapters/always-include-types-validation.test.ts:26-29`
+  - WI-742 added a functional sentinel in `adapter.ts:77-84`. The test file contains an identical sentinel. Both are now functional (the test-file copy is evaluated during test compilation; the adapter.ts copy by `tsc --noEmit`). Duplication creates maintenance confusion but no safety gap.
+  - **Recommendation**: Defer — harmless duplication. Remove in a polish cycle.
 
-  **S1**: `ALLOWLISTED_COMMANDS` in `hooks.ts` includes `cat` and `ls` — consider whether these expand the command surface unnecessarily.
-  **S2**: `adapter-contract.test.ts` getDomainState test verifies an active policy appears but does not assert `decisions` and `questions` arrays are also present.
-cycle: 20
-content_hash: 1ff02771a71da04e30e5b5919a60c14087591ba11e045d433736fed48cd313ba
-token_count: 756
+  **MN2: getDomainState null-status coverage limited to domain_policy — decisions/questions untested**
+
+  - **Component**: `adapter-contract.test.ts:1195-1210`
+  - WI-743 added null-status test for `domain_policy`. The decisions query (reader.ts:859-866) has no status filter (null-status decisions included, untested). The questions query (reader.ts:868-875) uses `WHERE n.status = 'open'` (null-status questions excluded, untested). Secondary boundary conditions.
+  - **Recommendation**: Defer — policies were the direct trigger. The decisions/questions behavior should be confirmed against the contract doc before testing.
+
+  **MN3: ALL_NODE_TYPES runtime length check uses loose lower-bound**
+
+  - **Component**: `tests/adapters/always-include-types-validation.test.ts:410-412`
+  - Comment says 'update this number when NodeType grows' but assertion is `toBeGreaterThan(0)` (not `toBe(27)`). Compile-time sentinel covers the meaningful case. Comment/assertion mismatch is misleading.
+  - **Recommendation**: Defer — polish item.
+
+  ### Prior Findings Verification
+
+  - **MI1 (stale handler names — WI-744)**: Resolved.
+  - **MI2 (null-status getDomainState — WI-743)**: Resolved. Test at line 1195 guards `n.status IS NULL` clause.
+  - **S1 (tautological exhaustiveness check — WI-742)**: Resolved. Annotation removed; sentinel in adapter.ts operative. Import ordering also resolved.
+
+  ### Architecture Deviations
+
+  None.
+content_hash: 6f3e6aeefdc4f38d14ded3e5a014060d2603238741013032937e17cdc0b76d93
+token_count: 555

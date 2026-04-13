@@ -1,0 +1,29 @@
+id: interview-refine-23
+type: refine
+cycle: 23
+trigger: cycle-22-review-fail
+entries:
+  - question: Are you here to address the cycle 22 review findings, make other changes, or both?
+    answer: All of the above findings.
+    domain: workflow
+  - question: "S1 (significant): extensionTables.length in schema.test.ts asserts local array length, not DB count. Address now, defer, or dismiss?"
+    answer: Address now.
+    domain: artifact-structure
+  - question: "M1-code: Stale '(3)' in checkSchemaVersion description. M2-code: .rejects.toThrow() missing error type. M3-code: Deferral comment has no WI ID. Address all, defer, or dismiss?"
+    answer: All of the above.
+    domain: artifact-structure
+  - question: "M1-gap: proxy_human_decisions has no column-structure test. M1-spec: chmod approach undocumented as POSIX-only. Address?"
+    answer: All of the above.
+    domain: artifact-structure
+  - question: WI-752/753 acceptance criteria wording mismatches (documentation only). Address?
+    answer: All of the above.
+    domain: workflow
+  - question: Do the existing guiding principles still apply for this cycle?
+    answer: Yes — confirmed implicitly by scope (test-only changes, no architecture changes).
+    domain: null
+  - question: Should the execution strategy change for this cycle?
+    answer: No change needed — standard batched parallel mode with sequential ordering for items sharing schema.test.ts.
+    domain: workflow
+cycle_modified: 21
+content_hash: 9e9f5cdeebee95676469bc78c569efbfc3263eb490399b85e54d46fd7f99c941
+token_count: 365

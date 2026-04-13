@@ -1,0 +1,38 @@
+id: ME-1702A3C9
+type: metrics_event
+event_name: unknown
+timestamp: 2026-04-10T00:00:00Z
+event_type: quality_summary
+skill: review
+cycle: null
+findings:
+  total: 10
+  by_severity:
+    critical: 1
+    significant: 2
+    minor: 3
+    suggestion: 4
+  by_reviewer:
+    code-reviewer:
+      critical: 0
+      significant: 0
+      minor: 1
+    spec-reviewer:
+      critical: 0
+      significant: 2
+      minor: 2
+    gap-analyst:
+      critical: 0
+      significant: 0
+      minor: 0
+  by_category:
+    requirements_missed: 0
+    bugs_introduced: 1
+    principles_violated: 2
+    implementation_gaps: 0
+    other: 3
+work_items_reviewed: 0
+andon_events: 0
+cycle_modified: 20
+content_hash: afc67bb89ee409b2da59aa6b5521d126f9b8e42714f77ada25c0a6baf99bff96
+token_count: 166

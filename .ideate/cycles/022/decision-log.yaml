@@ -1,0 +1,36 @@
+id: decision-log
+type: cycle_summary
+reviewer: journal-keeper
+content: |-
+  # Decision Log — Cycle 22 (WI-754 through WI-758)
+
+  ## Key Decisions
+
+  D-CY22-01: WI-754 DB-backed set comparison uses four-element exclusion (nodes, edges, node_file_refs, sqlite_*). The sqlite_* exclusion was added during execution when the test failed on sqlite_sequence. Correct and necessary. AC text not updated before close — P-76 violation caught at capstone.
+
+  D-CY22-02: WI-756 Phase 2 failure test uses D-194 pattern (chmod 444) with EACCES assertion and win32 platform guard. Two residual minor issues: existsSync assertion is vacuous (file cannot exist when writeFileSync threw before creating it), and no root-execution guard.
+
+  D-CY22-03: WI-757 proxy_human_decisions describe block is correct but incomplete: missing ON DELETE CASCADE test (every other extension table has one) and column count assertion.
+
+  D-CY22-04: WI-758 deferral comment now references WI-758 and D-195 (ESM module-level constant limitation). No-registry-entry path remains untested.
+
+  ## Convergence Record
+  | Cycle | Critical | Significant | Minor |
+  |---|---|---|---|
+  | 20 | 0 | 1 | 6 |
+  | 21 | 1 (full audit) | 2 | 8 |
+  | 22 (this) | 0 | 4 | 5 |
+
+  Cycle 22 significant count rose from 3 to 4, driven by schema.test.ts column coverage gaps (projects.current_phase_id, phases.completed_date, proxy_human_decisions CASCADE). These are pre-existing test coverage gaps surfaced by the cycle's schema-testing focus. Minor count dropped. No criticals. Pattern: converging on test coverage completeness.
+
+  ## Cross-References
+  CR1: AC-text-divergence is recurring. P-76 enacted after cycle 22 (WI-751-753). Cycle 23 produced a new instance in WI-754. Detection is reliable; prevention is not yet enforced by process.
+
+  CR2: WI-757 coverage — code-reviewer confirmed correctness of what was implemented; gap-analyst found CASCADE test and count assertion missing. Complementary, not contradictory.
+
+  CR3: ESM vi.spyOn constraint — D-194 applied correctly in WI-756. Two minor residuals (existsSync vacuous, no root guard) are carry-forward items.
+content_hash: 477e6665a834e7036c74aa7775cc8dc9a6cf4cad0ccd43d85807a32b80286d70
+token_count: 574
+file_path: .ideate/cycles/068/decision-log.yaml
+cycle: 22
+cycle_modified: 21

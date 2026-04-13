@@ -1,0 +1,36 @@
+id: ME-BB7DF9B1
+type: metrics_event
+event_name: gap-analyst
+timestamp: 2026-04-11T14:00:00Z
+skill: review
+phase: 4a
+cycle: 21
+agent_type: gap-analyst
+model: sonnet
+work_item: null
+wall_clock_ms: 285909
+turns_used: null
+context_files_read:
+  - mcp/artifact-server/src/__tests__/migrations.test.ts
+  - mcp/artifact-server/src/adapters/local/writer.ts
+  - mcp/artifact-server/src/__tests__/write-transaction.test.ts
+  - mcp/artifact-server/src/migrations.ts
+  - mcp/artifact-server/tests/adapters/always-include-types-validation.test.ts
+  - mcp/artifact-server/src/adapter.ts
+  - mcp/artifact-server/src/__tests__/schema.test.ts
+  - mcp/artifact-server/src/tools/metrics.ts
+input_tokens: null
+output_tokens: null
+cache_read_tokens: null
+cache_write_tokens: null
+mcp_tools_called:
+  - ideate_get_context_package
+  - ideate_get_review_manifest
+finding_count: 6
+finding_severities:
+  critical: 0
+  significant: 2
+  minor: 4
+cycle_modified: 20
+content_hash: b43f3afa6cf5347e9756fcb318e8ffaf1fdc9a92cc12b653eed41a5f09bd0321
+token_count: 234

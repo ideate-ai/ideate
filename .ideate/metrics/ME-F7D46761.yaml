@@ -1,0 +1,19 @@
+id: ME-F7D46761
+type: metrics_event
+event_name: unknown
+timestamp: 2026-04-11
+event: domain_curator.complete
+cycle: 22
+policies_added: 2
+decisions_added: 2
+questions_added: 0
+conflicts_flagged: 0
+new_policy_ids:
+  - P-75
+  - P-76
+new_decision_ids:
+  - D-194
+  - D-195
+cycle_modified: 21
+content_hash: 2e24024d076e1c7f15ab60f5f235be520baeb778e5b7556f9714609c15551589
+token_count: 71

@@ -1,0 +1,22 @@
+id: ME-67132C7E
+type: metrics_event
+event_name: unknown
+timestamp: 2026-04-12T00:00:00Z
+skill: refine
+phase: "8"
+cycle: null
+agent_type: null
+model: null
+work_item: null
+wall_clock_ms: null
+turns_used: null
+context_files_read: []
+input_tokens: null
+output_tokens: null
+cache_read_tokens: null
+cache_write_tokens: null
+mcp_tools_called: []
+summary: "Agents spawned: 1 (architect: opus, 152660ms). Total wall-clock: 152660ms. Models used: opus. Slowest agent: architect — 152660ms."
+cycle_modified: 21
+content_hash: e7541c698a1a9865b9ada87ee6063b107cb8d671e38a37e595a91cdb16214de7
+token_count: 125

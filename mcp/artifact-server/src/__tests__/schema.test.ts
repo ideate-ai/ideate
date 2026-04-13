@@ -76,7 +76,7 @@ describe("createSchema — nodes table", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Extension tables — 15 tables, each with FK to nodes(id)
+// Extension tables — 16 tables, each with FK to nodes(id)
 // ---------------------------------------------------------------------------
 
 describe("createSchema — extension tables", () => {
@@ -95,16 +95,21 @@ describe("createSchema — extension tables", () => {
     "document_artifacts",
     "interview_questions",
     "projects",
+    "proxy_human_decisions",
     "phases",
   ];
 
-  it("creates all 15 extension tables", () => {
+  it("creates all 16 extension tables", () => {
     const db = freshDb();
     const tables = tableNames(db);
     for (const name of extensionTables) {
       expect(tables, `expected extension table '${name}' to exist`).toContain(name);
     }
-    expect(extensionTables.length).toBe(15);
+    const dbTables = tableNames(db);
+    const dbExtensionTables = dbTables
+      .filter((t) => !["nodes", "edges", "node_file_refs"].includes(t) && !t.startsWith("sqlite_"))
+      .sort();
+    expect(dbExtensionTables).toEqual([...extensionTables].sort());
   });
 
   it("does not create an interview_responses table", () => {
@@ -603,9 +608,9 @@ describe("checkSchemaVersion", () => {
     }
   });
 
-  it("returns true when user_version matches CURRENT_SCHEMA_VERSION (3)", () => {
+  it("returns true when user_version matches CURRENT_SCHEMA_VERSION (5)", () => {
     const db = new Database(":memory:");
-    db.pragma(`user_version = ${CURRENT_SCHEMA_VERSION}`); // 3
+    db.pragma(`user_version = ${CURRENT_SCHEMA_VERSION}`); // 5
     const result = checkSchemaVersion(db, "/nonexistent/path/not/used.db");
     expect(result).toBe(true);
     db.close();
@@ -677,10 +682,10 @@ describe("createSchema — projects table", () => {
     expect(tables).toContain("projects");
   });
 
-  it("has expected columns: id, name, description, intent, scope_boundary, success_criteria, appetite, steering, horizon, status", () => {
+  it("has expected columns: id, name, description, intent, scope_boundary, success_criteria, appetite, steering, horizon, status, current_phase_id", () => {
     const db = freshDb();
     const cols = columnNames(db, "projects");
-    for (const col of ["id", "name", "description", "intent", "scope_boundary", "success_criteria", "appetite", "steering", "horizon", "status"]) {
+    for (const col of ["id", "name", "description", "intent", "scope_boundary", "success_criteria", "appetite", "steering", "horizon", "status", "current_phase_id"]) {
       expect(cols, `expected projects to have column '${col}'`).toContain(col);
     }
   });
@@ -713,10 +718,10 @@ describe("createSchema — phases table", () => {
     expect(tables).toContain("phases");
   });
 
-  it("has expected columns: id, name, description, project, phase_type, intent, steering, status, work_items", () => {
+  it("has expected columns: id, name, description, project, phase_type, intent, steering, status, work_items, completed_date", () => {
     const db = freshDb();
     const cols = columnNames(db, "phases");
-    for (const col of ["id", "name", "description", "project", "phase_type", "intent", "steering", "status", "work_items"]) {
+    for (const col of ["id", "name", "description", "project", "phase_type", "intent", "steering", "status", "work_items", "completed_date"]) {
       expect(cols, `expected phases to have column '${col}'`).toContain(col);
     }
   });
@@ -740,6 +745,58 @@ describe("createSchema — phases table", () => {
     expect(before).toBeDefined();
     db.prepare(`DELETE FROM nodes WHERE id = 'PH-001'`).run();
     const after = db.prepare(`SELECT id FROM phases WHERE id = 'PH-001'`).get();
+    expect(after).toBeUndefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// proxy_human_decisions table
+// ---------------------------------------------------------------------------
+
+describe("createSchema — proxy_human_decisions table", () => {
+  it("has all 8 expected columns", () => {
+    const db = freshDb();
+    const cols = columnNames(db, "proxy_human_decisions");
+    for (const col of ["id", "cycle", "trigger", "triggered_by", "decision", "rationale", "timestamp", "status"]) {
+      expect(cols, `expected proxy_human_decisions to have column '${col}'`).toContain(col);
+    }
+  });
+
+  it("NOT NULL constraints: cycle, trigger, decision, timestamp, status are required; triggered_by and rationale are nullable", () => {
+    const db = freshDb();
+    type ColInfo = { name: string; notnull: number };
+    const colInfo = db.prepare("PRAGMA table_info('proxy_human_decisions')").all() as ColInfo[];
+    const byName = Object.fromEntries(colInfo.map((c) => [c.name, c.notnull]));
+
+    // Required (NOT NULL)
+    for (const col of ["cycle", "trigger", "decision", "timestamp", "status"]) {
+      expect(byName[col], `expected '${col}' to be NOT NULL`).toBe(1);
+    }
+
+    // Nullable
+    for (const col of ["triggered_by", "rationale"]) {
+      expect(byName[col], `expected '${col}' to be nullable`).toBe(0);
+    }
+  });
+
+  it("has idx_proxy_human_decisions_cycle index", () => {
+    const db = freshDb();
+    expect(indexNames(db, "proxy_human_decisions")).toContain("idx_proxy_human_decisions_cycle");
+  });
+
+  it("ON DELETE CASCADE: deleting a node cascades to proxy_human_decisions row", () => {
+    const db = freshDb();
+    db.pragma("foreign_keys = ON");
+    db.prepare(
+      `INSERT INTO nodes (id, type, content_hash, file_path) VALUES ('PHD-001', 'proxy_human_decision', 'hash-phd', '/tmp/phd-001.yaml')`
+    ).run();
+    db.prepare(
+      `INSERT INTO proxy_human_decisions (id, cycle, "trigger", decision, timestamp, status) VALUES ('PHD-001', 1, 'test-trigger', 'test-decision', '2026-04-12', 'deferred')`
+    ).run();
+    const before = db.prepare(`SELECT id FROM proxy_human_decisions WHERE id = 'PHD-001'`).get();
+    expect(before).toBeDefined();
+    db.prepare(`DELETE FROM nodes WHERE id = 'PHD-001'`).run();
+    const after = db.prepare(`SELECT id FROM proxy_human_decisions WHERE id = 'PHD-001'`).get();
     expect(after).toBeUndefined();
   });
 });

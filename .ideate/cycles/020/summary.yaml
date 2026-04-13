@@ -1,95 +1,63 @@
 id: summary
 type: cycle_summary
-scope: full-audit
-date: "20260409"
+cycle: 20
 content: |-
-  # Review Summary — Full Audit (2026-04-09)
+  # Review Summary — Cycle 20
 
   ## Overview
-
-  The StorageAdapter validation layer (PR-002, PH-037) is complete and functionally correct. The full test suite passes (1166 tests, 0 failures). This audit found one build-breaking TypeScript import omission, two significant architecture doc staleness violations, and three significant testing/tooling gaps. No data-correctness issues were found.
+  Cycle 20 addressed all three findings from the prior capstone review of WI-736–741: the tautological ALL_NODE_TYPES exhaustiveness check (S1), test polish (MI2), and stale architecture doc handler names (MI1). All three work items passed review. The exhaustiveness check required rework during incremental review to move the sentinel from the tsconfig-excluded tests/ directory to adapter.ts src/, but resolved cleanly. No critical or significant findings were produced.
 
   ## Phase Convergence
+  Phase: PH-017 (implementation)
+  Cycles completed in this phase: 1 / 5 (threshold)
+  Convergence status: Converging
 
-  Phase: PH-017
-  Convergence status: Not assessed (full audit — cycle-level tracking not applicable)
+  Trend: First documented cycle in PH-017. Zero critical findings, zero significant findings. Three minor findings (all deferred). Prior S1 finding from cycle 19 capstone fully resolved.
 
   ## Project Progress
 
   | Success Criterion | Status |
   |---|---|
-  | StorageAdapter interface defined and documented in adapter-contract.md | pass |
-  | LocalAdapter implements all StorageAdapter methods | pass |
-  | RemoteAdapter implements all StorageAdapter methods | pass |
-  | deleteNode correctness (YAML rollback on SQLite failure) | pass |
-  | All write handlers use atomic write patterns (P-44) | pass |
-  | Adapter equivalence tests cover CRUD, traversal, journal, query | pass |
-  | 1166 tests passing, 0 failures | pass |
-  | npm run build produces clean build artifact | fail — EdgeType import omission (C1) |
-  | Architecture doc current with implementation (P-35, P-38) | fail — stale counts + renamed tool |
-  | P-59 ALL_NODE_TYPES sync enforced by self-maintaining test | partial — test uses hardcoded list |
+  | ALL_NODE_TYPES exhaustiveness check operative (P-59) | pass |
+  | Architecture doc file registry accurate (P-35) | pass |
+  | No stale handler names in architecture.yaml | pass |
+  | getDomainState null-status policy inclusion guarded by test | pass |
+  | Zero tsc errors | pass |
+  | All 1168+ tests pass | pass |
 
   ## Critical Findings
 
-  - [code-reviewer] **`EdgeType` not imported in `adapter.ts`** — `export type { EdgeType }` at line 96 does not bring the name into local scope under NodeNext resolution. Four interface definitions (`Edge`, `GraphQuery`, `QueryResult`, `StorageAdapter.removeEdges`) use `EdgeType` and will fail with TS2304 on `npm run build`. Fix: add `import type { EdgeType } from "./schema.js"` at line 98. Relates to: cross-cutting (schema-adapter boundary)
+  None.
 
   ## Significant Findings
 
-  - [code-reviewer] **18 TypeScript errors in test files not caught by vitest** — `adapter-contract.test.ts` (4 errors) and `indexer.test.ts` (14 errors) fail `tsc --noEmit`. Vitest masks them via esbuild. CI `tsc` checks fail. Relates to: cross-cutting
-
-  - [code-reviewer] **P-59 sync test uses hardcoded `expectedTypes` list** — test in `always-include-types-validation.test.ts` can pass even if `NodeType` union diverges from `ALL_NODE_TYPES`, as long as `expectedTypes` is also not updated. Self-enforcing alternative required. Relates to: P-59
-
-  - [spec-reviewer] **Architecture doc lists superseded tool name** — `ideate_get_work_item_context` at `architecture.yaml:337`; actual registered name is `ideate_get_artifact_context`. P-38 violation. Relates to: P-38
-
-  - [spec-reviewer] **Architecture doc stale component counts** — extension tables 12 (actual 16), edge types 10 (actual 16), tools 17 (actual 22), schema v1 (actual v5). P-35 violation. Relates to: P-35
-
-  - [gap-analyst] **No test verifying `ALL_NODE_TYPES` exhaustively covers `NodeType` union** — zero grep hits for `ALL_NODE_TYPES` in `src/__tests__/`. A type missed in the array causes silent `INVALID_NODE_TYPE` failures. P-59 gap. Relates to: P-59
-
-  - [gap-analyst] **`getDomainState` deprecated/superseded filter untested at adapter-contract level** — WI-734 verified the SQL filter via tool-level test only. `adapter-contract.test.ts` has no assertion that deprecated/superseded policies are excluded from `getDomainState` results. Fix: add contract-level test. Relates to: WI-734
-
-  - [gap-analyst] **`pretest.js` calls `process.exit(1)`, blocking `npm test` in fresh checkouts** — script comment says "advisory-only" but code calls exit on ENOENT or stale JS. Fresh-checkout CI silently runs zero tests. Relates to: cross-cutting
+  None.
 
   ## Minor Findings
 
-  - [code-reviewer] `handleUpdateWorkItems` pushes to `failures` before re-throwing — dead code (`write.ts:322-326`) → carry-forward
-  - [code-reviewer] `batchMutate` stores `cycle_modified: null` inconsistently vs `putNode` (`writer.ts:1314`) → carry-forward
-  - [code-reviewer] `batchMutate` scope collision detection ignores existing DB nodes (`writer.ts:1176-1232`) → carry-forward
-  - [code-reviewer] `deleteNode` silent split-brain path when rollback fails with null `originalContent` (`writer.ts:901-906`) → carry-forward
-  - [code-reviewer] `tsconfig.json` excludes only `migrate.test.ts`; 18-error test files still included (`tsconfig.json:16`) → carry-forward
-  - [gap-analyst] Equivalence test files listed in `adapter-contract.md:671-675` do not exist → carry-forward
-  - [gap-analyst] ValidationError constructor signature change has no dedicated regression test → carry-forward
-  - [gap-analyst] Q-125 ("skills directories contain only .gitkeep") is stale → carry-forward
-  - [gap-analyst] Watcher→indexer integration test does not cover derivation phase (P-24 gap) → carry-forward
-  - [gap-analyst] No architecture document for artifact server component structure → carry-forward
+  - [code-reviewer] Redundant exhaustiveness sentinel remains in tests/adapters/always-include-types-validation.test.ts:26-29 (not evaluated by tsc --noEmit, misleads readers about canonical location) — relates to: P-59 → carry-forward
+  - [gap-analyst] getDomainState null-status coverage tested for domain_policy only; domain_decisions (no status filter) and domain_questions (WHERE status = 'open') lack null-status boundary tests — relates to: WI-743, cross-cutting → carry-forward
+  - [gap-analyst] ALL_NODE_TYPES runtime length assertion uses `toBeGreaterThan(0)` with a misleading comment implying a precise count — relates to: WI-742 → carry-forward
+  - [spec-reviewer] WI-742 acceptance criterion 3 references always-include-types-validation.test.ts as the sentinel location; implementation correctly placed sentinel in adapter.ts instead (intent satisfied, text stale) — relates to: WI-742 → carry-forward
 
   ## Suggestions
 
-  - [gap-analyst] Review `ALLOWLISTED_COMMANDS` in `hooks.ts` (`cat`, `ls`) for necessity
-  - [gap-analyst] `adapter-contract.test.ts` getDomainState test does not assert `decisions` and `questions` arrays present
+  None.
 
   ## Findings Requiring User Input
 
-  1. **EdgeType import omission** — Mechanical one-line fix. Should this be a standalone work item or part of the next refinement batch?
-  2. **Architecture doc staleness** — Schedule as dedicated work item now, or defer to a future documentation pass?
-  3. **TypeScript errors in test files** — Is there a CI `tsc` check currently? Are these errors known? Fix strategy: exclude test files from tsconfig, or fix the type assertions?
-  4. **pretest.js behavior** — Fix to advisory-only (remove `process.exit(1)`), or intentional design?
-  5. **P-59 test approach** — Hardcoded list (current) vs type-level exhaustiveness check?
+  None — all findings can be resolved from existing context.
 
   ## Proposed Refinement Plan
 
-  The review identified 1 critical and 6 significant findings requiring a refinement cycle:
+  No critical or significant findings require a refinement cycle. The project is ready for user evaluation.
 
-  **Immediate (before next build):**
-  - Fix EdgeType import omission in adapter.ts (1-line change, WI-sized small)
+  The four minor carry-forward items are all polish/hygiene:
+  1. Remove redundant sentinel from tests/adapters/always-include-types-validation.test.ts:23-29
+  2. Add getDomainState null-status boundary tests for domain_decisions and domain_questions
+  3. Tighten ALL_NODE_TYPES runtime length assertion to `toBe(27)` and add update convention
+  4. (No action needed on WI-742 stale criterion — WI is closed and archived)
 
-  **Short-term (next refinement cycle):**
-  - Update architecture doc (stale counts + tool name) — doc-only changes, medium
-  - Fix test TypeScript errors (18 errors in 2 test files) — small
-  - Add P-59 self-enforcing test (replace hardcoded list) — small
-  - Add adapter-contract test for getDomainState deprecated/superseded exclusion — small
-  - Fix pretest.js to not block npm test — small
-
-  Estimated: 5-6 work items, all small-medium. `/ideate:refine` with scope "address full audit findings".
-cycle: 20
-content_hash: 26ea246b826badcb53d1111f6bdc58917d197741dca32dff2c8bbe1138d22193
-token_count: 1656
+  These can be addressed in a future polish cycle via /ideate:refine or deferred indefinitely.
+content_hash: 399f12de7f67b0b38e234e9ccb453fd53571e23a76214065b8b00c861736ac7f
+token_count: 770

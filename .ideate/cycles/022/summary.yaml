@@ -1,28 +1,83 @@
 id: summary
 type: cycle_summary
 content: |-
-  ## Cycle 22 Summary
+  # Review Summary — Cycle 068
 
-  **Overall Verdict**: Pass — Converged
+  ## Overview
+  Cycle 068 delivered model_overrides config support, two new edge types (governed_by, informed_by) in EDGE_TYPE_REGISTRY, the ideate_update_config MCP tool, model_overrides clauses in six skill files, and the /ideate:settings skill. The implementation is largely correct and all 416 tests pass. Two significant defects prevent the cycle from closing: the settings skill's 'Clear model override' feature is silently non-functional due to a merge strategy design gap, and an active policy (P-17) is in direct conflict with the new write path.
 
-  All three capstone reviewers returned Pass with zero critical and zero significant findings.
+  ## Significant Findings
+  - [code-reviewer] handleUpdateConfig cannot delete keys from model_overrides — the key-level merge spreads rawStored first, re-injecting any key absent from the patch. Settings skill 'Clear model override' silently fails; key persists in config.json — relates to: WI-364
+  - [code-reviewer] Writing model_overrides: {} violates sparse write invariant — when stored config has overrides and patch supplies {}, an empty object is written rather than the key being absent — relates to: WI-362
+  - [gap-analyst] handleUpdateConfig cannot delete keys — same root cause as code-reviewer S1, identified from the settings skill usage angle: no key deletion mechanism exists, making Clear model override a non-functional UI element — relates to: WI-364
+  - [gap-analyst] skills/autopilot/SKILL.md Phase 0 missing model_overrides clause — WI-363 updated 6 skill files but omitted the autopilot coordinator; proxy-human spawned by the coordinator will not honor model_overrides — relates to: WI-363
+  - [spec-reviewer] P-17 violation — P-17 states config.json is updated only by migration scripts; ideate_update_config writes config.json at any time; P-17.amended is null — relates to: P-17, cross-cutting
 
-  - Code quality: Pass (3 minor, all pre-existing)
-  - Spec adherence: Pass (1 minor — removeEdges empty-array asymmetry, pre-existing)
-  - Gap analysis: Pass (4 minor, all deferred)
+  ## Minor Findings
+  - [code-reviewer] No test for key deletion from model_overrides in handleUpdateConfig test suite — relates to: WI-362
+  - [gap-analyst] Plugin version not bumped after adding /ideate:settings skill and ideate_update_config tool — P-16 violation — relates to: cross-cutting
+  - [spec-reviewer] name: frontmatter key in skills/settings/SKILL.md has no precedent in other SKILL.md files — relates to: WI-364
+  - [spec-reviewer] WI-361 acceptance criteria text uses valid_sources/valid_targets but implementation uses source_types/target_types — relates to: WI-361
 
-  **Note**: `ideate_get_convergence_status` returned `principle_verdict: unknown` due to a parsing issue. Convergence was confirmed from reviewer verdicts directly.
+  ## Findings Requiring User Input
+  - P-17 conflict with ideate_update_config: P-17 says config.json is written only by migration scripts. The settings skill and ideate_update_config tool are a deliberate new write path. P-17 must be amended or superseded. Decision needed: is runtime config mutation via MCP the intended design, replacing the migration-only guard? Existing context does not resolve this because P-17 was written before the settings skill was conceived.
 
-  ## Work Items
-  - WI-680: adapter-contract.md deleteNode/removeEdges validation sections — Pass after rework
-  - WI-681: ppr.ts ValidationError details + ppr.test.ts .code assertions — Pass
-  - WI-682: putEdge/removeEdges equivalence test pairs — Pass
+  ## Proposed Refinement Plan
+  Three Significant findings require a refinement cycle before the cycle can close.
 
-  ## Test Suite
-  1053 passed, 289 skipped, 0 failed (1342 total)
-content_hash: 340cafd6c01c7f0b2e37ab0551fdd32248170d8999162fa19bffa1762c172040
-token_count: 264
+  1. Fix handleUpdateConfig key deletion (code-reviewer S1+S2, gap-analyst EC1): Change model_overrides merge in tools/config.ts to replace-all semantics when patch.model_overrides is provided. Strip empty objects after merge. Add deletion test. Update settings skill if merge semantics change affects the clear flow documentation.
+
+  2. Add model_overrides clause to skills/autopilot/SKILL.md Phase 0 (gap-analyst II1): One-line addition mirroring the pattern in all other skills.
+
+  3. Amend P-17 (spec-reviewer): After user confirms intent, amend P-17 to carve out ideate_update_config as a sanctioned write path for runtime config mutation via the settings skill.
+
+  Minor items to bundle: plugin version bump (MI1), remove name: frontmatter key from settings skill (N1).
+
+  Estimated scope: 3-4 small work items. No architecture changes required.
+content_hash: 51a9d0b0e9179c253ced601bb28b6644d72b578e591f60e8f31cd6673944e68d
+token_count: 1546
 file_path: .ideate/cycles/068/summary.yaml
 cycle: 22
-cycle_modified: 19
-verdict: Pass
+phase: PH-017
+phase_name: Documentation & Cleanup
+date: 2026-04-13
+scope: "9 work items (WI-754 through WI-762): test-quality fixes eliminating vacuous assertions, adding missing coverage, correcting documentation"
+overall_verdict: Pass
+reviewer_verdicts:
+  code-reviewer: Pass
+  spec-reviewer: Pass
+  gap-analyst: Pass (partial — stream idle timeout)
+critical_findings: 0
+significant_findings: 0
+minor_findings:
+  - id: M1
+    source: code-reviewer
+    title: migrations.test.ts not staged for commit
+    description: WI-758 target file is untracked (git ??). Functional but not in git history.
+  - id: M2
+    source: code-reviewer
+    title: Uncommitted source changes outside WI-754-762 scope
+    description: 12 production source files + 3 test files have unstaged modifications from earlier work (logging refactor, autopilot_state NodeType). Pass tests but need commit.
+  - id: M3
+    source: code-reviewer
+    title: SQLite reserved keyword 'trigger' not documented
+    description: proxy_human_decisions.trigger requires double-quoting in DML. No comment in schema.ts DDL.
+  - id: N1
+    source: spec-reviewer
+    title: WI-757 describe block name uses file pattern not spec shorthand
+    description: Spec says describe('proxy_human_decisions table') but implementation uses describe('createSchema — proxy_human_decisions table') matching established file convention. Not a violation.
+carry_forward_gaps:
+  - id: CF1
+    title: 8 extension tables lack column-structure tests
+  - id: CF2
+    title: 4 extension tables have partial column-structure tests
+  - id: CF3
+    title: 10 of 16 extension tables lack CASCADE tests
+  - id: CF4
+    title: ALL_NODE_TYPES.length hardcoded count assertion
+acceptance_criteria_status: All machine-verifiable AC for WI-754 through WI-762 satisfied
+test_results: 1,187 tests pass, 0 failures
+requires_human_review:
+  - "WI-759: Confirm WI-754.yaml acceptance criteria accurately describes sqlite_* filter approach"
+convergence_assessment: Phase converging well. All in-scope work items pass all three review perspectives. Remaining gaps are outside PH-017 scope and suitable for future phases.
+cycle_modified: 21

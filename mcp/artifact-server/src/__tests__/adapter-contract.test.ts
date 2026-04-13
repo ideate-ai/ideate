@@ -1209,6 +1209,54 @@ export function runAdapterContractTests(
         expect(policyIds).toContain("P-null-status");
       });
 
+      it("includes domain_decisions with null/absent status in getDomainState results", async () => {
+        await adapter.putNode({
+          id: "D-null-status",
+          type: "domain_decision",
+          properties: {
+            domain: "null-status-decision-test",
+            title: "Null status decision",
+            body: "Should appear in results",
+            // No status field — defaults to null
+          },
+        });
+        const result = await adapter.getDomainState(["null-status-decision-test"]);
+        const entry = result.get("null-status-decision-test");
+        expect(entry).toBeDefined();
+        const decisionIds = entry!.decisions.map((d: any) => d.id);
+        expect(decisionIds).toContain("D-null-status");
+      });
+
+      it("excludes domain_questions with null/absent status from getDomainState results", async () => {
+        // Anchor the domain with a decision so it always appears in the result map.
+        // Without an anchor, a null-status question causes the domain to never enter
+        // domainSet, making result.get(...) return undefined regardless of behavior.
+        await adapter.putNode({
+          id: "D-anchor-for-q-test",
+          type: "domain_decision",
+          properties: {
+            domain: "null-status-question-test",
+            title: "Anchor decision",
+            body: "Ensures domain appears in getDomainState results",
+          },
+        });
+        await adapter.putNode({
+          id: "Q-null-status",
+          type: "domain_question",
+          properties: {
+            domain: "null-status-question-test",
+            title: "Null status question",
+            body: "Should not appear in results",
+            // No status field — defaults to null; questions require status='open'
+          },
+        });
+        const result = await adapter.getDomainState(["null-status-question-test"]);
+        const entry = result.get("null-status-question-test");
+        expect(entry).toBeDefined();
+        const questionIds = entry!.questions.map((q: any) => q.id);
+        expect(questionIds).not.toContain("Q-null-status");
+      });
+
       it("getConvergenceData returns findings_by_severity and cycle_summary_content", async () => {
         const data = await adapter.getConvergenceData(1);
         expect(data).toHaveProperty("findings_by_severity");

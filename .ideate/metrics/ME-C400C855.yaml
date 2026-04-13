@@ -1,0 +1,26 @@
+id: ME-C400C855
+type: metrics_event
+event_name: unknown
+timestamp: 2026-04-10T00:00:00Z
+skill: execute
+phase: "7"
+agent_type: code-reviewer
+model: sonnet
+work_item: WI-745
+wall_clock_ms: 31030
+turns_used: 5
+context_files_read:
+  - /Users/dan/code/ideate/mcp/artifact-server/tests/adapters/always-include-types-validation.test.ts
+input_tokens: null
+output_tokens: null
+cache_read_tokens: null
+cache_write_tokens: null
+mcp_tools_called: []
+outcome: rework
+finding_count: 1
+finding_severities:
+  critical: 0
+  significant: 0
+  minor: 1
+first_pass_accepted: false
+rework_count: null

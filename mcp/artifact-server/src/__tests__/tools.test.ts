@@ -30,6 +30,7 @@ import { handleTool, signalIndexReady } from "../tools/index.js";
 import { handleEmitMetric } from "../tools/metrics.js";
 import { handleBootstrapWorkspace } from "../tools/bootstrap.js";
 import { handleManageAutopilotState } from "../tools/autopilot-state.js";
+import { CONFIG_SCHEMA_VERSION } from "../config.js";
 
 // ---------------------------------------------------------------------------
 // Setup / teardown
@@ -2756,7 +2757,7 @@ describe("handleBootstrapWorkspace", () => {
     const configPath = path.join(bootstrapIdeateDir, "config.json");
     expect(fs.existsSync(configPath)).toBe(true);
     const config = JSON.parse(fs.readFileSync(configPath, "utf8"));
-    expect(config.schema_version).toBe(4);
+    expect(config.schema_version).toBe(CONFIG_SCHEMA_VERSION);
     expect(config.project_name).toBe("test-project");
 
     // Verify subdirectories exist

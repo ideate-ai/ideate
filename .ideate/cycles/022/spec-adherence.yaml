@@ -2,34 +2,47 @@ id: spec-adherence
 type: cycle_summary
 reviewer: spec-reviewer
 content: |-
-  ## Verdict: Pass
+  ## Verdict: Fail
 
-  ## Principle Adherence: Pass
-  - P-44: deleteNode two-phase write complete. Phase 0 saves content, Phase 1 unlinks (ENOENT-tolerant), Phase 2 exclusive transaction; catch restores YAML.
-  - P-53: No storage-format references in new contract entries.
-  - P-64: All ValidationError codes conform to recognized patterns.
-  - D-177: LocalAdapter tests unconditional throughout.
-  - P-002: No new validation logic without tests.
+  ## Principle Violations
 
-  ## Minor Findings
+  ### P-17 Violation: config.json updated only by migration scripts
+  - P-17 states: 'config.json is written once and updated only by migration scripts, never by execute, review, or refine phases.'
+  - The ideate_update_config tool (WI-362) writes config.json via MCP at any time, invoked by the settings skill and available to any caller. P-17.amended is null — no amendment covers this new write path.
+  - This is a direct conflict. P-17 must be amended to carve out the settings skill / ideate_update_config tool, or a new superseding policy is needed.
 
-  ### M1: nextId Validation entry lists only 3 types; WI-709 criterion specified more
-  - adapter-contract.md line 313: lists `journal_entry`, `work_item`, `finding`
-  - WI-709 criterion also listed `guiding_principle`, `constraint`, `phase`, `project`
-  - The worker verified from writer.ts that only 3 types are supported for ID generation, so the doc is correct; the criterion was overstated. Verify implementation supports only 3 types to close.
-content_hash: 6fb124b2efcdc84a604874145cf795503294eedfb08767f1ab78786e567980af
-token_count: 515
+  ## Adherence Evidence (Passing)
+  - GP-14 / MCP-only artifact access: All 6 updated skills access config exclusively via ideate_get_config() and ideate_update_config. No direct .ideate/ path references in any skill file.
+  - P-33 (no file paths in responses): tools/config.ts response is { status: 'updated', updated_keys: [...] } — no file paths.
+  - P-34 (tool descriptions under 50 words): ideate_update_config description is 22 words.
+  - P-35 (ARCHITECTURE.md updated): '22 tools in 10 categories' heading; config tools section lists both tools; count matches TOOLS array.
+  - P-11 (model set at spawn time): Settings skill persists to config.json; skills read and apply at spawn time. Agent definition files not modified. Consistent with P-11.
+
+  ## Naming/Pattern Inconsistencies
+
+  ### N1: name: frontmatter key in settings skill has no precedent
+  - skills/settings/SKILL.md:2 — name: ideate:settings is present. No other SKILL.md file uses this key. The key is inert at runtime but inconsistent.
+
+  ### N2: WI-361 criterion uses valid_sources/valid_targets but implementation uses source_types/target_types
+  - EdgeTypeSpec defines source_types and target_types. The WI-361 criterion text says valid_sources/valid_targets. Functional intent is delivered but criterion field names do not match the implementation.
+content_hash: 20d3f171f8c0ec34cf28e73e5de60a00e2a3b465a4b61822c0e68d2fb7b01374
+token_count: 921
 file_path: .ideate/cycles/068/spec-adherence.yaml
+verdict: Pass
+architecture_deviations: None. All files touched by PH-017 reside in correct locations per architecture.
+unmet_acceptance_criteria: None. All 9 work items (WI-754 through WI-762) have all acceptance criteria satisfied.
+principle_violations: None.
+principle_adherence_evidence:
+  P-75: Schema test assertions query live DB via columnNames()/tableNames() using PRAGMA table_info and sqlite_master. WI-754 sqlite_* filter at schema.test.ts:110. WI-760 CASCADE test at schema.test.ts:787-801.
+  P-76: WI-759 created to address prior S1 finding. WI-754.yaml criterion 2 now documents sqlite_* filter.
+  P-44: Write-transaction test at write-transaction.test.ts:450-493 verifies two-phase pattern for putNodeForJournal.
+  GP-14: All test improvements operate through createSchema() and test helpers, not bypassing schema layer.
+  C-07: All WI criteria are machine-verifiable code patterns or test outcomes.
+undocumented_additions: None.
+naming_inconsistencies:
+  - id: N1
+    title: WI-757 describe block name differs from spec shorthand
+    description: WI-757 criterion refers to describe('proxy_human_decisions table') but implementation uses describe('createSchema — proxy_human_decisions table') matching the file-wide established pattern. Documentation imprecision in spec, not a code violation.
+residual_note: WI-754.yaml notes section still shows original 3-table filter code example while criteria field correctly documents 4-category filter. Notes are historical context, not prescriptive.
 cycle: 22
-cycle_modified: 19
-verdict: Fail
-scope: full-audit
-date: "20260407"
-findings:
-  - id: F-022-P1
-    severity: significant
-    principle: P-53
-    location: mcp/artifact-server/docs/adapter-contract.md:~138
-    description: "deleteNode Error Handling block violates P-53 (no implementation details in public specs). The prose uses concrete storage terms: 'SQLite DELETE', 'YAML restore', and 'SQLite transaction failed'. Interface specifications must not reference storage layer implementation."
-    recommendation: Rewrite deleteNode Error Handling block with storage-neutral language. Replace 'SQLite DELETE' with 'primary delete operation', 'YAML restore' with 'artifact restore', and 'SQLite transaction failed' with 'operation failed'.
-summary: "One P-53 violation: deleteNode Error Handling block in adapter-contract.md exposes concrete storage implementation details in an interface specification section."
+cycle_modified: 21

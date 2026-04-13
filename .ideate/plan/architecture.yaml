@@ -608,15 +608,15 @@ content: |-
   | mcp/artifact-server/src/indexer.ts | TypeScript | RebuildStats, MAX_DEPENDENCY_NODES, MAX_DEPENDENCY_EDGES, detectCycles, rebuildIndex |
   | mcp/artifact-server/src/watcher.ts | TypeScript | FileChangeEvent, ArtifactWatcher, artifactWatcher |
   | mcp/artifact-server/src/tools/index.ts | TypeScript | ToolContext, TOOLS, handleTool |
-  | mcp/artifact-server/src/tools/context.ts | TypeScript | handleGetWorkItemContext, handleGetContextPackage, handleAssembleContext |
+  | mcp/artifact-server/src/tools/context.ts | TypeScript | handleGetArtifactContext, handleGetContextPackage, handleAssembleContext |
   | mcp/artifact-server/src/tools/query.ts | TypeScript | handleArtifactQuery |
   | mcp/artifact-server/src/tools/execution.ts | TypeScript | handleGetExecutionStatus, handleGetReviewManifest |
-  | mcp/artifact-server/src/tools/analysis.ts | TypeScript | handleGetConvergenceStatus, handleGetDomainState, handleGetProjectStatus |
+  | mcp/artifact-server/src/tools/analysis.ts | TypeScript | handleGetConvergenceStatus, handleGetDomainState, handleGetWorkspaceStatus |
   | mcp/artifact-server/src/tools/write.ts | TypeScript | handleAppendJournal, handleArchiveCycle, handleWriteWorkItems, handleUpdateWorkItems, handleWriteArtifact |
   | mcp/artifact-server/src/tools/events.ts | TypeScript | handleEmitEvent |
   | mcp/artifact-server/src/tools/metrics.ts | TypeScript | handleGetMetrics |
   | mcp/artifact-server/src/index.ts | TypeScript | (MCP server entry point — no public exports) |
   | scripts/migrate-to-v3.ts | TypeScript | MigrationContext, sha256, toYaml, buildArtifact, parsePrinciples, parseYamlFlowArray, parseWorkItemsYaml, migrateJournal, migrateArchiveCycles, extractSection, migratePlanArtifacts, migrateSteeringArtifacts, migrateInterviews, migrateMetrics, MigrationOptions, runMigration |
   | scripts/migrate-to-v3.js | JavaScript | sha256, toYaml, buildArtifact, parsePrinciples, parseYamlFlowArray, parseWorkItemsYaml, migrateJournal, migrateArchiveCycles, extractSection, migratePlanArtifacts, migrateSteeringArtifacts, migrateInterviews, migrateMetrics, runMigration |
-content_hash: 43d38d74f6619f09f636fe3ed996cb479fc8a378255cfa28fe9daeb0f401c8ca
-token_count: 8230
+content_hash: e461cf260e8e567f9246649ba730e1d561dd085e08077b633958b18ec9d52f25
+token_count: 8231

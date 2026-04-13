@@ -444,6 +444,55 @@ describe("handleAppendJournal — transaction rollback", () => {
 });
 
 // ---------------------------------------------------------------------------
+// Tests: putNodeForJournal Phase 2 failure (writeFileSync throws)
+// ---------------------------------------------------------------------------
+
+describe("putNodeForJournal — Phase 2 failure (writeFileSync throws)", () => {
+  it.skipIf(process.platform === 'win32')("cleans up placeholder nodes row when writeFileSync throws during journal write", async () => {
+    const cycleNumber = 7;
+    const cycleStr = String(cycleNumber).padStart(3, "0");
+
+    // Pre-create the journal directory and mark it read-only so that
+    // fs.writeFileSync will throw EACCES (permission denied) during Phase 2.
+    // putNodeForJournal calls fs.mkdirSync with { recursive: true } first
+    // (which succeeds on an existing dir), then fs.writeFileSync (which fails
+    // on a read-only dir on POSIX systems).
+    const journalDir = path.join(artifactDir, "cycles", cycleStr, "journal");
+    fs.mkdirSync(journalDir, { recursive: true });
+    // Make the directory read-only (no write permission)
+    fs.chmodSync(journalDir, 0o444);
+
+    // The file path that putNodeForJournal will construct for the journal YAML.
+    // Sequence number will be 001 since there are no existing journal entries.
+    const expectedFilePath = path.join(journalDir, `J-${cycleStr}-001.yaml`);
+
+    try {
+      // Act: calling handleAppendJournal will invoke putNodeForJournal → Phase 2
+      // writeFileSync will throw EACCES because the directory is read-only.
+      await expect(
+        handleAppendJournal(ctx, {
+          skill: "execute",
+          date: "2026-03-01",
+          entry_type: "phase2_failure_test",
+          body: "Testing Phase 2 failure",
+          cycle_number: cycleNumber,
+        })
+      ).rejects.toThrow(/EACCES/i);
+
+      // Assert: Phase 2 cleanup deleted the placeholder nodes row
+      const nodesRow = db.prepare("SELECT COUNT(*) as cnt FROM nodes WHERE id LIKE ?").get(`J-${cycleStr}-%`) as { cnt: number };
+      expect(nodesRow.cnt).toBe(0);
+
+      // Assert: no YAML file exists at the expected path
+      expect(fs.existsSync(expectedFilePath)).toBe(false);
+    } finally {
+      // Restore write permissions so afterEach can clean up the temp directory
+      try { fs.chmodSync(journalDir, 0o755); } catch { /* ignore */ }
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Tests: handleWriteArtifact rollback — finding (findings extension table)
 // ---------------------------------------------------------------------------
 

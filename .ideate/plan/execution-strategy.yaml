@@ -1,36 +1,45 @@
 id: execution-strategy
 type: execution_strategy
-content: |-
-  # Execution Strategy — Cycle 23 (Full-Audit Correction)
-
-  ## Mode
-  Batched parallel — all 6 work items are independent (non-overlapping file scope, no data dependencies).
-
-  ## Parallelism
-  Max parallelism: 6 (all items in one group, all concurrent)
-
-  ## Worktree Configuration
-  Enabled for code-change items (WI-736, WI-737, WI-738, WI-739, WI-741).
-  Disabled for WI-740 (MCP artifact-only, no file changes).
-
-  ## Review Cadence
-  Incremental review per item on completion. Full capstone review not required for this cycle — all changes are targeted corrections with machine-verifiable acceptance criteria.
-
-  ## Work Item Groups
-
-  ### Group 1 (all parallel)
-  - WI-736: adapter.ts EdgeType import (low, ~1 line)
-  - WI-737: adapter-contract.test.ts type fixes + getDomainState filter test (small, depends on WI-736 for clean tsc output but can execute independently)
-  - WI-738: indexer.test.ts drizzle type fix (small, 16 occurrences)
-  - WI-739: ALL_NODE_TYPES structural test (small)
-  - WI-740: architecture doc update via MCP (low, artifact-only)
-  - WI-741: pretest.js process.exit(1) removal (low, ~2 lines)
-
-  ## Dependency Graph
-  WI-737 has a soft dependency on WI-736 (after WI-736 merges, `tsc --noEmit` for adapter.ts will be clean; WI-737 can still execute independently since it touches a different file). All other items are fully independent.
-
-  ## Agent Configuration
-  Model: sonnet (all workers)
-  All items are trivial to small — no opus needed.
-content_hash: 07f0d3a3b414595641be5d5a70e849ab5fb4071dc3789e36eb640e1a29f8d838
-token_count: 384
+mode: sequential
+max_parallelism: 3
+worktrees: false
+review_cadence: single capstone after all 4 items complete
+work_item_groups:
+  - group: 1
+    items:
+      - WI-745
+      - WI-746
+    notes: No dependencies between items. Different files. Run in parallel.
+dependency_graph: WI-759 → WI-760 → WI-761 → WI-762 (fully sequential)
+agent_configuration:
+  model: sonnet
+  reviewer_model: sonnet
+content_hash: 3102244df56e07b86f5ba3ee5beaff8a6c046725b0a031da7a559b5602ab1994
+token_count: 508
+cycle: 23
+parallelism: 1
+worktree: true
+groups:
+  - group: 1
+    items:
+      - WI-759
+    rationale: AC text update — modifies a work item artifact, not source code
+  - group: 2
+    items:
+      - WI-760
+    rationale: CASCADE test — adds a new it() block to proxy_human_decisions describe block
+  - group: 3
+    items:
+      - WI-761
+    rationale: Column assertion — adds current_phase_id to projects column test; depends on WI-760 completing first to serialize file edits
+  - group: 4
+    items:
+      - WI-762
+    rationale: Column assertion — adds completed_date to phases column test; depends on WI-761 completing first to serialize file edits
+note_on_wi749: WI-749 is a spike. If it finds domain_index is a planned-but-unimplemented feature, new work items will be created in the next refinement. It does not block any other item.
+note_on_wi750_wi748_overlap: WI-748 modifies writer.ts function bodies. WI-750 modifies only the module header comment at writer.ts:8-10. These are non-overlapping line ranges and can execute in parallel.
+cycle_modified: 21
+rationale: WI-760, WI-761, and WI-762 all modify schema.test.ts at different sections. Sequential execution avoids merge conflicts on the same file. WI-759 modifies a work item artifact and could run in parallel with WI-760, but the batch is small enough that sequential ordering is simpler.
+agent_config:
+  preferred_execution: main session
+  reason: All changes are 1-5 line edits in test files; subagent overhead is not justified

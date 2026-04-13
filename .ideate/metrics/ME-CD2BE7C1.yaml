@@ -1,0 +1,28 @@
+id: ME-CD2BE7C1
+type: metrics_event
+event_name: unknown
+timestamp: 2026-04-10T00:00:00Z
+skill: execute
+phase: "7"
+agent_type: code-reviewer
+model: sonnet
+work_item: WI-746
+wall_clock_ms: 83538
+turns_used: 16
+context_files_read:
+  - /Users/dan/code/ideate/mcp/artifact-server/src/__tests__/adapter-contract.test.ts
+  - /Users/dan/code/ideate/mcp/artifact-server/docs/adapter-contract.md
+  - /Users/dan/code/ideate/mcp/artifact-server/src/adapters/local/reader.ts
+input_tokens: null
+output_tokens: null
+cache_read_tokens: null
+cache_write_tokens: null
+mcp_tools_called: []
+outcome: rework
+finding_count: 2
+finding_severities:
+  critical: 0
+  significant: 1
+  minor: 1
+first_pass_accepted: false
+rework_count: null

@@ -1,6 +1,10 @@
 {
   "schema_version": 4,
+  "agent_budgets": {
+    "code-reviewer": 160,
+    "gap-analyst": 200
+  },
+  "spawn_mode": "teammate",
   "circuit_breaker_threshold": 5,
-  "default_appetite": 6,
-  "backend": "local"
+  "default_appetite": 6
 }

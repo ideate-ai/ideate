@@ -4,27 +4,19 @@ cycle: 20
 content: |-
   ## Cycle 20 Review Manifest
 
-  Phase: PH-039 — Indexer improvements and data quality fixes
+  This cycle addressed all findings from the cycle 20 capstone review of WI-736–741. Three work items were executed.
 
-  | Work Item | Title | Verdict | Findings (C/S/M) |
-  |-----------|-------|---------|------------------|
-  | WI-725 | Register belongs_to_cycle edge type in EDGE_TYPES and EDGE_TYPE_REGISTRY | Pass | 0/0/0 |
-  | WI-726 | Add delete-before-insert to deriveJournalEntryCycleEdges (P-67 compliance) | Rework | 0/1/0 |
-  | WI-727 | Expand hasDerivedEdgeUpdate trigger guard to include work_item and cycle_summary | Rework | 0/1/0 |
-  | WI-728 | Restrict comma-split normalization to derived_from field only | Pass | 0/0/0 |
+  | WI | Title | Files | Incremental Verdict | Findings |
+  |----|-------|-------|--------------------|---------|
+  | WI-742 | Fix ALL_NODE_TYPES type annotation and import ordering in adapter.ts | mcp/artifact-server/src/adapter.ts | rework→pass | S1: exhaustiveness sentinel in tests/ excluded from tsconfig — moved to adapter.ts src/; import ordering fixed |
+  | WI-743 | Test polish: null-status getDomainState test + remove redundant NodeType casts | mcp/artifact-server/src/__tests__/adapter-contract.test.ts | pass | none |
+  | WI-744 | Fix stale handler names in architecture doc file registry | .ideate/plan/architecture.yaml (via MCP) | pass | none |
 
-  ### Rework Notes
-  - WI-726: First pass modified schema.ts (out of scope) and idempotency test did not exercise targeted delete. Fixed by reverting schema.ts and rewriting test to seed DB directly then call deriveJournalEntryCycleEdges twice.
-  - WI-727: First pass missing rebuildIndex Phase 3 wire-up for deriveJournalEntryEdges. Post-merge, duplicate function definition caused esbuild failure; resolved by keeping richer stash version (includes title-derived edges) and removing WI-727 duplicate.
+  **Summary**: 3 work items, 3 incremental reviews. 0 Fail, 3 Pass (WI-742 required rework during incremental review — resolved before merge).
 
-  ### Files Modified
-  - mcp/artifact-server/src/schema.ts
-  - mcp/artifact-server/src/indexer.ts
-  - mcp/artifact-server/src/__tests__/indexer.test.ts
-  - mcp/artifact-server/src/__tests__/schema.test.ts
-  - mcp/artifact-server/docs/adapter-contract.md
-
-  ### Test Result
-  1162 tests pass, 310 skipped, 0 failures.
-content_hash: 4df6b7eae149e0f5ce49da668e395c51d555848d6ca59cc093dc542649c61eb4
-token_count: 374
+  **Key changes this cycle**:
+  - `adapter.ts`: Removed `: readonly NodeType[]` widening annotation from ALL_NODE_TYPES; added compile-time exhaustiveness sentinel `_ExhaustiveNodeTypeCheck` inline in adapter.ts (src/ scope, evaluated by tsc --noEmit); import ordering fixed for EdgeType/EDGE_TYPES re-exports.
+  - `adapter-contract.test.ts`: Removed 3 redundant `as NodeType` casts; added null-status getDomainState inclusion test guarding `n.status IS NULL` SQL clause.
+  - Architecture doc: handleGetWorkItemContext→handleGetArtifactContext, handleGetProjectStatus→handleGetWorkspaceStatus (file registry corrections).
+content_hash: 2371ed390f1558758dc70466b59a29c5d609a847b0d76994f3e7e03565d18c0b
+token_count: 409

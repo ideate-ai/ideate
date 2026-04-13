@@ -1,0 +1,19 @@
+id: ME-127362E2
+type: metrics_event
+event_name: unknown
+timestamp: null
+event: reviewer_complete
+reviewer: gap-analyst
+cycle: 22
+phase: PH-017
+verdict: Pass (partial)
+critical: 0
+significant: 0
+carry_forward: 4
+duration_ms: 485505
+tool_uses: 36
+total_tokens: 694
+note: stream idle timeout
+cycle_modified: 21
+content_hash: 29caf8488a469e953baa48709d7e8e2b6460dcbff665967a0883b06f65045f0d
+token_count: 77

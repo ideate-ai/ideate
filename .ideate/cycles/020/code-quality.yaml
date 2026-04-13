@@ -1,43 +1,38 @@
 id: code-quality
 type: cycle_summary
+cycle: 20
 reviewer: code-reviewer
-scope: full-audit
-date: "20260409"
 content: |-
-  ## Code Review — Full Audit
+  ## Code Review — Cycle 20 (WI-742/743/744)
 
-  **Verdict**: Fail
+  **Verdict**: Pass
 
   ### Critical Findings
 
-  **C1: `EdgeType` not in scope in `adapter.ts` — 4 TypeScript compilation errors**
-  - **File**: `mcp/artifact-server/src/adapter.ts:106,169,181,309`
-  - `EdgeType` is declared at line 96 only as a re-export (`export type { EdgeType } from "./schema.js"`), not as a local import. TypeScript NodeNext module resolution does not bring a type-only re-export into local scope. `adapter.ts` uses `EdgeType` in four interface definitions (`Edge`, `GraphQuery`, `QueryResult`, `StorageAdapter.removeEdges`) but the name is unresolvable in that file's scope.
-  - **Impact**: `npx tsc --noEmit` emits `TS2304: Cannot find name 'EdgeType'` at all four locations. `npm run build` will fail.
-  - **Fix**: Add `import type { EdgeType } from "./schema.js";` to `adapter.ts` alongside the existing `import { EDGE_TYPES }` at line 98.
+  None.
 
   ### Significant Findings
 
-  **S1: TypeScript errors in test files not caught by test runner**
-  - **Files**: `src/__tests__/adapter-contract.test.ts:1027,1047,1066,1086` and `src/__tests__/indexer.test.ts:1874+` (18 errors total)
-  - `adapter-contract.test.ts` passes `{ type: "work_item" }` where `MutateNodeInput` requires `type: NodeType` — TypeScript infers `string`. `indexer.test.ts` constructs `drizzle(db)` without schema argument. Vitest passes (esbuild), but `tsc --noEmit` fails.
-  - **Fix**: Cast `type: "work_item" as NodeType` in adapter-contract.test.ts; use `drizzle(db, { schema: dbSchema })` in indexer.test.ts.
-
-  **S2: P-59 compliance is fragile — ALL_NODE_TYPES sync test uses hardcoded list**
-  - **File**: `tests/adapters/always-include-types-validation.test.ts:400-435`
-  - Test verifies `ALL_NODE_TYPES` against a hardcoded `expectedTypes` array requiring 3 places to update synchronously. Will pass even if `ALL_NODE_TYPES` diverges from `NodeType` union as long as it matches `expectedTypes`.
-  - **Fix**: Derive `expectedTypes` from the `NodeType` union at compile time rather than maintaining a parallel hardcoded list.
+  None.
 
   ### Minor Findings
 
-  **M1**: `handleUpdateWorkItems` pushes to `failures` before re-throwing — dead code (`src/tools/write.ts:322-326`)
-  **M2**: `batchMutate` always stores `cycle_modified: null` — inconsistent with `putNode` (`src/adapters/local/writer.ts:1314`)
-  **M3**: `batchMutate` scope collision detection ignores existing database nodes (`src/adapters/local/writer.ts:1176-1232`)
-  **M4**: `deleteNode` silent divergence path when rollback fails due to null `originalContent` (`src/adapters/local/writer.ts:901-906`)
-  **M5**: `tsconfig.json` excludes only `migrate.test.ts` but not the 18-error test files (`mcp/artifact-server/tsconfig.json:16`)
+  **M1: Duplicate exhaustiveness sentinel not removed from out-of-tsconfig file**
 
-  ### Test Result
-  1166 passed, 0 failed (310 skipped — equivalence tests require Docker)
-cycle: 20
-content_hash: 26dbbc75bd0398d3a698ec233e58144aa6fe329eefafb5b9fe4c25e6fd601e3b
-token_count: 730
+  - **File**: `mcp/artifact-server/tests/adapters/always-include-types-validation.test.ts:26-29`
+  - The dead copy of the exhaustiveness sentinel remains in `tests/` (excluded from tsconfig). The operative sentinel was correctly moved to `adapter.ts:77-84`. The `tests/` copy is now evaluated during test compilation but not by `tsc --noEmit`. It is not broken but misleads readers into thinking it is the canonical check.
+  - **Suggested fix**: Remove lines 23-29 of `always-include-types-validation.test.ts`. The canonical check is now `adapter.ts:77-84`.
+
+  **M2: Dual import/re-export of EdgeType from schema.js is unusual**
+
+  - **File**: `mcp/artifact-server/src/adapter.ts:108-110`
+  - `EdgeType` is imported via `import type` on line 108 (for local use) and re-exported via `export type` on line 110. The pattern is valid under NodeNext module resolution (re-export does not bring symbol into local scope). The comment explains the intent. Stylistic concern only.
+
+  ### Test Results
+
+  Test Files: 32 passed | 5 skipped (37)
+  Tests: 1170 passed | 312 skipped (1482)
+  Duration: 6.11s
+  tsc --noEmit: EXIT 0
+content_hash: 89beda6ff1568846d0517c27c19f99d97a5da9f057eed20abf3a6e999d337a85
+token_count: 360

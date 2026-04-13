@@ -38,7 +38,9 @@ export type NodeType =
   | "constraints"
   | "research"
   | "interview"
-  | "domain_index";
+  | "domain_index"
+  // Session/state artifacts
+  | "autopilot_state";
 
 /** All valid NodeType values for runtime validation. */
 export const ALL_NODE_TYPES = [
@@ -69,6 +71,7 @@ export const ALL_NODE_TYPES = [
   "research",
   "interview",
   "domain_index",
+  "autopilot_state",
 ] as const;
 
 // Compile-time exhaustiveness: every NodeType must appear in ALL_NODE_TYPES.

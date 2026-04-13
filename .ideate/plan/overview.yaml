@@ -1,36 +1,73 @@
 id: overview
 type: overview
-content: |-
-  # Change Plan — Cycle 23 (Full-Audit Correction)
+title: Cycle 22 Review Fix-Up
+change_plan: |-
+  Address three minor carry-forward findings from cycle 20 review. No architecture changes, no new technology.
 
-  ## Trigger
-  Full audit review 2026-04-09. 1 critical finding, 6 significant findings across code-reviewer, spec-reviewer, and gap-analyst.
+  **Trigger**: Cycle 20 capstone review minor findings M1 (dead sentinel), M3 (loose length assertion), and Q-142 (getDomainState null-status gaps for decisions/questions).
 
-  ## What Is Changing
+  **What is changing**:
+  - `tests/adapters/always-include-types-validation.test.ts`: remove dead exhaustiveness sentinel (superseded by adapter.ts:77-84); tighten runtime length assertion from `toBeGreaterThan(0)` to `toBe(27)`.
+  - `src/__tests__/adapter-contract.test.ts`: add getDomainState null-status boundary tests for `domain_decision` (null-status decisions should appear — no status filter in SQL) and `domain_question` (verify adapter-contract.md intent, add test matching the contract).
 
-  1. **WI-736** — `adapter.ts`: Add `import type { EdgeType } from "./schema.js"` (1-line fix for 4 TS2304 build errors)
-  2. **WI-737** — `adapter-contract.test.ts`: Fix 4 TypeScript type errors + add getDomainState deprecated/superseded filter test
-  3. **WI-738** — `indexer.test.ts`: Fix 16 TypeScript errors (untyped drizzle instance)
-  4. **WI-739** — `tests/adapters/always-include-types-validation.test.ts`: Replace hardcoded expectedTypes with structural TypeScript exhaustiveness check (P-59 compliance)
-  5. **WI-740** — Architecture doc (via MCP): Update stale counts (12→16 ext tables, 10→16 edge types, 17→22 tools, v1→v5 schema) + rename `ideate_get_work_item_context` → `ideate_get_artifact_context`
-  6. **WI-741** — `scripts/pretest.js`: Remove `process.exit(1)` calls — advisory stderr warnings only
+  **What is NOT changing**: adapter.ts, reader.ts, any production code, adapter-contract.md (unless null-status question behavior is found to be incorrectly documented).
 
-  ## What Is NOT Changing
-  - Runtime behavior of any adapter or MCP tool
-  - Schema, database, or YAML structure
-  - Any logic beyond the targeted fixes listed above
+  **New work items**: WI-745, WI-746.
+content_hash: 5c097bb907f1a3e9928c7ec3c87969c6692e6aca6199c8fd6c399fa0d4a4a518
+token_count: 1214
+what_is_changing: Four targeted fixes in the MCP artifact server addressing findings from the full audit conducted in cycle 20.
+trigger: cycle-22-review-findings
+changes:
+  - id: WI-759
+    description: Update WI-754 acceptance criteria to document the sqlite_* filter that was added during implementation but not reflected in the AC text (P-76 violation).
+  - id: WI-760
+    description: Add ON DELETE CASCADE behavior test for the proxy_human_decisions table. All other extension tables with CASCADE are tested; this one was missed when WI-757 added the proxy_human_decisions describe block.
+  - id: WI-761
+    description: Add assertion for projects.current_phase_id column in the createSchema — projects table describe block. The column exists in the DDL but has no test assertion.
+  - id: WI-762
+    description: Add assertion for phases.completed_date column in the createSchema — phases table describe block. The column exists in the DDL but has no test assertion.
+scope_boundary: Test files and artifact text only. schema.ts, schema.ts DDL, all production source files, and MCP tools are unchanged.
+unchanged: Architecture, guiding principles, constraints, execution strategy shape, all non-MCP-server code.
+expected_impact: "After this cycle: (1) P-75 sub-rule on CASCADE coverage is satisfied for all extension tables; (2) P-75 sub-rule on all-columns-must-be-asserted is satisfied for projects and phases; (3) P-76 compliance restored for WI-754; (4) Q-146 resolved."
+cycle_modified: 21
+cycle: 22
+body: |-
+  ## What is changing and why
 
-  ## Scope Boundary
-  - 5 source/test files + 1 artifact-only (architecture doc)
-  - No new features, no architectural changes
-  - All changes are correctness/compliance fixes from the full audit
+  Three targeted test fixes addressing the Fail verdict from the cycle 21 capstone review. All changes are confined to test files — no production code changes.
 
-  ## Expected Impact
-  - `npm run build` succeeds (C1 fix)
-  - `npx tsc --noEmit` reports 0 errors (all TypeScript fixes)
-  - P-59 enforcement becomes self-maintaining (compile-time check)
-  - P-35, P-38 compliance restored (architecture doc update)
-  - P-73 compliance (pretest.js fix)
-  - P-72 compliance (getDomainState contract-level test)
-content_hash: a3607088a4d5944ef212c431ee11d38321f770c66a066e0a2d2137746becd3f5
-token_count: 446
+  ## Triggering context
+
+  Cycle 21 review returned Fail with two significant findings:
+  - S1: `src/__tests__/schema.test.ts` lists 15 extension tables; `schema.ts` creates 16 (`proxy_human_decisions` added in WI-748). The stale count provides false assurance — dropping the table from createSchema would not be caught.
+  - S2: `putNodeForJournal` Phase 2 rollback path (`writer.ts:1639-1648`) — the `fs.writeFileSync` throw → DELETE placeholder cleanup branch — has zero test coverage.
+
+  Minor carry-forward: `migrations.test.ts` lacks coverage for the error path (migration fn throws), multi-step chain (v3→v4→v5), and no-registry-entry silent bump.
+
+  ## Scope boundary
+
+  Only these files change:
+  - `src/__tests__/schema.test.ts` (WI-751)
+  - `src/__tests__/write-transaction.test.ts` (WI-752)
+  - `src/__tests__/migrations.test.ts` (WI-753)
+
+  No production code changes.
+
+  ## Expected impact
+
+  All three test files pass cleanly. schema.test.ts correctly reflects the 16-table schema. write-transaction.test.ts covers the Phase 2 cleanup branch. migrations.test.ts covers error and multi-step scenarios.
+summary: Four significant findings from the cycle 22 capstone review require correction. All changes are confined to the test suite and one work item artifact — no production code changes.
+scope_in:
+  - mcp/artifact-server/src/__tests__/schema.test.ts
+  - mcp/artifact-server/src/__tests__/write-transaction.test.ts
+  - mcp/artifact-server/src/__tests__/migrations.test.ts
+scope_out:
+  - Production code (schema.ts, writer.ts, migrations.ts)
+  - Any other test files
+  - Skills or agents
+work_items:
+  - "WI-754: Fix extensionTables count assertion to query DB (HIGH)"
+  - "WI-755: Fix stale CURRENT_SCHEMA_VERSION marker (MEDIUM)"
+  - "WI-756: Fix Phase 2 test — add EACCES assertion and platform guard (MEDIUM)"
+  - "WI-757: Add proxy_human_decisions column-structure test (LOW)"
+  - "WI-758: Update migrations.test.ts deferral comment to reference WI-758 (MEDIUM)"

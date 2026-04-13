@@ -1,0 +1,23 @@
+id: ME-925ADFB8
+type: metrics_event
+event_name: unknown
+timestamp: 2026-04-10T00:00:00Z
+skill: review
+phase: "7.2"
+cycle: 20
+agent_type: domain-curator
+model: sonnet
+work_item: null
+wall_clock_ms: 98220
+turns_used: 20
+context_files_read: []
+input_tokens: null
+output_tokens: null
+cache_read_tokens: null
+cache_write_tokens: null
+mcp_tools_called:
+  - ideate_get_domain_state
+  - ideate_artifact_query
+  - ideate_get_next_id
+finding_count: null
+finding_severities: null

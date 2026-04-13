@@ -3,11 +3,16 @@
  *
  * Extracted storage logic from tools/write.ts. Implements the write-side of
  * the StorageAdapter interface: putNode, patchNode, deleteNode, putEdge,
- * removeEdges, batchMutate, archiveCycle, nextId.
+ * removeEdges, batchMutate, archiveCycle, nextId, appendJournalEntry.
  *
- * Two-phase write pattern (YAML first, SQLite second) is preserved here and
- * is invisible to tool handlers. Tool handlers call adapter methods; storage
- * details (YAML I/O, SQLite upserts, rollback) are encapsulated in this module.
+ *   appendJournalEntry — three-phase journal write (reserve → YAML → finalize) preserving P-44 compliance
+ *
+ * P-44 two-phase write pattern (YAML first, SQLite second) is preserved for all
+ * write operations and is invisible to tool handlers. Tool handlers call adapter
+ * methods; storage details (YAML I/O, SQLite upserts, rollback) are encapsulated
+ * in this module. appendJournalEntry uses a three-phase pattern (exclusive tx to
+ * reserve a sequence-number slot, YAML write outside any transaction, exclusive tx
+ * to finalize) to satisfy P-44 while preventing sequence-number collisions.
  */
 
 import * as fs from "fs";
@@ -1559,7 +1564,7 @@ export class LocalWriterAdapter {
 
   // -------------------------------------------------------------------------
   // putNodeForJournal — specialized journal entry writer
-  // Handles the exclusive-transaction sequence-number pattern.
+  // Three-phase P-44-compliant write: reserve seq (tx1) → YAML (no tx) → finalize (tx2).
   // -------------------------------------------------------------------------
 
   async putNodeForJournal(args: {
@@ -1575,50 +1580,92 @@ export class LocalWriterAdapter {
     const journalDir = path.join(this.ideateDir, "cycles", cycleStr, "journal");
     ensureDir(journalDir);
 
-    let writtenYamlPath = "";
-    let entryId: string;
-    let id: string | undefined;
-
+    // -----------------------------------------------------------------------
+    // Phase 1 — Allocate and reserve sequence slot (exclusive SQLite tx, raw SQL)
+    // Releases the exclusive lock before YAML I/O begins (P-44 requirement).
+    // -----------------------------------------------------------------------
+    let id: string;
+    let filePath: string;
     try {
-      entryId = this.db.transaction(() => {
-        // Use MAX+1 strategy (not COUNT) to get next sequence number
+      const phase1Result = this.db.transaction(() => {
+        // MAX+1 strategy prevents sequence-number gaps from deleted entries.
         const maxRow = this.db.prepare(
           `SELECT MAX(CAST(SUBSTR(id, ?) AS INTEGER)) as max_num FROM nodes WHERE id LIKE ?`
         ).get(`J-${cycleStr}-`.length + 1, `J-${cycleStr}-%`) as { max_num: number | null };
         const seq = (maxRow?.max_num ?? 0) + 1;
         const seqStr = String(seq).padStart(3, "0");
-        id = `J-${cycleStr}-${seqStr}`;
+        const allocatedId = `J-${cycleStr}-${seqStr}`;
+        const allocatedFilePath = path.join(journalDir, `${allocatedId}.yaml`);
 
-        // Build YAML object
-        const entryObj = {
-          id,
-          type: "journal_entry",
-          phase: skill,
-          date,
-          cycle_created: cycleNumber,
-          title: entryType,
-          content: body,
-        };
+        // Insert placeholder row to reserve the slot; prevents concurrent callers
+        // from allocating the same sequence number.
+        this.db.prepare(
+          `INSERT INTO nodes (id, type, cycle_created, cycle_modified, content_hash, token_count, file_path, status)
+           VALUES (?, ?, ?, NULL, '', 0, ?, NULL)`
+        ).run(allocatedId, "journal_entry", cycleNumber, allocatedFilePath);
 
-        // Serialize and write YAML file (inside exclusive lock)
-        const yamlContent = stringifyYaml(entryObj);
-        const filePath = path.join(journalDir, `${id}.yaml`);
-        fs.mkdirSync(path.dirname(filePath), { recursive: true });
-        fs.writeFileSync(filePath, yamlContent, "utf8");
-        writtenYamlPath = filePath;
+        return { id: allocatedId, filePath: allocatedFilePath };
+      }).exclusive();
+      id = phase1Result.id;
+      filePath = phase1Result.filePath;
+    } catch (tx1Err) {
+      throw new ValidationError(
+        `operation failed: ${(tx1Err as Error).message}`,
+        "TRANSACTION_FAILED",
+        { operation: "appendJournalEntry" }
+      );
+    }
 
-        // Upsert SQLite rows
-        const contentHash = computeArtifactHash(entryObj as Record<string, unknown>);
+    // -----------------------------------------------------------------------
+    // Phase 2 — Write YAML file (outside any transaction, per P-44)
+    // On failure: delete placeholder and rethrow.
+    // -----------------------------------------------------------------------
+    const entryObj = {
+      id,
+      type: "journal_entry",
+      phase: skill,
+      date,
+      cycle_created: cycleNumber,
+      title: entryType,
+      content: body,
+    };
+    const yamlContent = stringifyYaml(entryObj);
+    const contentHash = computeArtifactHash(entryObj as Record<string, unknown>);
+    const tokens = tokenCount(yamlContent);
+
+    try {
+      fs.mkdirSync(path.dirname(filePath), { recursive: true });
+      fs.writeFileSync(filePath, yamlContent, "utf8");
+    } catch (writeErr) {
+      // Rollback Phase 1 placeholder (best-effort).
+      try {
+        this.db.transaction(() => {
+          this.db.prepare(`DELETE FROM nodes WHERE id = ?`).run(id);
+        }).exclusive();
+      } catch {
+        // best-effort; ignore cleanup errors
+      }
+      throw writeErr;
+    }
+
+    // -----------------------------------------------------------------------
+    // Phase 3 — Finalize (exclusive SQLite tx)
+    // On failure: unlink YAML, delete placeholder, throw ValidationError.
+    // -----------------------------------------------------------------------
+    try {
+      this.db.transaction(() => {
         const nodeRow: NodeRow = {
           id,
           type: "journal_entry",
           cycle_created: cycleNumber,
           cycle_modified: null,
           content_hash: contentHash,
-          token_count: tokenCount(yamlContent),
+          token_count: tokens,
           file_path: filePath,
           status: null,
         };
+        upsertNode(this.drizzleDb, nodeRow);
+
         const journalRow: JournalEntryRow = {
           id,
           phase: skill,
@@ -1627,30 +1674,29 @@ export class LocalWriterAdapter {
           work_item: null,
           content: body,
         };
-        upsertNode(this.drizzleDb, nodeRow);
         upsertJournalEntry(this.drizzleDb, journalRow);
-
-        return id;
       }).exclusive();
     } catch (txErr) {
-      if (writtenYamlPath) {
-        try {
-          if (fs.existsSync(writtenYamlPath)) fs.unlinkSync(writtenYamlPath);
-        } catch (cleanupErr) {
-          throw new ValidationError(
-            `operation failed: ${(txErr as Error).message}; cleanup also failed: ${(cleanupErr as Error).message}`,
-            "TRANSACTION_FAILED",
-            { operation: "appendJournalEntry", id, filePath: writtenYamlPath }
-          );
-        }
+      // Rollback: remove YAML and delete placeholder (both best-effort).
+      try {
+        if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+      } catch {
+        // best-effort; ignore unlink errors
+      }
+      try {
+        this.db.transaction(() => {
+          this.db.prepare(`DELETE FROM nodes WHERE id = ?`).run(id);
+        }).exclusive();
+      } catch {
+        // best-effort; ignore cleanup errors
       }
       throw new ValidationError(
         `operation failed: ${(txErr as Error).message}`,
         "TRANSACTION_FAILED",
-        { operation: "appendJournalEntry", id, filePath: writtenYamlPath || undefined }
+        { operation: "appendJournalEntry", id, filePath }
       );
     }
 
-    return entryId;
+    return id;
   }
 }

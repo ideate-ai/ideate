@@ -1,0 +1,25 @@
+id: ME-8E9B87B1
+type: metrics_event
+event_name: unknown
+timestamp: null
+event: refine_complete
+skill: refine
+cycle: 21
+phase: PH-040
+work_items_created: 4
+mode: post-review-correction
+decisions:
+  - CONFIG_SCHEMA_VERSION bump + full migration tests
+  - putNodeForJournal restructure (P-44 fix, no exception)
+  - domain_index investigation (spike)
+  - stale comment cleanup
+config_changes:
+  code-reviewer:
+    from: 80
+    to: 160
+  gap-analyst:
+    from: 100
+    to: 200
+cycle_modified: 20
+content_hash: b7b93d91e20bdf7353a7f1a71bc8641af856db3324b06e488a03b978c548591b
+token_count: 122

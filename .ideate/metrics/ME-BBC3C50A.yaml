@@ -1,0 +1,26 @@
+id: ME-BBC3C50A
+type: metrics_event
+event_name: unknown
+timestamp: 2026-04-10T00:00:00Z
+skill: review
+phase: 4a
+cycle: 20
+agent_type: code-reviewer
+model: sonnet
+work_item: null
+wall_clock_ms: 121577
+turns_used: 22
+context_files_read:
+  - /Users/dan/code/ideate/mcp/artifact-server/src/adapter.ts
+  - /Users/dan/code/ideate/mcp/artifact-server/src/__tests__/adapter-contract.test.ts
+input_tokens: null
+output_tokens: null
+cache_read_tokens: null
+cache_write_tokens: null
+mcp_tools_called:
+  - ideate_get_context_package
+finding_count: 2
+finding_severities:
+  critical: 0
+  significant: 0
+  minor: 2
