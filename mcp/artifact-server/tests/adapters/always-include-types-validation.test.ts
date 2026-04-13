@@ -400,7 +400,13 @@ describe("always_include_types validation (WI-649)", () => {
     it("ALL_NODE_TYPES contains every NodeType value with no duplicates", () => {
       // No duplicates
       expect(new Set(ALL_NODE_TYPES).size).toBe(ALL_NODE_TYPES.length);
-      expect(ALL_NODE_TYPES.length).toBe(28); // Update this count when NodeType grows
+      // No hardcoded count — completeness is enforced at compile time by
+      // _ExhaustiveNodeTypeCheck in adapter.ts. Runtime checks verify integrity only.
+      expect(ALL_NODE_TYPES.length).toBeGreaterThan(0);
+      for (const t of ALL_NODE_TYPES) {
+        expect(typeof t).toBe("string");
+        expect(t.length).toBeGreaterThan(0);
+      }
     });
 
     it("is readonly array", () => {

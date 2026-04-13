@@ -163,6 +163,149 @@ describe("createSchema — ON DELETE CASCADE (nodes → extension)", () => {
     const after = db.prepare(`SELECT id FROM findings WHERE id = 'FIND-001'`).get();
     expect(after).toBeUndefined();
   });
+
+  it("deleting a node cascades to domain_policies extension row", () => {
+    const db = freshDb();
+    db.pragma("foreign_keys = ON");
+    db.prepare(
+      `INSERT INTO nodes (id, type, content_hash, file_path) VALUES ('P-001', 'domain_policy', 'hash', '/tmp/p-001.yaml')`
+    ).run();
+    db.prepare(
+      `INSERT INTO domain_policies (id, domain) VALUES ('P-001', 'test-domain')`
+    ).run();
+    const before = db.prepare(`SELECT id FROM domain_policies WHERE id = 'P-001'`).get();
+    expect(before).toBeDefined();
+    db.prepare(`DELETE FROM nodes WHERE id = 'P-001'`).run();
+    const after2 = db.prepare(`SELECT id FROM domain_policies WHERE id = 'P-001'`).get();
+    expect(after2).toBeUndefined();
+  });
+
+  it("deleting a node cascades to domain_decisions extension row", () => {
+    const db = freshDb();
+    db.pragma("foreign_keys = ON");
+    db.prepare(
+      `INSERT INTO nodes (id, type, content_hash, file_path) VALUES ('D-001', 'domain_decision', 'hash', '/tmp/d-001.yaml')`
+    ).run();
+    db.prepare(
+      `INSERT INTO domain_decisions (id, domain) VALUES ('D-001', 'test-domain')`
+    ).run();
+    db.prepare(`DELETE FROM nodes WHERE id = 'D-001'`).run();
+    const after3 = db.prepare(`SELECT id FROM domain_decisions WHERE id = 'D-001'`).get();
+    expect(after3).toBeUndefined();
+  });
+
+  it("deleting a node cascades to domain_questions extension row", () => {
+    const db = freshDb();
+    db.pragma("foreign_keys = ON");
+    db.prepare(
+      `INSERT INTO nodes (id, type, content_hash, file_path) VALUES ('Q-001', 'domain_question', 'hash', '/tmp/q-001.yaml')`
+    ).run();
+    db.prepare(
+      `INSERT INTO domain_questions (id, domain) VALUES ('Q-001', 'test-domain')`
+    ).run();
+    db.prepare(`DELETE FROM nodes WHERE id = 'Q-001'`).run();
+    const after4 = db.prepare(`SELECT id FROM domain_questions WHERE id = 'Q-001'`).get();
+    expect(after4).toBeUndefined();
+  });
+
+  it("deleting a node cascades to guiding_principles extension row", () => {
+    const db = freshDb();
+    db.pragma("foreign_keys = ON");
+    db.prepare(
+      `INSERT INTO nodes (id, type, content_hash, file_path) VALUES ('GP-01', 'guiding_principle', 'hash', '/tmp/gp-01.yaml')`
+    ).run();
+    db.prepare(
+      `INSERT INTO guiding_principles (id, name) VALUES ('GP-01', 'Test Principle')`
+    ).run();
+    db.prepare(`DELETE FROM nodes WHERE id = 'GP-01'`).run();
+    const after5 = db.prepare(`SELECT id FROM guiding_principles WHERE id = 'GP-01'`).get();
+    expect(after5).toBeUndefined();
+  });
+
+  it("deleting a node cascades to constraints extension row", () => {
+    const db = freshDb();
+    db.pragma("foreign_keys = ON");
+    db.prepare(
+      `INSERT INTO nodes (id, type, content_hash, file_path) VALUES ('C-01', 'constraint', 'hash', '/tmp/c-01.yaml')`
+    ).run();
+    // NOTE: "constraints" is a SQL reserved keyword but SQLite accepts it unquoted as a table name
+    db.prepare(
+      `INSERT INTO constraints (id, category) VALUES ('C-01', 'design')`
+    ).run();
+    db.prepare(`DELETE FROM nodes WHERE id = 'C-01'`).run();
+    const after6 = db.prepare(`SELECT id FROM constraints WHERE id = 'C-01'`).get();
+    expect(after6).toBeUndefined();
+  });
+
+  it("deleting a node cascades to module_specs extension row", () => {
+    const db = freshDb();
+    db.pragma("foreign_keys = ON");
+    db.prepare(
+      `INSERT INTO nodes (id, type, content_hash, file_path) VALUES ('MOD-001', 'module_spec', 'hash', '/tmp/mod-001.yaml')`
+    ).run();
+    db.prepare(
+      `INSERT INTO module_specs (id, name) VALUES ('MOD-001', 'Test Module')`
+    ).run();
+    db.prepare(`DELETE FROM nodes WHERE id = 'MOD-001'`).run();
+    const after7 = db.prepare(`SELECT id FROM module_specs WHERE id = 'MOD-001'`).get();
+    expect(after7).toBeUndefined();
+  });
+
+  it("deleting a node cascades to research_findings extension row", () => {
+    const db = freshDb();
+    db.pragma("foreign_keys = ON");
+    db.prepare(
+      `INSERT INTO nodes (id, type, content_hash, file_path) VALUES ('RF-001', 'research', 'hash', '/tmp/rf-001.yaml')`
+    ).run();
+    db.prepare(
+      `INSERT INTO research_findings (id, topic) VALUES ('RF-001', 'Test Topic')`
+    ).run();
+    db.prepare(`DELETE FROM nodes WHERE id = 'RF-001'`).run();
+    const after8 = db.prepare(`SELECT id FROM research_findings WHERE id = 'RF-001'`).get();
+    expect(after8).toBeUndefined();
+  });
+
+  it("deleting a node cascades to journal_entries extension row", () => {
+    const db = freshDb();
+    db.pragma("foreign_keys = ON");
+    db.prepare(
+      `INSERT INTO nodes (id, type, content_hash, file_path) VALUES ('J-023-001', 'journal_entry', 'hash', '/tmp/j-023-001.yaml')`
+    ).run();
+    db.prepare(
+      `INSERT INTO journal_entries (id) VALUES ('J-023-001')`
+    ).run();
+    db.prepare(`DELETE FROM nodes WHERE id = 'J-023-001'`).run();
+    const after9 = db.prepare(`SELECT id FROM journal_entries WHERE id = 'J-023-001'`).get();
+    expect(after9).toBeUndefined();
+  });
+
+  it("deleting a node cascades to metrics_events extension row", () => {
+    const db = freshDb();
+    db.pragma("foreign_keys = ON");
+    db.prepare(
+      `INSERT INTO nodes (id, type, content_hash, file_path) VALUES ('MET-001', 'metric', 'hash', '/tmp/met-001.yaml')`
+    ).run();
+    db.prepare(
+      `INSERT INTO metrics_events (id, event_name) VALUES ('MET-001', 'work_item.completed')`
+    ).run();
+    db.prepare(`DELETE FROM nodes WHERE id = 'MET-001'`).run();
+    const after10 = db.prepare(`SELECT id FROM metrics_events WHERE id = 'MET-001'`).get();
+    expect(after10).toBeUndefined();
+  });
+
+  it("deleting a node cascades to document_artifacts extension row", () => {
+    const db = freshDb();
+    db.pragma("foreign_keys = ON");
+    db.prepare(
+      `INSERT INTO nodes (id, type, content_hash, file_path) VALUES ('DOC-001', 'cycle_summary', 'hash', '/tmp/doc-001.yaml')`
+    ).run();
+    db.prepare(
+      `INSERT INTO document_artifacts (id) VALUES ('DOC-001')`
+    ).run();
+    db.prepare(`DELETE FROM nodes WHERE id = 'DOC-001'`).run();
+    const after11 = db.prepare(`SELECT id FROM document_artifacts WHERE id = 'DOC-001'`).get();
+    expect(after11).toBeUndefined();
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -422,10 +565,28 @@ describe("createSchema — indexes", () => {
 // ---------------------------------------------------------------------------
 
 describe("createSchema — findings table columns", () => {
-  it("has an addressed_by column", () => {
+  it("has all 11 expected columns", () => {
     const db = freshDb();
-    const columns = columnNames(db, "findings");
-    expect(columns).toContain("addressed_by");
+    const cols = columnNames(db, "findings");
+    for (const col of [
+      "id", "severity", "work_item", "file_refs", "verdict",
+      "cycle", "reviewer", "description", "suggestion", "addressed_by", "title",
+    ]) {
+      expect(cols, `expected findings to have column '${col}'`).toContain(col);
+    }
+  });
+
+  it("NOT NULL constraints: severity, work_item, verdict, cycle, reviewer are required; file_refs, description, suggestion, addressed_by, title are nullable", () => {
+    const db = freshDb();
+    type ColInfo = { name: string; notnull: number };
+    const colInfo = db.prepare("PRAGMA table_info('findings')").all() as ColInfo[];
+    const byName = Object.fromEntries(colInfo.map((c) => [c.name, c.notnull]));
+    for (const col of ["severity", "work_item", "verdict", "cycle", "reviewer"]) {
+      expect(byName[col], `${col} should be NOT NULL`).toBe(1);
+    }
+    for (const col of ["file_refs", "description", "suggestion", "addressed_by", "title"]) {
+      expect(byName[col], `${col} should be nullable`).toBe(0);
+    }
   });
 });
 
@@ -434,10 +595,27 @@ describe("createSchema — findings table columns", () => {
 // ---------------------------------------------------------------------------
 
 describe("createSchema — domain_policies table columns", () => {
-  it("has an amended_by column", () => {
+  it("has all 7 expected columns", () => {
     const db = freshDb();
-    const columns = columnNames(db, "domain_policies");
-    expect(columns).toContain("amended_by");
+    const cols = columnNames(db, "domain_policies");
+    for (const col of [
+      "id", "domain", "derived_from", "established", "amended", "amended_by", "description",
+    ]) {
+      expect(cols, `expected domain_policies to have column '${col}'`).toContain(col);
+    }
+  });
+
+  it("NOT NULL constraints: domain is required; derived_from, established, amended, amended_by, description are nullable", () => {
+    const db = freshDb();
+    type ColInfo = { name: string; notnull: number };
+    const colInfo = db.prepare("PRAGMA table_info('domain_policies')").all() as ColInfo[];
+    const byName = Object.fromEntries(colInfo.map((c) => [c.name, c.notnull]));
+    for (const col of ["domain"]) {
+      expect(byName[col], `${col} should be NOT NULL`).toBe(1);
+    }
+    for (const col of ["derived_from", "established", "amended", "amended_by", "description"]) {
+      expect(byName[col], `${col} should be nullable`).toBe(0);
+    }
   });
 });
 
@@ -446,14 +624,27 @@ describe("createSchema — domain_policies table columns", () => {
 // ---------------------------------------------------------------------------
 
 describe("createSchema — domain_questions table columns", () => {
-  it("has a nullable addressed_by column", () => {
+  it("has all 8 expected columns", () => {
     const db = freshDb();
-    const rows = db
-      .prepare(`PRAGMA table_info(domain_questions)`)
-      .all() as Array<{ name: string; notnull: number }>;
-    const col = rows.find((r) => r.name === "addressed_by");
-    expect(col).toBeDefined();
-    expect(col!.notnull).toBe(0);
+    const cols = columnNames(db, "domain_questions");
+    for (const col of [
+      "id", "domain", "impact", "source", "resolution", "resolved_in", "description", "addressed_by",
+    ]) {
+      expect(cols, `expected domain_questions to have column '${col}'`).toContain(col);
+    }
+  });
+
+  it("NOT NULL constraints: domain is required; impact, source, resolution, resolved_in, description, addressed_by are nullable", () => {
+    const db = freshDb();
+    type ColInfo = { name: string; notnull: number };
+    const colInfo = db.prepare("PRAGMA table_info('domain_questions')").all() as ColInfo[];
+    const byName = Object.fromEntries(colInfo.map((c) => [c.name, c.notnull]));
+    for (const col of ["domain"]) {
+      expect(byName[col], `${col} should be NOT NULL`).toBe(1);
+    }
+    for (const col of ["impact", "source", "resolution", "resolved_in", "description", "addressed_by"]) {
+      expect(byName[col], `${col} should be nullable`).toBe(0);
+    }
   });
 });
 
@@ -462,21 +653,280 @@ describe("createSchema — domain_questions table columns", () => {
 // ---------------------------------------------------------------------------
 
 describe("createSchema — document_artifacts table columns", () => {
-  it("has nullable title, cycle, and content columns", () => {
+  it("has all 4 expected columns", () => {
     const db = freshDb();
-    const rows = db
-      .prepare(`PRAGMA table_info(document_artifacts)`)
-      .all() as Array<{ name: string; notnull: number }>;
-    const colNames = rows.map((r) => r.name);
-    expect(colNames).toContain("title");
-    expect(colNames).toContain("cycle");
-    expect(colNames).toContain("content");
-    const title = rows.find((r) => r.name === "title");
-    expect(title!.notnull).toBe(0);
-    const cycle = rows.find((r) => r.name === "cycle");
-    expect(cycle!.notnull).toBe(0);
-    const content = rows.find((r) => r.name === "content");
-    expect(content!.notnull).toBe(0);
+    const cols = columnNames(db, "document_artifacts");
+    for (const col of ["id", "title", "cycle", "content"]) {
+      expect(cols, `expected document_artifacts to have column '${col}'`).toContain(col);
+    }
+  });
+
+  it("NOT NULL constraints: title, cycle, and content are nullable", () => {
+    const db = freshDb();
+    type ColInfo = { name: string; notnull: number };
+    const colInfo = db.prepare("PRAGMA table_info('document_artifacts')").all() as ColInfo[];
+    const byName = Object.fromEntries(colInfo.map((c) => [c.name, c.notnull]));
+    for (const col of ["title", "cycle", "content"]) {
+      expect(byName[col], `${col} should be nullable`).toBe(0);
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// work_items table
+// ---------------------------------------------------------------------------
+
+describe("createSchema — work_items table", () => {
+  it("has all 13 expected columns", () => {
+    const db = freshDb();
+    const cols = columnNames(db, "work_items");
+    for (const col of [
+      "id", "title", "complexity", "scope", "depends", "blocks",
+      "criteria", "module", "domain", "phase", "notes", "work_item_type", "resolution",
+    ]) {
+      expect(cols, `expected work_items to have column '${col}'`).toContain(col);
+    }
+  });
+
+  it("NOT NULL constraints: title is required; complexity, scope, depends, blocks, criteria, module, domain, phase, notes, work_item_type, resolution are nullable", () => {
+    const db = freshDb();
+    type ColInfo = { name: string; notnull: number };
+    const colInfo = db.prepare("PRAGMA table_info('work_items')").all() as ColInfo[];
+    const byName = Object.fromEntries(colInfo.map((c) => [c.name, c.notnull]));
+
+    // Required (NOT NULL)
+    for (const col of ["title"]) {
+      expect(byName[col], `expected '${col}' to be NOT NULL`).toBe(1);
+    }
+
+    // Nullable
+    for (const col of ["complexity", "scope", "depends", "blocks", "criteria", "module", "domain", "phase", "notes", "work_item_type", "resolution"]) {
+      expect(byName[col], `expected '${col}' to be nullable`).toBe(0);
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// domain_decisions table
+// ---------------------------------------------------------------------------
+
+describe("createSchema — domain_decisions table", () => {
+  it("has all 8 expected columns", () => {
+    const db = freshDb();
+    const cols = columnNames(db, "domain_decisions");
+    for (const col of ["id", "domain", "cycle", "supersedes", "description", "rationale", "title", "source"]) {
+      expect(cols, `expected domain_decisions to have column '${col}'`).toContain(col);
+    }
+  });
+
+  it("NOT NULL constraints: domain is required; cycle, supersedes, description, rationale, title, source are nullable", () => {
+    const db = freshDb();
+    type ColInfo = { name: string; notnull: number };
+    const colInfo = db.prepare("PRAGMA table_info('domain_decisions')").all() as ColInfo[];
+    const byName = Object.fromEntries(colInfo.map((c) => [c.name, c.notnull]));
+
+    // Required (NOT NULL)
+    for (const col of ["domain"]) {
+      expect(byName[col], `expected '${col}' to be NOT NULL`).toBe(1);
+    }
+
+    // Nullable
+    for (const col of ["cycle", "supersedes", "description", "rationale", "title", "source"]) {
+      expect(byName[col], `expected '${col}' to be nullable`).toBe(0);
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// guiding_principles table
+// ---------------------------------------------------------------------------
+
+describe("createSchema — guiding_principles table", () => {
+  it("has all 4 expected columns", () => {
+    const db = freshDb();
+    const cols = columnNames(db, "guiding_principles");
+    for (const col of ["id", "name", "description", "amendment_history"]) {
+      expect(cols, `expected guiding_principles to have column '${col}'`).toContain(col);
+    }
+  });
+
+  it("NOT NULL constraints: name is required; description and amendment_history are nullable", () => {
+    const db = freshDb();
+    type ColInfo = { name: string; notnull: number };
+    const colInfo = db.prepare("PRAGMA table_info('guiding_principles')").all() as ColInfo[];
+    const byName = Object.fromEntries(colInfo.map((c) => [c.name, c.notnull]));
+
+    // Required (NOT NULL)
+    for (const col of ["name"]) {
+      expect(byName[col], `expected '${col}' to be NOT NULL`).toBe(1);
+    }
+
+    // Nullable
+    for (const col of ["description", "amendment_history"]) {
+      expect(byName[col], `expected '${col}' to be nullable`).toBe(0);
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// constraints table
+// ---------------------------------------------------------------------------
+
+describe("createSchema — constraints table", () => {
+  it("has all 3 expected columns", () => {
+    const db = freshDb();
+    const cols = columnNames(db, "constraints");
+    for (const col of ["id", "category", "description"]) {
+      expect(cols, `expected constraints to have column '${col}'`).toContain(col);
+    }
+  });
+
+  it("NOT NULL constraints: category is required; description is nullable", () => {
+    const db = freshDb();
+    type ColInfo = { name: string; notnull: number };
+    const colInfo = db.prepare("PRAGMA table_info('constraints')").all() as ColInfo[];
+    const byName = Object.fromEntries(colInfo.map((c) => [c.name, c.notnull]));
+
+    // Required (NOT NULL)
+    for (const col of ["category"]) {
+      expect(byName[col], `expected '${col}' to be NOT NULL`).toBe(1);
+    }
+
+    // Nullable
+    for (const col of ["description"]) {
+      expect(byName[col], `expected '${col}' to be nullable`).toBe(0);
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// module_specs table
+// ---------------------------------------------------------------------------
+
+describe("createSchema — module_specs table", () => {
+  it("has all 6 expected columns", () => {
+    const db = freshDb();
+    const cols = columnNames(db, "module_specs");
+    for (const col of ["id", "name", "scope", "provides", "requires", "boundary_rules"]) {
+      expect(cols, `expected module_specs to have column '${col}'`).toContain(col);
+    }
+  });
+
+  it("NOT NULL constraints: name is required; scope, provides, requires, boundary_rules are nullable", () => {
+    const db = freshDb();
+    type ColInfo = { name: string; notnull: number };
+    const colInfo = db.prepare("PRAGMA table_info('module_specs')").all() as ColInfo[];
+    const byName = Object.fromEntries(colInfo.map((c) => [c.name, c.notnull]));
+
+    // Required (NOT NULL)
+    for (const col of ["name"]) {
+      expect(byName[col], `expected '${col}' to be NOT NULL`).toBe(1);
+    }
+
+    // Nullable
+    for (const col of ["scope", "provides", "requires", "boundary_rules"]) {
+      expect(byName[col], `expected '${col}' to be nullable`).toBe(0);
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// research_findings table
+// ---------------------------------------------------------------------------
+
+describe("createSchema — research_findings table", () => {
+  it("has all 5 expected columns", () => {
+    const db = freshDb();
+    const cols = columnNames(db, "research_findings");
+    for (const col of ["id", "topic", "date", "content", "sources"]) {
+      expect(cols, `expected research_findings to have column '${col}'`).toContain(col);
+    }
+  });
+
+  it("NOT NULL constraints: topic is required; date, content, sources are nullable", () => {
+    const db = freshDb();
+    type ColInfo = { name: string; notnull: number };
+    const colInfo = db.prepare("PRAGMA table_info('research_findings')").all() as ColInfo[];
+    const byName = Object.fromEntries(colInfo.map((c) => [c.name, c.notnull]));
+
+    // Required (NOT NULL)
+    for (const col of ["topic"]) {
+      expect(byName[col], `expected '${col}' to be NOT NULL`).toBe(1);
+    }
+
+    // Nullable
+    for (const col of ["date", "content", "sources"]) {
+      expect(byName[col], `expected '${col}' to be nullable`).toBe(0);
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// journal_entries table
+// ---------------------------------------------------------------------------
+
+describe("createSchema — journal_entries table", () => {
+  it("has all 6 expected columns", () => {
+    const db = freshDb();
+    const cols = columnNames(db, "journal_entries");
+    for (const col of ["id", "phase", "date", "title", "work_item", "content"]) {
+      expect(cols, `expected journal_entries to have column '${col}'`).toContain(col);
+    }
+  });
+
+  it("NOT NULL constraints: phase, date, title, work_item, content are all nullable", () => {
+    const db = freshDb();
+    type ColInfo = { name: string; notnull: number };
+    const colInfo = db.prepare("PRAGMA table_info('journal_entries')").all() as ColInfo[];
+    const byName = Object.fromEntries(colInfo.map((c) => [c.name, c.notnull]));
+
+    // Nullable
+    for (const col of ["phase", "date", "title", "work_item", "content"]) {
+      expect(byName[col], `expected '${col}' to be nullable`).toBe(0);
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// metrics_events table
+// ---------------------------------------------------------------------------
+
+describe("createSchema — metrics_events table", () => {
+  it("has all 18 expected columns", () => {
+    const db = freshDb();
+    const cols = columnNames(db, "metrics_events");
+    for (const col of [
+      "id", "event_name", "timestamp", "payload",
+      "input_tokens", "output_tokens", "cache_read_tokens", "cache_write_tokens",
+      "outcome", "finding_count", "finding_severities", "first_pass_accepted", "rework_count",
+      "work_item_total_tokens", "cycle_total_tokens", "cycle_total_cost_estimate",
+      "convergence_cycles", "context_artifact_ids",
+    ]) {
+      expect(cols, `expected metrics_events to have column '${col}'`).toContain(col);
+    }
+  });
+
+  it("NOT NULL constraints: event_name is required; all other non-PK columns are nullable", () => {
+    const db = freshDb();
+    type ColInfo = { name: string; notnull: number };
+    const colInfo = db.prepare("PRAGMA table_info('metrics_events')").all() as ColInfo[];
+    const byName = Object.fromEntries(colInfo.map((c) => [c.name, c.notnull]));
+
+    // Required (NOT NULL)
+    for (const col of ["event_name"]) {
+      expect(byName[col], `expected '${col}' to be NOT NULL`).toBe(1);
+    }
+
+    // Nullable
+    for (const col of [
+      "timestamp", "payload", "input_tokens", "output_tokens",
+      "cache_read_tokens", "cache_write_tokens", "outcome", "finding_count",
+      "finding_severities", "first_pass_accepted", "rework_count",
+      "work_item_total_tokens", "cycle_total_tokens", "cycle_total_cost_estimate",
+      "convergence_cycles", "context_artifact_ids",
+    ]) {
+      expect(byName[col], `expected '${col}' to be nullable`).toBe(0);
+    }
   });
 });
 

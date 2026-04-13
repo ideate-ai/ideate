@@ -1,8 +1,8 @@
 id: PH-017
 type: phase
 name: Documentation & Cleanup
-intent: "Cycle 22 test-quality fixes: eliminate vacuous assertions, add missing coverage, correct documentation"
-description: Fix deferred minor items from reviews, update ARCHITECTURE.md for new skills, create comprehensive GUIDE.md user guide.
+intent: "Cycle 23: complete schema.test.ts coverage for all extension tables — column-structure tests, CASCADE tests, reserved keyword documentation, and hardcoded count removal"
+description: Test-quality fixes and schema test coverage completion
 phase_type: implementation
 project: PR-002
 status: active
@@ -17,7 +17,12 @@ work_items:
   - WI-760
   - WI-761
   - WI-762
+  - WI-763
+  - WI-764
+  - WI-765
+  - WI-766
+  - WI-767
 success_criteria: All deferred minor fixes resolved. ARCHITECTURE.md reflects current skill surface. GUIDE.md provides complete user-facing documentation for all 10 skills, project/phase management, work item types, and the SDLC loop.
-content_hash: 68c735311be3a777aa2c46f8c70eacae8f177c47b3fb9216db532d0a5313798d
-token_count: 210
+content_hash: 15317678b064b337d38e95434b33ba17f7d6a5cfc7d11b76ead27eb4b850c7d6
+token_count: 224
 cycle_modified: 21

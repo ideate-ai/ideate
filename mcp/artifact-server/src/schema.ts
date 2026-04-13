@@ -518,6 +518,8 @@ export function createSchema(db: Database.Database): void {
     `);
 
     // -- constraints --
+    // NOTE: "constraints" is a SQL reserved keyword used as a table name;
+    // SQLite tolerates it unquoted in DDL but quote it in DML if needed.
     db.exec(`
       CREATE TABLE IF NOT EXISTS constraints (
         id          TEXT PRIMARY KEY REFERENCES nodes(id) ON DELETE CASCADE,
@@ -613,7 +615,8 @@ export function createSchema(db: Database.Database): void {
       CREATE TABLE IF NOT EXISTS proxy_human_decisions (
         id        TEXT PRIMARY KEY REFERENCES nodes(id) ON DELETE CASCADE,
         cycle     INTEGER NOT NULL,
-        trigger   TEXT NOT NULL,
+        trigger   TEXT NOT NULL, -- NOTE: "trigger" is a SQLite reserved keyword; double-quote it in DML statements
+
         triggered_by TEXT,
         decision  TEXT NOT NULL,
         rationale TEXT,

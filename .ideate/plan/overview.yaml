@@ -1,6 +1,6 @@
 id: overview
 type: overview
-title: Cycle 22 Review Fix-Up
+title: "PH-017 Cycle 23: Schema test coverage completion"
 change_plan: |-
   Address three minor carry-forward findings from cycle 20 review. No architecture changes, no new technology.
 
@@ -13,10 +13,10 @@ change_plan: |-
   **What is NOT changing**: adapter.ts, reader.ts, any production code, adapter-contract.md (unless null-status question behavior is found to be incorrectly documented).
 
   **New work items**: WI-745, WI-746.
-content_hash: 5c097bb907f1a3e9928c7ec3c87969c6692e6aca6199c8fd6c399fa0d4a4a518
-token_count: 1214
+content_hash: 3ddf711230ab4d546470adf9f23cd44325afa8943375f485e2a2345a8a87faad
+token_count: 1321
 what_is_changing: Four targeted fixes in the MCP artifact server addressing findings from the full audit conducted in cycle 20.
-trigger: cycle-22-review-findings
+trigger: Cycle 22 review minor findings (M3) and carry-forward gaps (CF1-CF4)
 changes:
   - id: WI-759
     description: Update WI-754 acceptance criteria to document the sqlite_* filter that was added during implementation but not reflected in the AC text (P-76 violation).
@@ -66,8 +66,10 @@ scope_out:
   - Any other test files
   - Skills or agents
 work_items:
-  - "WI-754: Fix extensionTables count assertion to query DB (HIGH)"
-  - "WI-755: Fix stale CURRENT_SCHEMA_VERSION marker (MEDIUM)"
-  - "WI-756: Fix Phase 2 test — add EACCES assertion and platform guard (MEDIUM)"
-  - "WI-757: Add proxy_human_decisions column-structure test (LOW)"
-  - "WI-758: Update migrations.test.ts deferral comment to reference WI-758 (MEDIUM)"
+  - "WI-763: Document reserved keywords in schema.ts DDL"
+  - "WI-764: Column-structure tests for 8 untested tables"
+  - "WI-765: Complete partial column-structure tests for 4 tables"
+  - "WI-766: CASCADE tests for 10 untested tables"
+  - "WI-767: Replace ALL_NODE_TYPES.length hardcoded count"
+scope: Complete schema.test.ts test coverage for all 16 extension tables. Add column-structure tests for 8 untested tables, expand 4 partial tests, add CASCADE tests for 10 untested tables, replace hardcoded ALL_NODE_TYPES count, document reserved keywords in DDL.
+not_changing: No production code changes except DDL comments in schema.ts. No architecture changes. No new modules. All changes are test coverage and documentation.

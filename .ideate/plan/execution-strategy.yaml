@@ -3,43 +3,38 @@ type: execution_strategy
 mode: sequential
 max_parallelism: 3
 worktrees: false
-review_cadence: single capstone after all 4 items complete
+review_cadence: per-item
 work_item_groups:
   - group: 1
     items:
       - WI-745
       - WI-746
     notes: No dependencies between items. Different files. Run in parallel.
-dependency_graph: WI-759 → WI-760 → WI-761 → WI-762 (fully sequential)
+dependency_graph: WI-763 (independent) | WI-767 (independent) | WI-764 → WI-765 → WI-766
 agent_configuration:
   model: sonnet
   reviewer_model: sonnet
-content_hash: 3102244df56e07b86f5ba3ee5beaff8a6c046725b0a031da7a559b5602ab1994
-token_count: 508
+content_hash: f53dc58df67fd6b434e5ba62420866fce455d05a1f7dd76eaf85e6ac17884b18
+token_count: 452
 cycle: 23
 parallelism: 1
 worktree: true
 groups:
-  - group: 1
+  - name: Independent fixes
     items:
-      - WI-759
-    rationale: AC text update — modifies a work item artifact, not source code
-  - group: 2
+      - WI-763
+      - WI-767
+    notes: WI-763 modifies schema.ts, WI-767 modifies adapter-contract.test.ts — no file overlap with each other or the schema.test.ts chain. Can run in parallel if desired.
+  - name: Schema test coverage chain
     items:
-      - WI-760
-    rationale: CASCADE test — adds a new it() block to proxy_human_decisions describe block
-  - group: 3
-    items:
-      - WI-761
-    rationale: Column assertion — adds current_phase_id to projects column test; depends on WI-760 completing first to serialize file edits
-  - group: 4
-    items:
-      - WI-762
-    rationale: Column assertion — adds completed_date to phases column test; depends on WI-761 completing first to serialize file edits
+      - WI-764
+      - WI-765
+      - WI-766
+    notes: All three modify schema.test.ts. Must be sequential. WI-764 adds new describe blocks, WI-765 expands existing ones, WI-766 adds CASCADE tests.
 note_on_wi749: WI-749 is a spike. If it finds domain_index is a planned-but-unimplemented feature, new work items will be created in the next refinement. It does not block any other item.
 note_on_wi750_wi748_overlap: WI-748 modifies writer.ts function bodies. WI-750 modifies only the module header comment at writer.ts:8-10. These are non-overlapping line ranges and can execute in parallel.
 cycle_modified: 21
 rationale: WI-760, WI-761, and WI-762 all modify schema.test.ts at different sections. Sequential execution avoids merge conflicts on the same file. WI-759 modifies a work item artifact and could run in parallel with WI-760, but the batch is small enough that sequential ordering is simpler.
 agent_config:
-  preferred_execution: main session
-  reason: All changes are 1-5 line edits in test files; subagent overhead is not justified
+  model: sonnet
+  max_turns: 100
