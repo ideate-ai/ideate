@@ -1,6 +1,7 @@
 import * as fs from "fs";
 import * as path from "path";
 import type { ToolContext } from "../types.js";
+import { log } from "../logger.js";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -142,7 +143,7 @@ export async function handleGetConvergenceStatus(
           if (parsed && typeof parsed.content === "string") {
             return parsed.content;
           }
-          console.warn("resolveContent: da_content parsed successfully but .content is not a string for id:", row.id);
+          log.warn("analysis", `resolveContent: da_content parsed successfully but .content is not a string for id: ${row.id}`);
           return null;
         } catch {
           // not JSON

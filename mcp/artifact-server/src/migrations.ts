@@ -17,6 +17,7 @@ import * as fs from "fs";
 import Database from "better-sqlite3";
 import { readRawConfig, writeConfig, CONFIG_SCHEMA_VERSION } from "./config.js";
 import { CURRENT_SCHEMA_VERSION } from "./schema.js";
+import { log } from "./logger.js";
 
 // ---------------------------------------------------------------------------
 // Migration interface
@@ -143,8 +144,7 @@ export function runPendingMigrations(ideateDir: string): MigrationResult {
       continue;
     }
 
-    const ts = new Date().toISOString();
-    console.log(`[${ts}] [migrations] Running: ${migration.description} (v${migration.fromVersion} → v${migration.toVersion})`);
+    log.info("migrations", `Running: ${migration.description} (v${migration.fromVersion} → v${migration.toVersion})`);
 
     try {
       migration.migrate(ideateDir);
@@ -157,8 +157,7 @@ export function runPendingMigrations(ideateDir: string): MigrationResult {
       writeConfig(ideateDir, updatedConfig);
     } catch (err) {
       const errMsg = err instanceof Error ? err.message : String(err);
-      const errTs = new Date().toISOString();
-      console.error(`[${errTs}] [migrations] Failed: ${migration.description} — ${errMsg}`);
+      log.error("migrations", `Failed: ${migration.description} — ${errMsg}`);
       result.errors.push(`v${migration.fromVersion}→v${migration.toVersion}: ${errMsg}`);
       break; // Stop on first failure
     }

@@ -24,6 +24,7 @@ import {
   getTableName,
   computeArtifactHash,
 } from "./db-helpers.js";
+import { log } from "./logger.js";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -68,7 +69,7 @@ function walkDir(dir: string): string[] {
     try {
       entries = fs.readdirSync(current, { withFileTypes: true });
     } catch (err) {
-      console.error('[ideate] walkDir: failed to read directory', current, err);
+      log.error("indexer", `walkDir: failed to read directory ${current}`, err);
       return;
     }
     for (const entry of entries) {
@@ -99,7 +100,7 @@ function safeParseYaml(content: string, filePath: string, caller: string = "unkn
   } catch (err) {
     const errMsg = err instanceof Error ? err.message : String(err);
     const timestamp = new Date().toISOString();
-    console.warn(`[${timestamp}] [indexer:${caller}] YAML parse error in ${filePath}: ${errMsg}`);
+    log.warn("indexer", `[${caller}] YAML parse error in ${filePath}: ${errMsg}`);
     return { parsed: null, errorMessage: errMsg };
   }
 }
@@ -1003,7 +1004,7 @@ export function rebuildIndex(db: Database.Database, drizzleDb: DrizzleDb, ideate
   deletePhase();
 
   if (stats.files_failed > 0) {
-    console.warn(`[indexer] ${stats.files_failed} file(s) failed to parse`);
+    log.warn("indexer", `${stats.files_failed} file(s) failed to parse`);
   }
 
   // Phase 3: Derive relates_to edges from journal entry titles.
@@ -1030,7 +1031,7 @@ export function rebuildIndex(db: Database.Database, drizzleDb: DrizzleDb, ideate
 
   if (cycles.length > 0) {
     for (const cycle of cycles) {
-      console.warn(`[indexer] Cycle detected among nodes: ${cycle.join(" -> ")}`);
+      log.warn("indexer", `Cycle detected among nodes: ${cycle.join(" -> ")}`);
     }
   }
 

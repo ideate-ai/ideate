@@ -12,6 +12,7 @@ import {
   CycleDetectedError,
   ScopeCollisionError,
 } from "../../adapter.js";
+import { log } from "../../logger.js";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -212,7 +213,7 @@ export class GraphQLClient {
         const result = await this.executeOnce<T>(document, variables);
         // Log successful retry if this wasn't the first attempt
         if (attempt > 1) {
-          console.log(`[GraphQLClient] Request succeeded on attempt ${attempt}/${this.MAX_RETRIES}`);
+          log.info("graphql", `Request succeeded on attempt ${attempt}/${this.MAX_RETRIES}`);
         }
         return result;
       } catch (err) {
@@ -225,13 +226,13 @@ export class GraphQLClient {
 
         // Don't retry if this was the last attempt
         if (attempt >= this.MAX_RETRIES) {
-          console.log(`[GraphQLClient] Request failed after ${this.MAX_RETRIES} attempts`);
+          log.error("graphql", `Request failed after ${this.MAX_RETRIES} attempts`);
           throw err;
         }
 
         // Calculate and apply backoff delay
         const delay = this.getRetryDelay(attempt);
-        console.log(`[GraphQLClient] Attempt ${attempt}/${this.MAX_RETRIES} failed, retrying in ${delay}ms...`);
+        log.warn("graphql", `Attempt ${attempt}/${this.MAX_RETRIES} failed, retrying in ${delay}ms...`);
         await this.sleep(delay);
       }
     }

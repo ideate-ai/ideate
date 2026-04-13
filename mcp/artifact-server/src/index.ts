@@ -9,6 +9,7 @@ import { TOOLS, handleTool } from "./tools/index.js";
 import { artifactWatcher } from "./watcher.js";
 import { resolveArtifactDir } from "./config.js";
 import { createDormantState, initServer, routeToolCall, ServerState } from "./server.js";
+import { log } from "./logger.js";
 
 const require = createRequire(import.meta.url);
 const pkg = require("../package.json") as { version: string };
@@ -29,7 +30,7 @@ try {
 } catch (err) {
   // Start in dormant mode — lazy recovery will retry on first tool call.
   const msg = err instanceof Error ? err.message : String(err);
-  console.log(`[ideate-artifact-server] Startup init failed (dormant mode): ${msg}`);
+  log.info("server", `Startup init failed (dormant mode): ${msg}`);
 }
 
 // ---------------------------------------------------------------------------
@@ -48,11 +49,16 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
 server.setRequestHandler(CallToolRequestSchema, async (request) => {
   const { name, arguments: args } = request.params;
   const _args = (args ?? {}) as Record<string, unknown>;
+  const done = log.toolCall(name, _args);
 
   try {
-    return await routeToolCall(state, name, _args, handleTool);
+    const result = await routeToolCall(state, name, _args, handleTool);
+    done();
+    return result;
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
+    log.error("tool", `${name} failed: ${message}`, err);
+    done();
     return {
       content: [{ type: "text", text: `Error: ${message}` }],
       isError: true,
@@ -69,6 +75,14 @@ function shutdown() {
 
 process.on("SIGINT", shutdown);
 process.on("SIGTERM", shutdown);
+
+// Prevent unhandled errors from crashing the MCP server
+process.on("unhandledRejection", (reason) => {
+  log.error("process", "Unhandled promise rejection", reason);
+});
+process.on("uncaughtException", (err) => {
+  log.error("process", "Uncaught exception", err);
+});
 
 const transport = new StdioServerTransport();
 await server.connect(transport);

@@ -32,6 +32,7 @@ import type {
 
 import { ConnectionError, ValidationError, StorageAdapterError, ImmutableFieldError, ALL_NODE_TYPES, ALL_EDGE_TYPES } from "../../adapter.js";
 import { GraphQLClient } from "./client.js";
+import { log } from "../../logger.js";
 
 // ---------------------------------------------------------------------------
 // Enum case mapping helpers
@@ -1438,7 +1439,7 @@ export class RemoteAdapter implements StorageAdapter {
       // Count nodes where status is null
       return data.artifactQuery.edges.filter((edge) => edge.node.status === null).length;
     } catch (err) {
-      console.error("_countNodesWithoutStatus failed:", err);
+      log.error("remote", "_countNodesWithoutStatus failed", err);
       return 0;
     }
   }

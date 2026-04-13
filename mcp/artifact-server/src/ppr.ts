@@ -17,6 +17,7 @@
 
 import { BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
 import type * as dbSchema from "./db.js";
+import { log } from "./logger.js";
 import { edges } from "./db.js";
 import { ValidationError } from "./adapter.js";
 
@@ -182,8 +183,8 @@ export function computePPR(
 
   // Check maxNodes limit
   if (totalNodes > maxNodes) {
-    console.warn(
-      `[PPR] Graph size (${totalNodes} nodes) exceeds maxNodes limit (${maxNodes}). ` +
+    log.warn("ppr",
+      `Graph size (${totalNodes} nodes) exceeds maxNodes limit (${maxNodes}). ` +
       `Returning empty result to prevent resource exhaustion.`
     );
     return [];

@@ -25,6 +25,7 @@ import { createSchema, checkSchemaVersion } from "./schema.js";
 import { rebuildIndex, indexFiles, removeFiles, RebuildStats } from "./indexer.js";
 import { runPendingMigrations } from "./migrations.js";
 import * as dbSchema from "./db.js";
+import { log } from "./logger.js";
 
 // ---------------------------------------------------------------------------
 // ServerState — testable value object instead of module-level mutable vars
@@ -119,10 +120,10 @@ export function initServer(dir: string, state: ServerState): void {
   // They run against the artifact directory (dir), not the SQLite index.
   const migrationResult = runPendingMigrations(dir);
   if (migrationResult.migrationsRun > 0) {
-    console.log(`[ideate-artifact-server] ${migrationResult.migrationsRun} migration(s) applied (v${migrationResult.fromVersion} → v${migrationResult.toVersion})`);
+    log.info("server", `${migrationResult.migrationsRun} migration(s) applied (v${migrationResult.fromVersion} → v${migrationResult.toVersion})`);
   }
   if (migrationResult.errors.length > 0) {
-    console.error(`[ideate-artifact-server] Migration errors: ${migrationResult.errors.join("; ")}`);
+    log.error("server", `Migration errors: ${migrationResult.errors.join("; ")}`);
   }
 
   // Use locals so server state is only committed after full success
@@ -146,7 +147,7 @@ export function initServer(dir: string, state: ServerState): void {
   state.ctx = { db: newDb, drizzleDb: newDrizzle, ideateDir: dir, adapter };
 
   signalIndexReady();
-  console.log(`[ideate-artifact-server] initialized, ${stats.files_scanned} files indexed`);
+  log.info("server", `initialized, ${stats.files_scanned} files indexed`);
 
   // File watcher: incrementally index changed files (guard against duplicate listeners)
   artifactWatcher.watch(dir);
@@ -165,7 +166,7 @@ export function initServer(dir: string, state: ServerState): void {
           removeFiles(state.ctx.db, state.ctx.drizzleDb, yamlDeleted);
         }
       } catch (err) {
-        console.error("[watcher] incremental index failed:", err);
+        log.error("watcher", "incremental index failed", err);
       }
     });
   }
@@ -188,7 +189,7 @@ function tryInitServer(dir: string, state: ServerState): string | null {
     return null;
   } catch (err) {
     const msg = (err as Error).message;
-    console.error(`[ideate-artifact-server] Late initialization failed: ${msg}`);
+    log.error("server", `Late initialization failed: ${msg}`);
     return `DB initialization failed: ${msg}. Server is still dormant.`;
   }
 }
@@ -265,7 +266,7 @@ export async function routeToolCall(
     try {
       const dir = resolveArtifactDir({});
       initServer(dir, state);
-      console.log(`[ideate-artifact-server] Lazy initialization succeeded: ${dir}`);
+      log.info("server", `Lazy initialization succeeded: ${dir}`);
       // Fall through to normal handling now that ctx is set
     } catch {
       const result = JSON.stringify({
@@ -283,7 +284,7 @@ export async function routeToolCall(
     try {
       const dir = resolveArtifactDir({});
       initServer(dir, state);
-      console.log(`[ideate-artifact-server] Lazy initialization succeeded: ${dir}`);
+      log.info("server", `Lazy initialization succeeded: ${dir}`);
     } catch {
       return {
         content: [{ type: "text", text: "Error: Project not initialized. Run /ideate:init to set up the .ideate/ directory." }],

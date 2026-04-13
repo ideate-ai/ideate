@@ -1,6 +1,7 @@
 import { existsSync, readFileSync } from "fs";
 import path from "path";
 import { spawnSync } from "child_process";
+import { log } from "./logger.js";
 
 // ---------------------------------------------------------------------------
 // Event name constants
@@ -205,8 +206,9 @@ export function dispatchHook(
   // Validate command against allowlist
   const allowedCommand = validateCommand(parsed.command);
   if (!allowedCommand) {
-    console.log(
-      `[ideate:hooks] Hook rejected: command "${parsed.command}" is not in allowlist. ` +
+    log.warn(
+      "hooks",
+      `Hook rejected: command "${parsed.command}" is not in allowlist. ` +
       `Allowed commands: ${Array.from(ALLOWLISTED_COMMANDS).join(", ")}`
     );
     throw new Error(
@@ -259,10 +261,7 @@ export function fireEvent(
     try {
       dispatchHook(hook, variables);
     } catch (err) {
-      console.log(
-        `[ideate:hooks] Error firing hook for event "${eventName}":`,
-        err
-      );
+      log.error("hooks", `Error firing hook for event "${eventName}"`, err);
     }
   }
 }
