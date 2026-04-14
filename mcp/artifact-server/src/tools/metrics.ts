@@ -1,76 +1,14 @@
-import * as fs from "fs";
-import * as path from "path";
-import * as crypto from "crypto";
-import { randomUUID } from "crypto";
-import { stringify as stringifyYaml } from "yaml";
 import type { ToolContext } from "../types.js";
-import * as dbSchema from "../db.js";
 
 // ---------------------------------------------------------------------------
-// Helpers
+// handleEmitMetric — no-op (soft-deprecated in PH-044)
 // ---------------------------------------------------------------------------
-
-function tokenCount(content: string): number {
-  return Math.floor(content.length / 4);
-}
 
 /**
- * Compute a stable content hash for a YAML artifact object.
- * Inlined from db-helpers.ts to avoid direct db-helpers import in tool handlers.
+ * Soft-deprecated in PH-044. Prior aggregation logic was distrusted as
+ * unreliable (bad data worse than no data). Full removal and replacement
+ * deferred to quality-metrics rebuild phase.
  */
-function computeArtifactHash(yamlObj: Record<string, unknown>): string {
-  const forHash: Record<string, unknown> = {};
-  for (const [k, v] of Object.entries(yamlObj)) {
-    if (k !== "content_hash" && k !== "token_count" && k !== "file_path") {
-      forHash[k] = v;
-    }
-  }
-  const serialized = stringifyYaml(forHash, { lineWidth: 0 });
-  return crypto.createHash("sha256").update(serialized, "utf8").digest("hex");
-}
-
-/**
- * Upsert a row into the nodes table (inlined from db-helpers to avoid direct import).
- *
- * Test-only fallback — adapter is always set in production. This helper is only
- * exercised by the no-adapter fallback path in handleEmitMetric.
- */
-function upsertNodeRow(
-  db: ToolContext["drizzleDb"],
-  row: {
-    id: string; type: string; cycle_created: number | null; cycle_modified: number | null;
-    content_hash: string; token_count: number | null; file_path: string; status: string | null;
-  }
-): void {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  (db.insert(dbSchema.nodes) as any)
-    .values(row)
-    .onConflictDoUpdate({ target: dbSchema.nodes.id, set: row })
-    .run();
-}
-
-/**
- * Upsert a row into the metrics_events table (inlined from db-helpers to avoid direct import).
- *
- * Test-only fallback — adapter is always set in production. This helper is only
- * exercised by the no-adapter fallback path in handleEmitMetric.
- */
-function upsertMetricsEventRow(
-  db: ToolContext["drizzleDb"],
-  row: Record<string, unknown>
-): void {
-  const { id, ...rest } = row;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  (db.insert(dbSchema.metricsEvents) as any)
-    .values(row)
-    .onConflictDoUpdate({ target: dbSchema.metricsEvents.id, set: rest })
-    .run();
-}
-
-// ---------------------------------------------------------------------------
-// handleEmitMetric — write YAML + upsert to SQLite (P-44 pattern)
-// ---------------------------------------------------------------------------
-
 export async function handleEmitMetric(
   ctx: ToolContext,
   args: Record<string, unknown>
@@ -81,133 +19,9 @@ export async function handleEmitMetric(
     throw new Error("Missing required parameter: payload");
   }
 
-  // Generate unique ID
-  const id = "ME-" + randomUUID().replace(/-/g, "").slice(0, 8).toUpperCase();
-
-  // Resolve metrics directory
-  const metricsDir = path.join(ctx.ideateDir, "metrics");
-  fs.mkdirSync(metricsDir, { recursive: true });
-
-  // Build YAML content
-  const yamlDoc: Record<string, unknown> = {
-    id,
-    type: "metrics_event",
-    event_name: payload.agent_type ?? payload.event_name ?? "unknown",
-    timestamp: payload.timestamp ?? null,
-  };
-  // Include all other payload fields
-  for (const [k, v] of Object.entries(payload)) {
-    if (!(k in yamlDoc)) {
-      yamlDoc[k] = v;
-    }
-  }
-
-  const content_hash = computeArtifactHash(yamlDoc);
-  const yamlContent = stringifyYaml(yamlDoc);
-  const token_count = tokenCount(yamlContent);
-
-  const yamlPath = path.join(metricsDir, id + ".yaml");
-
-  if (ctx.adapter) {
-    // Delegate to adapter — handles YAML write + SQLite upsert internally
-    await ctx.adapter.putNode({
-      id,
-      type: "metrics_event",
-      properties: { ...yamlDoc },
-      cycle: typeof payload.cycle === "number" ? payload.cycle : undefined,
-    });
-    return "Metric emitted successfully";
-  }
-
-  // Test-only fallback — adapter is always set in production.
-  // Phase 1: Write YAML file
-  fs.writeFileSync(yamlPath, yamlContent, "utf8");
-
-  // Phase 2: Upsert to SQLite inside an exclusive transaction
-  try {
-    ctx.db.transaction(() => {
-      const nodeRow = {
-        id,
-        type: "metrics_event",
-        content_hash,
-        token_count,
-        file_path: yamlPath,
-        status: null as string | null,
-        cycle_created: typeof payload.cycle === "number" ? payload.cycle : null,
-        cycle_modified: typeof payload.cycle === "number" ? payload.cycle : null,
-      };
-      upsertNodeRow(ctx.drizzleDb, nodeRow);
-
-      // Handle finding_severities field
-      let finding_severities: string | null = null;
-      if (typeof payload.finding_severities === "string") {
-        finding_severities = payload.finding_severities;
-      } else if (payload.finding_severities != null) {
-        finding_severities = JSON.stringify(payload.finding_severities);
-      }
-
-      // Handle context_artifact_ids field
-      let context_artifact_ids: string | null = null;
-      if (Array.isArray(payload.context_artifact_ids)) {
-        context_artifact_ids = JSON.stringify(payload.context_artifact_ids);
-      } else if (typeof payload.context_artifact_ids === "string") {
-        context_artifact_ids = payload.context_artifact_ids;
-      }
-
-      // Handle first_pass_accepted (normalize boolean to integer)
-      let first_pass_accepted: number | null = null;
-      if (typeof payload.first_pass_accepted === "boolean") {
-        first_pass_accepted = payload.first_pass_accepted ? 1 : 0;
-      } else if (typeof payload.first_pass_accepted === "number") {
-        first_pass_accepted = payload.first_pass_accepted;
-      }
-
-      // Compute payload JSON from queryable top-level fields (skills send flat payloads)
-      const computedPayload: Record<string, unknown> = {};
-      const payloadFields = [
-        "agent_type", "skill", "phase", "work_item", "model",
-        "wall_clock_ms", "turns_used", "cycle",
-      ] as const;
-      for (const field of payloadFields) {
-        if (payload[field] !== undefined && payload[field] !== null) {
-          computedPayload[field] = payload[field];
-        }
-      }
-      const storedPayload = Object.keys(computedPayload).length > 0
-        ? JSON.stringify(computedPayload)
-        : null;
-
-      const metricsRow: Record<string, unknown> = {
-        id,
-        event_name: typeof payload.agent_type === "string"
-          ? payload.agent_type
-          : typeof payload.event_name === "string" ? payload.event_name : "unknown",
-        timestamp: typeof payload.timestamp === "string" ? payload.timestamp : null,
-        payload: storedPayload,
-        input_tokens: typeof payload.input_tokens === "number" ? payload.input_tokens : null,
-        output_tokens: typeof payload.output_tokens === "number" ? payload.output_tokens : null,
-        cache_read_tokens: typeof payload.cache_read_tokens === "number" ? payload.cache_read_tokens : null,
-        cache_write_tokens: typeof payload.cache_write_tokens === "number" ? payload.cache_write_tokens : null,
-        outcome: typeof payload.outcome === "string" ? payload.outcome : null,
-        finding_count: typeof payload.finding_count === "number" ? payload.finding_count : null,
-        finding_severities,
-        first_pass_accepted,
-        rework_count: typeof payload.rework_count === "number" ? payload.rework_count : null,
-        work_item_total_tokens: typeof payload.work_item_total_tokens === "number" ? payload.work_item_total_tokens : null,
-        cycle_total_tokens: typeof payload.cycle_total_tokens === "number" ? payload.cycle_total_tokens : null,
-        cycle_total_cost_estimate: typeof payload.cycle_total_cost_estimate === "string" ? payload.cycle_total_cost_estimate : null,
-        convergence_cycles: typeof payload.convergence_cycles === "number" ? payload.convergence_cycles : null,
-        context_artifact_ids,
-      };
-      upsertMetricsEventRow(ctx.drizzleDb, metricsRow);
-    }).exclusive();
-  } catch (err) {
-    // Best-effort cleanup of YAML file on transaction failure
-    try { fs.unlinkSync(yamlPath); } catch { /* ignore */ }
-    throw err;
-  }
-
-  return "Metric emitted successfully";
+  // No-op: do not write YAML, do not call adapter.putNode, do not insert into metrics_events.
+  void ctx;
+  return "Metric emission deprecated — event not recorded.";
 }
 
 // ---------------------------------------------------------------------------

@@ -43,28 +43,6 @@ beforeEach(() => {
   ctx = { db, drizzleDb, ideateDir: artifactDir };
 });
 
-/**
- * Build a ToolContext whose drizzleDb.insert() always throws, simulating a
- * mid-transaction SQLite failure. The raw better-sqlite3 `db` remains intact
- * so that setup queries succeed; only the Drizzle-layer upserts fail.
- */
-function makeFailingDrizzleCtx(): ToolContext {
-  const failingDrizzleDb = new Proxy(drizzleDb, {
-    get(target, prop) {
-      if (prop === "insert") {
-        return () => {
-          throw new Error("simulated SQLite constraint violation");
-        };
-      }
-      const val = (target as unknown as Record<string | symbol, unknown>)[prop];
-      if (typeof val === "function") return val.bind(target);
-      return val;
-    },
-  }) as DrizzleDb;
-
-  return { db, drizzleDb: failingDrizzleDb, ideateDir: artifactDir };
-}
-
 afterEach(() => {
   try { db.close(); } catch { /* ignore */ }
   fs.rmSync(tmpDir, { recursive: true, force: true });
@@ -139,180 +117,32 @@ describe("handleEmitMetric", () => {
     });
   });
 
-  describe("metric emission", () => {
-    it("writes a YAML file and returns success", async () => {
+  describe("no-op emission (soft-deprecated)", () => {
+    it("returns deprecation message and creates no file under metrics/", async () => {
       const payload = { event_name: "code-reviewer", input_tokens: 100 };
       const result = await handleEmitMetric(ctx, { payload });
 
-      expect(result).toBe("Metric emitted successfully");
+      expect(result).toBe("Metric emission deprecated — event not recorded.");
 
-      // A YAML file should exist in the metrics/ directory
+      // No YAML file should be written
       const metricsDir = path.join(artifactDir, "metrics");
-      expect(fs.existsSync(metricsDir)).toBe(true);
-      const files = fs.readdirSync(metricsDir).filter(f => f.endsWith(".yaml"));
-      expect(files.length).toBe(1);
-      expect(files[0]).toMatch(/^ME-[0-9A-F]{8}\.yaml$/);
+      const files = fs.existsSync(metricsDir)
+        ? fs.readdirSync(metricsDir).filter(f => f.endsWith(".yaml"))
+        : [];
+      expect(files).toHaveLength(0);
     });
 
-    it("writes multiple metrics to separate YAML files", async () => {
-      await handleEmitMetric(ctx, { payload: { event_name: "agent-a", input_tokens: 100 } });
-      await handleEmitMetric(ctx, { payload: { event_name: "agent-b", input_tokens: 200 } });
+    it("inserts no row into metrics_events", async () => {
+      await handleEmitMetric(ctx, { payload: { event_name: "architect", input_tokens: 1000, cycle: 3 } });
 
-      const metricsDir = path.join(artifactDir, "metrics");
-      const files = fs.readdirSync(metricsDir).filter(f => f.endsWith(".yaml"));
-      expect(files.length).toBe(2);
-    });
-
-    it("stores the metric in SQLite and makes it queryable via handleGetMetrics", async () => {
-      const payload = {
-        event_name: "code-reviewer",
-        timestamp: "2024-01-15T10:30:00Z",
-        input_tokens: 500,
-        output_tokens: 300,
-        outcome: "pass",
-        cycle: 5,
-      };
-
-      await handleEmitMetric(ctx, { payload });
-
-      const result = await handleGetMetrics(ctx, { scope: "agent" });
-      expect(result).toContain("code-reviewer");
-      expect(result).toContain("**Total events**: 1");
-    });
-
-    it("is directly queryable from SQLite metrics_events table", async () => {
-      const payload = { event_name: "architect", input_tokens: 1000, cycle: 3 };
-      await handleEmitMetric(ctx, { payload });
-
-      const rows = db.prepare(
-        "SELECT me.id, me.event_name, me.input_tokens FROM metrics_events me"
-      ).all() as Array<{ id: string; event_name: string; input_tokens: number }>;
-
-      expect(rows.length).toBe(1);
-      expect(rows[0].event_name).toBe("architect");
-      expect(rows[0].input_tokens).toBe(1000);
-      expect(rows[0].id).toMatch(/^ME-[0-9A-F]{8}$/);
-    });
-
-    it("handles complex payload objects", async () => {
-      const payload = {
-        timestamp: "2024-01-15T10:30:00Z",
-        event_name: "decomposer",
-        work_item: "WI-123",
-        cycle: 5,
-        phase: "execute",
-        input_tokens: 5000,
-        output_tokens: 3000,
-        cache_read_tokens: 2000,
-        outcome: "pass",
-        finding_count: 2,
-        finding_severities: { critical: 0, significant: 1, minor: 1 }
-      };
-
-      const result = await handleEmitMetric(ctx, { payload });
-      expect(result).toBe("Metric emitted successfully");
-
-      // YAML file exists
-      const metricsDir = path.join(artifactDir, "metrics");
-      const files = fs.readdirSync(metricsDir).filter(f => f.endsWith(".yaml"));
-      expect(files.length).toBe(1);
-
-      // SQLite has the row with correct values
-      const row = db.prepare(
-        "SELECT event_name, input_tokens, finding_count, finding_severities FROM metrics_events"
-      ).get() as { event_name: string; input_tokens: number; finding_count: number; finding_severities: string };
-      expect(row.event_name).toBe("decomposer");
-      expect(row.input_tokens).toBe(5000);
-      expect(row.finding_count).toBe(2);
-      // finding_severities was an object, should be JSON-serialized
-      const sevParsed = JSON.parse(row.finding_severities);
-      expect(sevParsed.significant).toBe(1);
+      const rows = db.prepare("SELECT COUNT(*) as cnt FROM metrics_events").get() as { cnt: number };
+      expect(rows.cnt).toBe(0);
     });
 
     it("does not write metrics.jsonl", async () => {
       await handleEmitMetric(ctx, { payload: { event_name: "test" } });
       const jsonlPath = path.join(artifactDir, "metrics.jsonl");
       expect(fs.existsSync(jsonlPath)).toBe(false);
-    });
-
-    it("stores agent_type in payload JSON and event_name column", async () => {
-      const payload = {
-        agent_type: "code-reviewer",
-        skill: "execute",
-        phase: "execute",
-        work_item: "WI-123",
-        input_tokens: 800,
-        output_tokens: 400,
-        cycle: 7,
-      };
-
-      await handleEmitMetric(ctx, { payload });
-
-      const row = db.prepare(
-        "SELECT event_name, payload FROM metrics_events"
-      ).get() as { event_name: string; payload: string };
-
-      // event_name should be agent_type
-      expect(row.event_name).toBe("code-reviewer");
-
-      // payload column should contain agent_type and other queryable fields
-      const parsed = JSON.parse(row.payload);
-      expect(parsed.agent_type).toBe("code-reviewer");
-      expect(parsed.skill).toBe("execute");
-      expect(parsed.work_item).toBe("WI-123");
-    });
-
-    it("groups by agent_type in aggregation after handleEmitMetric", async () => {
-      await handleEmitMetric(ctx, {
-        payload: {
-          agent_type: "code-reviewer",
-          input_tokens: 1000,
-          output_tokens: 500,
-          cycle: 1,
-        },
-      });
-      await handleEmitMetric(ctx, {
-        payload: {
-          agent_type: "code-reviewer",
-          input_tokens: 2000,
-          output_tokens: 800,
-          cycle: 1,
-        },
-      });
-      await handleEmitMetric(ctx, {
-        payload: {
-          agent_type: "architect",
-          input_tokens: 5000,
-          output_tokens: 2000,
-          cycle: 1,
-        },
-      });
-
-      const result = await handleGetMetrics(ctx, { scope: "agent" });
-
-      expect(result).not.toContain("No agent metrics data found");
-      expect(result).toContain("code-reviewer");
-      expect(result).toContain("architect");
-      expect(result).toContain("**Total events**: 3");
-      // code-reviewer: 2 events, total input 3000
-      expect(result).toContain("3000");
-    });
-  });
-
-  describe("cleanup on failure", () => {
-    it("removes YAML file and re-throws when the SQLite transaction fails", async () => {
-      const failCtx = makeFailingDrizzleCtx();
-
-      await expect(
-        handleEmitMetric(failCtx, { payload: { event_name: "test-agent", input_tokens: 100 } })
-      ).rejects.toThrow("simulated SQLite constraint violation");
-
-      // YAML file must have been cleaned up by the rollback handler
-      const metricsDir = path.join(artifactDir, "metrics");
-      const files = fs.existsSync(metricsDir)
-        ? fs.readdirSync(metricsDir).filter(f => f.endsWith(".yaml"))
-        : [];
-      expect(files).toHaveLength(0);
     });
   });
 });

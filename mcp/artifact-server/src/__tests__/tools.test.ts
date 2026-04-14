@@ -2728,26 +2728,26 @@ describe("integration: append_journal → artifact_query sync", () => {
 // ---------------------------------------------------------------------------
 
 describe("handleEmitMetric", () => {
-  it("writes metric to YAML file and SQLite (not metrics.jsonl)", async () => {
+  it("returns deprecation message and creates no file or DB row (no-op)", async () => {
     const payload = { event_name: "test", input_tokens: 1234, phase: "execute" };
     const result = await handleEmitMetric(ctx, { payload });
 
-    expect(result).toBe("Metric emitted successfully");
+    expect(result).toBe("Metric emission deprecated — event not recorded.");
 
-    // YAML file created in metrics/ directory
+    // No YAML file written
     const metricsDir = path.join(artifactDir, "metrics");
-    expect(fs.existsSync(metricsDir)).toBe(true);
-    const files = fs.readdirSync(metricsDir).filter(f => f.endsWith(".yaml"));
-    expect(files.length).toBe(1);
+    const files = fs.existsSync(metricsDir)
+      ? fs.readdirSync(metricsDir).filter(f => f.endsWith(".yaml"))
+      : [];
+    expect(files).toHaveLength(0);
 
     // metrics.jsonl must NOT exist
     const metricsPath = path.join(artifactDir, "metrics.jsonl");
     expect(fs.existsSync(metricsPath)).toBe(false);
 
-    // SQLite row exists
-    const row = ctx.db.prepare("SELECT event_name, input_tokens FROM metrics_events").get() as { event_name: string; input_tokens: number };
-    expect(row.event_name).toBe("test");
-    expect(row.input_tokens).toBe(1234);
+    // No SQLite row inserted
+    const rows = ctx.db.prepare("SELECT COUNT(*) as cnt FROM metrics_events").get() as { cnt: number };
+    expect(rows.cnt).toBe(0);
   });
 
   it("throws when payload is missing", async () => {
