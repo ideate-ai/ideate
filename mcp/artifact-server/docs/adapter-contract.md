@@ -220,7 +220,7 @@ Execute a PPR-based graph traversal for context assembly.
 - `options.edge_type_weights`: Per-edge-type weight overrides
 - `options.token_budget`: Maximum token budget for context assembly (default: 50000)
 - `options.always_include_types`: Node types to always include regardless of PPR score
-- `options.max_nodes`: Maximum nodes to process (default: 10000)
+- `options.max_nodes`: Post-sort result-count cap (optional, default: unlimited). After `computePPR` ranks all reachable nodes by score, only the top `max_nodes` results are returned to the caller. This does NOT limit iteration — `computePPR` walks the entire graph regardless of `max_nodes`. The cap was previously described as a graph-size abort; that behavior was removed in WI-789. See D-210.
 
 **Returns:**
 - `ranked_nodes`: Nodes ranked by relevance score, highest first
