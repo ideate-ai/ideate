@@ -465,7 +465,7 @@ export const TOOLS: Tool[] = [
   {
     name: "ideate_get_metrics",
     description:
-      "Aggregated metrics. Scopes: agent (tokens/findings), work_item (acceptance), cycle (convergence). Omit scope for all. Returns JSON.",
+      "Deprecated — reads historical data only. Aggregated metrics. Scopes: agent (tokens/findings), work_item (acceptance), cycle (convergence). Omit scope for all. Returns JSON.",
     inputSchema: {
       type: "object",
       properties: {
@@ -572,7 +572,7 @@ export const TOOLS: Tool[] = [
   {
     name: "ideate_emit_metric",
     description:
-      "Record a metric event for the current session. Use for all metric emissions. Returns confirmation string.",
+      "Deprecated — emits no events. Record a metric event for the current session. Use for all metric emissions. Returns confirmation string.",
     inputSchema: {
       type: "object",
       properties: {
