@@ -392,9 +392,9 @@ describe("computePPR — edge case regression tests", () => {
     expect(Array.isArray(results)).toBe(true);
   });
 
-  it("CR-002: PPR with maxNodes limit returns empty array when exceeded", () => {
-    // When graph size exceeds maxNodes, PPR returns empty result
-    // This should be a well-formed empty array, not null/undefined
+  it("CR-002: PPR with maxNodes passes through to computePPR without aborting", () => {
+    // maxNodes is no longer a graph-size abort — computePPR returns full
+    // results regardless of graph size. The slice is applied by LocalAdapter.
     insertNode("A");
     insertNode("B");
     insertEdge("A", "B", "depends_on");
@@ -402,7 +402,8 @@ describe("computePPR — edge case regression tests", () => {
     const drizzleDb = drizzle(db, { schema: dbSchema });
     const results = computePPR(drizzleDb, ["A"], { maxNodes: 1 });
 
-    expect(results).toEqual([]);
+    // computePPR returns all nodes regardless of maxNodes
+    expect(results.length).toBe(2);
     expect(Array.isArray(results)).toBe(true);
   });
 
@@ -678,103 +679,60 @@ describe("computePPR — stress tests with large graphs", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Test 8: Boundary tests for maxNodes enforcement
+// Test 8: maxNodes is ignored inside computePPR — full results always returned
 // ---------------------------------------------------------------------------
 
-describe("computePPR — maxNodes boundary tests", () => {
-  it("proceeds when graph size equals maxNodes limit", () => {
-    // Graph has exactly 10 connected nodes, maxNodes is 10
+describe("computePPR — maxNodes is ignored (pure-slice semantic)", () => {
+  // After WI-789: maxNodes is no longer a graph-size abort inside computePPR.
+  // The option is kept in PPROptions for backward compatibility but has no
+  // effect on computation. LocalAdapter.traverse() applies the slice after
+  // PPR scoring. All tests here assert that computePPR returns full results.
+
+  it("returns all nodes regardless of maxNodes value smaller than graph size", () => {
+    // 10 connected nodes, maxNodes=5 (previously would have aborted)
     for (let i = 0; i < 10; i++) {
       insertNode(`N${i}`);
     }
-    // Connect nodes in a chain so all are discovered
     for (let i = 0; i < 9; i++) {
       insertEdge(`N${i}`, `N${i + 1}`, "depends_on");
     }
 
     const drizzleDb = drizzle(db, { schema: dbSchema });
-    // totalNodes=10, maxNodes=10: 10 > 10 is false, should proceed
+    const results = computePPR(drizzleDb, ["N0"], { maxNodes: 5 });
+
+    // maxNodes is ignored — all 10 nodes are returned
+    expect(results.length).toBe(10);
+  });
+
+  it("returns all nodes when maxNodes equals graph size", () => {
+    for (let i = 0; i < 10; i++) {
+      insertNode(`N${i}`);
+    }
+    for (let i = 0; i < 9; i++) {
+      insertEdge(`N${i}`, `N${i + 1}`, "depends_on");
+    }
+
+    const drizzleDb = drizzle(db, { schema: dbSchema });
     const results = computePPR(drizzleDb, ["N0"], { maxNodes: 10 });
 
     expect(results.length).toBe(10);
   });
 
-  it("returns empty array when graph size exceeds maxNodes by 1", () => {
-    // Graph has 11 connected nodes, maxNodes is 10
-    for (let i = 0; i < 11; i++) {
-      insertNode(`N${i}`);
-    }
-    // Connect nodes in a chain
+  it("returns all nodes when maxNodes exceeds graph size", () => {
     for (let i = 0; i < 10; i++) {
-      insertEdge(`N${i}`, `N${i + 1}`, "depends_on");
-    }
-
-    const drizzleDb = drizzle(db, { schema: dbSchema });
-    const results = computePPR(drizzleDb, ["N0"], { maxNodes: 10 });
-
-    // 11 > 10, should return empty
-    expect(results).toEqual([]);
-    expect(Array.isArray(results)).toBe(true);
-  });
-
-  it("enforces maxNodes: 5 nodes with maxNodes=4 returns empty", () => {
-    const nodeCount = 5;
-    const maxNodes = 4;
-
-    for (let i = 0; i < nodeCount; i++) {
       insertNode(`N${i}`);
     }
-    // Connect nodes in a chain
-    for (let i = 0; i < nodeCount - 1; i++) {
+    for (let i = 0; i < 9; i++) {
       insertEdge(`N${i}`, `N${i + 1}`, "depends_on");
     }
 
     const drizzleDb = drizzle(db, { schema: dbSchema });
-    const results = computePPR(drizzleDb, ["N0"], { maxNodes });
+    const results = computePPR(drizzleDb, ["N0"], { maxNodes: 100 });
 
-    // 5 > 4, should return empty
-    expect(results).toEqual([]);
+    expect(results.length).toBe(10);
   });
 
-  it("enforces maxNodes: 5 nodes with maxNodes=5 proceeds", () => {
-    const nodeCount = 5;
-    const maxNodes = 5;
-
-    for (let i = 0; i < nodeCount; i++) {
-      insertNode(`N${i}`);
-    }
-    // Connect nodes in a chain
-    for (let i = 0; i < nodeCount - 1; i++) {
-      insertEdge(`N${i}`, `N${i + 1}`, "depends_on");
-    }
-
-    const drizzleDb = drizzle(db, { schema: dbSchema });
-    const results = computePPR(drizzleDb, ["N0"], { maxNodes });
-
-    // 5 > 5 is false, should proceed
-    expect(results.length).toBe(nodeCount);
-  });
-
-  it("enforces maxNodes: 5 nodes with maxNodes=6 proceeds", () => {
-    const nodeCount = 5;
-    const maxNodes = 6;
-
-    for (let i = 0; i < nodeCount; i++) {
-      insertNode(`N${i}`);
-    }
-    // Connect nodes in a chain
-    for (let i = 0; i < nodeCount - 1; i++) {
-      insertEdge(`N${i}`, `N${i + 1}`, "depends_on");
-    }
-
-    const drizzleDb = drizzle(db, { schema: dbSchema });
-    const results = computePPR(drizzleDb, ["N0"], { maxNodes });
-
-    // 5 > 6 is false, should proceed
-    expect(results.length).toBe(nodeCount);
-  });
-
-  it("handles maxNodes=0 by returning empty result", () => {
+  it("returns all nodes when maxNodes=0 (0 means no limit in adapter contract)", () => {
     insertNode("A");
     insertNode("B");
     insertEdge("A", "B", "depends_on");
@@ -782,56 +740,66 @@ describe("computePPR — maxNodes boundary tests", () => {
     const drizzleDb = drizzle(db, { schema: dbSchema });
     const results = computePPR(drizzleDb, ["A"], { maxNodes: 0 });
 
-    // 2 > 0, should return empty
-    expect(results).toEqual([]);
+    // computePPR ignores maxNodes entirely — all 2 nodes returned
+    expect(results.length).toBe(2);
   });
 
-  it("handles maxNodes=1 with single-node graph", () => {
+  it("returns all nodes when maxNodes=1 with multi-node graph", () => {
+    insertNode("A");
+    insertNode("B");
+    insertNode("C");
+    insertEdge("A", "B", "depends_on");
+    insertEdge("B", "C", "depends_on");
+
+    const drizzleDb = drizzle(db, { schema: dbSchema });
+    const results = computePPR(drizzleDb, ["A"], { maxNodes: 1 });
+
+    // All 3 nodes returned regardless of maxNodes
+    expect(results.length).toBe(3);
+  });
+
+  it("single-node graph with maxNodes=1 returns the one node", () => {
     insertNode("ONLY");
 
     const drizzleDb = drizzle(db, { schema: dbSchema });
     const results = computePPR(drizzleDb, ["ONLY"], { maxNodes: 1 });
 
-    // With maxNodes=1 and 1 node, should proceed (1 > 1 is false)
     expect(results.length).toBe(1);
     expect(results[0].nodeId).toBe("ONLY");
     expect(results[0].score).toBeGreaterThan(0);
   });
 
-  it("only counts connected nodes toward maxNodes limit", () => {
-    // Create 15 nodes but only connect 5
-    for (let i = 0; i < 15; i++) {
-      insertNode(`N${i}`);
-    }
-    // Only connect first 5 nodes
-    for (let i = 0; i < 4; i++) {
-      insertEdge(`N${i}`, `N${i + 1}`, "depends_on");
-    }
-
-    const drizzleDb = drizzle(db, { schema: dbSchema });
-    // totalNodes will be 5 (connected) + 1 (seed "N0" already counted) = 5
-    // Actually: seed N0 + N1,N2,N3,N4 via edges = 5 total
-    const results = computePPR(drizzleDb, ["N0"], { maxNodes: 10 });
-
-    // Only connected nodes are counted, so should proceed (5 <= 10)
-    expect(results.length).toBe(5);
-  });
-
-  it("enforces maxNodes with very large limit", () => {
-    // Create a moderate-sized connected graph
+  it("large graph is not affected by small maxNodes", () => {
+    // 100 connected nodes, maxNodes=10 (previously would have aborted)
     for (let i = 0; i < 100; i++) {
       insertNode(`N${i}`);
     }
-    // Connect nodes in a chain
     for (let i = 0; i < 99; i++) {
       insertEdge(`N${i}`, `N${i + 1}`, "depends_on");
     }
 
     const drizzleDb = drizzle(db, { schema: dbSchema });
-    // maxNodes very large, should proceed
-    const results = computePPR(drizzleDb, ["N0"], { maxNodes: 10000 });
+    const results = computePPR(drizzleDb, ["N0"], { maxNodes: 10 });
 
+    // All 100 nodes returned
     expect(results.length).toBe(100);
+  });
+
+  it("results are sorted descending regardless of maxNodes", () => {
+    for (let i = 0; i < 5; i++) {
+      insertNode(`N${i}`);
+    }
+    for (let i = 0; i < 4; i++) {
+      insertEdge(`N${i}`, `N${i + 1}`, "depends_on");
+    }
+
+    const drizzleDb = drizzle(db, { schema: dbSchema });
+    const results = computePPR(drizzleDb, ["N0"], { maxNodes: 2 });
+
+    expect(results.length).toBe(5);
+    for (let i = 1; i < results.length; i++) {
+      expect(results[i - 1].score).toBeGreaterThanOrEqual(results[i].score);
+    }
   });
 });
 
@@ -1504,7 +1472,9 @@ describe("computePPR — large graph stress tests (10,000+ nodes)", () => {
     }
   });
 
-  it("maxNodes enforcement works with large graphs", () => {
+  it("maxNodes is ignored in computePPR — large graph always returns full results", () => {
+    // After WI-789: maxNodes is no longer an abort threshold inside computePPR.
+    // Large graphs are always fully processed regardless of maxNodes.
     const nodeCount = 1000;
 
     for (let i = 0; i < nodeCount; i++) {
@@ -1518,18 +1488,12 @@ describe("computePPR — large graph stress tests (10,000+ nodes)", () => {
 
     const drizzleDb = drizzle(db, { schema: dbSchema });
 
-    // Test with various maxNodes values
+    // All maxNodes values → computePPR always returns all nodes
     const maxNodesValues = [100, 500, 1000];
     for (const maxNodes of maxNodesValues) {
       const results = computePPR(drizzleDb, ["N0"], { maxNodes });
-
-      if (nodeCount > maxNodes) {
-        // Should return empty array when limit exceeded
-        expect(results).toEqual([]);
-      } else {
-        // Should return results when within limit
-        expect(results.length).toBeGreaterThan(0);
-      }
+      // maxNodes is ignored — all nodeCount nodes returned
+      expect(results.length).toBe(nodeCount);
     }
   });
 });
@@ -1618,24 +1582,30 @@ describe("computePPR — parameter validation", () => {
     expect(results.length).toBeGreaterThan(0);
   });
 
-  it("rejects negative maxNodes", () => {
+  it("accepts negative maxNodes without validation — computePPR ignores it", () => {
+    // After WI-789: maxNodes is no longer validated inside computePPR.
+    // Negative values are silently accepted and ignored.
     insertNode("SEED");
     const drizzleDb = drizzle(db, { schema: dbSchema });
-    expect(() => computePPR(drizzleDb, ["SEED"], { maxNodes: -1 })).toThrow(/maxNodes must be a non-negative integer/);
+    const results = computePPR(drizzleDb, ["SEED"], { maxNodes: -1 });
+    expect(results.length).toBe(1);
   });
 
-  it("rejects non-integer maxNodes", () => {
+  it("accepts non-integer maxNodes without validation — computePPR ignores it", () => {
+    // After WI-789: maxNodes is no longer validated inside computePPR.
     insertNode("SEED");
     const drizzleDb = drizzle(db, { schema: dbSchema });
-    expect(() => computePPR(drizzleDb, ["SEED"], { maxNodes: 10.5 })).toThrow(/maxNodes must be a non-negative integer/);
+    const results = computePPR(drizzleDb, ["SEED"], { maxNodes: 10.5 });
+    expect(results.length).toBe(1);
   });
 
-  it("accepts maxNodes = 0", () => {
+  it("accepts maxNodes = 0 — computePPR ignores it, returns all results", () => {
+    // After WI-789: maxNodes=0 no longer aborts computePPR.
+    // The adapter contract uses 0 to mean "no cap" (applied at LocalAdapter slice level).
     insertNode("SEED");
     const drizzleDb = drizzle(db, { schema: dbSchema });
-    // maxNodes = 0 means all graphs are rejected (returns empty)
     const results = computePPR(drizzleDb, ["SEED"], { maxNodes: 0 });
-    expect(results).toEqual([]);
+    expect(results.length).toBe(1);
   });
 
   it("accepts valid non-negative integer maxNodes", () => {
@@ -1681,16 +1651,16 @@ describe("computePPR — parameter validation", () => {
     }
   });
 
-  it("throws INVALID_MAX_NODES code for invalid maxNodes", () => {
+  it("maxNodes is accepted without validation — computePPR ignores it", () => {
+    // After WI-789: maxNodes is no longer validated or enforced inside
+    // computePPR. Any value (including negative) is silently ignored.
+    // The slice is applied by LocalAdapter.traverse() after PPR scoring.
     insertNode("SEED");
     const drizzleDb = drizzle(db, { schema: dbSchema });
-    try {
-      computePPR(drizzleDb, ["SEED"], { maxNodes: -1 });
-      expect(true).toBe(false);
-    } catch (err) {
-      expect(err).toBeInstanceOf(ValidationError);
-      expect((err as ValidationError).code).toBe("INVALID_MAX_NODES");
-    }
+    // Should not throw, and should return the full result
+    const results = computePPR(drizzleDb, ["SEED"], { maxNodes: -1 });
+    expect(results.length).toBe(1);
+    expect(results[0].nodeId).toBe("SEED");
   });
 });
 

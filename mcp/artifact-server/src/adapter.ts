@@ -158,7 +158,11 @@ export interface TraversalOptions {
    * TraversalResult.truncated_types.
    */
   always_include_types?: NodeType[];
-  /** Maximum number of nodes to process in PPR. If graph exceeds this, returns empty result. Default: 10000. */
+  /**
+   * Maximum number of ranked nodes returned. Applied as a slice after PPR
+   * scoring. If omitted or 0, all ranked nodes are returned. No effect on
+   * PPR computation itself.
+   */
   max_nodes?: number;
 }
 

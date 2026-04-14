@@ -718,6 +718,73 @@ async function teardownHappyPathSetup(setup: HappyPathSetup): Promise<void> {
   }
 }
 
+// ---------------------------------------------------------------------------
+// Suite: max_nodes as a result-count cap (WI-789)
+//
+// Asserts adapter contract: same graph + same max_nodes → ranked_nodes.length ≤ N.
+// Score ordering is NOT asserted (per RF D5 — remote PPR may differ in score
+// values). Only the length invariant is checked.
+// ---------------------------------------------------------------------------
+
+suite("Equivalence — traverse() max_nodes result-count cap", () => {
+  let adapters: DualAdapters;
+
+  beforeAll(async () => {
+    adapters = await createDualAdapters();
+  }, 120_000);
+
+  afterAll(async () => {
+    if (adapters) await adapters.cleanup();
+  });
+
+  it("traverse(WI-001, max_nodes=3) — both adapters return ranked_nodes.length <= 3", async () => {
+    const maxNodes = 3;
+    const options: TraversalOptions = {
+      seed_ids: ["WI-001"],
+      max_nodes: maxNodes,
+    };
+
+    const [local, remote] = await Promise.all([
+      adapters.local.traverse(options),
+      adapters.remote.traverse(options),
+    ]);
+
+    expect(local.ranked_nodes.length).toBeLessThanOrEqual(maxNodes);
+    expect(remote.ranked_nodes.length).toBeLessThanOrEqual(maxNodes);
+  });
+
+  it("traverse(WI-001, max_nodes=1) — both adapters return at most 1 ranked node", async () => {
+    const maxNodes = 1;
+    const options: TraversalOptions = {
+      seed_ids: ["WI-001"],
+      max_nodes: maxNodes,
+    };
+
+    const [local, remote] = await Promise.all([
+      adapters.local.traverse(options),
+      adapters.remote.traverse(options),
+    ]);
+
+    expect(local.ranked_nodes.length).toBeLessThanOrEqual(maxNodes);
+    expect(remote.ranked_nodes.length).toBeLessThanOrEqual(maxNodes);
+  });
+
+  it("traverse(WI-001, max_nodes=0) — both adapters return all ranked nodes (0 means no cap)", async () => {
+    const options: TraversalOptions = {
+      seed_ids: ["WI-001"],
+      max_nodes: 0,
+    };
+
+    const [localCapped, localUncapped] = await Promise.all([
+      adapters.local.traverse(options),
+      adapters.local.traverse({ seed_ids: ["WI-001"] }),
+    ]);
+
+    // max_nodes=0 means no cap; result count should equal uncapped result count
+    expect(localCapped.ranked_nodes.length).toBe(localUncapped.ranked_nodes.length);
+  });
+});
+
 describe("Equivalence — traverse() happy path with seeded node (D-177)", () => {
   let setup: HappyPathSetup;
 

@@ -218,7 +218,7 @@ export class LocalContextAdapter {
     const seenIds = new Set<string>();
 
     const alwaysInclude: NodeRow[] = [];
-    const ranked: NodeRow[] = [];
+    let ranked: NodeRow[] = [];
 
     // First, fetch ALL nodes of always-include types from the DB
     // (they may not appear in PPR results if they have no edges to seeds)
@@ -255,6 +255,11 @@ export class LocalContextAdapter {
     ranked.sort(
       (a, b) => (scoreMap.get(b.id) ?? 0) - (scoreMap.get(a.id) ?? 0)
     );
+
+    // Apply max_nodes as a result-count cap per adapter contract
+    if (maxNodes != null && maxNodes > 0) {
+      ranked = ranked.slice(0, maxNodes);
+    }
 
     // -----------------------------------------------------------------------
     // Greedily assemble artifacts within token budget

@@ -845,7 +845,7 @@ export class RemoteAdapter implements StorageAdapter {
       content: rn.content,
     }));
 
-    // Apply max_nodes limit if specified (for adapter parity with LocalAdapter)
+    // Apply max_nodes as a result-count cap per adapter contract
     if (options.max_nodes != null && options.max_nodes > 0 && rankedNodes.length > options.max_nodes) {
       rankedNodes = rankedNodes.slice(0, options.max_nodes);
     }

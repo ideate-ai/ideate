@@ -17,7 +17,6 @@
 
 import { BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
 import type * as dbSchema from "./db.js";
-import { log } from "./logger.js";
 import { edges } from "./db.js";
 import { ValidationError } from "./adapter.js";
 
@@ -37,7 +36,11 @@ export interface PPROptions {
    * Edges with unlisted types get weight 1.0.
    */
   edgeTypeWeights?: Record<string, number>;
-  /** Maximum number of nodes to process. If graph exceeds this, returns empty result with warning. Default: 10000 */
+  /**
+   * Maximum number of nodes to process. Kept for backward compatibility but
+   * ignored inside computePPR — the caller (LocalAdapter.traverse) applies
+   * max_nodes as a result-count slice after PPR scoring.
+   */
   maxNodes?: number;
 }
 
@@ -104,8 +107,6 @@ export function computePPR(
     edgeTypeWeights[normalizeEdgeType(key)] = value;
   }
 
-  const maxNodes = options?.maxNodes ?? 10000;
-
   // Validate alpha: must be 0 < alpha <= 1
   if (!Number.isFinite(alpha) || alpha <= 0 || alpha > 1) {
     throw new ValidationError(
@@ -130,15 +131,6 @@ export function computePPR(
       `convergenceThreshold must be a positive number, received ${convergenceThreshold}`,
       "INVALID_CONVERGENCE_THRESHOLD",
       { value: convergenceThreshold }
-    );
-  }
-
-  // Validate maxNodes: must be non-negative integer
-  if (!Number.isInteger(maxNodes) || maxNodes < 0) {
-    throw new ValidationError(
-      `maxNodes must be a non-negative integer, received ${maxNodes}`,
-      "INVALID_MAX_NODES",
-      { value: maxNodes }
     );
   }
 
@@ -180,15 +172,6 @@ export function computePPR(
   }
   const allNodeIds = Array.from(nodeSet);
   const totalNodes = allNodeIds.length;
-
-  // Check maxNodes limit
-  if (totalNodes > maxNodes) {
-    log.warn("ppr",
-      `Graph size (${totalNodes} nodes) exceeds maxNodes limit (${maxNodes}). ` +
-      `Returning empty result to prevent resource exhaustion.`
-    );
-    return [];
-  }
 
   // adj: undirected adjacency — for each node, the list of weighted neighbours
   const adj = new Map<string, Array<{ neighbour: string; weight: number }>>();
