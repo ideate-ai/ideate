@@ -585,7 +585,7 @@ export const TOOLS: Tool[] = [
       required: ["payload"],
     },
     annotations: {
-      readOnlyHint: false,
+      readOnlyHint: true,
       destructiveHint: false,
       idempotentHint: false,
       openWorldHint: false,
