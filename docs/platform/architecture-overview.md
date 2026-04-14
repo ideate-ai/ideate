@@ -670,7 +670,7 @@ The `ideateDir` field is retained because some tool handlers use it for non-stor
 
 1. **Archive operation (resolved)**: `archiveCycle(cycle: number): Promise<void>` is a core StorageAdapter interface method with backend-specific semantics. LocalAdapter performs artifact moves and index updates; RemoteAdapter calls the archiveCycle GraphQL mutation to transition statuses. See adapter-interface.md Section 4.7.
 
-2. **Metrics emit**: `handleEmitMetric` (in tools/metrics.ts) and `handleEmitEvent` (in tools/events.ts) write metrics and event records. They follow the same putNode pattern. Should metrics and events be treated as regular nodes or have a separate fast-path?
+2. **Metrics emit (resolved)**: `handleEmitMetric` (in tools/metrics.ts) is a no-op shim retained for backward compatibility — emission was soft-deprecated in WI-790 (see D-211); the tool stays registered to avoid breaking existing skill code, but no new rows are written to `metrics_events`. `handleEmitEvent` (in tools/events.ts) still writes event records via the putNode pattern. The original question of whether metrics should follow a fast-path is moot under soft-deprecation; it returns when replacement telemetry is designed in PH-047-candidate.
 
 3. **Source code index**: handleGetContextPackage scans the filesystem for source files. This is not artifact storage — it is project context. Should the adapter own source code scanning, or should it remain a handler concern?
 
