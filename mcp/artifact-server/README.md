@@ -53,7 +53,7 @@ All 22 tools are scoped to a single project root configured at server startup.
 | `ideate_update_work_items` | Update work item fields (status, scope, criteria, etc.) without full overwrite |
 | `ideate_write_artifact` | Write any artifact to the project store (findings, policies, decisions, phases, etc.) |
 | `ideate_emit_event` | Fire registered hooks for a lifecycle event |
-| `ideate_emit_metric` | Record a metric event for the current session |
+| `ideate_emit_metric` | **Deprecated (no-op)** — see D-211 / WI-790. Retained for backward compatibility; emission is disabled. |
 | `ideate_bootstrap_workspace` | Initialize workspace artifacts for a new project |
 | `ideate_manage_autopilot_state` | Get or update autopilot state for crash recovery and persistence |
 | `ideate_update_config` | Deep-merge a partial patch into the project config |
