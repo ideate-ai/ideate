@@ -314,6 +314,24 @@ Query nodes by type and filters with pagination.
 
 ---
 
+#### `getMetricsEvents(filter?: NodeFilter): Promise<MetricsEventRow[]>`
+
+Fetch all metrics event rows matching the optional filter in a single round-trip.
+
+**Parameters:**
+- `filter` (optional): Node filter criteria. Supported fields:
+  - `cycle`: matched against `node.cycle_created`
+  - `agent_type`: matched inside the payload JSON field
+  - `work_item`: matched inside the payload JSON field (exact match)
+  - `phase`: matched inside the payload JSON field
+
+**Returns:**
+- Array of `MetricsEventRow` objects ordered by `timestamp ASC, id ASC`
+
+**Remote behavior:** Queries via the remote backend (executes a single GraphQL query or stubs with a compatible fallback until the remote backend exposes the endpoint).
+
+---
+
 #### `nextId(type: NodeType, cycle?: number): Promise<string>`
 
 Generate the next available ID for a given node type.
@@ -484,6 +502,34 @@ Append a journal entry for the given skill invocation.
 
 **Error Codes:**
 - `TRANSACTION_FAILED`: Database transaction failed
+
+---
+
+#### `indexFiles(paths: string[]): Promise<void>`
+
+Incrementally index specific file paths into the SQLite index. Called by the artifact watcher on add/change events.
+
+**Parameters:**
+- `paths`: Absolute file paths to index. Non-YAML paths are silently ignored.
+
+**Returns:**
+- `Promise<void>`
+
+**Remote behavior:** No-op on `RemoteAdapter`; the remote index is maintained server-side.
+
+---
+
+#### `removeFiles(paths: string[]): Promise<void>`
+
+Remove file paths from the SQLite index. Called by the artifact watcher on unlink events.
+
+**Parameters:**
+- `paths`: Absolute file paths to remove from the index.
+
+**Returns:**
+- `Promise<void>`
+
+**Remote behavior:** No-op on `RemoteAdapter`; the remote index is maintained server-side.
 
 ---
 

@@ -50,21 +50,28 @@ export function createDormantState(): ServerState {
 // ---------------------------------------------------------------------------
 
 /**
- * Validate the backend field from config and throw a clear error if the
- * selected backend is not yet implemented or is invalid.
+ * Select and construct the appropriate StorageAdapter based on config.backend.
+ *
+ * - "local" (default): constructs a LocalAdapter backed by SQLite. Requires
+ *   `db` and `drizzleDb` to be provided.
+ * - "remote": constructs a RemoteAdapter using config.remote. Does not use
+ *   `db` or `drizzleDb`.
  *
  * @param dir - Path to the .ideate/ directory (used to read config)
- * @throws {Error} when backend is "remote" (not yet implemented) or unknown
+ * @param db - Open SQLite database instance (required for local backend)
+ * @param drizzleDb - Drizzle ORM wrapper (required for local backend)
+ * @throws {Error} when remote config is missing required fields, or backend is unknown
  */
 export function selectAdapter(
   dir: string,
-  db: InstanceType<typeof Database>,
-  drizzleDb: BetterSQLite3Database<typeof dbSchema>
+  db?: InstanceType<typeof Database>,
+  drizzleDb?: BetterSQLite3Database<typeof dbSchema>
 ): StorageAdapter {
   const config = readRawConfig(dir);
   const backend = config.backend ?? "local";
 
   if (backend === "local" || backend === undefined) {
+    if (!db || !drizzleDb) throw new Error("Local backend requires db and drizzleDb");
     return new LocalAdapter({ db, drizzleDb, ideateDir: dir });
   }
 
@@ -127,7 +134,28 @@ export function initServer(dir: string, state: ServerState): void {
     log.error("server", `Migration errors: ${migrationResult.errors.join("; ")}`);
   }
 
-  // Use locals so server state is only committed after full success
+  // Read backend before opening DB so we can skip SQLite entirely for remote.
+  const rawConfig = readRawConfig(dir);
+  const backend = rawConfig.backend ?? "local";
+
+  if (backend === "remote") {
+    // Remote path: skip openDatabase, drizzle, rebuildIndex, and file watcher.
+    // The RemoteAdapter communicates with a remote server; no local SQLite needed.
+    const rawAdapter = selectAdapter(dir);
+    const adapter = new ValidatingAdapter(rawAdapter);
+
+    state.ideateDir = dir;
+    state.db = null;
+    // db and drizzleDb are intentionally absent for remote backend.
+    // Production tool code routes through adapter only and does not access ctx.db.
+    state.ctx = { ideateDir: dir, adapter };
+
+    signalIndexReady();
+    log.info("server", "initialized (remote backend, no local index)");
+    return;
+  }
+
+  // Local path: use locals so server state is only committed after full success.
   const newDb = openDatabase(dir);
   let newDrizzle;
   let stats: RebuildStats;

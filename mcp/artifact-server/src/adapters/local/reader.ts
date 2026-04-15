@@ -393,7 +393,7 @@ export class LocalReaderAdapter {
   }
 
   // -----------------------------------------------------------------------
-  // queryNodes — filter mode (mirrors runFilterMode in tools/query.ts)
+  // queryNodes — returns nodes matching a NodeFilter with pagination
   // -----------------------------------------------------------------------
 
   async queryNodes(
@@ -536,15 +536,17 @@ export class LocalReaderAdapter {
   // -----------------------------------------------------------------------
 
   async getMetricsEvents(filter?: NodeFilter): Promise<MetricsEventRow[]> {
-    // Build WHERE clauses. Cycle lives on nodes.cycle_created; all other
-    // filter dimensions (agent_type, work_item, phase) live inside the
-    // JSON payload field and are applied TypeScript-side after the query.
+    // Build WHERE clauses. Cycle lives on nodes.cycle_created and is pushed
+    // to SQL. The remaining filter dimensions (agent_type, work_item, phase)
+    // live inside the JSON payload field and are applied TypeScript-side after
+    // the query returns.
     const whereClauses: string[] = ["n.type = 'metrics_event'"];
     const params: (string | number)[] = [];
 
-    // No SQL filter for cycle here — cycle_created is on nodes table but
-    // NodeFilter.cycle maps to extension-table columns for other types, and
-    // metrics_event has no cycle extension column. We apply it in TS below.
+    if (filter?.cycle !== undefined && filter.cycle !== null) {
+      whereClauses.push("n.cycle_created = ?");
+      params.push(filter.cycle);
+    }
 
     const whereClause = "WHERE " + whereClauses.join(" AND ");
 
@@ -621,11 +623,9 @@ export class LocalReaderAdapter {
       return { node: nodeMeta, properties };
     });
 
-    // Apply TypeScript-side filters for cycle and payload-resident fields
+    // Apply TypeScript-side filters for payload-resident fields
+    // (agent_type, work_item, phase live inside the JSON payload column).
     if (filter) {
-      if (filter.cycle !== undefined && filter.cycle !== null) {
-        results = results.filter((r) => r.node.cycle_created === filter.cycle);
-      }
       if (filter.agent_type !== undefined) {
         results = results.filter((r) => {
           if (!r.properties.payload) return false;
@@ -659,7 +659,7 @@ export class LocalReaderAdapter {
   }
 
   // -----------------------------------------------------------------------
-  // queryGraph — graph traversal mode (mirrors runGraphMode in tools/query.ts)
+  // queryGraph — traverses the edge graph from an origin node up to a depth
   // -----------------------------------------------------------------------
 
   async queryGraph(
@@ -1196,8 +1196,7 @@ export class LocalReaderAdapter {
   }
 
   // -----------------------------------------------------------------------
-  // Internal: build summary map for a list of (id, type) pairs
-  // Mirrors buildSummaryMap in tools/query.ts
+  // Internal: build a summary string map for a list of (id, type) pairs
   // -----------------------------------------------------------------------
 
   private _buildSummaryMap(items: { id: string; type: string }[]): Record<string, string> {

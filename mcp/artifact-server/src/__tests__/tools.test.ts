@@ -409,7 +409,7 @@ describe("handleGetArtifactContext — generic artifact dispatch", () => {
 describe("handleGetContextPackage", () => {
   // Attach a LocalAdapter to ctx so handlers that require ctx.adapter work.
   beforeEach(() => {
-    ctx.adapter = new LocalAdapter({ db, drizzleDb: ctx.drizzleDb, ideateDir: artifactDir });
+    ctx.adapter = new LocalAdapter({ db, drizzleDb: ctx.drizzleDb!, ideateDir: artifactDir });
   });
 
 
@@ -652,7 +652,7 @@ describe("adapter-required guard tests", () => {
 describe("handleGetExecutionStatus", () => {
   // Attach LocalAdapter — handler routes all queries through ctx.adapter.
   beforeEach(() => {
-    ctx.adapter = new LocalAdapter({ db, drizzleDb: ctx.drizzleDb, ideateDir: artifactDir });
+    ctx.adapter = new LocalAdapter({ db, drizzleDb: ctx.drizzleDb!, ideateDir: artifactDir });
   });
 
   it("happy path: shows total, completed, pending, ready counts", async () => {
@@ -690,7 +690,7 @@ describe("handleGetExecutionStatus", () => {
 describe("handleGetReviewManifest", () => {
   // Attach LocalAdapter — handler routes all queries through ctx.adapter.
   beforeEach(() => {
-    ctx.adapter = new LocalAdapter({ db, drizzleDb: ctx.drizzleDb, ideateDir: artifactDir });
+    ctx.adapter = new LocalAdapter({ db, drizzleDb: ctx.drizzleDb!, ideateDir: artifactDir });
   });
 
   it("happy path: returns markdown table with work item rows", async () => {
@@ -975,7 +975,7 @@ describe("handleGetConvergenceStatus", () => {
     insertNode("spec-adherence-201", "cycle_summary", { file_path: canonicalPath, cycle_created: 201 });
 
     // Attach LocalAdapter — routes handleGetConvergenceStatus through reader.ts:getConvergenceData
-    ctx.adapter = new LocalAdapter({ db, drizzleDb: ctx.drizzleDb, ideateDir: artifactDir });
+    ctx.adapter = new LocalAdapter({ db, drizzleDb: ctx.drizzleDb!, ideateDir: artifactDir });
 
     // No findings for cycle 201 → condition_a: true
     const result = await handleGetConvergenceStatus(ctx, { cycle_number: 201 });
@@ -1128,14 +1128,14 @@ describe("handleGetWorkspaceStatus", () => {
   it("view=project returns project view with phase progress", async () => {
     // Insert active project
     insertNode("PR-001", "project", { status: "active" });
-    ctx.db.prepare(`
+    ctx.db!.prepare(`
       INSERT INTO projects (id, name, intent, appetite, status)
       VALUES (?, ?, ?, ?, ?)
     `).run("PR-001", "Test Project", "Build something", 6, "active");
 
     // Insert active phase
     insertNode("PH-001", "phase", { status: "active" });
-    ctx.db.prepare(`
+    ctx.db!.prepare(`
       INSERT INTO phases (id, name, phase_type, project, intent, status)
       VALUES (?, ?, ?, ?, ?, ?)
     `).run("PH-001", "Phase One", "implementation", "PR-001", "Do work", "active");
@@ -1143,10 +1143,10 @@ describe("handleGetWorkspaceStatus", () => {
     // Insert work items in phase
     insertNode("WI-P01", "work_item", { status: "done" });
     insertWorkItem("WI-P01", "Done item");
-    ctx.db.prepare(`UPDATE work_items SET phase = ? WHERE id = ?`).run("PH-001", "WI-P01");
+    ctx.db!.prepare(`UPDATE work_items SET phase = ? WHERE id = ?`).run("PH-001", "WI-P01");
     insertNode("WI-P02", "work_item", { status: "pending" });
     insertWorkItem("WI-P02", "Pending item");
-    ctx.db.prepare(`UPDATE work_items SET phase = ? WHERE id = ?`).run("PH-001", "WI-P02");
+    ctx.db!.prepare(`UPDATE work_items SET phase = ? WHERE id = ?`).run("PH-001", "WI-P02");
 
     const result = await handleGetWorkspaceStatus(ctx, { view: "project" });
     expect(result).toContain("# Project View");
@@ -1165,7 +1165,7 @@ describe("handleGetWorkspaceStatus", () => {
   it("view=phase returns phase view with work items table", async () => {
     // Insert active phase
     insertNode("PH-001", "phase", { status: "active" });
-    ctx.db.prepare(`
+    ctx.db!.prepare(`
       INSERT INTO phases (id, name, phase_type, project, intent, status)
       VALUES (?, ?, ?, ?, ?, ?)
     `).run("PH-001", "Phase One", "implementation", "PR-001", "Do work", "active");
@@ -1174,10 +1174,10 @@ describe("handleGetWorkspaceStatus", () => {
     // queryNodes("work_item"), so seed both as non-terminal statuses.
     insertNode("WI-T01", "work_item", { status: "in_progress" });
     insertWorkItem("WI-T01", "Table test in progress", { complexity: "small" });
-    ctx.db.prepare(`UPDATE work_items SET phase = ?, work_item_type = ? WHERE id = ?`).run("PH-001", "feature", "WI-T01");
+    ctx.db!.prepare(`UPDATE work_items SET phase = ?, work_item_type = ? WHERE id = ?`).run("PH-001", "feature", "WI-T01");
     insertNode("WI-T02", "work_item", { status: "pending" });
     insertWorkItem("WI-T02", "Table test pending", { complexity: "medium" });
-    ctx.db.prepare(`UPDATE work_items SET phase = ?, work_item_type = ? WHERE id = ?`).run("PH-001", "bug", "WI-T02");
+    ctx.db!.prepare(`UPDATE work_items SET phase = ?, work_item_type = ? WHERE id = ?`).run("PH-001", "bug", "WI-T02");
 
     const result = await handleGetWorkspaceStatus(ctx, { view: "phase" });
     expect(result).toContain("# Phase View");
@@ -1196,14 +1196,14 @@ describe("handleGetWorkspaceStatus", () => {
   it("view=project shows horizon phase names from JSON column", async () => {
     // Insert active project with horizon
     insertNode("PR-002", "project", { status: "active" });
-    ctx.db.prepare(`
+    ctx.db!.prepare(`
       INSERT INTO projects (id, name, intent, appetite, status, horizon)
       VALUES (?, ?, ?, ?, ?, ?)
     `).run("PR-002", "Horizon Test", "Test horizon", 6, "active", JSON.stringify({ next: ["PH-H01"], later: [] }));
 
     // Insert the horizon phase so name lookup works
     insertNode("PH-H01", "phase", { status: "pending" });
-    ctx.db.prepare(`
+    ctx.db!.prepare(`
       INSERT INTO phases (id, name, phase_type, project, intent, status)
       VALUES (?, ?, ?, ?, ?, ?)
     `).run("PH-H01", "Next Phase", "design", "PR-002", "Design work", "pending");
@@ -1216,7 +1216,7 @@ describe("handleGetWorkspaceStatus", () => {
 
   it("view=project shows 'No phases planned' when horizon is null", async () => {
     insertNode("PR-003", "project", { status: "active" });
-    ctx.db.prepare(`
+    ctx.db!.prepare(`
       INSERT INTO projects (id, name, intent, appetite, status)
       VALUES (?, ?, ?, ?, ?)
     `).run("PR-003", "No Horizon", "Test null horizon", 6, "active");
@@ -1228,7 +1228,7 @@ describe("handleGetWorkspaceStatus", () => {
 
   it("view=phase shows status field", async () => {
     insertNode("PH-002", "phase", { status: "active" });
-    ctx.db.prepare(`
+    ctx.db!.prepare(`
       INSERT INTO phases (id, name, phase_type, project, intent, status)
       VALUES (?, ?, ?, ?, ?, ?)
     `).run("PH-002", "Status Test", "implementation", "PR-001", "Test", "active");
@@ -1239,21 +1239,21 @@ describe("handleGetWorkspaceStatus", () => {
 
   it("view=phase shows dependency edges between phase items", async () => {
     insertNode("PH-003", "phase", { status: "active" });
-    ctx.db.prepare(`
+    ctx.db!.prepare(`
       INSERT INTO phases (id, name, phase_type, project, intent, status)
       VALUES (?, ?, ?, ?, ?, ?)
     `).run("PH-003", "Dep Test", "implementation", "PR-001", "Test", "active");
 
     insertNode("WI-D01", "work_item", { status: "pending" });
     insertWorkItem("WI-D01", "First item");
-    ctx.db.prepare(`UPDATE work_items SET phase = ? WHERE id = ?`).run("PH-003", "WI-D01");
+    ctx.db!.prepare(`UPDATE work_items SET phase = ? WHERE id = ?`).run("PH-003", "WI-D01");
 
     insertNode("WI-D02", "work_item", { status: "pending" });
     insertWorkItem("WI-D02", "Second item", { depends: ["WI-D01"] });
-    ctx.db.prepare(`UPDATE work_items SET phase = ? WHERE id = ?`).run("PH-003", "WI-D02");
+    ctx.db!.prepare(`UPDATE work_items SET phase = ? WHERE id = ?`).run("PH-003", "WI-D02");
 
     // Insert the dependency edge
-    ctx.db.prepare(`
+    ctx.db!.prepare(`
       INSERT OR IGNORE INTO edges (source_id, target_id, edge_type)
       VALUES (?, ?, ?)
     `).run("WI-D02", "WI-D01", "depends_on");
@@ -1786,7 +1786,7 @@ describe("handleWriteWorkItems", () => {
 
   it("error path: throws with 'null' message when a required field is null", () => {
     expect(() =>
-      upsertExtensionRow(ctx.drizzleDb, "work_items", "WI-NULL-1", { title: null })
+      upsertExtensionRow(ctx.drizzleDb!, "work_items", "WI-NULL-1", { title: null })
     ).toThrow(/required field 'title' is null/);
   });
 
@@ -1991,7 +1991,7 @@ describe("handleWriteWorkItems", () => {
     fs.writeFileSync(filePath, yamlContent, "utf8");
 
     // Index the file
-    indexFiles(db, ctx.drizzleDb, [filePath]);
+    indexFiles(db, ctx.drizzleDb!, [filePath]);
 
     // work_item_type must default to 'feature'
     const wiRow = db
@@ -2554,7 +2554,7 @@ describe("handleWriteArtifact", () => {
 describe("handleAssembleContext", () => {
   // Attach a LocalAdapter to ctx so traverse() flows through the StorageAdapter contract.
   beforeEach(() => {
-    ctx.adapter = new LocalAdapter({ db, drizzleDb: ctx.drizzleDb, ideateDir: artifactDir });
+    ctx.adapter = new LocalAdapter({ db, drizzleDb: ctx.drizzleDb!, ideateDir: artifactDir });
   });
 
   /** Insert an edge between two existing nodes */
@@ -2871,7 +2871,7 @@ describe("handleEmitMetric", () => {
     expect(fs.existsSync(metricsPath)).toBe(false);
 
     // No SQLite row inserted
-    const rows = ctx.db.prepare("SELECT COUNT(*) as cnt FROM metrics_events").get() as { cnt: number };
+    const rows = ctx.db!.prepare("SELECT COUNT(*) as cnt FROM metrics_events").get() as { cnt: number };
     expect(rows.cnt).toBe(0);
   });
 
@@ -3188,7 +3188,7 @@ describe("handleWriteArtifact routing", () => {
     expect(result).toContain("P-99");
     const filePath = path.join(artifactDir, "policies", "P-99.yaml");
     expect(fs.existsSync(filePath)).toBe(true);
-    const policyRow = ctx.db.prepare("SELECT * FROM domain_policies WHERE id = ?").get("P-99");
+    const policyRow = ctx.db!.prepare("SELECT * FROM domain_policies WHERE id = ?").get("P-99");
     expect(policyRow).toBeTruthy();
   });
 
@@ -3205,7 +3205,7 @@ describe("handleWriteArtifact routing", () => {
     expect(result).toContain("D-99");
     const filePath = path.join(artifactDir, "decisions", "D-99.yaml");
     expect(fs.existsSync(filePath)).toBe(true);
-    const decisionRow = ctx.db.prepare("SELECT * FROM domain_decisions WHERE id = ?").get("D-99");
+    const decisionRow = ctx.db!.prepare("SELECT * FROM domain_decisions WHERE id = ?").get("D-99");
     expect(decisionRow).toBeTruthy();
   });
 
@@ -3222,7 +3222,7 @@ describe("handleWriteArtifact routing", () => {
     expect(result).toContain("Q-99");
     const filePath = path.join(artifactDir, "questions", "Q-99.yaml");
     expect(fs.existsSync(filePath)).toBe(true);
-    const questionRow = ctx.db.prepare("SELECT * FROM domain_questions WHERE id = ?").get("Q-99");
+    const questionRow = ctx.db!.prepare("SELECT * FROM domain_questions WHERE id = ?").get("Q-99");
     expect(questionRow).toBeTruthy();
   });
 
@@ -3238,7 +3238,7 @@ describe("handleWriteArtifact routing", () => {
     expect(result).toContain("CS-test-001");
     const filePath = path.join(artifactDir, "cycles", "005", "CS-test-001.yaml");
     expect(fs.existsSync(filePath)).toBe(true);
-    const row = ctx.db.prepare("SELECT * FROM document_artifacts WHERE id = ?").get("CS-test-001");
+    const row = ctx.db!.prepare("SELECT * FROM document_artifacts WHERE id = ?").get("CS-test-001");
     expect(row).toBeTruthy();
     expect((row as Record<string, unknown>).cycle).toBe(5);
   });
@@ -3253,7 +3253,7 @@ describe("handleWriteArtifact routing", () => {
     });
 
     // 1. Live write must have populated document_artifacts.cycle immediately
-    const liveRow = ctx.db.prepare("SELECT cycle FROM document_artifacts WHERE id = 'CS-cycle-inject-001'").get() as { cycle: number | null } | undefined;
+    const liveRow = ctx.db!.prepare("SELECT cycle FROM document_artifacts WHERE id = 'CS-cycle-inject-001'").get() as { cycle: number | null } | undefined;
     expect(liveRow, "row should exist after live write").toBeDefined();
     expect(liveRow!.cycle, "live write must populate cycle").toBe(3);
 
@@ -3288,7 +3288,7 @@ describe("handleWriteArtifact routing", () => {
 
     expect(result).toContain("research_finding");
     expect(result).toContain("RF-test-001");
-    const row = ctx.db.prepare("SELECT * FROM research_findings WHERE id = ?").get("RF-test-001");
+    const row = ctx.db!.prepare("SELECT * FROM research_findings WHERE id = ?").get("RF-test-001");
     expect(row).toBeTruthy();
     expect((row as Record<string, unknown>).content).toBeTruthy();
   });
@@ -3304,7 +3304,7 @@ describe("handleWriteArtifact routing", () => {
 
     expect(result).toContain("module_spec");
     expect(result).toContain("MS-test-001");
-    const row = ctx.db.prepare("SELECT * FROM module_specs WHERE id = ?").get("MS-test-001");
+    const row = ctx.db!.prepare("SELECT * FROM module_specs WHERE id = ?").get("MS-test-001");
     expect(row).toBeTruthy();
   });
 
@@ -3338,10 +3338,10 @@ describe("handleWriteArtifact routing", () => {
     expect(fs.existsSync(wrongPath), "WI-999.yaml must not exist").toBe(false);
 
     // The DB node must record WI-001, not WI-999
-    const row = ctx.db.prepare("SELECT id FROM nodes WHERE id = 'WI-001'").get() as { id: string } | undefined;
+    const row = ctx.db!.prepare("SELECT id FROM nodes WHERE id = 'WI-001'").get() as { id: string } | undefined;
     expect(row, "DB row for WI-001 must exist").toBeDefined();
     expect(row!.id).toBe("WI-001");
-    const wrongRow = ctx.db.prepare("SELECT id FROM nodes WHERE id = 'WI-999'").get();
+    const wrongRow = ctx.db!.prepare("SELECT id FROM nodes WHERE id = 'WI-999'").get();
     expect(wrongRow, "DB row for WI-999 must not exist").toBeUndefined();
   });
 
@@ -3475,7 +3475,7 @@ describe("P-46: TYPE_TO_EXTENSION_TABLE completeness", () => {
 
     await handleWriteArtifact(ctx, args);
 
-    const row = ctx.db.prepare(`SELECT * FROM ${tableName} WHERE id = ?`).get(id) as Record<string, unknown>;
+    const row = ctx.db!.prepare(`SELECT * FROM ${tableName} WHERE id = ?`).get(id) as Record<string, unknown>;
     expect(row).toBeTruthy();
     if (checkFields) checkFields(row);
   });
@@ -3498,11 +3498,11 @@ describe("handleWriteArtifact — metrics_event dispatch branch", () => {
       },
     });
 
-    const nodeRow = ctx.db.prepare("SELECT * FROM nodes WHERE id = ?").get("ME-491-001") as Record<string, unknown>;
+    const nodeRow = ctx.db!.prepare("SELECT * FROM nodes WHERE id = ?").get("ME-491-001") as Record<string, unknown>;
     expect(nodeRow).toBeTruthy();
     expect(nodeRow.type).toBe("metrics_event");
 
-    const extRow = ctx.db.prepare("SELECT event_name, payload FROM metrics_events WHERE id = ?").get("ME-491-001") as Record<string, unknown>;
+    const extRow = ctx.db!.prepare("SELECT event_name, payload FROM metrics_events WHERE id = ?").get("ME-491-001") as Record<string, unknown>;
     expect(extRow).toBeTruthy();
     expect(extRow.event_name).toBe("wi_complete");
     const parsed = JSON.parse(extRow.payload as string);
@@ -3524,11 +3524,11 @@ describe("handleWriteArtifact — interview_question dispatch branch", () => {
       },
     });
 
-    const nodeRow = ctx.db.prepare("SELECT * FROM nodes WHERE id = ?").get("IQ-491-001") as Record<string, unknown>;
+    const nodeRow = ctx.db!.prepare("SELECT * FROM nodes WHERE id = ?").get("IQ-491-001") as Record<string, unknown>;
     expect(nodeRow).toBeTruthy();
     expect(nodeRow.type).toBe("interview_question");
 
-    const extRow = ctx.db.prepare("SELECT interview_id, question, answer, seq FROM interview_questions WHERE id = ?").get("IQ-491-001") as Record<string, unknown>;
+    const extRow = ctx.db!.prepare("SELECT interview_id, question, answer, seq FROM interview_questions WHERE id = ?").get("IQ-491-001") as Record<string, unknown>;
     expect(extRow).toBeTruthy();
     expect(extRow.interview_id).toBe("refine-491");
     expect(extRow.question).toBe("What is the target audience?");
@@ -3640,7 +3640,7 @@ describe("P-33 compliance: no absolute .ideate/ paths in tool responses", () => 
   });
 
   it("handleGetExecutionStatus response contains no .ideate/ path", async () => {
-    ctx.adapter = new LocalAdapter({ db, drizzleDb: ctx.drizzleDb, ideateDir: artifactDir });
+    ctx.adapter = new LocalAdapter({ db, drizzleDb: ctx.drizzleDb!, ideateDir: artifactDir });
     insertNode("WI-P33-04", "work_item", { status: "pending" });
     insertWorkItem("WI-P33-04", "P-33 execution status item");
     const result = await handleGetExecutionStatus(ctx, {});

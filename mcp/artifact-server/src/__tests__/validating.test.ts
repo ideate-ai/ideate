@@ -1581,3 +1581,53 @@ describe("getDomainState", () => {
     });
   });
 });
+
+// ---------------------------------------------------------------------------
+// indexFiles
+// ---------------------------------------------------------------------------
+
+describe("indexFiles", () => {
+  it("throws INVALID_PATHS for non-array input", async () => {
+    await expect(
+      adapter.indexFiles("not-an-array" as unknown as string[])
+    ).rejects.toSatisfy((e) => {
+      assertValidationError(e, "INVALID_PATHS");
+      return true;
+    });
+    expect(mock.calls).toHaveLength(0);
+  });
+
+  it("passes through valid string[] to inner adapter", async () => {
+    await adapter.indexFiles(["path/to/file.yaml", "path/to/other.yaml"]);
+    expect(mock.calls).toHaveLength(1);
+    expect(mock.calls[0]).toEqual({
+      method: "indexFiles",
+      args: [["path/to/file.yaml", "path/to/other.yaml"]],
+    });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// removeFiles
+// ---------------------------------------------------------------------------
+
+describe("removeFiles", () => {
+  it("throws INVALID_PATHS for non-array input", async () => {
+    await expect(
+      adapter.removeFiles(42 as unknown as string[])
+    ).rejects.toSatisfy((e) => {
+      assertValidationError(e, "INVALID_PATHS");
+      return true;
+    });
+    expect(mock.calls).toHaveLength(0);
+  });
+
+  it("passes through valid string[] to inner adapter", async () => {
+    await adapter.removeFiles(["path/to/file.yaml"]);
+    expect(mock.calls).toHaveLength(1);
+    expect(mock.calls[0]).toEqual({
+      method: "removeFiles",
+      args: [["path/to/file.yaml"]],
+    });
+  });
+});

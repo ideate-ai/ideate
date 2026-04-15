@@ -138,7 +138,7 @@ describe("dormant mode", () => {
     expect(state.ctx).not.toBeNull();
     expect(state.ctx!.ideateDir).toBe(path.join(tmpDir, ".ideate"));
 
-    const tables = state.ctx!.db
+    const tables = state.ctx!.db!
       .prepare(
         "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name"
       )
