@@ -1394,15 +1394,18 @@ export function runAdapterContractTests(
     // -----------------------------------------------------------------------
     // getMetricsEvents (contract) — WI-827
     //
-    // Covers the four required filter combinations:
+    // Covers the six required filter combinations:
     //   1. Empty store → []
     //   2. cycle filter
     //   3. agent_type filter
     //   4. Combined (cycle + agent_type) AND semantics
+    //   5. work_item filter
+    //   6. phase filter
     //
-    // These tests run against BOTH LocalAdapter and RemoteAdapter through this
-    // shared factory, which automatically exercises the RemoteAdapter's
-    // TypeScript-side cycle filtering (D-210 two-round-trip path).
+    // These tests run against LocalAdapter unconditionally and against
+    // RemoteAdapter when a live test server is available (see
+    // remote-contract.test.ts). In standard CI without a live server,
+    // only LocalAdapter coverage is active.
     //
     // Write path: putNode with type "metrics_event" stores agent_type inside
     // the payload JSON field. cycle_created is set via MutateNodeInput.cycle.
@@ -1415,6 +1418,8 @@ export function runAdapterContractTests(
       //   and as properties.cycle_created so the LocalAdapter writer stores it
       //   correctly regardless of CYCLE_SCOPED_TYPES membership.
       // - agentType: stored in payload.agent_type via the writer
+      // - workItem: stored in payload.work_item via the writer
+      // - phase: stored in payload.phase via the writer
       // - timestamp: ISO timestamp string for ordering assertions
       async function writeMetricsEvent(
         a: StorageAdapter,
@@ -1424,6 +1429,8 @@ export function runAdapterContractTests(
           agentType?: string;
           eventName?: string;
           timestamp?: string;
+          workItem?: string;
+          phase?: string;
         }
       ): Promise<void> {
         const props: Record<string, unknown> = {
@@ -1433,6 +1440,12 @@ export function runAdapterContractTests(
         };
         if (opts.agentType !== undefined) {
           props.agent_type = opts.agentType;
+        }
+        if (opts.workItem !== undefined) {
+          props.work_item = opts.workItem;
+        }
+        if (opts.phase !== undefined) {
+          props.phase = opts.phase;
         }
         await a.putNode({
           id: opts.id,
@@ -1552,6 +1565,86 @@ export function runAdapterContractTests(
         expect(payload.agent_type).toBe("executor");
       });
 
+      // 5. work_item filter — write events with different work_item values
+      it("filters by work_item correctly", async () => {
+        await writeMetricsEvent(adapter, {
+          id: "ME-CT-WI01",
+          cycle: 10,
+          agentType: "worker-agent",
+          workItem: "WI-001",
+          timestamp: "2026-05-01T00:01:00.000Z",
+        });
+        await writeMetricsEvent(adapter, {
+          id: "ME-CT-WI02",
+          cycle: 10,
+          agentType: "worker-agent",
+          workItem: "WI-002",
+          timestamp: "2026-05-01T00:02:00.000Z",
+        });
+        await writeMetricsEvent(adapter, {
+          id: "ME-CT-WI03",
+          cycle: 11,
+          agentType: "reviewer-agent",
+          workItem: "WI-001",
+          timestamp: "2026-05-01T00:03:00.000Z",
+        });
+
+        const results = await adapter.getMetricsEvents({ work_item: "WI-001" });
+
+        expect(Array.isArray(results)).toBe(true);
+        const ids = results.map((r) => r.node.id).sort();
+        expect(ids).toContain("ME-CT-WI01");
+        expect(ids).toContain("ME-CT-WI03");
+        expect(ids).not.toContain("ME-CT-WI02");
+
+        // Verify payload carries work_item
+        for (const row of results.filter((r) => ["ME-CT-WI01", "ME-CT-WI03"].includes(r.node.id))) {
+          expect(row.properties.payload).not.toBeNull();
+          const payload = JSON.parse(row.properties.payload!) as Record<string, unknown>;
+          expect(payload.work_item).toBe("WI-001");
+        }
+      });
+
+      // 6. phase filter — write events with different phase values
+      it("filters by phase correctly", async () => {
+        await writeMetricsEvent(adapter, {
+          id: "ME-CT-PH01",
+          cycle: 20,
+          agentType: "worker-agent",
+          phase: "PH-045",
+          timestamp: "2026-06-01T00:01:00.000Z",
+        });
+        await writeMetricsEvent(adapter, {
+          id: "ME-CT-PH02",
+          cycle: 20,
+          agentType: "worker-agent",
+          phase: "PH-046",
+          timestamp: "2026-06-01T00:02:00.000Z",
+        });
+        await writeMetricsEvent(adapter, {
+          id: "ME-CT-PH03",
+          cycle: 21,
+          agentType: "reviewer-agent",
+          phase: "PH-045",
+          timestamp: "2026-06-01T00:03:00.000Z",
+        });
+
+        const results = await adapter.getMetricsEvents({ phase: "PH-045" });
+
+        expect(Array.isArray(results)).toBe(true);
+        const ids = results.map((r) => r.node.id).sort();
+        expect(ids).toContain("ME-CT-PH01");
+        expect(ids).toContain("ME-CT-PH03");
+        expect(ids).not.toContain("ME-CT-PH02");
+
+        // Verify payload carries phase
+        for (const row of results.filter((r) => ["ME-CT-PH01", "ME-CT-PH03"].includes(r.node.id))) {
+          expect(row.properties.payload).not.toBeNull();
+          const payload = JSON.parse(row.properties.payload!) as Record<string, unknown>;
+          expect(payload.phase).toBe("PH-045");
+        }
+      });
+
       // Shape contract — returned rows must conform to MetricsEventRow structure
       it("returned rows have the correct MetricsEventRow shape (node + properties)", async () => {
         await writeMetricsEvent(adapter, {
@@ -1572,7 +1665,9 @@ export function runAdapterContractTests(
         expect(row.node.cycle_created).toBe(7);
 
         // properties shape — all MetricsEventProperties keys must be present
+        // and known-written fields must carry the correct types
         expect(row.properties).toHaveProperty("event_name");
+        expect(typeof row.properties.event_name).toBe("string");
         expect(row.properties).toHaveProperty("timestamp");
         expect(row.properties).toHaveProperty("payload");
         expect(row.properties).toHaveProperty("input_tokens");
@@ -1589,6 +1684,12 @@ export function runAdapterContractTests(
         expect(row.properties).toHaveProperty("cycle_total_cost_estimate");
         expect(row.properties).toHaveProperty("convergence_cycles");
         expect(row.properties).toHaveProperty("context_artifact_ids");
+
+        // typeof checks for known-written scalar fields
+        // event_name is written as "test_event" (string)
+        expect(typeof row.properties.event_name).toBe("string");
+        // cycle_created is returned on the node as a number
+        expect(typeof row.node.cycle_created).toBe("number");
       });
     });
 

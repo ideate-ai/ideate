@@ -326,7 +326,7 @@ Fetch all metrics event rows matching the optional filter.
   - `phase`: matched inside the payload JSON field
 
 **Returns:**
-- Array of `MetricsEventRow` objects ordered by `timestamp ASC, id ASC`
+- Array of `MetricsEventRow` objects ordered by `timestamp ASC, id ASC`. Returns `[]` (empty array, not null) when no events match. Never throws.
 
 **Remote behavior:** Fetches all `metrics_event` nodes via two round-trips (`queryNodes` + `getNodes`), then applies all filters (including `cycle`) in TypeScript. This is an O(n) scan; cycle-filter SQL pushdown is local-only.
 
@@ -670,7 +670,9 @@ type NodeType =
   | "constraints"
   | "research"
   | "interview"
-  | "domain_index";
+  | "domain_index"
+  // Session/state artifacts
+  | "autopilot_state";
 ```
 
 ### EdgeType

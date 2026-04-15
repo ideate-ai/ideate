@@ -808,8 +808,9 @@ Return finding counts by severity for a cycle, and the cycle summary document co
 
 **Current LocalAdapter behavior**:
 - Queries `findings` table by cycle for severity counts.
-- Searches for cycle_summary node by cycle number. Looks in `document_artifacts` table for content. Falls back to reading YAML file from file_path.
-- Returns raw YAML/document content if from file, or parsed JSON content if from DB.
+- Searches for cycle_summary node by cycle number using strict canonical-only selection (WI-824): only rows whose `file_path` ends with `/spec-adherence.yaml` or `/summary.yaml` are considered. Legacy ID-named files (SA-NNN, CQ-NNN, GA-NNN) are invisible to this selector. If no canonical row is found, `cycle_summary_content` returns null.
+- Selection priority: `adherenceRow` (file_path ends with `/spec-adherence.yaml`) is preferred; `summaryRow` (file_path ends with `/summary.yaml`) is the fallback. `targetRow = adherenceRow ?? summaryRow`.
+- Reads content from the `da_content` column of `document_artifacts`; if the JSON blob has a `content` string field, that field value is returned. Otherwise the raw blob is returned.
 
 **Current RemoteAdapter behavior**:
 - Sends `convergenceStatus(cycleNumber)` query.
@@ -824,7 +825,7 @@ Return finding counts by severity for a cycle, and the cycle summary document co
 
 1. **cycle_summary_content format**: LocalAdapter may return raw YAML (from file) or the content field from document_artifacts. Server returns the JSON `content` property which is `JSON.stringify(input.properties)`. If the cycle summary was created via putNode with `{title: "Summary", content: "...markdown..."}`, server returns `'{"title":"Summary","content":"...markdown..."}'` while LocalAdapter returns either raw YAML or the `content` field from document_artifacts table (which for document types is `typeof content.content === "string" ? content.content : JSON.stringify(content)`).
 
-2. **Cycle matching**: LocalAdapter matches by `da.cycle = ?` OR file_path pattern `%/cycles/NNN/%`. Server matches by `n.cycle = $cycleNumber OR n.cycle_created = $cycleNumber`. These are different matching strategies.
+2. **Cycle matching**: LocalAdapter matches by file_path ending with `/spec-adherence.yaml` or `/summary.yaml` (strict canonical-only, WI-824). Server matches by `n.cycle = $cycleNumber OR n.cycle_created = $cycleNumber`. These are different matching strategies; the local approach is a provenance guard against legacy ID-named files.
 
 **Recommended fix**:
 

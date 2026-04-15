@@ -798,11 +798,11 @@ Based on the context assembly research (`context-assembly-strategies.yaml`, Ques
 | `mcp/artifact-server/src/tools/metrics.ts` | `ideate_get_metrics` (agent/work_item/cycle aggregations) |
 | `mcp/artifact-server/src/tools/autopilot-state.ts` | `ideate_manage_autopilot_state` (get or update autopilot session state) |
 | `mcp/artifact-server/src/tools/config.ts` | `handleUpdateConfig` (deep-merge patch into config.json with validation) |
-| `mcp/artifact-server/src/adapter.ts` | `StorageAdapter` interface, error classes (`StorageAdapterError`, `NotFoundError`, etc.), `createAdapter` factory |
+| `mcp/artifact-server/src/adapter.ts` | `StorageAdapter` interface, error classes (`StorageAdapterError`, `NotFoundError`, etc.), `selectAdapter` factory |
 | `mcp/artifact-server/src/adapters/local/writer.ts` | `LocalAdapter` write operations: `putNode`, `patchNode`, `deleteNode`, `putEdge`, `removeEdges`, `batchMutate`, `appendJournalEntry`, `archiveCycle` |
 | `mcp/artifact-server/src/adapters/local/reader.ts` | `LocalAdapter` read operations: `getNode`, `getNodes`, `readNodeContent`, `getEdges`, `traverse`, `queryGraph`, `queryNodes`, `nextId`, `countNodes`, `getDomainState`, `getConvergenceData` |
 | `mcp/artifact-server/src/adapters/local/context.ts` | Shared `LocalAdapterContext`: database handles, artifact directory path, index-ready signal used by both writer and reader |
-| `mcp/artifact-server/src/adapters/local/index.ts` | Assembles `LocalAdapter` from writer, reader, and shared context; exports `createLocalAdapter` factory |
+| `mcp/artifact-server/src/adapters/local/index.ts` | Assembles `LocalAdapter` from writer, reader, and shared context; exports the `LocalAdapter` class |
 
 ---
 

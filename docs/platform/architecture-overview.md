@@ -209,7 +209,7 @@ The adapter internally handles sequence numbering, YAML serialization, and SQLit
 | 241-306 | Copy files, verify hashes, delete originals | Storage | New: archive/move operation |
 | 311-321 | Delete/update SQLite rows for moved files | Storage | `deleteNode` + `patchNode` |
 
-**Refactored call**: New `archiveCycle(cycle: number)` method on the adapter, or a sequence of `deleteNode` / `patchNode` calls. This is an operation that is inherently local-mode-specific (file archival). The remote adapter would handle archival differently (status change, not file move).
+**Refactored call**: New `archiveCycle(cycle: number): Promise<string>` method on the adapter, or a sequence of `deleteNode` / `patchNode` calls. This is an operation that is inherently local-mode-specific (file archival). The remote adapter would handle archival differently (status change, not file move).
 
 **Design note**: Archive is a candidate for a local-only extension method rather than a core adapter interface method, since remote mode has no concept of file archival.
 
@@ -649,7 +649,7 @@ The `ideateDir` field is retained because some tool handlers use it for non-stor
 
 ## 7. Open Questions
 
-1. **Archive operation (resolved)**: `archiveCycle(cycle: number): Promise<void>` is a core StorageAdapter interface method with backend-specific semantics. LocalAdapter performs artifact moves and index updates; RemoteAdapter calls the archiveCycle GraphQL mutation to transition statuses. See adapter-interface.md Section 4.7.
+1. **Archive operation (resolved)**: `archiveCycle(cycle: number): Promise<string>` is a core StorageAdapter interface method with backend-specific semantics. LocalAdapter performs artifact moves and index updates; RemoteAdapter calls the archiveCycle GraphQL mutation to transition statuses. See adapter-interface.md Section 4.7.
 
 2. **Metrics emit (resolved)**: `handleEmitMetric` (in tools/metrics.ts) is a no-op shim retained for backward compatibility — emission was soft-deprecated in WI-790 (see D-211); the tool stays registered to avoid breaking existing skill code, but no new rows are written to `metrics_events`. `handleEmitEvent` (in tools/events.ts) still writes event records via the putNode pattern. The original question of whether metrics should follow a fast-path is moot under soft-deprecation; it returns when replacement telemetry is designed in PH-047-candidate.
 
