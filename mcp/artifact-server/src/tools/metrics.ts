@@ -1,4 +1,23 @@
 import type { ToolContext } from "../types.js";
+import type { Node } from "../adapter.js";
+
+// ---------------------------------------------------------------------------
+// Adapter resolution
+//
+// All handlers require ctx.adapter to be set. No tool handler may access
+// ctx.db or ctx.drizzleDb directly — all data access routes through
+// ctx.adapter (RF-clean-interface-proposal §1 invariant 2).
+// ---------------------------------------------------------------------------
+
+function getAdapter(ctx: ToolContext) {
+  if (!ctx.adapter) {
+    throw new Error(
+      "metrics.ts: ToolContext.adapter is required. " +
+        "This is a configuration error — the server and all tests must provide an adapter."
+    );
+  }
+  return ctx.adapter;
+}
 
 // ---------------------------------------------------------------------------
 // handleEmitMetric — no-op (soft-deprecated in PH-044)
@@ -97,36 +116,52 @@ interface LocalMetricsEventRow {
 // Helpers
 // ---------------------------------------------------------------------------
 
+
 /**
- * Build WHERE clause fragments based on the filter object.
- * Returns { clauses: string[], params: unknown[] }
+ * Map a Node returned by adapter.getNodes() to the LocalMetricsEventRow shape
+ * used by the aggregation functions.
+ *
+ * node.properties contains all columns from the metrics_events extension table
+ * (event_name, timestamp, payload, input_tokens, etc.) because LocalAdapter's
+ * fetchExtensionProperties does SELECT * FROM metrics_events WHERE id = ?.
+ * RemoteAdapter is expected to provide the same fields in Node.properties for
+ * metrics_event nodes.
  */
-function buildWhereFragments(
-  filter: MetricsFilter | undefined
-): { clauses: string[]; params: unknown[] } {
-  const clauses: string[] = [];
-  const params: unknown[] = [];
+function nodeToMetricsRow(node: Node): LocalMetricsEventRow {
+  const p = node.properties;
 
-  if (!filter) return { clauses, params };
-
-  if (filter.cycle !== undefined) {
-    clauses.push("n.cycle_created = ?");
-    params.push(filter.cycle);
+  function num(v: unknown): number | null {
+    if (v === null || v === undefined) return null;
+    if (typeof v === "number") return v;
+    const n = Number(v);
+    return isNaN(n) ? null : n;
   }
-  if (filter.agent_type !== undefined) {
-    clauses.push("json_extract(me.payload, '$.agent_type') = ?");
-    params.push(filter.agent_type);
-  }
-  if (filter.work_item !== undefined) {
-    clauses.push("json_extract(me.payload, '$.work_item') = ?");
-    params.push(filter.work_item);
-  }
-  if (filter.phase !== undefined) {
-    clauses.push("json_extract(me.payload, '$.phase') = ?");
-    params.push(filter.phase);
+  function str(v: unknown): string | null {
+    if (v === null || v === undefined) return null;
+    return String(v);
   }
 
-  return { clauses, params };
+  return {
+    id: node.id,
+    event_name: typeof p.event_name === "string" ? p.event_name : node.id,
+    timestamp: str(p.timestamp),
+    payload: str(p.payload),
+    input_tokens: num(p.input_tokens),
+    output_tokens: num(p.output_tokens),
+    cache_read_tokens: num(p.cache_read_tokens),
+    cache_write_tokens: num(p.cache_write_tokens),
+    outcome: str(p.outcome),
+    finding_count: num(p.finding_count),
+    finding_severities: str(p.finding_severities),
+    first_pass_accepted: num(p.first_pass_accepted),
+    rework_count: num(p.rework_count),
+    work_item_total_tokens: num(p.work_item_total_tokens),
+    cycle_total_tokens: num(p.cycle_total_tokens),
+    cycle_total_cost_estimate: str(p.cycle_total_cost_estimate),
+    convergence_cycles: num(p.convergence_cycles),
+    context_artifact_ids: str(p.context_artifact_ids),
+    cycle_created: node.cycle_created,
+  };
 }
 
 /**
@@ -478,52 +513,79 @@ export async function handleGetMetrics(
       }
     : undefined;
 
-  const { clauses, params } = buildWhereFragments(filter);
+  const adapter = getAdapter(ctx);
 
-  const whereStr = clauses.length > 0 ? `WHERE ${clauses.join(" AND ")}` : "";
-
-  const fullQuery = `
-    SELECT
-      me.id,
-      me.event_name,
-      me.timestamp,
-      me.payload,
-      me.input_tokens,
-      me.output_tokens,
-      me.cache_read_tokens,
-      me.cache_write_tokens,
-      me.outcome,
-      me.finding_count,
-      me.finding_severities,
-      me.first_pass_accepted,
-      me.rework_count,
-      me.work_item_total_tokens,
-      me.cycle_total_tokens,
-      me.cycle_total_cost_estimate,
-      me.convergence_cycles,
-      me.context_artifact_ids,
-      n.cycle_created
-    FROM metrics_events me
-    JOIN nodes n ON n.id = me.id
-    ${whereStr}
-    ORDER BY me.timestamp ASC, me.id ASC
-  `;
+  // Fetch all metric_event nodes via the adapter. queryNodes returns NodeMeta
+  // only; getNodes returns full Node objects whose .properties contain all
+  // metrics_events extension columns (event_name, input_tokens, payload, etc.).
+  // Filters are applied in TypeScript after fetching because:
+  //   - cycle maps to node.cycle_created (NodeFilter.cycle only applies for
+  //     node types where hasColumn("cycle") is true, which excludes
+  //     metrics_event in the local adapter).
+  //   - agent_type, work_item, phase live inside the payload JSON field and
+  //     are not queryable through NodeFilter.
+  const METRICS_FETCH_LIMIT = 100_000;
+  const queryResult = await adapter.queryNodes(
+    { type: "metrics_event" },
+    METRICS_FETCH_LIMIT,
+    0
+  );
+  const nodeIds = queryResult.nodes.map(({ node }) => node.id);
 
   let rows: LocalMetricsEventRow[];
 
-  if (ctx.adapter) {
-    // Adapter-first branch: use adapter.queryNodes to confirm the metrics_event
-    // type is accessible via the adapter, then fetch the full aggregation data
-    // from the local DB. The adapter's queryNodes interface returns only NodeMeta
-    // (no metrics-specific fields such as input_tokens or finding_count), so the
-    // detailed aggregation must still run against the raw SQL layer. The adapter
-    // call here serves as the canonical read path entry point; in production
-    // the local adapter wraps the same SQLite DB.
-    await ctx.adapter.queryNodes({ type: "metrics_event", cycle: filter?.cycle }, 1, 0);
-    rows = ctx.db.prepare(fullQuery).all(...params) as LocalMetricsEventRow[];
+  if (nodeIds.length === 0) {
+    rows = [];
   } else {
-    // Test-only fallback — adapter is always set in production.
-    rows = ctx.db.prepare(fullQuery).all(...params) as LocalMetricsEventRow[];
+    const nodesMap = await adapter.getNodes(nodeIds);
+    const allRows = Array.from(nodesMap.values()).map(nodeToMetricsRow);
+
+    // Apply TypeScript-side filters (mirrors the SQL WHERE fragments).
+    rows = allRows.filter((row) => {
+      if (filter?.cycle !== undefined && row.cycle_created !== filter.cycle) {
+        return false;
+      }
+      if (filter?.agent_type !== undefined) {
+        let payloadAgentType: string | null = null;
+        if (row.payload) {
+          try {
+            const p = JSON.parse(row.payload) as Record<string, unknown>;
+            if (typeof p.agent_type === "string") payloadAgentType = p.agent_type;
+          } catch { /* ignore */ }
+        }
+        if (payloadAgentType !== filter.agent_type) return false;
+      }
+      if (filter?.work_item !== undefined) {
+        let payloadWorkItem: string | null = null;
+        if (row.payload) {
+          try {
+            const p = JSON.parse(row.payload) as Record<string, unknown>;
+            if (typeof p.work_item === "string") payloadWorkItem = p.work_item;
+          } catch { /* ignore */ }
+        }
+        if (payloadWorkItem !== filter.work_item) return false;
+      }
+      if (filter?.phase !== undefined) {
+        let payloadPhase: string | null = null;
+        if (row.payload) {
+          try {
+            const p = JSON.parse(row.payload) as Record<string, unknown>;
+            if (typeof p.phase === "string") payloadPhase = p.phase;
+          } catch { /* ignore */ }
+        }
+        if (payloadPhase !== filter.phase) return false;
+      }
+      return true;
+    });
+
+    // Restore ordering consistent with the original SQL (timestamp ASC, id ASC).
+    rows.sort((a, b) => {
+      const tA = a.timestamp ?? "";
+      const tB = b.timestamp ?? "";
+      if (tA < tB) return -1;
+      if (tA > tB) return 1;
+      return a.id.localeCompare(b.id);
+    });
   }
 
   const sections: string[] = [];

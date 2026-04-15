@@ -328,20 +328,12 @@ describe("handleGetArtifactContext — phase dispatch", () => {
     expect(result).toContain("Code review complete");
   });
 
-  it("error path: throws when phase node exists but phases extension row is missing", async () => {
-    // This test exercises the SQLite-fallback path in context.ts (still
-    // present — context.ts was not modified by WI-800). Clear the adapter so
-    // handlePhaseContext takes the legacy path that throws on missing
-    // extension rows.
-    ctx.adapter = undefined;
-
-    // Insert only the node — no phases extension row
-    insertNode("PH-BAD", "phase", { status: "active" });
-
-    await expect(
-      handleGetArtifactContext(ctx, { artifact_id: "PH-BAD" })
-    ).rejects.toThrow(/phase metadata not found/i);
-  });
+  // WI-803: Removed "throws when phase node exists but phases extension row is missing" test.
+  // The SQLite-fallback path that threw this error was deleted in WI-803 (all data access
+  // now goes through ctx.adapter). With the adapter path, LocalAdapter.getNode returns the
+  // node (with empty properties) even when the phases extension row is absent, so the
+  // "phase metadata not found" error never fires. The assertion no longer applies at the
+  // adapter boundary (Option B from WI-803 spec).
 });
 
 describe("handleGetArtifactContext — generic artifact dispatch", () => {
@@ -402,24 +394,12 @@ describe("handleGetArtifactContext — generic artifact dispatch", () => {
     expect(result).toContain("governed_by");
   });
 
-  it("error path: returns 'Content not available' when file_path points to nonexistent file", async () => {
-    // This test exercises the SQLite-fallback path in context.ts (still
-    // present — context.ts was not modified by WI-800). Clear the adapter so
-    // handleGenericArtifactContext takes the legacy path that emits the
-    // "Content not available" placeholder when file_path is absent on disk.
-    ctx.adapter = undefined;
-
-    insertNode("P-MISSING", "domain_policy", {
-      file_path: path.join(artifactDir, "policies", "P-MISSING.yaml"),
-      status: "active",
-    });
-    db.prepare(`INSERT OR REPLACE INTO domain_policies (id, domain, description) VALUES (?, ?, ?)`)
-      .run("P-MISSING", "workflow", "Ghost policy");
-
-    const result = await handleGetArtifactContext(ctx, { artifact_id: "P-MISSING" });
-
-    expect(result).toContain("Content not available");
-  });
+  // WI-803: Removed "returns 'Content not available' when file_path points to nonexistent file" test.
+  // The SQLite-fallback path that produced the "Content not available" placeholder was deleted
+  // in WI-803 (all data access now goes through ctx.adapter). With the adapter path,
+  // LocalAdapter.readNodeContent returns "" (empty string) when the file is absent — so the
+  // content section is simply omitted rather than showing "Content not available".
+  // The assertion no longer applies at the adapter boundary (Option B from WI-803 spec).
 });
 
 // ---------------------------------------------------------------------------

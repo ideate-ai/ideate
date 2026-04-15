@@ -2,6 +2,24 @@ import type { ToolContext } from "../types.js";
 import { TYPE_TO_EXTENSION_TABLE } from "../db.js";
 
 // ---------------------------------------------------------------------------
+// Adapter resolution
+//
+// All handlers require ctx.adapter to be set.  The fallback path that
+// called ctx.db.prepare directly was removed in WI-804 (enforces invariants
+// 1 and 2 from RF-clean-interface-proposal §1).
+// ---------------------------------------------------------------------------
+
+function getAdapter(ctx: ToolContext) {
+  if (!ctx.adapter) {
+    throw new Error(
+      "query.ts: ToolContext.adapter is required. " +
+        "This is a configuration error — the server and all tests must provide an adapter."
+    );
+  }
+  return ctx.adapter;
+}
+
+// ---------------------------------------------------------------------------
 // handleGetNextId — return next available ID for an artifact type
 // ---------------------------------------------------------------------------
 
@@ -20,9 +38,6 @@ const TYPE_PREFIX_MAP: Record<string, { prefix: string; padWidth: number }> = {
   phase: { prefix: "PH-", padWidth: 3 },
 };
 
-// Types that require cycle-scoped IDs (format: {prefix}{cycle}-{seq})
-const CYCLE_SCOPED_ID_TYPES = ["proxy_human_decision"];
-
 export async function handleGetNextId(
   ctx: ToolContext,
   args: Record<string, unknown>
@@ -40,15 +55,8 @@ export async function handleGetNextId(
     throw new Error(`Unknown type '${type}'. Valid types: ${validTypes}`);
   }
 
-  // Delegate to adapter (required — ctx.db fallback removed in WI-800)
-  if (!ctx.adapter) {
-    throw new Error(
-      "handleGetNextId requires ctx.adapter to be set. " +
-        "This is a configuration error — the server and all tests must provide an adapter."
-    );
-  }
-
-  return ctx.adapter.nextId(type as import("../adapter.js").NodeType, cycle);
+  const adapter = getAdapter(ctx);
+  return adapter.nextId(type as import("../adapter.js").NodeType, cycle);
 }
 
 // ---------------------------------------------------------------------------
@@ -56,132 +64,6 @@ export async function handleGetNextId(
 // ---------------------------------------------------------------------------
 
 const VALID_TYPES = Object.keys(TYPE_TO_EXTENSION_TABLE);
-
-// Maps type → extension table name and summary SQL expression
-const TYPE_EXTENSION_INFO: Record<
-  string,
-  { table: string; summaryExpr: string }
-> = {
-  work_item: {
-    table: "work_items",
-    summaryExpr: "e.title",
-  },
-  finding: {
-    table: "findings",
-    summaryExpr: "e.severity || ' — ' || e.verdict || ' by ' || e.reviewer",
-  },
-  domain_policy: {
-    table: "domain_policies",
-    summaryExpr: "e.description",
-  },
-  domain_decision: {
-    table: "domain_decisions",
-    summaryExpr: "e.description",
-  },
-  domain_question: {
-    table: "domain_questions",
-    summaryExpr: "e.description",
-  },
-  guiding_principle: {
-    table: "guiding_principles",
-    summaryExpr: "e.name",
-  },
-  constraint: {
-    table: "constraints",
-    summaryExpr: "e.category || ': ' || e.description",
-  },
-  module_spec: {
-    table: "module_specs",
-    summaryExpr: "e.name",
-  },
-  research_finding: {
-    table: "research_findings",
-    summaryExpr: "e.topic",
-  },
-  journal_entry: {
-    table: "journal_entries",
-    summaryExpr: "'[' || e.phase || '] ' || e.title",
-  },
-  metrics_event: {
-    table: "metrics_events",
-    summaryExpr: "e.event_name",
-  },
-  // Document artifact types all share the same table
-  decision_log: {
-    table: "document_artifacts",
-    summaryExpr: "COALESCE(e.title, n.type)",
-  },
-  cycle_summary: {
-    table: "document_artifacts",
-    summaryExpr: "COALESCE(e.title, n.type)",
-  },
-  review_manifest: {
-    table: "document_artifacts",
-    summaryExpr: "COALESCE(e.title, n.type)",
-  },
-  review_output: {
-    table: "document_artifacts",
-    summaryExpr: "COALESCE(e.title, n.type)",
-  },
-  architecture: {
-    table: "document_artifacts",
-    summaryExpr: "COALESCE(e.title, n.type)",
-  },
-  overview: {
-    table: "document_artifacts",
-    summaryExpr: "COALESCE(e.title, n.type)",
-  },
-  execution_strategy: {
-    table: "document_artifacts",
-    summaryExpr: "COALESCE(e.title, n.type)",
-  },
-  guiding_principles: {
-    table: "document_artifacts",
-    summaryExpr: "COALESCE(e.title, n.type)",
-  },
-  constraints: {
-    table: "document_artifacts",
-    summaryExpr: "COALESCE(e.title, n.type)",
-  },
-  research: {
-    table: "document_artifacts",
-    summaryExpr: "COALESCE(e.title, n.type)",
-  },
-  interview: {
-    table: "document_artifacts",
-    summaryExpr: "COALESCE(e.title, n.type)",
-  },
-  interview_question: {
-    table: "interview_questions",
-    summaryExpr: "e.interview_id || ': ' || e.question",
-  },
-  proxy_human_decision: {
-    table: "proxy_human_decisions",
-    summaryExpr: "e.trigger || ' → ' || e.decision || ' [' || e.status || ']'",
-  },
-  project: {
-    table: "projects",
-    summaryExpr: "COALESCE(e.name, SUBSTR(e.intent, 1, 40))",
-  },
-  phase: {
-    table: "phases",
-    summaryExpr: "COALESCE(e.name, e.phase_type || ': ' || SUBSTR(e.intent, 1, 40))",
-  },
-};
-
-// ---------------------------------------------------------------------------
-// Filters that live on extension tables (not nodes)
-// ---------------------------------------------------------------------------
-
-interface ParsedFilters {
-  domain?: string;
-  status?: string;
-  cycle?: number;
-  severity?: string;
-  phase?: string;
-  work_item?: string;
-  work_item_type?: string;
-}
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -205,456 +87,6 @@ function markdownTable(headers: string[], rows: string[][]): string {
 }
 
 // ---------------------------------------------------------------------------
-// Filter mode
-// ---------------------------------------------------------------------------
-
-interface FilterModeRow {
-  id: string;
-  type: string;
-  status: string | null;
-  summary: string | null;
-  domain: string | null;
-  cycle: number | null;
-}
-
-interface FilterModeResult {
-  rows: FilterModeRow[];
-  total_count: number;
-}
-
-// ---------------------------------------------------------------------------
-// Raw row type for graph traversal
-// ---------------------------------------------------------------------------
-
-type RawRow = {
-  node_id: string;
-  type: string;
-  edge_type: string;
-  direction: string;
-  depth: number;
-  status: string | null;
-};
-
-interface GraphModeResult {
-  rows: RawRow[];
-  total_count: number;
-}
-
-// Test-only fallback path — in production, handleArtifactQuery delegates to ctx.adapter
-function runFilterMode(
-  ctx: ToolContext,
-  type: string | undefined,
-  filters: ParsedFilters,
-  limit: number,
-  offset: number
-): FilterModeResult {
-  const whereClauses: string[] = [];
-  const params: (string | number)[] = [];
-
-  if (type) {
-    whereClauses.push("n.type = ?");
-    params.push(type);
-  }
-
-  // status lives on nodes
-  if (filters.status) {
-    whereClauses.push("n.status = ?");
-    params.push(filters.status);
-  } else if (type === "work_item") {
-    // Default: exclude done and obsolete work items to reduce response size.
-    // Callers that need done items should pass filters.status explicitly.
-    whereClauses.push("(n.status IS NULL OR (n.status != 'done' AND n.status != 'obsolete'))");
-  }
-
-  // Build the summary expression and optional extension JOIN
-  let summaryExpr = "NULL";
-  let extensionJoin = "";
-
-  if (type && TYPE_EXTENSION_INFO[type]) {
-    const info = TYPE_EXTENSION_INFO[type];
-    summaryExpr = info.summaryExpr;
-    extensionJoin = `LEFT JOIN ${info.table} e ON e.id = n.id`;
-
-    // Apply extension-table filters for the given type
-    if (filters.domain && hasColumn(type, "domain")) {
-      whereClauses.push("e.domain = ?");
-      params.push(filters.domain);
-    }
-    if (filters.cycle && hasColumn(type, "cycle")) {
-      whereClauses.push("e.cycle = ?");
-      params.push(filters.cycle);
-    }
-    if (filters.severity && type === "finding") {
-      whereClauses.push("e.severity = ?");
-      params.push(filters.severity);
-    }
-    if (filters.phase && (type === "journal_entry" || type === "work_item")) {
-      whereClauses.push("e.phase = ?");
-      params.push(filters.phase);
-    }
-    if (filters.work_item && hasColumn(type, "work_item")) {
-      whereClauses.push("e.work_item = ?");
-      params.push(filters.work_item);
-    }
-    if (filters.work_item_type && hasColumn(type, "work_item_type")) {
-      whereClauses.push("e.work_item_type = ?");
-      params.push(filters.work_item_type);
-    }
-  } else if (!type) {
-    // No specific type — we can only filter on nodes columns
-    // domain/cycle/severity/phase/work_item are ignored when no type is given
-    // (they live on extension tables we can't JOIN without knowing the type)
-  }
-
-  const whereClause =
-    whereClauses.length > 0 ? "WHERE " + whereClauses.join(" AND ") : "";
-
-  // domain column for the result: use extension table when possible
-  let domainExpr = "NULL";
-  if (type && (type.startsWith("domain_") || type === "work_item")) {
-    domainExpr = "e.domain";
-  }
-
-  // cycle column for the result
-  let cycleExpr = "NULL";
-  if (type === "finding" || type === "domain_decision") {
-    cycleExpr = "e.cycle";
-  } else if (
-    type &&
-    ["decision_log", "cycle_summary", "review_manifest", "architecture",
-     "overview", "execution_strategy", "guiding_principles", "constraints",
-     "research", "interview"].includes(type)
-  ) {
-    cycleExpr = "e.cycle";
-  }
-
-  const sql = `
-    SELECT
-      n.id,
-      n.type,
-      n.status,
-      SUBSTR(COALESCE(${summaryExpr}, ''), 1, 81) AS summary,
-      ${domainExpr} AS domain,
-      ${cycleExpr} AS cycle
-    FROM nodes n
-    ${extensionJoin}
-    ${whereClause}
-    ORDER BY n.id
-    LIMIT ? OFFSET ?
-  `;
-
-  params.push(limit, offset);
-
-  const rows = ctx.db.prepare(sql).all(...params) as FilterModeRow[];
-
-  // Count total matching items (without limit/offset)
-  const countSql = `
-    SELECT COUNT(*) as total_count
-    FROM nodes n
-    ${extensionJoin}
-    ${whereClause}
-  `;
-  const countRow = ctx.db.prepare(countSql).get(...params.slice(0, -2)) as { total_count: number };
-  const total_count = countRow.total_count;
-
-  if (rows.length === 0) {
-    return { rows: [], total_count };
-  }
-
-  return { rows, total_count };
-}
-
-// ---------------------------------------------------------------------------
-// Graph traversal mode
-// ---------------------------------------------------------------------------
-
-// Test-only fallback path — in production, handleArtifactQuery delegates to ctx.adapter
-function runGraphMode(
-  ctx: ToolContext,
-  relatedTo: string,
-  depth: number,
-  direction: string,
-  edgeTypes: string[] | undefined,
-  typeFilter: string | undefined,
-  filters: ParsedFilters,
-  limit: number,
-  offset: number
-): GraphModeResult | { error: string } {
-  // Verify the seed node exists
-  const seedNode = ctx.db
-    .prepare("SELECT id FROM nodes WHERE id = ?")
-    .get(relatedTo) as { id: string } | undefined;
-
-  if (!seedNode) {
-    return { error: `Node '${relatedTo}' not found` };
-  }
-
-  if (depth === 1) {
-    return runGraphDepth1(ctx, relatedTo, direction, edgeTypes, typeFilter, filters, limit, offset);
-  } else {
-    return runGraphRecursive(ctx, relatedTo, depth, direction, edgeTypes, typeFilter, filters, limit, offset);
-  }
-}
-
-function buildEdgeTypeFilter(edgeTypes: string[] | undefined, alias: string): string {
-  if (!edgeTypes || edgeTypes.length === 0) return "";
-  const placeholders = edgeTypes.map(() => "?").join(", ");
-  return `AND ${alias}.edge_type IN (${placeholders})`;
-}
-
-function runGraphDepth1(
-  ctx: ToolContext,
-  relatedTo: string,
-  direction: string,
-  edgeTypes: string[] | undefined,
-  typeFilter: string | undefined,
-  filters: ParsedFilters,
-  limit: number,
-  offset: number
-): GraphModeResult {
-  const edgeTypeFilter = buildEdgeTypeFilter(edgeTypes, "e");
-  const edgeTypeParams = edgeTypes ?? [];
-
-  let sql: string;
-  const params: (string | number)[] = [];
-
-  if (direction === "outgoing") {
-    sql = `
-      SELECT n.id AS node_id, n.type, e.edge_type, 'outgoing' AS direction, 1 AS depth, n.status
-      FROM edges e
-      JOIN nodes n ON n.id = e.target_id
-      WHERE e.source_id = ?
-      ${edgeTypeFilter}
-    `;
-    params.push(relatedTo, ...edgeTypeParams);
-  } else if (direction === "incoming") {
-    sql = `
-      SELECT n.id AS node_id, n.type, e.edge_type, 'incoming' AS direction, 1 AS depth, n.status
-      FROM edges e
-      JOIN nodes n ON n.id = e.source_id
-      WHERE e.target_id = ?
-      ${edgeTypeFilter}
-    `;
-    params.push(relatedTo, ...edgeTypeParams);
-  } else {
-    // both
-    sql = `
-      SELECT n.id AS node_id, n.type, e.edge_type, 'outgoing' AS direction, 1 AS depth, n.status
-      FROM edges e
-      JOIN nodes n ON n.id = e.target_id
-      WHERE e.source_id = ?
-      ${edgeTypeFilter}
-      UNION
-      SELECT n.id AS node_id, n.type, e.edge_type, 'incoming' AS direction, 1 AS depth, n.status
-      FROM edges e
-      JOIN nodes n ON n.id = e.source_id
-      WHERE e.target_id = ?
-      ${edgeTypeFilter}
-    `;
-    params.push(relatedTo, ...edgeTypeParams, relatedTo, ...edgeTypeParams);
-  }
-
-  // Wrap in a CTE so we can apply type/filter/pagination
-  return executeTraversalQuery(ctx, sql, params, typeFilter, filters, limit, offset);
-}
-
-function runGraphRecursive(
-  ctx: ToolContext,
-  relatedTo: string,
-  depth: number,
-  direction: string,
-  edgeTypes: string[] | undefined,
-  typeFilter: string | undefined,
-  filters: ParsedFilters,
-  limit: number,
-  offset: number
-): GraphModeResult {
-  const edgeTypeFilter = buildEdgeTypeFilter(edgeTypes, "e");
-  const edgeTypeParams = edgeTypes ?? [];
-
-  let outgoingStep: string;
-  let incomingStep: string;
-
-  // Outgoing step (traversal follows source_id → target_id)
-  outgoingStep = `
-    SELECT e.target_id AS next_id, e.edge_type, 'outgoing' AS direction, t.depth + 1 AS depth
-    FROM traversal t
-    JOIN edges e ON e.source_id = t.node_id
-    ${edgeTypeFilter}
-    WHERE t.depth < ?
-  `;
-
-  // Incoming step (traversal follows target_id → source_id)
-  incomingStep = `
-    SELECT e.source_id AS next_id, e.edge_type, 'incoming' AS direction, t.depth + 1 AS depth
-    FROM traversal t
-    JOIN edges e ON e.target_id = t.node_id
-    ${edgeTypeFilter}
-    WHERE t.depth < ?
-  `;
-
-  let recursiveBody: string;
-  let params: (string | number)[] = [];
-
-  if (direction === "outgoing") {
-    recursiveBody = `
-      SELECT ? AS node_id, '' AS edge_type, '' AS direction, 0 AS depth
-      UNION
-      ${outgoingStep}
-    `;
-    params = [relatedTo, ...edgeTypeParams, depth];
-  } else if (direction === "incoming") {
-    recursiveBody = `
-      SELECT ? AS node_id, '' AS edge_type, '' AS direction, 0 AS depth
-      UNION
-      ${incomingStep}
-    `;
-    params = [relatedTo, ...edgeTypeParams, depth];
-  } else {
-    // both directions
-    recursiveBody = `
-      SELECT ? AS node_id, '' AS edge_type, '' AS direction, 0 AS depth
-      UNION
-      ${outgoingStep}
-      UNION
-      ${incomingStep}
-    `;
-    params = [relatedTo, ...edgeTypeParams, depth, ...edgeTypeParams, depth];
-  }
-
-  const cteQuery = `
-    WITH RECURSIVE traversal(node_id, edge_type, direction, depth) AS (
-      ${recursiveBody}
-    )
-    SELECT n.id AS node_id, n.type, t.edge_type, t.direction, t.depth, n.status
-    FROM traversal t
-    JOIN nodes n ON n.id = t.node_id
-    WHERE t.depth > 0
-  `;
-
-  return executeTraversalQuery(ctx, cteQuery, params, typeFilter, filters, limit, offset);
-}
-
-function executeTraversalQuery(
-  ctx: ToolContext,
-  baseSql: string,
-  baseParams: (string | number)[],
-  typeFilter: string | undefined,
-  filters: ParsedFilters,
-  limit: number,
-  offset: number
-): GraphModeResult {
-  // We need summaries — but the base traversal query doesn't include them.
-  // We wrap it and JOIN with extension tables based on each row's type.
-  // Since we can't easily do a dynamic per-row JOIN in SQLite, we'll do a two-phase approach:
-  // 1. Run the traversal to get node ids + metadata
-  // 2. Fetch summaries for each unique type
-
-  // Apply type filter within the query if present
-  let filteredSql = baseSql;
-  const filteredParams = [...baseParams];
-
-  if (typeFilter) {
-    filteredSql = `SELECT * FROM (${baseSql}) WHERE type = ?`;
-    filteredParams.push(typeFilter);
-  }
-
-  // Status filter from nodes
-  if (filters.status) {
-    filteredSql = `SELECT * FROM (${filteredSql}) WHERE status = ?`;
-    filteredParams.push(filters.status);
-  }
-
-  // Count total before pagination
-  const countSql = `SELECT COUNT(*) as total_count FROM (${filteredSql})`;
-  const countRow = ctx.db.prepare(countSql).get(...filteredParams) as { total_count: number };
-  const total_count = countRow.total_count;
-
-  // Paginate
-  filteredSql = `${filteredSql} ORDER BY depth, node_id LIMIT ? OFFSET ?`;
-  filteredParams.push(limit, offset);
-
-  const rows = ctx.db.prepare(filteredSql).all(...filteredParams) as RawRow[];
-
-  if (rows.length === 0) {
-    return { rows: [], total_count };
-  }
-
-  return { rows, total_count };
-}
-
-// ---------------------------------------------------------------------------
-// Summary builder: fetches summaries for a mixed list of (id, type) pairs
-// ---------------------------------------------------------------------------
-
-function buildSummaryMap(
-  ctx: ToolContext,
-  items: { id: string; type: string }[]
-): Record<string, string> {
-  if (items.length === 0) return {};
-
-  // Group by extension table
-  const byTable: Record<string, { ids: string[]; summaryExpr: string }> = {};
-
-  for (const item of items) {
-    const info = TYPE_EXTENSION_INFO[item.type];
-    if (!info) continue;
-    const key = info.table;
-    if (!byTable[key]) {
-      byTable[key] = { ids: [], summaryExpr: info.summaryExpr };
-    }
-    byTable[key].ids.push(item.id);
-  }
-
-  const result: Record<string, string> = {};
-
-  for (const [table, { ids, summaryExpr }] of Object.entries(byTable)) {
-    const placeholders = ids.map(() => "?").join(", ");
-    const sql = `
-      SELECT n.id, SUBSTR(COALESCE(${summaryExpr}, ''), 1, 81) AS summary
-      FROM nodes n
-      LEFT JOIN ${table} e ON e.id = n.id
-      WHERE n.id IN (${placeholders})
-    `;
-    const rows = ctx.db.prepare(sql).all(...ids) as { id: string; summary: string }[];
-    for (const row of rows) {
-      result[row.id] = row.summary ?? "";
-    }
-  }
-
-  return result;
-}
-
-// ---------------------------------------------------------------------------
-// Helper: does a given artifact type have a specific column on its extension table?
-// ---------------------------------------------------------------------------
-
-function hasColumn(type: string, column: string): boolean {
-  const domainTypes = [
-    "domain_policy", "domain_decision", "domain_question", "work_item",
-  ];
-  const cycleTypes = ["finding", "domain_decision", "proxy_human_decision"];
-  const workItemRefTypes = ["finding"];
-  const phaseTypes = ["journal_entry", "work_item"];
-  const workItemTypeTypes = ["work_item"];
-
-  switch (column) {
-    case "domain":
-      return domainTypes.includes(type);
-    case "cycle":
-      return cycleTypes.includes(type);
-    case "work_item":
-      return workItemRefTypes.includes(type);
-    case "phase":
-      return phaseTypes.includes(type);
-    case "work_item_type":
-      return workItemTypeTypes.includes(type);
-    default:
-      return false;
-  }
-}
-
-// ---------------------------------------------------------------------------
 // Main handler
 // ---------------------------------------------------------------------------
 
@@ -663,7 +95,15 @@ export async function handleArtifactQuery(
   args: Record<string, unknown>
 ): Promise<string> {
   const type = args.type as string | undefined;
-  const filters = (args.filters ?? {}) as ParsedFilters;
+  const filters = (args.filters ?? {}) as {
+    domain?: string;
+    status?: string;
+    cycle?: number;
+    severity?: string;
+    phase?: string;
+    work_item?: string;
+    work_item_type?: string;
+  };
   const relatedTo = args.related_to as string | undefined;
   const edgeTypes = args.edge_types as string[] | undefined;
   const direction = (args.direction as string | undefined) ?? "both";
@@ -698,141 +138,55 @@ export async function handleArtifactQuery(
   let limit = limitRaw ?? 50;
   if (limit > 200) limit = 200;
 
-  // If adapter is available, delegate storage operations to it
-  if (ctx.adapter) {
-    if (relatedTo) {
-      let result;
-      try {
-        const { NotFoundError } = await import("../adapter.js");
-        result = await ctx.adapter.queryGraph(
-          {
-            origin_id: relatedTo,
-            depth,
-            direction: direction as "outgoing" | "incoming" | "both",
-            edge_types: edgeTypes as import("../adapter.js").EdgeType[] | undefined,
-            type_filter: type as import("../adapter.js").NodeType | undefined,
-            filters: {
-              status: filters.status,
-              domain: filters.domain,
-              cycle: filters.cycle,
-              severity: filters.severity,
-              phase: filters.phase,
-              work_item: filters.work_item,
-              work_item_type: filters.work_item_type,
-            },
-          },
-          limit,
-          offset
-        );
-      } catch (err) {
-        const { NotFoundError } = await import("../adapter.js");
-        if (err instanceof NotFoundError) {
-          return `Error: Node '${relatedTo}' not found`;
-        }
-        throw err;
-      }
+  const adapter = getAdapter(ctx);
 
-      if (result.nodes.length === 0) {
-        if (result.total_count === 0) {
-          return "No results found.";
-        }
-        return `No results on this page. **Total**: ${result.total_count} — use lower offset.`;
-      }
-
-      const tableRows = result.nodes.map((n) => [
-        n.node.id,
-        n.node.type,
-        n.edge_type ?? "",
-        n.direction ?? "",
-        n.depth !== undefined ? String(n.depth) : "",
-        n.node.status ?? "",
-        truncate(n.summary),
-      ]);
-
-      const table = markdownTable(
-        ["ID", "Type", "Edge", "Dir", "Depth", "Status", "Summary"],
-        tableRows
-      );
-
-      return `${table}\n\n**Total**: ${result.total_count}`;
-    } else {
-      const result = await ctx.adapter.queryNodes(
+  if (relatedTo) {
+    let result;
+    try {
+      const { NotFoundError } = await import("../adapter.js");
+      result = await adapter.queryGraph(
         {
-          type: type as import("../adapter.js").NodeType | undefined,
-          status: filters.status,
-          domain: filters.domain,
-          cycle: filters.cycle,
-          severity: filters.severity,
-          phase: filters.phase,
-          work_item: filters.work_item,
-          work_item_type: filters.work_item_type,
+          origin_id: relatedTo,
+          depth,
+          direction: direction as "outgoing" | "incoming" | "both",
+          edge_types: edgeTypes as import("../adapter.js").EdgeType[] | undefined,
+          type_filter: type as import("../adapter.js").NodeType | undefined,
+          filters: {
+            status: filters.status,
+            domain: filters.domain,
+            cycle: filters.cycle,
+            severity: filters.severity,
+            phase: filters.phase,
+            work_item: filters.work_item,
+            work_item_type: filters.work_item_type,
+          },
         },
         limit,
         offset
       );
-
-      if (result.nodes.length === 0) {
-        if (result.total_count === 0) {
-          return "No results found.";
-        }
-        return `No results on this page. **Total**: ${result.total_count} — use lower offset.`;
+    } catch (err) {
+      const { NotFoundError } = await import("../adapter.js");
+      if (err instanceof NotFoundError) {
+        return `Error: Node '${relatedTo}' not found`;
       }
-
-      const tableRows = result.nodes.map((n) => [
-        n.node.id,
-        n.node.type,
-        n.node.status ?? "",
-        truncate(n.summary),
-        "",
-        "",
-      ]);
-
-      const table = markdownTable(
-        ["ID", "Type", "Status", "Summary", "Domain", "Cycle"],
-        tableRows
-      );
-
-      return `${table}\n\n**Total**: ${result.total_count}`;
-    }
-  }
-
-  // Fallback: direct SQLite path (used when no adapter is configured)
-  // Route to appropriate mode
-  if (relatedTo) {
-    const result = runGraphMode(
-      ctx,
-      relatedTo,
-      depth,
-      direction,
-      edgeTypes,
-      type,
-      filters,
-      limit,
-      offset
-    );
-
-    // Handle error case
-    if ("error" in result) {
-      return `Error: ${result.error}`;
+      throw err;
     }
 
-    if (result.rows.length === 0) {
+    if (result.nodes.length === 0) {
       if (result.total_count === 0) {
         return "No results found.";
       }
       return `No results on this page. **Total**: ${result.total_count} — use lower offset.`;
     }
 
-    // Fetch summaries and build table
-    const summaryMap = buildSummaryMap(ctx, result.rows.map((r) => ({ id: r.node_id, type: r.type })));
-    const tableRows = result.rows.map((r) => [
-      r.node_id,
-      r.type,
-      r.edge_type || "",
-      r.direction || "",
-      String(r.depth),
-      r.status ?? "",
-      truncate(summaryMap[r.node_id]),
+    const tableRows = result.nodes.map((n) => [
+      n.node.id,
+      n.node.type,
+      n.edge_type ?? "",
+      n.direction ?? "",
+      n.depth !== undefined ? String(n.depth) : "",
+      n.node.status ?? "",
+      truncate(n.summary),
     ]);
 
     const table = markdownTable(
@@ -842,22 +196,35 @@ export async function handleArtifactQuery(
 
     return `${table}\n\n**Total**: ${result.total_count}`;
   } else {
-    const result = runFilterMode(ctx, type, filters, limit, offset);
+    const result = await adapter.queryNodes(
+      {
+        type: type as import("../adapter.js").NodeType | undefined,
+        status: filters.status,
+        domain: filters.domain,
+        cycle: filters.cycle,
+        severity: filters.severity,
+        phase: filters.phase,
+        work_item: filters.work_item,
+        work_item_type: filters.work_item_type,
+      },
+      limit,
+      offset
+    );
 
-    if (result.rows.length === 0) {
+    if (result.nodes.length === 0) {
       if (result.total_count === 0) {
         return "No results found.";
       }
       return `No results on this page. **Total**: ${result.total_count} — use lower offset.`;
     }
 
-    const tableRows = result.rows.map((r) => [
-      r.id,
-      r.type,
-      r.status ?? "",
-      truncate(r.summary),
-      r.domain ?? "",
-      r.cycle != null ? String(r.cycle) : "",
+    const tableRows = result.nodes.map((n) => [
+      n.node.id,
+      n.node.type,
+      n.node.status ?? "",
+      truncate(n.summary),
+      "",
+      "",
     ]);
 
     const table = markdownTable(
