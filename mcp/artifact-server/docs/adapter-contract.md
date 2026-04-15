@@ -316,7 +316,7 @@ Query nodes by type and filters with pagination.
 
 #### `getMetricsEvents(filter?: NodeFilter): Promise<MetricsEventRow[]>`
 
-Fetch all metrics event rows matching the optional filter in a single round-trip.
+Fetch all metrics event rows matching the optional filter.
 
 **Parameters:**
 - `filter` (optional): Node filter criteria. Supported fields:
@@ -328,7 +328,7 @@ Fetch all metrics event rows matching the optional filter in a single round-trip
 **Returns:**
 - Array of `MetricsEventRow` objects ordered by `timestamp ASC, id ASC`
 
-**Remote behavior:** Queries via the remote backend (executes a single GraphQL query or stubs with a compatible fallback until the remote backend exposes the endpoint).
+**Remote behavior:** Fetches all `metrics_event` nodes via two round-trips (`queryNodes` + `getNodes`), then applies all filters (including `cycle`) in TypeScript. This is an O(n) scan; cycle-filter SQL pushdown is local-only.
 
 ---
 

@@ -358,7 +358,7 @@ The helper sub-functions `runFilterMode`, `runGraphMode`, and `buildSummaryMap` 
 | 143-197 | Route to graph traversal, format table | Business logic + Storage | `queryGraph` |
 | 199-236 | Route to node filter, format table | Business logic + Storage | `queryNodes` |
 
-`handleArtifactQuery` delegates directly to `adapter.queryGraph` (when `related_to` is provided) or `adapter.queryNodes` (otherwise). There are no intermediate helper sub-functions; all storage access goes through the adapter. The formatted markdown table produced by the handler has five output columns: **ID**, **Type**, **Status**, **Summary**, and **Cycle**.
+`handleArtifactQuery` delegates directly to `adapter.queryGraph` (when `related_to` is provided) or `adapter.queryNodes` (otherwise). There are no intermediate helper sub-functions; all storage access goes through the adapter. The filter-mode table (queryNodes path) has five output columns: **ID**, **Type**, **Status**, **Summary**, **Cycle**. The graph-mode table (queryGraph path, triggered by `related_to`) has seven output columns: **ID**, **Type**, **Edge**, **Dir**, **Depth**, **Status**, **Summary**.
 
 ### 3.4 Inventory: tools/analysis.ts (696 lines)
 

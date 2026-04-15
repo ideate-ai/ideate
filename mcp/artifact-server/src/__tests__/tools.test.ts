@@ -610,10 +610,8 @@ describe("handleArtifactQuery", () => {
 describe("adapter-required guard tests", () => {
   it("handleGetArtifactContext throws when ctx.adapter is not set", async () => {
     const noAdapterCtx: ToolContext = {
-      db: ctx.db,
-      drizzleDb: ctx.drizzleDb,
       ideateDir: ctx.ideateDir,
-      // adapter intentionally omitted
+      // adapter intentionally omitted; db/drizzleDb omitted — not exercised by these guard tests
     };
     await expect(handleGetArtifactContext(noAdapterCtx, { artifact_id: "WI-001" })).rejects.toThrow(
       "context.ts: ToolContext.adapter is required"
@@ -622,10 +620,8 @@ describe("adapter-required guard tests", () => {
 
   it("handleArtifactQuery throws when ctx.adapter is not set", async () => {
     const noAdapterCtx: ToolContext = {
-      db: ctx.db,
-      drizzleDb: ctx.drizzleDb,
       ideateDir: ctx.ideateDir,
-      // adapter intentionally omitted
+      // adapter intentionally omitted; db/drizzleDb omitted — not exercised by these guard tests
     };
     await expect(handleArtifactQuery(noAdapterCtx, { type: "work_item" })).rejects.toThrow(
       "query.ts: ToolContext.adapter is required"
@@ -634,10 +630,8 @@ describe("adapter-required guard tests", () => {
 
   it("handleGetNextId throws when ctx.adapter is not set", async () => {
     const noAdapterCtx: ToolContext = {
-      db: ctx.db,
-      drizzleDb: ctx.drizzleDb,
       ideateDir: ctx.ideateDir,
-      // adapter intentionally omitted
+      // adapter intentionally omitted; db/drizzleDb omitted — not exercised by these guard tests
     };
     await expect(handleGetNextId(noAdapterCtx, { type: "work_item" })).rejects.toThrow(
       "query.ts: ToolContext.adapter is required"
@@ -3582,6 +3576,27 @@ describe("write-to-convergence roundtrip", () => {
     expect(result).toContain("principle_verdict: fail");
     expect(result).toContain("condition_a: true");
     expect(result).toContain("converged: false");
+  });
+
+  it("writes spec-adherence with verdict Pass and convergence reports condition_b true", async () => {
+    // GA-II1 roundtrip: write spec-adherence artifact via handleWriteArtifact then verify
+    // getConvergenceData picks it up correctly — exercises the DB write→query chain end-to-end.
+    await handleWriteArtifact(ctx, {
+      type: "cycle_summary",
+      id: "spec-adherence",
+      cycle: 88,
+      content: {
+        reviewer: "spec-reviewer",
+        content: "## Principle Violation Verdict: Pass\n\nNone.",
+      },
+    });
+
+    // No critical/significant findings for cycle 88 → condition_a: true
+    // spec-adherence content contains Principle Violation section with None. → condition_b: true
+    const result = await handleGetConvergenceStatus(ctx, { cycle_number: 88 });
+
+    expect(result).toContain("condition_b: true");
+    expect(result).toContain("principle_verdict: pass");
   });
 });
 

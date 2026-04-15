@@ -117,6 +117,21 @@ describe("selectAdapter — remote backend wiring", () => {
       fs.rmSync(path.dirname(ideateDir), { recursive: true, force: true });
     }
   });
+
+  it("throws when local backend is selected without db/drizzleDb", () => {
+    const ideateDir = makeTempIdeateDir({
+      schema_version: 4,
+      backend: "local",
+    });
+
+    try {
+      expect(() =>
+        selectAdapter(ideateDir, undefined, undefined)
+      ).toThrow(/Local backend requires db and drizzleDb/);
+    } finally {
+      fs.rmSync(path.dirname(ideateDir), { recursive: true, force: true });
+    }
+  });
 });
 
 describe("RemoteAdapter — unreachable endpoint error handling", () => {
