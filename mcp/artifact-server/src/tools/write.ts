@@ -1,25 +1,23 @@
 import { stringify as stringifyYaml } from "yaml";
 import type { ToolContext } from "../types.js";
 import { TYPE_TO_EXTENSION_TABLE } from "../db.js";
-import { LocalAdapter } from "../adapters/local/index.js";
-import type { StorageAdapter } from "../adapter.js";
 
 // ---------------------------------------------------------------------------
 // Adapter resolution
 //
-// Handlers call getAdapter(ctx) to get a StorageAdapter.  If ctx.adapter is
-// set (production path, injected by server.ts), it is used directly.
-// Otherwise a LocalAdapter is constructed on-the-fly from ctx.db/drizzleDb/
-// ideateDir — this preserves backward compatibility with existing tests that
-// create ctx = { db, drizzleDb, ideateDir } without an adapter.
+// All handlers require ctx.adapter to be set.  The fallback path that
+// constructed a concrete adapter on-the-fly from ctx.db/drizzleDb was removed
+// in WI-800 (enforces invariants 1 and 2 from RF-clean-interface-proposal §1).
 // ---------------------------------------------------------------------------
 
-function getAdapter(ctx: ToolContext): StorageAdapter {
-  if (ctx.adapter) return ctx.adapter;
-  if (!ctx.db || !ctx.drizzleDb) {
-    throw new Error("write.ts: ToolContext must provide either adapter or db/drizzleDb");
+function getAdapter(ctx: ToolContext) {
+  if (!ctx.adapter) {
+    throw new Error(
+      "write.ts: ToolContext.adapter is required. " +
+        "This is a configuration error — the server and all tests must provide an adapter."
+    );
   }
-  return new LocalAdapter({ db: ctx.db, drizzleDb: ctx.drizzleDb, ideateDir: ctx.ideateDir });
+  return ctx.adapter;
 }
 
 // ---------------------------------------------------------------------------
@@ -45,21 +43,15 @@ export async function handleAppendJournal(
   let cycleNumber = 0;
   if (args.cycle_number !== undefined && args.cycle_number !== null) {
     cycleNumber = args.cycle_number as number;
-  } else if (ctx.adapter) {
+  } else {
     // Adapter path: query journal entries to find the max cycle_created.
     // queryNodes returns NodeMeta rows which include cycle_created.
-    const result = await ctx.adapter.queryNodes({ type: "journal_entry" }, 1000, 0);
+    const result = await adapter.queryNodes({ type: "journal_entry" }, 1000, 0);
     for (const { node } of result.nodes) {
       if (node.cycle_created !== null && node.cycle_created > cycleNumber) {
         cycleNumber = node.cycle_created;
       }
     }
-  } else {
-    if (!ctx.db) throw new Error("handleAppendJournal: ctx.db required when cycle_number is not supplied");
-    const maxCycleRow = ctx.db.prepare(
-      `SELECT MAX(cycle_created) as max_cycle FROM nodes WHERE type = 'journal_entry'`
-    ).get() as { max_cycle: number | null };
-    cycleNumber = maxCycleRow?.max_cycle ?? 0;
   }
 
   // Delegate to adapter's journal write (handles exclusive transaction + sequence numbering)

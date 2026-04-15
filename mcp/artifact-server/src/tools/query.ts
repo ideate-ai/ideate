@@ -40,48 +40,15 @@ export async function handleGetNextId(
     throw new Error(`Unknown type '${type}'. Valid types: ${validTypes}`);
   }
 
-  // If adapter is available, delegate to it
-  if (ctx.adapter) {
-    return ctx.adapter.nextId(type as import("../adapter.js").NodeType, cycle);
+  // Delegate to adapter (required — ctx.db fallback removed in WI-800)
+  if (!ctx.adapter) {
+    throw new Error(
+      "handleGetNextId requires ctx.adapter to be set. " +
+        "This is a configuration error — the server and all tests must provide an adapter."
+    );
   }
 
-  const { prefix, padWidth } = mapping;
-
-  // For cycle-scoped types, require cycle parameter and generate {prefix}{cycle}-{seq} format
-  if (CYCLE_SCOPED_ID_TYPES.includes(type)) {
-    if (cycle === undefined) {
-      throw new Error(`Parameter 'cycle' is required for type '${type}'`);
-    }
-
-    const paddedCycle = String(cycle).padStart(3, "0");
-    const pattern = `${prefix}${paddedCycle}-%`;
-
-    // Query for max seq within this cycle
-    const row = ctx.db.prepare(
-      `SELECT MAX(CAST(SUBSTR(id, ?) AS INTEGER)) as max_num
-       FROM nodes
-       WHERE id LIKE ?`
-    ).get(prefix.length + 4 + 1, pattern) as { max_num: number | null } | undefined;
-
-    const maxNum = row?.max_num ?? 0;
-    const nextNum = maxNum + 1;
-    const nextId = `${prefix}${paddedCycle}-${String(nextNum).padStart(padWidth, "0")}`;
-
-    return nextId;
-  }
-
-  // Standard (non-cycle-scoped) ID generation
-  const row = ctx.db.prepare(
-    `SELECT MAX(CAST(SUBSTR(id, LENGTH(?) + 1) AS INTEGER)) as max_num
-     FROM nodes
-     WHERE id LIKE ? || '%'`
-  ).get(prefix, prefix) as { max_num: number | null } | undefined;
-
-  const maxNum = row?.max_num ?? 0;
-  const nextNum = maxNum + 1;
-  const nextId = prefix + String(nextNum).padStart(padWidth, "0");
-
-  return nextId;
+  return ctx.adapter.nextId(type as import("../adapter.js").NodeType, cycle);
 }
 
 // ---------------------------------------------------------------------------

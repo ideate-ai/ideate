@@ -79,6 +79,7 @@ beforeEach(() => {
 
   const drizzleDb = drizzle(db, { schema: dbSchema });
   ctx = { db, drizzleDb, ideateDir: artifactDir };
+  ctx.adapter = new LocalAdapter({ db, drizzleDb, ideateDir: artifactDir });
 });
 
 afterEach(() => {
@@ -328,6 +329,12 @@ describe("handleGetArtifactContext — phase dispatch", () => {
   });
 
   it("error path: throws when phase node exists but phases extension row is missing", async () => {
+    // This test exercises the SQLite-fallback path in context.ts (still
+    // present — context.ts was not modified by WI-800). Clear the adapter so
+    // handlePhaseContext takes the legacy path that throws on missing
+    // extension rows.
+    ctx.adapter = undefined;
+
     // Insert only the node — no phases extension row
     insertNode("PH-BAD", "phase", { status: "active" });
 
@@ -396,6 +403,12 @@ describe("handleGetArtifactContext — generic artifact dispatch", () => {
   });
 
   it("error path: returns 'Content not available' when file_path points to nonexistent file", async () => {
+    // This test exercises the SQLite-fallback path in context.ts (still
+    // present — context.ts was not modified by WI-800). Clear the adapter so
+    // handleGenericArtifactContext takes the legacy path that emits the
+    // "Content not available" placeholder when file_path is absent on disk.
+    ctx.adapter = undefined;
+
     insertNode("P-MISSING", "domain_policy", {
       file_path: path.join(artifactDir, "policies", "P-MISSING.yaml"),
       status: "active",
@@ -859,6 +872,72 @@ describe("handleGetConvergenceStatus", () => {
     expect(result).toContain("condition_b: true");
     expect(result).toContain("converged: true");
   });
+
+  it("regression WI-797: canonical spec-adherence.yaml (Pass) wins over legacy SA-NNN.yaml (Fail) in same cycle dir", async () => {
+    // Reproducer: cycle dir contains both spec-adherence.yaml (Pass) and SA-NNN.yaml (Fail).
+    // Before fix: condition_b was false because the checker picked up the legacy SA- row.
+    // After fix: condition_b is true because canonical filename is preferred.
+    const cycleDir = path.join(artifactDir, "cycles", "200");
+    fs.mkdirSync(cycleDir, { recursive: true });
+
+    // Legacy SA-200.yaml with Fail verdict — on disk only (file_path fallback path)
+    const legacyPath = path.join(cycleDir, "SA-200.yaml");
+    fs.writeFileSync(
+      legacyPath,
+      "id: SA-200\ntype: cycle_summary\ncycle: 200\ncontent: |-\n  ## Verdict: Fail\n\n  Two principle violations found.\n",
+      "utf8"
+    );
+    insertNode("SA-200", "cycle_summary", { file_path: legacyPath, cycle_created: 200 });
+
+    // Canonical spec-adherence.yaml with Pass verdict — on disk only (file_path fallback path)
+    const canonicalPath = path.join(cycleDir, "spec-adherence.yaml");
+    fs.writeFileSync(
+      canonicalPath,
+      "id: spec-adherence\ntype: cycle_summary\ncycle: 200\ncontent: |-\n  **Principle Violation Verdict**: Pass\n\n  All reviewers returned Pass with zero significant findings.\n",
+      "utf8"
+    );
+    insertNode("spec-adherence", "cycle_summary", { file_path: canonicalPath, cycle_created: 200 });
+
+    // No findings for cycle 200 → condition_a: true
+    const result = await handleGetConvergenceStatus(ctx, { cycle_number: 200 });
+    expect(result).toContain("condition_b: true");
+    expect(result).toContain("principle_verdict: pass");
+    expect(result).toContain("converged: true");
+  });
+
+  it("regression WI-797 (adapter path): canonical spec-adherence.yaml (Pass) wins over legacy SA-NNN.yaml (Fail) via LocalAdapter.getConvergenceData", async () => {
+    // Mirrors the SQLite-fallback regression test above, but exercises the adapter path
+    // (reader.ts:getConvergenceData) by attaching a LocalAdapter to ctx.
+    const cycleDir = path.join(artifactDir, "cycles", "201");
+    fs.mkdirSync(cycleDir, { recursive: true });
+
+    // Legacy SA-201.yaml with Fail verdict — on disk only (file_path fallback path)
+    const legacyPath = path.join(cycleDir, "SA-201.yaml");
+    fs.writeFileSync(
+      legacyPath,
+      "id: SA-201\ntype: cycle_summary\ncycle: 201\ncontent: |-\n  ## Verdict: Fail\n\n  Two principle violations found.\n",
+      "utf8"
+    );
+    insertNode("SA-201", "cycle_summary", { file_path: legacyPath, cycle_created: 201 });
+
+    // Canonical spec-adherence.yaml with Pass verdict — on disk only (file_path fallback path)
+    const canonicalPath = path.join(cycleDir, "spec-adherence.yaml");
+    fs.writeFileSync(
+      canonicalPath,
+      "id: spec-adherence-201\ntype: cycle_summary\ncycle: 201\ncontent: |-\n  **Principle Violation Verdict**: Pass\n\n  All reviewers returned Pass with zero significant findings.\n",
+      "utf8"
+    );
+    insertNode("spec-adherence-201", "cycle_summary", { file_path: canonicalPath, cycle_created: 201 });
+
+    // Attach LocalAdapter — routes handleGetConvergenceStatus through reader.ts:getConvergenceData
+    ctx.adapter = new LocalAdapter({ db, drizzleDb: ctx.drizzleDb, ideateDir: artifactDir });
+
+    // No findings for cycle 201 → condition_a: true
+    const result = await handleGetConvergenceStatus(ctx, { cycle_number: 201 });
+    expect(result).toContain("condition_b: true");
+    expect(result).toContain("principle_verdict: pass");
+    expect(result).toContain("converged: true");
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -1046,9 +1125,10 @@ describe("handleGetWorkspaceStatus", () => {
       VALUES (?, ?, ?, ?, ?, ?)
     `).run("PH-001", "Phase One", "implementation", "PR-001", "Do work", "active");
 
-    // Insert work items
-    insertNode("WI-T01", "work_item", { status: "done" });
-    insertWorkItem("WI-T01", "Table test done", { complexity: "small" });
+    // Insert work items. Per D-131, the adapter excludes done/obsolete from
+    // queryNodes("work_item"), so seed both as non-terminal statuses.
+    insertNode("WI-T01", "work_item", { status: "in_progress" });
+    insertWorkItem("WI-T01", "Table test in progress", { complexity: "small" });
     ctx.db.prepare(`UPDATE work_items SET phase = ?, work_item_type = ? WHERE id = ?`).run("PH-001", "feature", "WI-T01");
     insertNode("WI-T02", "work_item", { status: "pending" });
     insertWorkItem("WI-T02", "Table test pending", { complexity: "medium" });
@@ -2930,6 +3010,13 @@ describe("handleWriteArtifact — project and phase types", () => {
 // ---------------------------------------------------------------------------
 
 describe("handleManageAutopilotState (get action)", () => {
+  beforeEach(() => {
+    // Tests in this describe exercise the filesystem fallback path of
+    // autopilot-state.ts (not modified by WI-800). Clear the adapter so
+    // those legacy paths run.
+    ctx.adapter = undefined;
+  });
+
   it("returns default state when no file exists", async () => {
     const result = await handleManageAutopilotState(ctx, { action: "get" });
     const state = JSON.parse(result);
@@ -2960,6 +3047,13 @@ describe("handleManageAutopilotState (get action)", () => {
 // ---------------------------------------------------------------------------
 
 describe("handleManageAutopilotState (update action)", () => {
+  beforeEach(() => {
+    // Tests in this describe exercise the filesystem fallback path of
+    // autopilot-state.ts (not modified by WI-800). Clear the adapter so
+    // those legacy paths run.
+    ctx.adapter = undefined;
+  });
+
   it("creates state file and merges update when no file exists", async () => {
     const result = await handleManageAutopilotState(ctx, {
       action: "update",

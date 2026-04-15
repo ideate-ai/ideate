@@ -951,11 +951,15 @@ export class LocalReaderAdapter {
       )
       .all(cycle, likePattern, likePattern) as RawRow[];
 
-    // Prefer adherence row, fall back to summary row
+    // Prefer canonical filenames (fix: option c — ignore legacy ID-named files when
+    // canonical spec-adherence.yaml is present, preventing false negatives from
+    // stale legacy SA-NNN files in the same cycle directory).
     const adherenceRow =
+      summaryRows.find((r) => r.file_path.endsWith("/spec-adherence.yaml")) ??
       summaryRows.find((r) => r.id.toUpperCase().startsWith("SA-")) ??
       summaryRows.find((r) => r.id.toLowerCase().includes("adherence"));
     const summaryRow =
+      summaryRows.find((r) => r.file_path.endsWith("/summary.yaml")) ??
       summaryRows.find(
         (r) =>
           r.id.toUpperCase().startsWith("CS-") ||

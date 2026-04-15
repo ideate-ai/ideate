@@ -58,6 +58,7 @@ beforeEach(() => {
 
   drizzleDb = drizzle(db, { schema: dbSchema });
   ctx = { db, drizzleDb, ideateDir: artifactDir };
+  ctx.adapter = new LocalAdapter({ db, drizzleDb, ideateDir: artifactDir });
 });
 
 afterEach(() => {
@@ -125,7 +126,8 @@ function makeFailingDrizzleCtx(): ToolContext {
     },
   }) as DrizzleDb;
 
-  return { db, drizzleDb: failingDrizzleDb, ideateDir: artifactDir };
+  const failingAdapter = new LocalAdapter({ db, drizzleDb: failingDrizzleDb, ideateDir: artifactDir });
+  return { db, drizzleDb: failingDrizzleDb, ideateDir: artifactDir, adapter: failingAdapter };
 }
 
 // ---------------------------------------------------------------------------

@@ -1,7 +1,6 @@
 import * as fs from "fs";
 import * as path from "path";
 import type { ToolContext } from "../types.js";
-import { log } from "../logger.js";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -105,65 +104,17 @@ export async function handleGetConvergenceStatus(
   let findingsBySeverity: Record<string, number>;
   let cycleSummaryContent: string | null;
 
-  if (ctx.adapter) {
-    // Delegate storage operations to adapter
-    const convergenceData = await ctx.adapter.getConvergenceData(cycleNumber);
-    findingsBySeverity = convergenceData.findings_by_severity;
-    cycleSummaryContent = convergenceData.cycle_summary_content;
-  } else {
-    // Fallback: direct SQLite path
-    const paddedCycle = String(cycleNumber).padStart(3, "0");
-    type RawRow = { id: string; file_path: string; da_content: string | null };
-    const likePattern = `%/cycles/${paddedCycle}/%`;
-    const rawRows = ctx.db.prepare(`
-      SELECT n.id, n.file_path, da.content AS da_content
-      FROM nodes n
-      LEFT JOIN document_artifacts da ON n.id = da.id
-      WHERE n.type = 'cycle_summary'
-        AND (
-          da.cycle = ?
-          OR (da.id IS NULL AND n.file_path LIKE ?)
-          OR (da.id IS NOT NULL AND da.cycle IS NULL AND n.file_path LIKE ?)
-        )
-    `).all(cycleNumber, likePattern, likePattern) as RawRow[];
-
-    const adherenceRow =
-      rawRows.find((r) => r.id.toUpperCase().startsWith("SA-")) ??
-      rawRows.find((r) => r.id.toLowerCase().includes("adherence"));
-    const summaryRow = rawRows.find((r) =>
-      r.id.toUpperCase().startsWith("CS-") ||
-      r.id.toLowerCase().includes("summary")
-    ) ?? rawRows[0];
-
-    function resolveContent(row: RawRow | undefined): string | null {
-      if (!row) return null;
-      if (row.da_content !== null && row.da_content !== undefined) {
-        try {
-          const parsed = JSON.parse(row.da_content) as Record<string, unknown>;
-          if (parsed && typeof parsed.content === "string") {
-            return parsed.content;
-          }
-          log.warn("analysis", `resolveContent: da_content parsed successfully but .content is not a string for id: ${row.id}`);
-          return null;
-        } catch {
-          // not JSON
-        }
-        return row.da_content;
-      }
-      return readFileSafe(row.file_path);
-    }
-
-    cycleSummaryContent = resolveContent(adherenceRow ?? summaryRow);
-
-    const severityRows = ctx.db.prepare(
-      `SELECT severity, COUNT(*) as count FROM findings WHERE cycle = ? GROUP BY severity`
-    ).all(cycleNumber) as Array<{ severity: string; count: number }>;
-
-    findingsBySeverity = {};
-    for (const row of severityRows) {
-      findingsBySeverity[row.severity] = row.count;
-    }
+  if (!ctx.adapter) {
+    throw new Error(
+      "handleGetConvergenceStatus requires ctx.adapter to be set. " +
+        "This is a configuration error — the server and all tests must provide an adapter."
+    );
   }
+
+  // Delegate storage operations to adapter
+  const convergenceData = await ctx.adapter.getConvergenceData(cycleNumber);
+  findingsBySeverity = convergenceData.findings_by_severity;
+  cycleSummaryContent = convergenceData.cycle_summary_content;
 
   let principleResult: PrincipleResult;
   if (cycleSummaryContent === null) {
@@ -228,75 +179,15 @@ export async function handleGetDomainState(
 
   let domainMap: Map<string, DomainEntry>;
 
-  if (ctx.adapter) {
-    // Delegate to adapter
-    domainMap = await ctx.adapter.getDomainState(domainsFilter ?? undefined);
-  } else {
-    // Fallback: direct SQLite path
-    const allPolicies = ctx.db.prepare(`
-      SELECT dp.id, dp.domain, dp.description, n.status
-      FROM domain_policies dp
-      JOIN nodes n ON n.id = dp.id
-      WHERE (n.status IS NULL OR (n.status != 'deprecated' AND n.status != 'superseded'))
-      ORDER BY dp.domain, dp.id
-    `).all() as Array<{
-      id: string;
-      domain: string;
-      description: string | null;
-      status: string | null;
-    }>;
-
-    const allDecisions = ctx.db.prepare(`
-      SELECT dd.id, dd.domain, dd.description, n.status
-      FROM domain_decisions dd
-      JOIN nodes n ON n.id = dd.id
-      ORDER BY dd.domain, dd.id
-    `).all() as Array<{
-      id: string;
-      domain: string;
-      description: string | null;
-      status: string | null;
-    }>;
-
-    const allQuestions = ctx.db.prepare(`
-      SELECT dq.id, dq.domain, dq.description, n.status
-      FROM domain_questions dq
-      JOIN nodes n ON n.id = dq.id
-      WHERE n.status = 'open'
-      ORDER BY dq.domain, dq.id
-    `).all() as Array<{
-      id: string;
-      domain: string;
-      description: string | null;
-      status: string | null;
-    }>;
-
-    const domainSet = new Set<string>([
-      ...allPolicies.map((p) => p.domain),
-      ...allDecisions.map((d) => d.domain),
-      ...allQuestions.map((q) => q.domain),
-    ]);
-    let domainList = Array.from(domainSet).sort();
-
-    if (domainsFilter && domainsFilter.length > 0) {
-      domainList = domainList.filter((d) => domainsFilter.includes(d));
-    }
-
-    domainMap = new Map<string, DomainEntry>();
-    for (const domain of domainList) {
-      domainMap.set(domain, {
-        policies: allPolicies
-          .filter((p) => p.domain === domain)
-          .map(({ id, description, status }) => ({ id, description, status })),
-        decisions: allDecisions
-          .filter((d) => d.domain === domain)
-          .map(({ id, description, status }) => ({ id, description, status })),
-        questions: allQuestions
-          .filter((q) => q.domain === domain)
-          .map(({ id, description, status }) => ({ id, description, status })),
-      });
-    }
+  if (!ctx.adapter) {
+    throw new Error(
+      "handleGetDomainState requires ctx.adapter to be set. " +
+        "This is a configuration error — the server and all tests must provide an adapter."
+    );
   }
+
+  // Delegate to adapter
+  domainMap = await ctx.adapter.getDomainState(domainsFilter ?? undefined);
 
   const sections: string[] = [];
   if (cycleNumber !== null) {
@@ -354,77 +245,28 @@ export async function handleGetDomainState(
 // ---------------------------------------------------------------------------
 
 async function buildProjectView(ctx: ToolContext): Promise<string> {
-  if (ctx.adapter) {
-    // Delegate to adapter
-    const projectResult = await ctx.adapter.queryNodes({ type: "project", status: "active" }, 1, 0);
-    let activeProject: { id: string; name: string | null; intent: string; appetite: number | null } | undefined;
-    if (projectResult.nodes.length > 0) {
-      const projectNode = await ctx.adapter.getNode(projectResult.nodes[0].node.id);
-      if (projectNode) {
-        activeProject = {
-          id: projectNode.id,
-          name: (projectNode.properties.name as string | null) ?? null,
-          intent: (projectNode.properties.intent as string) ?? "",
-          appetite: (projectNode.properties.appetite as number | null) ?? null,
-        };
-      }
-    }
-
-    if (!activeProject) {
-      return "# Project View\n\nNo active project.";
-    }
-
-    const lines: string[] = [];
-    lines.push("# Project View");
-    lines.push("");
-    lines.push(`**Project**: ${activeProject.id}${activeProject.name ? ` — ${activeProject.name}` : ""}`);
-    lines.push(`**Intent**: ${activeProject.intent}`);
-    lines.push(`**Appetite**: ${activeProject.appetite ?? "unset"}`);
-    lines.push("");
-
-    const phaseResult = await ctx.adapter.queryNodes({ type: "phase", status: "active" }, 1, 0);
-    if (phaseResult.nodes.length > 0) {
-      const phaseNode = await ctx.adapter.getNode(phaseResult.nodes[0].node.id);
-      if (phaseNode) {
-        const activePhaseId = phaseNode.id;
-        const phaseName = (phaseNode.properties.name as string | null) ?? null;
-        const phaseType = (phaseNode.properties.phase_type as string) ?? "";
-
-        const wiCounts = await ctx.adapter.countNodes({ type: "work_item", phase: activePhaseId }, "status");
-        let total = 0;
-        let done = 0;
-        for (const entry of wiCounts) {
-          total += entry.count;
-          if (entry.key === "done") done = entry.count;
-        }
-
-        lines.push("## Current Phase");
-        lines.push(`**Phase**: ${activePhaseId}${phaseName ? ` — ${phaseName}` : ""}`);
-        lines.push(`**Type**: ${phaseType}`);
-        lines.push(`**Progress**: ${done}/${total} work items done`);
-        lines.push("");
-      }
-    } else {
-      lines.push("## Current Phase");
-      lines.push("No active phase.");
-      lines.push("");
-    }
-
-    lines.push("## Horizon");
-    lines.push("No phases planned.");
-
-    return lines.join("\n");
+  if (!ctx.adapter) {
+    throw new Error(
+      "buildProjectView requires ctx.adapter to be set. " +
+        "This is a configuration error — the server and all tests must provide an adapter."
+    );
   }
 
-  // Fallback: direct SQLite path
-  const activeProject = ctx.db.prepare(`
-    SELECT p.id, p.name, p.intent, p.appetite
-    FROM projects p
-    JOIN nodes n ON n.id = p.id
-    WHERE n.status = 'active'
-    ORDER BY n.id
-    LIMIT 1
-  `).get() as { id: string; name: string | null; intent: string; appetite: number | null } | undefined;
+  // Delegate to adapter
+  const projectResult = await ctx.adapter.queryNodes({ type: "project", status: "active" }, 1, 0);
+  let activeProject: { id: string; name: string | null; intent: string; appetite: number | null } | undefined;
+  let activeProjectNode: Awaited<ReturnType<typeof ctx.adapter.getNode>> = null;
+  if (projectResult.nodes.length > 0) {
+    activeProjectNode = await ctx.adapter.getNode(projectResult.nodes[0].node.id);
+    if (activeProjectNode) {
+      activeProject = {
+        id: activeProjectNode.id,
+        name: (activeProjectNode.properties.name as string | null) ?? null,
+        intent: (activeProjectNode.properties.intent as string) ?? "",
+        appetite: (activeProjectNode.properties.appetite as number | null) ?? null,
+      };
+    }
+  }
 
   if (!activeProject) {
     return "# Project View\n\nNo active project.";
@@ -438,180 +280,115 @@ async function buildProjectView(ctx: ToolContext): Promise<string> {
   lines.push(`**Appetite**: ${activeProject.appetite ?? "unset"}`);
   lines.push("");
 
-  // Current phase
-  const activePhase = ctx.db.prepare(`
-    SELECT p.id, p.name, p.phase_type
-    FROM phases p
-    JOIN nodes n ON n.id = p.id
-    WHERE n.status = 'active'
-    ORDER BY n.id
-    LIMIT 1
-  `).get() as { id: string; name: string | null; phase_type: string } | undefined;
+  const phaseResult = await ctx.adapter.queryNodes({ type: "phase", status: "active" }, 1, 0);
+  if (phaseResult.nodes.length > 0) {
+    const phaseNode = await ctx.adapter.getNode(phaseResult.nodes[0].node.id);
+    if (phaseNode) {
+      const activePhaseId = phaseNode.id;
+      const phaseName = (phaseNode.properties.name as string | null) ?? null;
+      const phaseType = (phaseNode.properties.phase_type as string) ?? "";
 
-  if (activePhase) {
-    // Work item progress for this phase
-    const phaseWiRows = ctx.db.prepare(`
-      SELECT n.status, COUNT(*) as count
-      FROM work_items wi
-      JOIN nodes n ON n.id = wi.id
-      WHERE wi.phase = ?
-      GROUP BY n.status
-    `).all(activePhase.id) as Array<{ status: string | null; count: number }>;
+      const wiCounts = await ctx.adapter.countNodes({ type: "work_item", phase: activePhaseId }, "status");
+      let total = 0;
+      let done = 0;
+      for (const entry of wiCounts) {
+        total += entry.count;
+        if (entry.key === "done") done = entry.count;
+      }
 
-    let total = 0;
-    let done = 0;
-    for (const row of phaseWiRows) {
-      total += row.count;
-      if (row.status === "done") done = row.count;
+      lines.push("## Current Phase");
+      lines.push(`**Phase**: ${activePhaseId}${phaseName ? ` — ${phaseName}` : ""}`);
+      lines.push(`**Type**: ${phaseType}`);
+      lines.push(`**Progress**: ${done}/${total} work items done`);
+      lines.push("");
     }
-
-    lines.push("## Current Phase");
-    lines.push(`**Phase**: ${activePhase.id}${activePhase.name ? ` — ${activePhase.name}` : ""}`);
-    lines.push(`**Type**: ${activePhase.phase_type}`);
-    lines.push(`**Progress**: ${done}/${total} work items done`);
-    lines.push("");
   } else {
     lines.push("## Current Phase");
     lines.push("No active phase.");
     lines.push("");
   }
 
-  // Horizon — read from SQLite projects table
-  const horizonRow = ctx.db.prepare(
-    `SELECT p.horizon FROM projects p JOIN nodes n ON n.id = p.id WHERE n.status = 'active' LIMIT 1`
-  ).get() as { horizon: string | null } | undefined;
-
-  if (horizonRow?.horizon) {
+  // Horizon — read from project node properties (reuse the node fetched above)
+  const horizonRaw = activeProjectNode?.properties.horizon;
+  let horizonNext: string[] = [];
+  if (horizonRaw) {
     try {
-      const horizon = JSON.parse(horizonRow.horizon) as { next?: string[]; later?: string[] };
-      const nextIds = horizon.next ?? [];
-      if (nextIds.length > 0) {
-        lines.push("## Horizon");
-        for (const phaseId of nextIds) {
-          const phaseRow = ctx.db.prepare(
-            `SELECT name FROM phases WHERE id = ?`
-          ).get(phaseId) as { name: string | null } | undefined;
-          const label = phaseRow?.name ? `${phaseId} — ${phaseRow.name}` : phaseId;
-          lines.push(`- ${label}`);
-        }
-      } else {
-        lines.push("## Horizon");
-        lines.push("No phases planned.");
-      }
+      const horizon =
+        typeof horizonRaw === "string"
+          ? (JSON.parse(horizonRaw) as { next?: string[] })
+          : (horizonRaw as { next?: string[] });
+      horizonNext = horizon.next ?? [];
     } catch {
-      lines.push("## Horizon");
-      lines.push("No phases planned.");
+      horizonNext = [];
     }
-  } else {
-    lines.push("## Horizon");
+  }
+
+  lines.push("## Horizon");
+  if (horizonNext.length === 0) {
     lines.push("No phases planned.");
+  } else {
+    const horizonNodes = await ctx.adapter.getNodes(horizonNext);
+    for (const phaseId of horizonNext) {
+      const node = horizonNodes.get(phaseId);
+      const name = (node?.properties.name as string | null) ?? null;
+      lines.push(`- ${name ? `${phaseId} — ${name}` : phaseId}`);
+    }
   }
 
   return lines.join("\n");
 }
 
 async function buildPhaseView(ctx: ToolContext): Promise<string> {
-  if (ctx.adapter) {
-    // Delegate to adapter
-    const phaseResult = await ctx.adapter.queryNodes({ type: "phase", status: "active" }, 1, 0);
-
-    if (phaseResult.nodes.length === 0) {
-      return "# Phase View\n\nNo active phase.";
-    }
-
-    const phaseNode = await ctx.adapter.getNode(phaseResult.nodes[0].node.id);
-    if (!phaseNode) {
-      return "# Phase View\n\nNo active phase.";
-    }
-
-    const activePhaseId = phaseNode.id;
-    const phaseName = (phaseNode.properties.name as string | null) ?? null;
-    const phaseType = (phaseNode.properties.phase_type as string) ?? "";
-    const phaseStatus = phaseNode.status ?? "unknown";
-
-    const lines: string[] = [];
-    lines.push("# Phase View");
-    lines.push("");
-    lines.push(`**Phase**: ${activePhaseId}${phaseName ? ` — ${phaseName}` : ""}`);
-    lines.push(`**Type**: ${phaseType}`);
-    lines.push(`**Status**: ${phaseStatus}`);
-    lines.push("");
-
-    // Work items in this phase
-    const wiResult = await ctx.adapter.queryNodes({ type: "work_item", phase: activePhaseId }, 1000, 0);
-    if (wiResult.nodes.length > 0) {
-      const wiIds = wiResult.nodes.map((n) => n.node.id);
-      const wiNodes = await ctx.adapter.getNodes(wiIds);
-
-      lines.push("## Work Items");
-      lines.push("");
-      lines.push("| ID | Title | Status | Complexity | Type |");
-      lines.push("|----|-------|--------|------------|------|");
-      for (const nodeId of wiIds) {
-        const node = wiNodes.get(nodeId);
-        if (!node) continue;
-        const title = truncateDesc((node.properties.title as string) ?? "");
-        const complexity = (node.properties.complexity as string | null) ?? "-";
-        const work_item_type = (node.properties.work_item_type as string | null) ?? "-";
-        lines.push(
-          `| ${node.id} | ${title} | ${node.status ?? "unknown"} | ${complexity} | ${work_item_type} |`
-        );
-      }
-      lines.push("");
-    } else {
-      lines.push("## Work Items");
-      lines.push("No work items assigned to this phase.");
-      lines.push("");
-    }
-
-    return lines.join("\n");
+  if (!ctx.adapter) {
+    throw new Error(
+      "buildPhaseView requires ctx.adapter to be set. " +
+        "This is a configuration error — the server and all tests must provide an adapter."
+    );
   }
 
-  // Fallback: direct SQLite path
-  const activePhase = ctx.db.prepare(`
-    SELECT p.id, p.name, p.phase_type, n.status
-    FROM phases p
-    JOIN nodes n ON n.id = p.id
-    WHERE n.status = 'active'
-    ORDER BY n.id
-    LIMIT 1
-  `).get() as { id: string; name: string | null; phase_type: string; status: string } | undefined;
+  // Delegate to adapter
+  const phaseResult = await ctx.adapter.queryNodes({ type: "phase", status: "active" }, 1, 0);
 
-  if (!activePhase) {
+  if (phaseResult.nodes.length === 0) {
     return "# Phase View\n\nNo active phase.";
   }
+
+  const phaseNode = await ctx.adapter.getNode(phaseResult.nodes[0].node.id);
+  if (!phaseNode) {
+    return "# Phase View\n\nNo active phase.";
+  }
+
+  const activePhaseId = phaseNode.id;
+  const phaseName = (phaseNode.properties.name as string | null) ?? null;
+  const phaseType = (phaseNode.properties.phase_type as string) ?? "";
+  const phaseStatus = phaseNode.status ?? "unknown";
 
   const lines: string[] = [];
   lines.push("# Phase View");
   lines.push("");
-  lines.push(`**Phase**: ${activePhase.id}${activePhase.name ? ` — ${activePhase.name}` : ""}`);
-  lines.push(`**Type**: ${activePhase.phase_type}`);
-  lines.push(`**Status**: ${activePhase.status}`);
+  lines.push(`**Phase**: ${activePhaseId}${phaseName ? ` — ${phaseName}` : ""}`);
+  lines.push(`**Type**: ${phaseType}`);
+  lines.push(`**Status**: ${phaseStatus}`);
   lines.push("");
 
   // Work items in this phase
-  const phaseItems = ctx.db.prepare(`
-    SELECT wi.id, wi.title, wi.complexity, wi.work_item_type, n.status
-    FROM work_items wi
-    JOIN nodes n ON n.id = wi.id
-    WHERE wi.phase = ?
-    ORDER BY wi.id
-  `).all(activePhase.id) as Array<{
-    id: string;
-    title: string;
-    complexity: string | null;
-    work_item_type: string | null;
-    status: string | null;
-  }>;
+  const wiResult = await ctx.adapter.queryNodes({ type: "work_item", phase: activePhaseId }, 1000, 0);
+  const wiIds = wiResult.nodes.map((n) => n.node.id);
+  if (wiIds.length > 0) {
+    const wiNodes = await ctx.adapter.getNodes(wiIds);
 
-  if (phaseItems.length > 0) {
     lines.push("## Work Items");
     lines.push("");
     lines.push("| ID | Title | Status | Complexity | Type |");
     lines.push("|----|-------|--------|------------|------|");
-    for (const item of phaseItems) {
+    for (const nodeId of wiIds) {
+      const node = wiNodes.get(nodeId);
+      if (!node) continue;
+      const title = truncateDesc((node.properties.title as string) ?? "");
+      const complexity = (node.properties.complexity as string | null) ?? "-";
+      const work_item_type = (node.properties.work_item_type as string | null) ?? "-";
       lines.push(
-        `| ${item.id} | ${truncateDesc(item.title)} | ${item.status ?? "unknown"} | ${item.complexity ?? "-"} | ${item.work_item_type ?? "-"} |`
+        `| ${node.id} | ${title} | ${node.status ?? "unknown"} | ${complexity} | ${work_item_type} |`
       );
     }
     lines.push("");
@@ -622,22 +399,20 @@ async function buildPhaseView(ctx: ToolContext): Promise<string> {
   }
 
   // Dependencies between phase items
-  if (phaseItems.length > 1) {
-    const phaseItemIds = phaseItems.map((i) => i.id);
-    const placeholders = phaseItemIds.map(() => "?").join(",");
-    const deps = ctx.db.prepare(`
-      SELECT source_id, target_id
-      FROM edges
-      WHERE edge_type = 'depends_on'
-        AND source_id IN (${placeholders})
-        AND target_id IN (${placeholders})
-    `).all(...phaseItemIds, ...phaseItemIds) as Array<{ source_id: string; target_id: string }>;
-
-    if (deps.length > 0) {
-      lines.push("## Dependencies");
-      for (const dep of deps) {
-        lines.push(`- ${dep.source_id} depends on ${dep.target_id}`);
+  if (wiIds.length > 1) {
+    const wiIdSet = new Set(wiIds);
+    const depLines: string[] = [];
+    for (const wiId of wiIds) {
+      const edges = await ctx.adapter.getEdges(wiId, "outgoing");
+      for (const edge of edges) {
+        if (edge.edge_type === "depends_on" && wiIdSet.has(edge.target_id)) {
+          depLines.push(`- ${edge.source_id} depends on ${edge.target_id}`);
+        }
       }
+    }
+    if (depLines.length > 0) {
+      lines.push("## Dependencies");
+      for (const line of depLines) lines.push(line);
     }
   }
 
@@ -674,129 +449,80 @@ export async function handleGetWorkspaceStatus(
   let activeProject: { id: string; name: string | null; intent: string; appetite: number | null } | undefined;
   let activePhase: { id: string; name: string | null; phase_type: string; intent: string } | undefined;
 
-  if (ctx.adapter) {
-    // Delegate aggregation queries to adapter
-    const wiCounts = await ctx.adapter.countNodes({ type: "work_item" }, "status");
-    wiByStatus = {};
-    for (const entry of wiCounts) {
-      wiByStatus[entry.key] = entry.count;
-    }
-
-    if (cycleNumber !== null) {
-      const findingCounts = await ctx.adapter.countNodes(
-        { type: "finding", cycle: cycleNumber },
-        "severity"
-      );
-      for (const entry of findingCounts) {
-        if (entry.key === "critical") criticalCount = entry.count;
-        else if (entry.key === "significant") significantCount = entry.count;
-        else if (entry.key === "minor") minorCount = entry.count;
-      }
-    }
-
-    // Get open questions per domain via getDomainState
-    const domainState = await ctx.adapter.getDomainState();
-    const openQMap: Record<string, number> = {};
-    for (const [domain, entry] of domainState) {
-      if (entry.questions.length > 0) {
-        openQMap[domain] = entry.questions.length;
-      }
-    }
-    openQRows = Object.entries(openQMap)
-      .sort(([a], [b]) => a.localeCompare(b))
-      .map(([domain, count]) => ({ domain, count }));
-
-    // Active project
-    activeProject = undefined;
-    const projectResult = await ctx.adapter.queryNodes(
-      { type: "project", status: "active" },
-      1,
-      0
+  if (!ctx.adapter) {
+    throw new Error(
+      "handleGetWorkspaceStatus requires ctx.adapter to be set. " +
+        "This is a configuration error — the server and all tests must provide an adapter."
     );
-    if (projectResult.nodes.length > 0) {
-      const projectNode = await ctx.adapter.getNode(projectResult.nodes[0].node.id);
-      if (projectNode) {
-        activeProject = {
-          id: projectNode.id,
-          name: (projectNode.properties.name as string | null) ?? null,
-          intent: (projectNode.properties.intent as string) ?? "",
-          appetite: (projectNode.properties.appetite as number | null) ?? null,
-        };
-      }
-    }
+  }
 
-    // Active phase
-    activePhase = undefined;
-    const phaseResult = await ctx.adapter.queryNodes(
-      { type: "phase", status: "active" },
-      1,
-      0
+  // Delegate aggregation queries to adapter
+  const wiCounts = await ctx.adapter.countNodes({ type: "work_item" }, "status");
+  wiByStatus = {};
+  for (const entry of wiCounts) {
+    wiByStatus[entry.key] = entry.count;
+  }
+
+  if (cycleNumber !== null) {
+    const findingCounts = await ctx.adapter.countNodes(
+      { type: "finding", cycle: cycleNumber },
+      "severity"
     );
-    if (phaseResult.nodes.length > 0) {
-      const phaseNode = await ctx.adapter.getNode(phaseResult.nodes[0].node.id);
-      if (phaseNode) {
-        activePhase = {
-          id: phaseNode.id,
-          name: (phaseNode.properties.name as string | null) ?? null,
-          phase_type: (phaseNode.properties.phase_type as string) ?? "",
-          intent: (phaseNode.properties.intent as string) ?? "",
-        };
-      }
+    for (const entry of findingCounts) {
+      if (entry.key === "critical") criticalCount = entry.count;
+      else if (entry.key === "significant") significantCount = entry.count;
+      else if (entry.key === "minor") minorCount = entry.count;
     }
-  } else {
-    // Fallback: direct SQLite path
-    const wiCounts = ctx.db.prepare(`
-      SELECT n.status, COUNT(*) as count
-      FROM nodes n
-      WHERE n.type = 'work_item'
-      GROUP BY n.status
-    `).all() as Array<{ status: string | null; count: number }>;
+  }
 
-    wiByStatus = {};
-    for (const row of wiCounts) {
-      const s = row.status ?? "unknown";
-      wiByStatus[s] = row.count;
+  // Get open questions per domain via getDomainState
+  const domainState = await ctx.adapter.getDomainState();
+  const openQMap: Record<string, number> = {};
+  for (const [domain, entry] of domainState) {
+    if (entry.questions.length > 0) {
+      openQMap[domain] = entry.questions.length;
     }
+  }
+  openQRows = Object.entries(openQMap)
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([domain, count]) => ({ domain, count }));
 
-    if (cycleNumber !== null) {
-      const countRows = ctx.db.prepare(`
-        SELECT severity, COUNT(*) as count
-        FROM findings WHERE cycle = ?
-        GROUP BY severity
-      `).all(cycleNumber) as Array<{ severity: string; count: number }>;
-      for (const r of countRows) {
-        if (r.severity === "critical") criticalCount = r.count;
-        else if (r.severity === "significant") significantCount = r.count;
-        else if (r.severity === "minor") minorCount = r.count;
-      }
+  // Active project
+  activeProject = undefined;
+  const projectResult = await ctx.adapter.queryNodes(
+    { type: "project", status: "active" },
+    1,
+    0
+  );
+  if (projectResult.nodes.length > 0) {
+    const projectNode = await ctx.adapter.getNode(projectResult.nodes[0].node.id);
+    if (projectNode) {
+      activeProject = {
+        id: projectNode.id,
+        name: (projectNode.properties.name as string | null) ?? null,
+        intent: (projectNode.properties.intent as string) ?? "",
+        appetite: (projectNode.properties.appetite as number | null) ?? null,
+      };
     }
+  }
 
-    openQRows = ctx.db.prepare(`
-      SELECT dq.domain, COUNT(*) as count
-      FROM domain_questions dq
-      JOIN nodes n ON n.id = dq.id
-      WHERE n.status = 'open'
-      GROUP BY dq.domain
-      ORDER BY dq.domain
-    `).all() as Array<{ domain: string; count: number }>;
-
-    activeProject = ctx.db.prepare(`
-      SELECT p.id, p.name, p.intent, p.appetite
-      FROM projects p
-      JOIN nodes n ON n.id = p.id
-      WHERE n.status = 'active'
-      ORDER BY n.id
-      LIMIT 1
-    `).get() as { id: string; name: string | null; intent: string; appetite: number | null } | undefined;
-
-    activePhase = ctx.db.prepare(`
-      SELECT p.id, p.name, p.phase_type, p.intent
-      FROM phases p
-      JOIN nodes n ON n.id = p.id
-      WHERE n.status = 'active'
-      ORDER BY n.id
-      LIMIT 1
-    `).get() as { id: string; name: string | null; phase_type: string; intent: string } | undefined;
+  // Active phase
+  activePhase = undefined;
+  const phaseResult = await ctx.adapter.queryNodes(
+    { type: "phase", status: "active" },
+    1,
+    0
+  );
+  if (phaseResult.nodes.length > 0) {
+    const phaseNode = await ctx.adapter.getNode(phaseResult.nodes[0].node.id);
+    if (phaseNode) {
+      activePhase = {
+        id: phaseNode.id,
+        name: (phaseNode.properties.name as string | null) ?? null,
+        phase_type: (phaseNode.properties.phase_type as string) ?? "",
+        intent: (phaseNode.properties.intent as string) ?? "",
+      };
+    }
   }
 
   // Compute aggregate totals
