@@ -1032,7 +1032,8 @@ export class RemoteAdapter implements StorageAdapter {
   }
 
   /**
-   * Fetch metrics events in a single round-trip.
+   * Fetch metrics events via two round-trips (queryNodes + getNodes);
+   * filters (including cycle) are applied in TypeScript. O(n) scan.
    *
    * Remote backend stub: the ideate-server GraphQL API does not yet expose a
    * dedicated metricsEvents query. This implementation falls back to the
