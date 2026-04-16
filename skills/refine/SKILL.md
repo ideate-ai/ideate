@@ -59,7 +59,7 @@ Prompt for the architect:
 >
 > Focus on areas relevant to understanding what exists, so that a refinement interview can ask informed questions about what to change.
 
-Wait for the architect's analysis before proceeding. You need this to ask informed questions and to avoid asking about things the code already answers. After the architect returns, record a metrics entry (see Metrics Instrumentation).
+Wait for the architect's analysis before proceeding. You need this to ask informed questions and to avoid asking about things the code already answers.
 
 ---
 
@@ -230,8 +230,6 @@ Prompt for each researcher:
 
 After the researcher returns, write the findings using `ideate_write_artifact` with type `research` and id `research-{topic-slug}`.
 
-After each researcher agent returns, record a metrics entry (see Metrics Instrumentation).
-
 Integrate research findings into the refinement plan. If a finding contradicts an assumption from the interview, note the contradiction and resolve it (ask the user if the resolution is unclear).
 
 Research artifacts follow the naming convention in the artifact conventions. If research on this topic already exists, create a new artifact with a distinguishing suffix (e.g., `research-oauth2-providers-v2`), not overwrite the original.
@@ -327,7 +325,7 @@ For large refinements (5+ work items), spawn `ideate:decomposer` agent(s) with `
 >
 > These are REFINEMENT work items. The codebase already exists. Work items should reference existing files to modify, use existing patterns and conventions, and integrate with existing architecture. File scope should use `modify` for existing files.
 
-For small refinements (fewer than 5 work items), produce work items directly without spawning a decomposer. After each decomposer agent returns, record a metrics entry (see Metrics Instrumentation).
+For small refinements (fewer than 5 work items), produce work items directly without spawning a decomposer.
 
 Validate all new work items:
 - Non-overlapping file scope between concurrent new items
@@ -464,48 +462,6 @@ The test: after this refinement cycle, executing the new work items and leaving 
 
 ---
 
-# Metrics Instrumentation
-
-After each agent spawn (via the Agent tool), emit one metric entry via `ideate_emit_metric({payload: {...}})`. Best-effort only: if the call fails, continue without interruption.
-
-**Entry schema (one JSON object per line):**
-
-    {"timestamp":"<ISO8601>","skill":"refine","phase":"<id>","cycle":null,"agent_type":"<type>","model":"<model>","work_item":null,"wall_clock_ms":<ms>,"turns_used":null,"context_files_read":["<path>",...],"input_tokens":null,"output_tokens":null,"cache_read_tokens":null,"cache_write_tokens":null,"mcp_tools_called":["<tool_name>",...]}
-
-- `timestamp` — ISO 8601 when the agent was spawned.
-- `skill` — `"refine"` (constant for this skill).
-- `phase` — phase identifier (e.g., `"2"`, `"6"`, `"7h"`).
-- `agent_type` — the agent definition name (e.g., `"architect"`, `"researcher"`, `"decomposer"`).
-- `model` — model string passed to Agent tool (e.g., `"sonnet"`, `"opus"`).
-- `work_item` — `null` (refine skill agents are not tied to individual work items).
-- `wall_clock_ms` — elapsed ms between Agent tool invocation and return.
-- `context_files_read` — absolute file paths explicitly provided in the agent's prompt.
-- `mcp_tools_called` — array of strings. Names of MCP tools called to assemble context for this agent spawn (e.g., `["ideate_get_context_package", "ideate_get_artifact_context"]`). Empty array `[]` if no MCP tools were called.
-
-**Token and turn count fields**: Set `turns_used`, `input_tokens`, `output_tokens`, `cache_read_tokens`, `cache_write_tokens` to `null`. These fields are not extractable from Agent tool responses — the Agent tool returns only the subagent's final text, not its token usage. When hook-based extraction is implemented (via SubagentStop hooks), these instructions will be updated.
-
-Before each Agent tool call, record which MCP tool calls (if any) were made to assemble context for that spawn. Include the tool names in the `mcp_tools_called` array. If no MCP tools were called, use an empty array `[]`.
-
-Record timestamp immediately before the Agent tool call; compute `wall_clock_ms` after it returns.
-
-**Turns tracking and budget warning**: Use the maxTurns value from `{config}.agent_budgets` for each agent type (`architect`, `researcher`, `decomposer`). If config was not loaded or the agent type is not present in `agent_budgets`, use the agent's frontmatter default. This warning is currently inactive because `turns_used` is null. It will activate when hook-based turn extraction is implemented. If `turns_used` is non-null and the agent's maxTurns is known, compute the utilization: `turns_used / maxTurns`. If utilization > 0.80, append a warning to the journal entry for this refinement cycle (via `ideate_append_journal`):
-
-> Agent {agent_type} used {turns_used}/{maxTurns} turns ({pct}%) — near budget limit
-
-where `{pct}` is `round(turns_used / maxTurns * 100)`. This warning is best-effort — if the journal call fails, continue without interruption.
-
-**Journal summary**: At the end of Phase 8 (after presenting the refinement summary), append via `ideate_append_journal`:
-
-> ## [refine] {date} — Metrics summary
-> Agents spawned: {N total} ({breakdown by type})
-> Total wall-clock: {total_ms}ms
-> Models used: {list of distinct models}
-> Slowest agent: {agent_type} — {ms}ms
-
-If metrics could not be emitted, note "metrics unavailable" and omit the breakdown.
-
----
-
 # Error Handling
 
 - If the artifact directory is missing required files, stop and tell the user what is missing. Do not guess or create placeholder artifacts.
@@ -524,7 +480,6 @@ Before completing, verify:
 - [x] All artifact reads go through `ideate_artifact_query`, `ideate_get_context_package`, `ideate_get_domain_state`, or `ideate_get_workspace_status`
 - [x] All artifact writes go through `ideate_write_artifact` or `ideate_write_work_items`
 - [x] Next ID for work items, principles, constraints, and phases obtained via `ideate_get_next_id` — no glob patterns
-- [x] Metrics emitted via `ideate_emit_metric` — no direct file appends
 - [x] Journal entries appended via `ideate_append_journal` — no direct file writes
 - [x] MCP query descriptions do not leak internal storage paths
 - [x] Decomposer agent prompts pass artifact content, not file paths — verified in Phase 7h prompt template

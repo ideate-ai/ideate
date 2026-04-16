@@ -267,19 +267,7 @@ Mirrors `ideate_get_next_id`. Maps to `StorageAdapter.nextId()`. Returns the nex
 
 **Purpose**: Allows agents to pre-allocate IDs before writing artifacts, enabling deterministic batch operations. The server generates IDs atomically to prevent races in concurrent write scenarios.
 
-**Input**: `type` — required node type. `cycle` — optional cycle number for cycle-scoped types (findings, journal entries, metrics events). **Return type**: `String!` — the formatted artifact ID.
-
-### 3.14 Metrics
-
-```graphql
-metrics(scope: MetricsScopeInput, filter: MetricsFilterInput): MetricsResult!
-```
-
-Mirrors `ideate_get_metrics`. Returns aggregated metric and event records for a codebase, optionally filtered by cycle, metric name, event type, or time range. Auth scope: MEMBER or above.
-
-**Purpose**: Provides dashboard consumers and agents with aggregated performance data — token budgets consumed, PPR iteration counts, work item cycle times — without requiring raw artifact traversal.
-
-**Input**: `scope: MetricsScopeInput` — optional fields: `codebaseId: ID`, `cycleNumber: Int`. `filter: MetricsFilterInput` — optional fields: `metricName: String`, `eventType: String`, `since: String` (ISO-8601). **Return type**: `MetricsResult!` — includes `events: [MetricsEvent!]!` and `aggregates: [MetricAggregate!]!`.
+**Input**: `type` — required node type. `cycle` — optional cycle number for cycle-scoped types (findings, journal entries). **Return type**: `String!` — the formatted artifact ID.
 
 ---
 
@@ -431,23 +419,11 @@ Mirrors `ideate_update_config`. Applies a partial patch (deep-merged) to the pro
 emitEvent(input: EmitEventInput!): MutateNodeResult!
 ```
 
-Mirrors `ideate_emit_event`. Records a lifecycle event (e.g., cycle start, phase transition, autopilot decision) as an artifact in the graph. Auth scope: MEMBER or above.
+Mirrors `ideate_emit_event`. Fires registered hooks for a named lifecycle event (e.g., cycle start, phase transition, autopilot decision). Auth scope: MEMBER or above.
 
-**Purpose**: Provides a structured audit trail of system events. Unlike metrics (which are numeric measurements), events capture discrete state transitions and agent decisions. The resolver stores the event as a `MetricsEvent` node with `eventType` set to `"lifecycle"`.
+**Purpose**: Provides a hook dispatch surface for lifecycle events. Events are not persisted — they dispatch to hook handlers registered at the workspace level for cross-cutting concerns (notifications, external integrations, audit logs).
 
 **Input type**: `EmitEventInput` — fields: `eventType: String!`, `payload: JSON`, `cycle: Int`, `codebaseId: ID`. **Return type**: `MutateNodeResult!` — the created event node including its generated artifact ID.
-
-### 5.10 Emit Metric
-
-```graphql
-emitMetric(input: EmitMetricInput!): MutateNodeResult!
-```
-
-Mirrors `ideate_emit_metric`. Records a numeric measurement (e.g., token usage, PPR iteration count, work item latency) as a `MetricsEvent` artifact. Auth scope: MEMBER or above.
-
-**Purpose**: Enables quantitative tracking of agent behavior and system performance over time. Metrics are stored in the graph so they can be queried alongside the artifacts they reference, enabling cycle-scoped aggregations.
-
-**Input type**: `EmitMetricInput` — fields: `metricName: String!`, `value: Float!`, `unit: String`, `payload: JSON`, `cycle: Int`, `codebaseId: ID`. **Return type**: `MutateNodeResult!` — the created metric node including its generated artifact ID.
 
 ---
 
@@ -676,8 +652,6 @@ Every MCP tool operation has a GraphQL equivalent. This table is the canonical m
 | `ideate_write_artifact` | `mutation { putNode(input) }` | Generic artifact write |
 | `ideate_assemble_context` | `query { assembleContext(input) }` | Server-side PPR |
 | `ideate_emit_event` | `mutation { emitEvent(input) }` | |
-| `ideate_emit_metric` | `mutation { emitMetric(input) }` | |
-| `ideate_get_metrics` | `query { metrics(scope, filter) }` | |
 | `ideate_bootstrap_workspace` | `mutation { bootstrapWorkspace(projectName) }` | |
 | `ideate_get_next_id` | `query { nextId(type, cycle) }` | |
 | `ideate_manage_autopilot_state` | `mutation { manageAutopilotState(action, state) }` | |

@@ -99,16 +99,6 @@ If the loop exited because appetite was exhausted and the proxy-human deferred, 
 
 ### Phase 9: Activity Report
 
-Before presenting the report, append via `ideate_append_journal`:
-
-```markdown
-## [autopilot] {date} — Overall metrics summary
-Total agents spawned across all cycles: {N}
-Total wall-clock across all cycles: {total_ms}ms
-```
-
-If `ideate_emit_metric` calls failed, note "metrics unavailable".
-
 **Reconstructing per-cycle data**: The autopilot session state (via `ideate_manage_autopilot_state({action: "get"})`) stores only aggregates. Retrieve journal entries via `ideate_artifact_query({type: "journal_entry"})` — collect all `[autopilot]` entries. For each cycle N, collect: work item completions, review summaries. Also retrieve proxy-human decisions via `ideate_artifact_query({type: "proxy_human_decision", filters: {cycle: N}})`. For each proxy-human decision where the decision is `deferred`, record it as a deferred item for that cycle.
 
 Present the full activity report:

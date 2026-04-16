@@ -21,7 +21,6 @@ export type NodeType =
   | "module_spec"
   | "research_finding"
   | "journal_entry"
-  | "metrics_event"
   | "interview_question"
   | "proxy_human_decision"
   | "project"
@@ -54,7 +53,6 @@ export const ALL_NODE_TYPES = [
   "module_spec",
   "research_finding",
   "journal_entry",
-  "metrics_event",
   "interview_question",
   "proxy_human_decision",
   "project",
@@ -204,7 +202,7 @@ export interface NodeFilter {
   phase?: string;
   work_item?: string;
   work_item_type?: string;
-  /** Agent type filter — used by getMetricsEvents; matched inside payload JSON. */
+  /** Agent type filter — matched inside payload JSON. */
   agent_type?: string;
 }
 
@@ -282,44 +280,6 @@ export interface BatchMutateResult {
   results: MutateNodeResult[];
   /** Any validation errors (e.g., DAG cycles, scope collisions). */
   errors: Array<{ id: string; error: string }>;
-}
-
-// ---------------------------------------------------------------------------
-// MetricsEvent types — used by getMetricsEvents
-// ---------------------------------------------------------------------------
-
-/**
- * Properties of a metrics_event node, mirroring the metrics_events extension
- * table columns. All fields nullable because rows may be sparsely populated.
- */
-export interface MetricsEventProperties {
-  event_name: string | null;
-  timestamp: string | null;
-  payload: string | null;
-  input_tokens: number | null;
-  output_tokens: number | null;
-  cache_read_tokens: number | null;
-  cache_write_tokens: number | null;
-  outcome: string | null;
-  finding_count: number | null;
-  finding_severities: string | null;
-  first_pass_accepted: number | null;
-  rework_count: number | null;
-  work_item_total_tokens: number | null;
-  cycle_total_tokens: number | null;
-  cycle_total_cost_estimate: string | null;
-  convergence_cycles: number | null;
-  context_artifact_ids: string | null;
-}
-
-/**
- * A single metrics event row: node metadata + typed extension properties.
- * Returned by getMetricsEvents to eliminate the N+1 fetchExtensionProperties
- * pattern (CR-S2 / RF-clean-interface-proposal §2 Option B).
- */
-export interface MetricsEventRow {
-  node: NodeMeta;
-  properties: MetricsEventProperties;
 }
 
 // ---------------------------------------------------------------------------
@@ -444,25 +404,6 @@ export interface StorageAdapter {
   ): Promise<QueryResult>;
 
   /**
-   * Fetch all metrics_event rows matching the optional filter in a single
-   * round-trip (O(1) adapter calls regardless of result count).
-   *
-   * LocalAdapter: executes a single SELECT … JOIN nodes … JOIN metrics_events.
-   * RemoteAdapter: executes a single GraphQL query or stubs with a compatible
-   *   fallback until the remote backend exposes the endpoint.
-   *
-   * Filters (all optional):
-   *   - cycle: matched against node.cycle_created
-   *   - agent_type: matched inside the payload JSON field
-   *   - work_item: matched inside the payload JSON field (exact match)
-   *   - phase: matched inside the payload JSON field
-   *
-   * Results are ordered timestamp ASC, id ASC (matching the pre-WI-808
-   * TypeScript sort in handleGetMetrics).
-   */
-  getMetricsEvents(filter?: NodeFilter): Promise<MetricsEventRow[]>;
-
-  /**
    * Incrementally index specific file paths into the SQLite index.
    * Called by the artifact watcher on add/change events.
    *
@@ -513,6 +454,12 @@ export interface StorageAdapter {
   /**
    * Count nodes grouped by a dimension (status, type, domain, severity).
    * Used by analysis handlers (workspace status, convergence, domain state).
+   *
+   * @remarks When `group_by` is `'severity'` and `filter.type === 'finding'`,
+   * findings whose `addressed_by` field is non-null, non-empty are excluded
+   * from all counts. Only unresolved findings
+   * (those with `addressed_by` IS NULL) are counted (per P-88). This is
+   * consistent with the exclusion rule applied in `getConvergenceData`.
    */
   countNodes(
     filter: NodeFilter,
@@ -539,11 +486,19 @@ export interface StorageAdapter {
   /**
    * Get convergence status for a cycle: finding counts by severity,
    * principle violation verdict.
+   * Excludes findings with non-null, non-empty addressed_by (resolved findings
+   * are not counted toward convergence blockers).
    */
   getConvergenceData(cycle: number): Promise<{
     findings_by_severity: Record<string, number>;
     cycle_summary_content: string | null;
   }>;
+
+  /**
+   * Retrieve tool_usage telemetry rows. Results are ordered by timestamp ASC, id ASC.
+   * Filters are AND-combined; missing filters are ignored.
+   */
+  getToolUsage(filter?: ToolUsageFilter): Promise<ToolUsageRow[]>;
 
   // -----------------------------------------------------------------------
   // Lifecycle
@@ -607,6 +562,49 @@ export interface StorageAdapter {
     body: string;
     cycle: number;
   }): Promise<string>;
+}
+
+// ---------------------------------------------------------------------------
+// Operational telemetry types (not part of the artifact graph)
+// ---------------------------------------------------------------------------
+
+/**
+ * Row type for the tool_usage table as returned by queries.
+ * Represents a single tool invocation telemetry record.
+ * This is a standalone operational table — not a node-extension table.
+ */
+export interface ToolUsageRow {
+  id: number;
+  tool_name: string;
+  request_tokens: number | null;
+  response_tokens: number | null;
+  request_bytes: number;
+  response_bytes: number;
+  session_id: string | null;
+  cycle: number | null;
+  phase: string | null;
+  timestamp: string;
+}
+
+/**
+ * Insert-side shape for tool_usage. `id` is omitted because SQLite assigns
+ * it via autoincrement on insert.
+ */
+export type ToolUsageInsert = Omit<ToolUsageRow, "id">;
+
+/**
+ * Filter parameters for getToolUsage queries.
+ * All fields are optional; present fields are AND-combined.
+ */
+export interface ToolUsageFilter {
+  tool_name?: string;
+  session_id?: string;
+  cycle?: number;
+  phase?: string;
+  /** ISO timestamp lower bound (inclusive). */
+  from?: string;
+  /** ISO timestamp upper bound (inclusive). */
+  to?: string;
 }
 
 // ---------------------------------------------------------------------------

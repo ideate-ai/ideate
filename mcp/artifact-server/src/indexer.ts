@@ -248,42 +248,6 @@ function buildExtensionRow(table: string, doc: Row): Row {
         content: toStrOrNull(doc.content),
       };
 
-    case "metrics_events": {
-      // Compute payload JSON from queryable top-level fields (same logic as handleEmitMetric)
-      const mePayloadFields = ["agent_type", "skill", "phase", "work_item", "model", "wall_clock_ms", "turns_used", "cycle"] as const;
-      const meComputedPayload: Record<string, unknown> = {};
-      for (const field of mePayloadFields) {
-        const v = (doc as Record<string, unknown>)[field];
-        if (v !== undefined && v !== null) meComputedPayload[field] = v;
-      }
-      const meStoredPayload = Object.keys(meComputedPayload).length > 0
-        ? JSON.stringify(meComputedPayload)
-        : null;
-      return {
-        event_name: toStrOrNull(doc.event_name) ?? toStrOrNull(doc.agent_type) ?? "",
-        timestamp: toStrOrNull(doc.timestamp),
-        payload: meStoredPayload,
-        // Token accounting
-        input_tokens: toNumOrNull(doc.input_tokens),
-        output_tokens: toNumOrNull(doc.output_tokens),
-        cache_read_tokens: toNumOrNull(doc.cache_read_tokens),
-        cache_write_tokens: toNumOrNull(doc.cache_write_tokens),
-        // Output quality signals
-        outcome: toStrOrNull(doc.outcome),
-        finding_count: toNumOrNull(doc.finding_count),
-        finding_severities: toStrOrNull(doc.finding_severities),
-        first_pass_accepted: toNumOrNull(doc.first_pass_accepted),
-        rework_count: toNumOrNull(doc.rework_count),
-        // Cycle-level aggregates
-        work_item_total_tokens: toNumOrNull(doc.work_item_total_tokens),
-        cycle_total_tokens: toNumOrNull(doc.cycle_total_tokens),
-        cycle_total_cost_estimate: toStrOrNull(doc.cycle_total_cost_estimate),
-        convergence_cycles: toNumOrNull(doc.convergence_cycles),
-        // Context composition
-        context_artifact_ids: toStrOrNull(doc.context_artifact_ids),
-      };
-    }
-
     case "document_artifacts":
       return {
         title:   toStrOrNull(doc.title),

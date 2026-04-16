@@ -13,7 +13,7 @@
  *   The SQLite indexer uses ?? '' in buildExtensionRow for several fields that
  *   are logically optional but are stored as NOT NULL in the schema:
  *     - work_items.title      (toStrOrNull(doc.title) ?? "")
- *     - metrics_events.event_name (toStrOrNull(doc.event_name) ?? toStrOrNull(doc.agent_type) ?? "")
+ *     - work_items.title (toStrOrNull(doc.title) ?? "")
  *   The writer (putNode path) mirrors this behaviour, so for putNode-created
  *   nodes the coercions are symmetric. Divergences arise only from fixture YAML
  *   loaded through the indexer when the Neo4j migration CLI stores null as-is.
@@ -471,8 +471,6 @@ suite("Equivalence — T-13 null-to-default coercion (indexer ?? '' pattern)", (
   // that are NOT NULL in the SQLite schema but logically optional in YAML:
   //
   //   work_items.title:      toStrOrNull(doc.title) ?? ""
-  //   metrics_events.event_name:
-  //     toStrOrNull(doc.event_name) ?? toStrOrNull(doc.agent_type) ?? ""
   //
   // The Neo4j migration CLI stores YAML values as-is (null → null).
   //
@@ -504,107 +502,6 @@ suite("Equivalence — T-13 null-to-default coercion (indexer ?? '' pattern)", (
     expect(typeof localNode!.properties.title).toBe("string");
     expect((localNode!.properties.title as string).length).toBeGreaterThan(0);
     expect(localNode!.properties.title).toBe(remoteNode!.properties.title);
-  });
-
-  // AC5 / AC6: metrics_events.event_name coercion via indexer
-  //
-  // ME-002 has event_name: null and agent_type: "reviewer".
-  // The SQLite indexer applies:
-  //   toStrOrNull(doc.event_name) ?? toStrOrNull(doc.agent_type) ?? ""
-  // → null ?? "reviewer" ?? "" = "reviewer"
-  //
-  // The Neo4j migration CLI stores event_name as null (the raw YAML value),
-  // not the fallback. This is a KNOWN DIVERGENCE (T-13).
-  //
-  // KNOWN DIVERGENCE (T-13): SQLite indexer coerces null event_name to the
-  // agent_type fallback ("reviewer") via the ?? chain in buildExtensionRow.
-  // Neo4j stores null as-is. The LocalAdapter returns "reviewer" while the
-  // RemoteAdapter returns null. Accepted until the indexer is fixed to store
-  // null when event_name is explicitly null in the YAML.
-  it("ME-002 properties.event_name: documents T-13 divergence between SQLite and Neo4j", async () => {
-    const [localNode, remoteNode] = await Promise.all([
-      adapters.local.getNode("ME-002"),
-      adapters.remote.getNode("ME-002"),
-    ]);
-
-    expect(localNode).not.toBeNull();
-    expect(remoteNode).not.toBeNull();
-
-    // KNOWN DIVERGENCE (T-13): SQLite indexer coerces null event_name to
-    // agent_type ("reviewer") via ?? chain. Neo4j stores null as-is.
-    // LocalAdapter returns "reviewer"; RemoteAdapter returns null.
-    // This divergence is accepted until the indexer ?? '' chain is fixed.
-    const localEventName = localNode!.properties.event_name;
-    const remoteEventName = remoteNode!.properties.event_name;
-
-    if (localEventName === remoteEventName) {
-      // If the backends converge (e.g. after a fix), the test still passes.
-      // Document the convergence.
-      expect(localEventName).toBe(remoteEventName);
-    } else {
-      // Document the known divergence explicitly.
-      // SQLite: "reviewer" (agent_type fallback via ?? chain)
-      // Neo4j:  null (raw YAML value)
-      expect(localEventName).toBe("reviewer");
-      expect(remoteEventName).toBeNull();
-    }
-  });
-
-  // ME-001 has event_name: "work_item_complete" (non-null) — no divergence expected
-  it("ME-001 properties.event_name is identical from both adapters (non-null, no T-13 issue)", async () => {
-    const [localNode, remoteNode] = await Promise.all([
-      adapters.local.getNode("ME-001"),
-      adapters.remote.getNode("ME-001"),
-    ]);
-
-    expect(localNode).not.toBeNull();
-    expect(remoteNode).not.toBeNull();
-
-    // Non-null event_name: no ?? fallback fires, both adapters agree.
-    expect(localNode!.properties.event_name).not.toBeNull();
-    expect(localNode!.properties.event_name).toBe(remoteNode!.properties.event_name);
-  });
-
-  // AC5 / AC6: putNode event_name=null via writer path
-  //
-  // The writer (upsertExtensionTableRow for metrics_event) uses:
-  //   event_name: typeof content.agent_type === "string"
-  //     ? content.agent_type
-  //     : (content.event_name as string) ?? ""
-  //
-  // When putNode is called with event_name=null and no agent_type, both adapters
-  // store "" (SQLite schema requires NOT NULL, writer falls back to "").
-  // The RemoteAdapter mirrors the writer behaviour for putNode inputs.
-  // This test confirms the putNode path is symmetric (no T-13 divergence).
-  it("putNode with event_name=null and no agent_type: both adapters agree on the stored value", async () => {
-    const id = "ME-EQ-NULL-EN-001";
-    const input: MutateNodeInput = {
-      id,
-      type: "metrics_event" as NodeType,
-      properties: {
-        event_name: null,
-        timestamp: "2026-04-01T00:00:00Z",
-        // agent_type is intentionally absent
-      },
-    };
-
-    await Promise.all([
-      adapters.local.putNode(input),
-      adapters.remote.putNode(input),
-    ]);
-
-    const [localNode, remoteNode] = await Promise.all([
-      adapters.local.getNode(id),
-      adapters.remote.getNode(id),
-    ]);
-
-    expect(localNode).not.toBeNull();
-    expect(remoteNode).not.toBeNull();
-
-    // Both adapters must agree; coercion (if any) is symmetric for putNode.
-    const localEN = localNode!.properties.event_name ?? null;
-    const remoteEN = remoteNode!.properties.event_name ?? null;
-    expect(localEN).toBe(remoteEN);
   });
 
   // AC5 / AC6: putNode with null domain_decision title via writer path
@@ -673,8 +570,6 @@ suite("Equivalence — Full node equivalence for null-heavy fixtures", () => {
 
   // Full assertNodesEquivalent comparison for fixtures that have multiple null fields.
   // These verify that assertNodesEquivalent passes despite all the null values.
-  // ME-002 is excluded from assertNodesEquivalent because of the known T-13
-  // divergence in event_name.
 
   it("WI-003 (null cycle fields, null resolution) passes assertNodesEquivalent", async () => {
     const [localNode, remoteNode] = await Promise.all([
@@ -736,34 +631,4 @@ suite("Equivalence — Full node equivalence for null-heavy fixtures", () => {
     assertNodesEquivalent(localNode!, remoteNode!);
   });
 
-  // ME-002: full node comparison is skipped for the event_name field due to T-13.
-  // Instead we verify all other fields are equivalent by comparing selectively.
-  //
-  // KNOWN DIVERGENCE (T-13): ME-002.properties.event_name is excluded from the
-  // full node comparison. SQLite returns "reviewer" (agent_type fallback);
-  // Neo4j returns null (raw YAML value). All other ME-002 fields must match.
-  it("ME-002 (null event_name — T-13): all fields except event_name are equivalent between adapters", async () => {
-    const [localNode, remoteNode] = await Promise.all([
-      adapters.local.getNode("ME-002"),
-      adapters.remote.getNode("ME-002"),
-    ]);
-
-    expect(localNode).not.toBeNull();
-    expect(remoteNode).not.toBeNull();
-
-    // Compare metadata fields individually (excluding content_hash and token_count)
-    expect(localNode!.id).toBe(remoteNode!.id);
-    expect(localNode!.type).toBe(remoteNode!.type);
-    expect(localNode!.status).toBe(remoteNode!.status);
-    expect(localNode!.cycle_created).toBe(remoteNode!.cycle_created);
-    expect(localNode!.cycle_modified).toBe(remoteNode!.cycle_modified);
-
-    // Compare extension properties, excluding the divergent event_name field.
-    // KNOWN DIVERGENCE (T-13): event_name excluded — SQLite returns "reviewer"
-    // (agent_type fallback via ?? chain); Neo4j returns null. Accepted until
-    // the indexer ?? '' chain is fixed.
-    const { event_name: _localEN, ...localProps } = localNode!.properties as Record<string, unknown>;
-    const { event_name: _remoteEN, ...remoteProps } = remoteNode!.properties as Record<string, unknown>;
-    expect(localProps).toEqual(remoteProps);
-  });
 });

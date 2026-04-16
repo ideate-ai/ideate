@@ -1,0 +1,15 @@
+id: F-CYCLE-33-M2
+type: finding
+severity: minor
+reviewer: code-reviewer
+work_item: WI-873
+verdict: Pass
+title: getToolUsage stub + getMetricsEvents removal bundled in WI-873 delta — scope-boundary concern
+description: remote/index.ts:1461-1471 adds getToolUsage stub; EXTENSION_COLUMNS/FIELD_FALLBACKS/ALL_NODE_TYPES/NodeType lose metrics_event. These changes appear to be residue from WI-863/WI-867 tool-usage migration, not part of WI-873 scope. Code itself is correct (LocalAdapter implements fully, RemoteAdapter returns documented stub, contract tests cover the path), but bundling unrelated changes with a targeted bug fix violates single-work-item-per-commit discipline.
+suggestion: Confirm these changes were intentionally combined. If residue, split into a separate commit referencing the correct WI before closing WI-873. If genuinely part of in-flight phase work, note in journal for audit trail.
+file_refs:
+  - mcp/artifact-server/src/adapters/remote/index.ts
+cycle: 33
+cycle_modified: 27
+content_hash: a98530d6eea2b70d015417740b6b06bf085319ebf539305de02bb4e07d16c248
+token_count: 250

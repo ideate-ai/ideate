@@ -13,8 +13,7 @@
 │  MCP Tool Handlers (business logic, validation, formatting)     │
 │                                                                  │
 │  tools/write.ts    tools/context.ts    tools/query.ts            │
-│  tools/analysis.ts tools/index.ts      tools/metrics.ts          │
-│  tools/events.ts                                                  │
+│  tools/analysis.ts tools/index.ts      tools/events.ts           │
 │  (Note: only storage-heavy handlers are shown above)              │
 │                                                                  │
 │  Responsibilities that STAY here:                                │
@@ -651,8 +650,67 @@ The `ideateDir` field is retained because some tool handlers use it for non-stor
 
 1. **Archive operation (resolved)**: `archiveCycle(cycle: number): Promise<string>` is a core StorageAdapter interface method with backend-specific semantics. LocalAdapter performs artifact moves and index updates; RemoteAdapter calls the archiveCycle GraphQL mutation to transition statuses. See adapter-interface.md Section 4.7.
 
-2. **Metrics emit (resolved)**: `handleEmitMetric` (in tools/metrics.ts) is a no-op shim retained for backward compatibility — emission was soft-deprecated in WI-790 (see D-211); the tool stays registered to avoid breaking existing skill code, but no new rows are written to `metrics_events`. `handleEmitEvent` (in tools/events.ts) still writes event records via the putNode pattern. The original question of whether metrics should follow a fast-path is moot under soft-deprecation; it returns when replacement telemetry is designed in PH-047-candidate.
+2. **Source code index**: handleGetContextPackage scans the filesystem for source files. This is not artifact storage — it is project context. Should the adapter own source code scanning, or should it remain a handler concern?
 
-3. **Source code index**: handleGetContextPackage scans the filesystem for source files. This is not artifact storage — it is project context. Should the adapter own source code scanning, or should it remain a handler concern?
+3. **File watcher**: The current watcher.ts exports `ArtifactWatcher` (class) and the singleton `artifactWatcher`. The watcher emits `"change"` events carrying a `BatchChangeEvent` (fields: `artifactDir`, `changed`, `deleted`). server.ts listens to these events and calls `adapter.indexFiles(yamlChanged)` and `adapter.removeFiles(yamlDeleted)` to trigger incremental re-indexing. The watcher itself does not touch the index directly. In remote mode, there is no local YAML to watch; the watcher is purely a LocalAdapter concern. Confirmed: it moves behind the adapter.
 
-4. **File watcher**: The current watcher.ts exports `ArtifactWatcher` (class) and the singleton `artifactWatcher`. The watcher emits `"change"` events carrying a `BatchChangeEvent` (fields: `artifactDir`, `changed`, `deleted`). server.ts listens to these events and calls `adapter.indexFiles(yamlChanged)` and `adapter.removeFiles(yamlDeleted)` to trigger incremental re-indexing. The watcher itself does not touch the index directly. In remote mode, there is no local YAML to watch; the watcher is purely a LocalAdapter concern. Confirmed: it moves behind the adapter.
+---
+
+## 8. Operational Telemetry Surface
+
+### 8.1 What Is Captured
+
+Every MCP tool dispatch is recorded as a `tool_usage` event. Each row captures:
+
+| Column | Type | Description |
+|---|---|---|
+| `tool_name` | text | Name of the MCP tool invoked |
+| `timestamp` | text | ISO 8601 timestamp of the dispatch |
+| `request_bytes` | integer | Byte size of the serialized tool input |
+| `response_bytes` | integer | Byte size of the serialized tool response |
+| `request_tokens` | integer (nullable) | Input token count (when available) |
+| `response_tokens` | integer (nullable) | Output token count (when available) |
+| `session_id` | text (nullable) | Claude session identifier |
+| `cycle` | integer (nullable) | Active cycle number at time of dispatch |
+| `phase` | text (nullable) | Active phase ID at time of dispatch |
+
+The session_id / cycle / phase context allows usage to be sliced per planning cycle or phase without requiring a separate query join.
+
+### 8.2 Where It Is Stored
+
+`tool_usage` rows are written to the local SQLite database at `.ideate/index.db`. The table is standalone: it is not a node-extension table and is not indexed alongside the artifact graph (nodes/edges). It has no foreign-key relationship to any node. This keeps operational telemetry orthogonal to artifact graph operations — a tool dispatch is always recorded regardless of whether the tool itself reads or writes any artifact.
+
+See the Drizzle schema in `mcp/artifact-server/src/db.ts` (`toolUsage` table definition).
+
+### 8.3 Who Consumes It
+
+**`ideate_get_tool_usage` MCP tool** (`tools/tool-usage.ts`)
+
+The tool exposes three views via the `view` parameter:
+
+- `"aggregate"` (default) — one row per tool name with call counts and cumulative token/byte totals.
+- `"detail"` — raw rows ordered oldest-first (timestamp ASC, id ASC), capped at `limit` (default 1000, max 10000).
+- `"both"` — aggregate section computed from all rows (never truncated) plus the detail section (subject to `limit`). Aggregate totals are always exact even when the detail section is truncated.
+
+Filter parameters: `tool_name`, `session_id`, `cycle`, `phase`, `from`, `to`. Filters are AND-combined; omitting a filter includes all rows.
+
+The tool delegates entirely to `adapter.getToolUsage(filter)` and applies no direct SQLite access, per P-33 (MCP tool responses and descriptions must not expose storage implementation details; telemetry stays behind the adapter).
+
+**`scripts/report-tool-usage.sh` CLI**
+
+A standalone reporting script that opens `.ideate/index.db` via the LocalAdapter (or RemoteAdapter when `backend: "remote"` is configured), calls `handleGetToolUsage`, and prints a formatted text report including totals, top-N most-called tools, and a per-tool breakdown. Accepts the same filter flags as the MCP tool (`--cycle`, `--phase`, `--session`, `--tool`, `--from`, `--to`, `--limit`, `--top`).
+
+### 8.4 Retention Policy
+
+The `tool_usage` table is append-only. There is no built-in retention limit or rotation. Rows accumulate indefinitely across cycles. If pruning is needed, it can be applied directly via SQL:
+
+```sql
+DELETE FROM tool_usage WHERE timestamp < '2026-01-01T00:00:00Z';
+```
+
+No adapter method exposes bulk deletion of telemetry rows; any such operation is a manual maintenance step outside the MCP surface.
+
+### 8.5 Domain Cross-References
+
+- **P-33** (artifact-structure): MCP tool descriptions and responses must not expose storage implementation details. `ideate_get_tool_usage` surfaces aggregate counts and raw rows without revealing file paths, table names, or schema details in its output.
+- **D-211** (workflow): The old metrics emission infrastructure (`ideate_emit_metric`) was soft-deprecated as of WI-790. `tool_usage` is the replacement operational telemetry channel — it records tool dispatch events automatically at the adapter layer without requiring skills or agents to emit events explicitly.

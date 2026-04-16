@@ -1,0 +1,15 @@
+id: F-WI-001-004
+type: finding
+title: Resolved finding — empty-string addressed_by (severity equivalence fixture)
+severity: significant
+work_item: WI-001
+verdict: fail
+cycle: 2
+reviewer: code-reviewer
+description: >-
+  Fixture finding with addressed_by set to empty string. Must NOT be counted
+  by either adapter. LocalAdapter stores "" which fails SQL IS NULL. RemoteAdapter
+  post-filter treats "" as non-null (addressedBy !== null) and skips it.
+addressed_by: ""
+cycle_created: 2
+cycle_modified: null

@@ -1,0 +1,42 @@
+id: WI-874
+type: work_item
+title: Fix convergence-checker false-negative from legacy artifact collision
+complexity: null
+scope:
+  - path: mcp/artifact-server/src/tools/index.ts
+    op: modify
+  - path: mcp/artifact-server/src/adapters/local/reader.ts
+    op: modify
+depends: []
+blocks: []
+criteria:
+  - "Repro documented: workspace where cycle slot N contains a legacy fail-verdict artifact (e.g., SA-NNN.yaml from a prior session) causes ideate_get_convergence_status to return condition_b:false even when all current-autopilot artifacts pass. Reproducer must run and demonstrate the failure before the fix."
+  - "Fix implemented via one of: (a) convergence-checker disambiguates by content date/source/session-id; (b) autopilot maps internal cycle numbers to next-available workspace cycle slots; (c) convergence-checker reads only canonically-named artifacts (spec-adherence, code-quality, gap-analysis) and ignores legacy ID-named files (SA-NNN, CQ-NNN, GA-NNN). Rationale for chosen option recorded in commit/resolution."
+  - "After fix: fresh autopilot run in a workspace with legacy fail-verdict artifacts in potentially-colliding cycle slots returns correct condition_b verdict (Pass when current-cycle reviewers pass)."
+  - "No regression: convergence behavior unchanged for workspaces with no legacy artifacts; existing convergence tests still pass."
+  - "Test coverage: unit or equivalence test covering the collision scenario added. Test must fail against pre-fix code and pass against post-fix code."
+  - "Related concern from cycle 32: ideate_get_convergence_status(32) returned principle_verdict:unknown despite spec-adherence artifact containing exact '**Principle Adherence Verdict**: Pass' — verify whether this is a symptom of the same collision bug or a separate parser drift. If separate, note for follow-up; if same, both resolve with this fix."
+domain: null
+phase: PH-049
+work_item_type: bug
+notes: |-
+  Discovered 2026-04-14 during autopilot run. cycles/002/SA-002.yaml (a March 29 archive from a prior session) collided with autopilot's internal cycle 2, causing the parser to read the old verdict.
+
+  Root cause: autopilot's internal cycle numbering (1, 2, 3...) reuses workspace cycle directory slots that may already contain unrelated archived artifacts from earlier sessions.
+
+  Fix options (from reporter):
+    (a) convergence-checker should disambiguate by content date/source/session-id
+    (b) autopilot should map internal cycle numbers to next-available workspace cycle slots
+    (c) convergence-checker should only read named files (code-quality, spec-adherence, gap-analysis) and ignore legacy ID-named files (SA-NNN, CQ-NNN, GA-NNN)
+
+  Option (c) is simplest and lowest-risk — current-session artifacts already use canonical names. Option (b) changes autopilot state semantics. Option (a) requires session-id plumbing that may not exist yet.
+
+  Reproducer: run autopilot in a workspace where cycles/{NNN}/ contains a legacy SA-*/CQ-*/GA-* artifact with verdict:Fail; observe condition_b:false even with all passing current-cycle reviewers.
+
+  Related: cycle 32 convergence parser also returned principle_verdict:unknown despite the artifact containing the exact expected text. Possibly the same root cause (reading a legacy artifact rather than the current one), possibly independent regex drift — investigate as part of this work item.
+resolution: null
+status: pending
+cycle_created: null
+cycle_modified: null
+content_hash: c0b5fa2a1a5049971eaca18a411eafe57f8d08415f2fd760411bf24d7df12df9
+token_count: 862

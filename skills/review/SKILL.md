@@ -258,7 +258,6 @@ All three agents run in parallel. Do not wait for one to finish before starting 
 After this agent returns:
 1. Extract the findings content from the agent's response.
 2. Call `ideate_write_artifact({type: "cycle_summary", id: "code-quality", content: {cycle: N, reviewer: "code-reviewer", content: <extracted findings>}})` to persist the review.
-3. Record a metrics entry (see Metrics Instrumentation).
 
 ## 4.2 spec-reviewer
 
@@ -289,7 +288,6 @@ After this agent returns:
 After this agent returns:
 1. Extract the findings content from the agent's response.
 2. Call `ideate_write_artifact({type: "cycle_summary", id: "spec-adherence", content: {cycle: N, reviewer: "spec-reviewer", content: <extracted findings>}})` to persist the review.
-3. Record a metrics entry (see Metrics Instrumentation).
 
 ## 4.3 gap-analyst
 
@@ -322,7 +320,6 @@ After this agent returns:
 After this agent returns:
 1. Extract the findings content from the agent's response.
 2. Call `ideate_write_artifact({type: "cycle_summary", id: "gap-analysis", content: {cycle: N, reviewer: "gap-analyst", content: <extracted findings>}})` to persist the review.
-3. Record a metrics entry (see Metrics Instrumentation).
 
 Wait for all three reviewers to complete. Verify their outputs were persisted via `ideate_write_artifact` before proceeding.
 
@@ -366,7 +363,6 @@ Spawn the journal-keeper only AFTER all three reviewers from Phase 4a have compl
 After this agent returns:
 1. Extract the decision log content from the agent's response.
 2. Call `ideate_write_artifact({type: "cycle_summary", id: "decision-log", content: {cycle: N, reviewer: "journal-keeper", content: <extracted decision log>}})` to persist the decision log.
-3. Record a metrics entry (see Metrics Instrumentation).
 
 ---
 
@@ -546,7 +542,6 @@ After the curator returns:
    - For policies: `ideate_write_artifact({type: "domain_policy", id: "P-{N}", content: {...}})`
    - For decisions: `ideate_write_artifact({type: "domain_decision", id: "D-{N}", content: {...}})`
    - For questions: `ideate_write_artifact({type: "domain_question", id: "Q-{N}", content: {...}})`
-3. Record a metrics entry (see Metrics Instrumentation).
 
 ## 7.3 After Curator Completes (Cycle Reviews Only)
 
@@ -571,61 +566,6 @@ Verify by calling `ideate_artifact_query` to confirm:
    - Only items not completed this cycle remain in the active working set (if any)
 
 After archival, the cycle's artifacts include: the review manifest, archived work items, archived findings, code-quality review, spec-adherence review, gap-analysis review, decision log, and summary.
-
----
-
-# Phase 7.6: Quality Metrics Event
-
-After the domain curator completes (and after Phase 7.5 archival for cycle reviews), emit a `quality_summary` metric. This is a best-effort operation — if it fails for any reason, skip it and continue to Phase 8 without blocking.
-
-## 7.6.1 Derive Counts from Summary
-
-Retrieve the summary artifact via `ideate_artifact_query({type: "cycle_summary", id: "summary", cycle: N})` (already produced in Phase 6). Derive the following counts from its content:
-
-**Severity counts** — count bullet points under each severity heading:
-- `findings.by_severity.critical`: count items under `## Critical Findings`
-- `findings.by_severity.significant`: count items under `## Significant Findings`
-- `findings.by_severity.minor`: count items under `## Minor Findings`
-- `findings.by_severity.suggestion`: count items under `## Suggestions`
-- `findings.total`: sum of all four severity counts
-
-**Per-reviewer counts** — each finding line includes a `[reviewer-name]` prefix. Count findings per severity per reviewer:
-- `findings.by_reviewer.code-reviewer`: count lines prefixed `[code-reviewer]` in each severity section, separated into `critical`, `significant`, `minor`
-- `findings.by_reviewer.spec-reviewer`: same for `[spec-reviewer]`
-- `findings.by_reviewer.gap-analyst`: same for `[gap-analyst]`
-
-**Category counts** — classify each finding into exactly one category using these rules, applied in order:
-- `requirements_missed`: gap-analyst findings (`[gap-analyst]` prefix) that are critical or significant and describe a missing requirement (look for words like "missing", "absent", "not implemented", "requirement", "not present", "never built", "no implementation", "omitted")
-- `bugs_introduced`: code-reviewer (`[code-reviewer]` prefix) critical and significant findings
-- `principles_violated`: spec-reviewer (`[spec-reviewer]` prefix) findings (any severity) that describe a principle violation (look for words like "principle", "violates", "violation", "constraint")
-- `implementation_gaps`: gap-analyst findings that are minor, or gap-analyst findings describing incomplete coverage or integration (look for words like "incomplete", "partial", "not connected", "missing integration")
-- `other`: all findings not matching any of the above categories
-
-**work_items_reviewed**: Count distinct work item numbers referenced in the review manifest content (`{manifest_content}` from Phase 3.5). If the manifest is unavailable, query findings via `ideate_artifact_query`.
-
-**andon_events**: Call `ideate_artifact_query({type: "journal_entry"})` to retrieve the most recent journal entries (last 20 entries). Count entries for the current cycle number N that mention "Andon" (case-insensitive). Use 0 if journal entries cannot be retrieved.
-
-**cycle**: Use the cycle number N determined in Phase 1.2. If not a cycle review (ad-hoc, domain, or full audit), use `null`.
-
-## 7.6.2 Emit the Metric
-
-Call `ideate_emit_metric` with the following payload:
-
-```json
-{"timestamp":"<ISO8601>","event_type":"quality_summary","skill":"review","cycle":<N>,"findings":{"total":<N>,"by_severity":{"critical":<N>,"significant":<N>,"minor":<N>,"suggestion":<N>},"by_reviewer":{"code-reviewer":{"critical":<N>,"significant":<N>,"minor":<N>},"spec-reviewer":{"critical":<N>,"significant":<N>,"minor":<N>},"gap-analyst":{"critical":<N>,"significant":<N>,"minor":<N>}},"by_category":{"requirements_missed":<N>,"bugs_introduced":<N>,"principles_violated":<N>,"implementation_gaps":<N>,"other":<N>}},"work_items_reviewed":<N>,"andon_events":<N>}
-```
-
-- `timestamp`: ISO 8601 timestamp at the moment of emission.
-- `event_type`: the string `"quality_summary"` (constant).
-- `skill`: the string `"review"` (constant).
-- `cycle`: integer cycle number N, or `null` for non-cycle reviews.
-- All count fields: integers derived from 7.6.1.
-
-## 7.6.3 Best-Effort Clause
-
-If count derivation fails (e.g., summary artifact is missing, cannot be parsed, or the format does not match expected headings), or if the metric cannot be emitted, skip the quality_summary metric entirely and proceed to Phase 8 without interruption. Log `quality_summary metric skipped: {reason}` in the output so the user is aware.
-
-Do not retry. Do not block the review on this step.
 
 ---
 
@@ -711,52 +651,6 @@ If no refinement is needed:
 
 ---
 
-# Metrics Instrumentation
-
-After each agent spawn (via the Agent tool), emit one metric entry via `ideate_emit_metric`. Best-effort only: if the call fails, continue without interruption.
-
-**Payload schema (one call per agent spawn):**
-
-```json
-{"timestamp":"<ISO8601>","skill":"review","phase":"<id>","cycle":null,"agent_type":"<type>","model":"<model>","work_item":null,"wall_clock_ms":<ms>,"turns_used":null,"context_files_read":["<path>",...],"input_tokens":null,"output_tokens":null,"cache_read_tokens":null,"cache_write_tokens":null,"mcp_tools_called":["<tool_name>",...],"finding_count":<N or null>,"finding_severities":{"critical":<N>,"significant":<N>,"minor":<N>} or null}
-```
-
-- `timestamp` — ISO 8601 when the agent was spawned.
-- `skill` — `"review"` (constant for this skill).
-- `phase` — phase identifier (e.g., `"4a"`, `"4b"`, `"7.2"`).
-- `agent_type` — the agent definition name (e.g., `"code-reviewer"`, `"spec-reviewer"`, `"gap-analyst"`, `"journal-keeper"`, `"domain-curator"`).
-- `model` — model string passed to Agent tool (e.g., `"sonnet"`, `"opus"`).
-- `work_item` — `null` (review skill agents are not tied to individual work items).
-- `wall_clock_ms` — elapsed ms between Agent tool invocation and return.
-- `context_files_read` — absolute file paths explicitly provided in the agent's prompt.
-- `mcp_tools_called` — array of strings. Names of MCP tools called to assemble context for this agent spawn (e.g., `["ideate_get_context_package", "ideate_get_artifact_context"]`). Empty array `[]` if no MCP tools were called.
-- `finding_count` — optional (null if not available). For reviewer spawns (`code-reviewer`, `spec-reviewer`, `gap-analyst`): total number of findings across all severities produced by that reviewer. Null for `journal-keeper` and `domain-curator` entries, and null if the reviewer output cannot be parsed.
-- `finding_severities` — optional (null if not available). For reviewer spawns: object with keys `critical`, `significant`, `minor` and integer values derived from parsing the reviewer's output. Null for `journal-keeper` and `domain-curator` entries, and null if the output cannot be parsed.
-
-**Token and turn count fields**: Set `turns_used`, `input_tokens`, `output_tokens`, `cache_read_tokens`, `cache_write_tokens` to `null`. These fields are not extractable from Agent tool responses — the Agent tool returns only the subagent's final text, not its token usage. When hook-based extraction is implemented (via SubagentStop hooks), these instructions will be updated.
-
-Before each Agent tool call, record which MCP tool calls (if any) were made to assemble context for that spawn. Include the tool names in the `mcp_tools_called` array. If no MCP tools were called, use an empty array `[]`.
-
-Record timestamp immediately before the Agent tool call; compute `wall_clock_ms` after it returns.
-
-**Turns tracking and budget warning**: Use the maxTurns value from `{config}.agent_budgets` for each agent type (`code-reviewer`, `spec-reviewer`, `gap-analyst`, `journal-keeper`, `domain-curator`). If config was not loaded or the agent type is not present in `agent_budgets`, use the agent's frontmatter default. This warning is currently inactive because `turns_used` is null. It will activate when hook-based turn extraction is implemented. If `turns_used` is non-null and the agent's maxTurns is known, compute the utilization: `turns_used / maxTurns`. If utilization > 0.80, append a warning to the Phase 8 journal entry (via `ideate_append_journal`):
-
-> Agent {agent_type} used {turns_used}/{maxTurns} turns ({pct}%) — near budget limit
-
-where `{pct}` is `round(turns_used / maxTurns * 100)`. This warning is best-effort — if the journal call fails, continue without interruption.
-
-**Journal summary**: In Phase 8 (Update Journal), append via `ideate_append_journal` after the review entry:
-
-> ## [review] {date} — Metrics summary
-> Agents spawned: {N total} (code-reviewer, spec-reviewer, gap-analyst, journal-keeper, {curator if run})
-> Total wall-clock: {total_ms}ms
-> Models used: {list of distinct models}
-> Slowest agent: {agent_type} — {ms}ms
-
-If metrics could not be emitted, note "metrics unavailable" and omit the breakdown.
-
----
-
 # Error Handling
 
 ## Subagent spawning unavailable
@@ -802,16 +696,15 @@ Do not proceed with the review without access to the source code. The review req
 Before completing this skill, verify all of the following:
 
 1. **No artifact path references**: The skill contains zero references to paths like `.ideate/`, `.ideate/cycles/`, `.ideate/domains/`, `.ideate/work-items/`, or any other filesystem paths under the artifact directory. All artifact access goes through MCP tools.
-2. **No filename references**: The skill does not reference filenames like `review-manifest.yaml`, `code-quality.yaml`, `spec-adherence.yaml`, `gap-analysis.yaml`, `decision-log.yaml`, `summary.yaml`, `metrics.jsonl`, `index.yaml`, or any other artifact filenames. Artifacts are referenced by type and designation.
+2. **No filename references**: The skill does not reference filenames like `review-manifest.yaml`, `code-quality.yaml`, `spec-adherence.yaml`, `gap-analysis.yaml`, `decision-log.yaml`, `summary.yaml`, `index.yaml`, or any other artifact filenames. Artifacts are referenced by type and designation.
 3. **Output location via MCP**: Output locations are derived by the MCP server from type, cycle number, scope, and date parameters passed to `ideate_write_artifact`. The skill never constructs directory paths.
 4. **Review manifest via tool**: The review manifest is retrieved via `ideate_get_review_manifest()`, not by reading a file path.
 5. **Reviewer outputs by type/id**: Reviewer outputs are retrieved via `ideate_artifact_query({type: "cycle_summary", id: "...", cycle: N})`, not by reading file paths.
-6. **Metrics via ideate_emit_metric**: All metric emissions use `ideate_emit_metric` with a payload object. No direct file appends.
-7. **Domain check via MCP**: Domain existence and state are checked via `ideate_get_domain_state()`, not by checking filesystem existence.
-8. **Review orchestration preserved**: The phase structure, reviewer spawn order (4a parallel, 4b sequential), curator logic, archival, and user presentation remain unchanged from the original.
-9. **Zero occurrences of ideate_get_project_status**: The skill contains no references to `ideate_get_project_status`. All workspace status queries use `ideate_get_workspace_status`.
-10. **Active project and phase queried early**: Phase 1.1 calls `ideate_artifact_query` with type `project` and `phase` filters to extract `{active_project}` and `{active_phase}` before any other phase-dependent logic runs.
-11. **Phase Convergence section present**: The summary output template (Phase 6.7) includes a `## Phase Convergence` section showing phase name, cycle count vs threshold, convergence status, and trend.
-12. **Project Progress section present**: The summary output template includes a `## Project Progress` table listing each success criterion with its status (pass / partial / not-started).
-13. **Circuit breaker reads threshold from config**: Phase 1.3 reads `{config}.circuit_breaker_threshold` via `ideate_get_config` (loaded in Phase 0). Default is `5` if the key is absent. If `{phase_cycle_count}` >= threshold, Andon is triggered and the review halts.
-14. **Finding routing guidance present**: Phase 6.4 specifies that critical/significant findings are routed to the current phase, minor findings carry forward, and suggestions are deferred.
+6. **Domain check via MCP**: Domain existence and state are checked via `ideate_get_domain_state()`, not by checking filesystem existence.
+7. **Review orchestration preserved**: The phase structure, reviewer spawn order (4a parallel, 4b sequential), curator logic, archival, and user presentation remain unchanged from the original.
+8. **Zero occurrences of ideate_get_project_status**: The skill contains no references to `ideate_get_project_status`. All workspace status queries use `ideate_get_workspace_status`.
+9. **Active project and phase queried early**: Phase 1.1 calls `ideate_artifact_query` with type `project` and `phase` filters to extract `{active_project}` and `{active_phase}` before any other phase-dependent logic runs.
+10. **Phase Convergence section present**: The summary output template (Phase 6.7) includes a `## Phase Convergence` section showing phase name, cycle count vs threshold, convergence status, and trend.
+11. **Project Progress section present**: The summary output template includes a `## Project Progress` table listing each success criterion with its status (pass / partial / not-started).
+12. **Circuit breaker reads threshold from config**: Phase 1.3 reads `{config}.circuit_breaker_threshold` via `ideate_get_config` (loaded in Phase 0). Default is `5` if the key is absent. If `{phase_cycle_count}` >= threshold, Andon is triggered and the review halts.
+13. **Finding routing guidance present**: Phase 6.4 specifies that critical/significant findings are routed to the current phase, minor findings carry forward, and suggestions are deferred.

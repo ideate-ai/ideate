@@ -24,7 +24,8 @@ import {
   ALL_EDGE_TYPES,
   ValidationError,
   ImmutableFieldError,
-  MetricsEventRow,
+  ToolUsageFilter,
+  ToolUsageRow,
 } from "./adapter.js";
 import type { EdgeType } from "./schema.js";
 
@@ -453,12 +454,6 @@ export class ValidatingAdapter implements StorageAdapter {
     return this.inner.queryNodes(filter, limit, offset);
   }
 
-  async getMetricsEvents(filter?: NodeFilter): Promise<MetricsEventRow[]> {
-    // No input validation needed — all filter fields are optional and
-    // validated by the inner adapter's TypeScript-side filtering logic.
-    return this.inner.getMetricsEvents(filter);
-  }
-
   async indexFiles(paths: string[]): Promise<void> {
     // paths: must be an array
     if (!Array.isArray(paths)) {
@@ -635,6 +630,37 @@ export class ValidatingAdapter implements StorageAdapter {
       );
     }
     return this.inner.getConvergenceData(cycle);
+  }
+
+  async getToolUsage(filter?: ToolUsageFilter): Promise<ToolUsageRow[]> {
+    const rows = await this.inner.getToolUsage(filter);
+    // Validate output shape: each row must have required fields with correct types.
+    // This catches malformed adapter implementations before they propagate.
+    for (let i = 0; i < rows.length; i++) {
+      const row = rows[i];
+      if (typeof row.id !== "number") {
+        throw new ValidationError(
+          `getToolUsage row[${i}].id must be a number, got ${typeof row.id}`,
+          "INVALID_TOOL_USAGE_ROW",
+          { index: i, field: "id", value: row.id }
+        );
+      }
+      if (typeof row.tool_name !== "string") {
+        throw new ValidationError(
+          `getToolUsage row[${i}].tool_name must be a string, got ${typeof row.tool_name}`,
+          "INVALID_TOOL_USAGE_ROW",
+          { index: i, field: "tool_name", value: row.tool_name }
+        );
+      }
+      if (typeof row.timestamp !== "string") {
+        throw new ValidationError(
+          `getToolUsage row[${i}].timestamp must be a string, got ${typeof row.timestamp}`,
+          "INVALID_TOOL_USAGE_ROW",
+          { index: i, field: "timestamp", value: row.timestamp }
+        );
+      }
+    }
+    return rows;
   }
 
   // -------------------------------------------------------------------------

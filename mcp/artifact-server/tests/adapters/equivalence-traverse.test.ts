@@ -663,7 +663,6 @@ async function createHappyPathSetup(): Promise<HappyPathSetup> {
     "constraints",
     "modules",
     "research",
-    "metrics",
     "interviews",
     "projects",
     "phases",

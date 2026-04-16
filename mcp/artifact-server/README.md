@@ -24,7 +24,7 @@ Add to `.mcp.json` in your project root:
 
 ## Tools
 
-All 22 tools are scoped to a single project root configured at server startup.
+All 21 tools are scoped to a single project root configured at server startup.
 
 ### Read tools
 
@@ -39,9 +39,9 @@ All 22 tools are scoped to a single project root configured at server startup.
 | `ideate_get_convergence_status` | Open findings by severity; convergence assessment for a cycle |
 | `ideate_get_domain_state` | Domain knowledge: policies, decisions, questions, optionally filtered by domain |
 | `ideate_get_workspace_status` | Current cycle, work item counts, journal entries, open questions |
-| `ideate_get_metrics` | Aggregated metrics by agent, work item, or cycle scope |
 | `ideate_assemble_context` | PPR-ranked context assembled within a token budget from seed artifact IDs |
 | `ideate_get_next_id` | Next available ID for a given artifact type |
+| `ideate_get_tool_usage` | Query the `tool_usage` telemetry table: aggregates or detail rows, filtered by tool, session, cycle, phase, or timestamp range. Tokens are cl100k_base approximations; no latency is captured. |
 
 ### Write tools
 
@@ -53,10 +53,24 @@ All 22 tools are scoped to a single project root configured at server startup.
 | `ideate_update_work_items` | Update work item fields (status, scope, criteria, etc.) without full overwrite |
 | `ideate_write_artifact` | Write any artifact to the project store (findings, policies, decisions, phases, etc.) |
 | `ideate_emit_event` | Fire registered hooks for a lifecycle event |
-| `ideate_emit_metric` | **Deprecated (no-op)** — see D-211 / WI-790. Retained for backward compatibility; emission is disabled. |
 | `ideate_bootstrap_workspace` | Initialize workspace artifacts for a new project |
 | `ideate_manage_autopilot_state` | Get or update autopilot state for crash recovery and persistence |
 | `ideate_update_config` | Deep-merge a partial patch into the project config |
+
+## Tool usage reporting
+
+`ideate_get_tool_usage` supports three `view` modes: `aggregate`, `detail`, and `both`. When using `view: "both"`, the two sections have different truncation behavior. The `aggregate` section is always computed from the full result set — counts and token totals are exact regardless of the `limit` parameter (default 1000, max 10000). The `rows` (detail) section is capped at `limit`; if more rows exist, `truncated` is set to `true` and rows beyond the limit are omitted. In practice this means you can trust aggregate summaries even when the detail list is truncated:
+
+```json
+{
+  "aggregate": [{ "tool_name": "ideate_write_artifact", "count": 312, "request_tokens_total": 48200, ... }],
+  "rows": [ ...first 1000 rows... ],
+  "total_count": 1450,
+  "truncated": true
+}
+```
+
+To retrieve detail rows beyond the default limit, pass `limit: 5000` (up to 10000), or narrow the result set with a filter such as `cycle`, `phase`, or `from`/`to` timestamps.
 
 ## Architecture
 
@@ -75,14 +89,15 @@ src/
 ├── migrations.ts     # Schema version migrations
 ├── types.ts          # Shared TypeScript types
 └── tools/
-    ├── index.ts      # TOOLS array (all 22 definitions) and handleTool dispatcher
+    ├── index.ts      # TOOLS array (all 21 definitions) and handleTool dispatcher
+    ├── instrumentation.ts  # instrumentToolDispatch (fail-soft dispatch wrapper) + countTokens (cl100k_base)
+    ├── tool-usage.ts # ideate_get_tool_usage (operational telemetry queries)
     ├── context.ts    # ideate_get_artifact_context, ideate_get_context_package, ideate_assemble_context
     ├── query.ts      # ideate_artifact_query, ideate_get_next_id
     ├── execution.ts  # ideate_get_execution_status, ideate_get_review_manifest
     ├── analysis.ts   # ideate_get_convergence_status, ideate_get_domain_state, ideate_get_workspace_status
     ├── write.ts      # ideate_append_journal, ideate_archive_cycle, ideate_write_work_items, ideate_update_work_items, ideate_write_artifact
     ├── events.ts     # ideate_emit_event
-    ├── metrics.ts    # ideate_emit_metric, ideate_get_metrics
     ├── bootstrap.ts  # ideate_bootstrap_workspace
     ├── autopilot-state.ts  # ideate_manage_autopilot_state
     └── config.ts     # ideate_update_config, ideate_get_config

@@ -132,8 +132,6 @@ Execute according to the mode in the execution strategy (loaded by the controlle
 
 **Workspace rename on phase transition**: When a phase transition has occurred (i.e., the controller entered this cycle via Phase 6c-ii → Phase Transition in refine.md), update the workspace label by calling `ideate_manage_autopilot_state({action: "update", state: {workspace_label: "phase-{phases_completed}"}})`. This is informational — it tags the session state so activity reports can group work by phase. Best-effort: if the call fails, continue without interruption.
 
-**Metrics**: After each worker agent returns, emit a metric via `ideate_emit_metric({payload: {phase: "6a", agent_type: "worker", ...}})` (full field schema in controller SKILL.md). Best-effort only: if the call fails, continue without interruption. **Token and turn count fields**: Set `turns_used`, `input_tokens`, `output_tokens`, `cache_read_tokens`, `cache_write_tokens` to `null`. These fields are not extractable from Agent tool responses — the Agent tool returns only the subagent's final text, not its token usage. When hook-based extraction is implemented (via SubagentStop hooks), these instructions will be updated. Include `mcp_tools_called` (array of MCP tool names used to assemble context for the spawn, or `[]` if none). Before each Agent tool call, record which MCP tool calls (if any) were made to assemble context for that spawn. Set `outcome`, `finding_count`, `finding_severities`, `first_pass_accepted` to `null` for worker entries. Set `rework_count` to the number of fix-and-re-review cycles completed for this work item (0 if first review passed without rework). **Budget warning**: This warning is currently inactive because `turns_used` is null. It will activate when hook-based turn extraction is implemented. If `turns_used` is non-null and the worker's maxTurns is known, and `turns_used / maxTurns > 0.80`, append to the journal entry for this work item: `Agent worker used {turns_used}/{maxTurns} turns ({pct}%) — near budget limit`.
-
 ### Incremental Review (Per Work Item)
 
 When a work item completes, spawn the `ideate:code-reviewer` agent with:
@@ -154,7 +152,7 @@ Include the following in the code-reviewer's prompt:
   >
   > **Dynamic testing (incremental scope)**: After your static review, perform the dynamic checks defined in your agent instructions under "Step 2 — Incremental review scope (single work item)". Discover the project's test model, run the smoke test, and run tests scoped to the changed files. If the smoke test fails, report a Critical finding titled "Startup failure after [work item name]".
 
-Write the result via `ideate_write_artifact({type: "finding", id: "F-{WI}-{SEQ}", content: {cycle: {cycle_number}, work_item: "{WI}", content: <findings from response>}})`. After the code-reviewer returns, emit a metric via `ideate_emit_metric({payload: {phase: "6a", agent_type: "code-reviewer", ...}})`. Best-effort only: if the call fails, continue without interruption. **Token and turn count fields**: Set `turns_used`, `input_tokens`, `output_tokens`, `cache_read_tokens`, `cache_write_tokens` to `null` (not extractable from Agent tool responses). Include `mcp_tools_called` (array of MCP tool names used to assemble context, or `[]` if none). Also set: `outcome` to `"pass"`, `"rework"`, or `"fail"` based on the review verdict and whether rework was required; `finding_count` to the total number of findings across all severities from the review (null if output cannot be parsed); `finding_severities` to `{"critical": N, "significant": N, "minor": N}` (null if output cannot be parsed); `first_pass_accepted` to `true` if the review passes with no rework required, `false` otherwise; `rework_count` to `null`. (Full field schema in controller SKILL.md.)
+Write the result via `ideate_write_artifact({type: "finding", id: "F-{WI}-{SEQ}", content: {cycle: {cycle_number}, work_item: "{WI}", content: <findings from response>}})`.
 
 **Review format**:
 
@@ -296,7 +294,6 @@ Return to the controller. The controller will proceed to Phase 6b (review.md).
 - Work item status — updated to 'done' for each completed item, via `ideate_update_work_items`
 - Autopilot session state — `total_items_executed` and `workspace_label` updated via `ideate_manage_autopilot_state`
 - Proxy-human decisions (PHD-{cycle}-{seq}) — if Andon events occurred, via `ideate_write_artifact` with type `proxy_human_decision`
-- Metrics — one entry per agent spawned, via `ideate_emit_metric`
 
 ## Self-Check
 

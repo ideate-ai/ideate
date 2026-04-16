@@ -159,12 +159,6 @@ describe("WI-645: nextId cycle parameter validation", () => {
         summary TEXT
       );
 
-      CREATE TABLE IF NOT EXISTS metrics_events (
-        node_id TEXT PRIMARY KEY,
-        event_name TEXT,
-        event_data TEXT
-      );
-
       CREATE TABLE IF NOT EXISTS interview_questions (
         node_id TEXT PRIMARY KEY,
         interview_id TEXT,

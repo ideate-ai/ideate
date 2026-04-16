@@ -13,7 +13,10 @@
 
 import Database from "better-sqlite3";
 import { drizzle, BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
+import * as crypto from "crypto";
+import * as fs from "fs";
 import * as path from "path";
+import { parse as parseYaml } from "yaml";
 import type { ToolContext } from "./types.js";
 import type { StorageAdapter } from "./adapter.js";
 import { LocalAdapter } from "./adapters/local/index.js";
@@ -89,6 +92,47 @@ export function selectAdapter(
 }
 
 // ---------------------------------------------------------------------------
+// readTelemetryContext — source session_id, cycle, phase from best-available
+// authority at server startup.
+//
+// - session_id: a UUID generated fresh for each server process startup. Stable
+//   for the lifetime of this MCP server process.
+// - cycle: read from autopilot-state.yaml (last_cycle), or null if absent.
+// - phase: read from autopilot-state.yaml (last_phase), or null if absent.
+// ---------------------------------------------------------------------------
+
+export interface TelemetryContext {
+  session_id: string;
+  cycle: number | null;
+  phase: string | null;
+}
+
+export function readTelemetryContext(dir: string): TelemetryContext {
+  const session_id = crypto.randomUUID();
+
+  const statePath = path.join(dir, "autopilot-state.yaml");
+  let cycle: number | null = null;
+  let phase: string | null = null;
+
+  try {
+    const raw = fs.readFileSync(statePath, "utf8");
+    const parsed = parseYaml(raw) as Record<string, unknown> | null;
+    if (parsed && typeof parsed === "object") {
+      if (typeof parsed["last_cycle"] === "number") {
+        cycle = parsed["last_cycle"] as number;
+      }
+      if (typeof parsed["last_phase"] === "string") {
+        phase = parsed["last_phase"] as string;
+      }
+    }
+  } catch {
+    // autopilot-state.yaml absent or unreadable — leave cycle/phase null
+  }
+
+  return { session_id, cycle, phase };
+}
+
+// ---------------------------------------------------------------------------
 // openDatabase — create + configure a SQLite DB in the given directory
 // ---------------------------------------------------------------------------
 
@@ -144,11 +188,19 @@ export function initServer(dir: string, state: ServerState): void {
     const rawAdapter = selectAdapter(dir);
     const adapter = new ValidatingAdapter(rawAdapter);
 
+    const telemetry = readTelemetryContext(dir);
+
     state.ideateDir = dir;
     state.db = null;
     // db and drizzleDb are intentionally absent for remote backend.
     // Production tool code routes through adapter only and does not access ctx.db.
-    state.ctx = { ideateDir: dir, adapter };
+    state.ctx = {
+      ideateDir: dir,
+      adapter,
+      session_id: telemetry.session_id,
+      cycle: telemetry.cycle,
+      phase: telemetry.phase,
+    };
 
     signalIndexReady();
     log.info("server", "initialized (remote backend, no local index)");
@@ -171,10 +223,20 @@ export function initServer(dir: string, state: ServerState): void {
   const rawAdapter = selectAdapter(dir, newDb, newDrizzle);
   const adapter = new ValidatingAdapter(rawAdapter);
 
+  const telemetry = readTelemetryContext(dir);
+
   // Commit state
   state.ideateDir = dir;
   state.db = newDb;
-  state.ctx = { db: newDb, drizzleDb: newDrizzle, ideateDir: dir, adapter };
+  state.ctx = {
+    db: newDb,
+    drizzleDb: newDrizzle,
+    ideateDir: dir,
+    adapter,
+    session_id: telemetry.session_id,
+    cycle: telemetry.cycle,
+    phase: telemetry.phase,
+  };
 
   signalIndexReady();
   log.info("server", `initialized, ${stats.files_scanned} files indexed`);

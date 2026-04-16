@@ -1,10 +1,12 @@
 id: code-quality
 type: cycle_summary
 reviewer: code-reviewer
-content: |-
-  ## Verdict: Fail
+content: |
+  # Capstone Code Review — PH-048 Quality Metrics Rebuild (Cycle 28)
 
-  WI-832 codified the P-87 recovery protocol but left P-87's own verification criterion partially unmet: the execute.md worker prompt does not include the explicit 'do not write .ideate/ directly' prohibition that P-87 requires worker-spawning skills to contain.
+  ## Verdict: Pass
+
+  All 17 work items in PH-048 produced code that is correct, well-tested, and free of critical defects. The full test suite passes (1432 tests, 0 failures). TypeScript compiles cleanly. Metrics removal is complete with no dead code. The dispatch wrapper's fail-soft guarantee is correctly implemented. The findings below are minor issues that affect documentation accuracy, test coverage gaps, or silent edge-case behavior — none cause incorrect production behavior.
 
   ## Critical Findings
 
@@ -12,51 +14,64 @@ content: |-
 
   ## Significant Findings
 
-  ### S1: P-87 verification criterion not satisfied — execute.md worker prompt missing .ideate/ write prohibition
-  - **File**: skills/autopilot/phases/execute.md:78-86
-  - **Issue**: P-87's verification states: 'At design time, ensure worker-spawning skills instruct workers not to write .ideate/ directly.' The worker-prompt list in execute.md contains seven bullets but none prohibit direct .ideate/ writes. The GP-14 enforcement paragraph at line 51 addresses the parent orchestrator's MCP calls, not the worker's behavior.
-  - **Impact**: Workers will continue to fall back to Write/Edit for .ideate/ mutations because their prompt does not prohibit it. Every such violation requires parent re-sync, but the root cause persists.
-  - **Suggested fix**: Add to the worker-prompt list: 'Do not write files under .ideate/ directly — all .ideate/ mutations must go through MCP tools (ideate_write_artifact, ideate_update_work_items, ideate_append_journal).'
+  None.
 
   ## Minor Findings
 
-  ### M1: Dead reference to non-existent adapter-interface.md in test comment
-  - **File**: mcp/artifact-server/src/__tests__/remote-adapter.test.ts:222
-  - **Issue**: Comment references 'adapter-interface.md Section 7' but the file does not exist under docs/. Actual docs: adapter-contract.md, ppr-alignment-research.md, tls-configuration.md.
-  - **Fix**: Update reference to adapter-contract.md or remove.
+  ### M1: `session_id`, `cycle`, `phase` are never populated in production but this is undocumented at the API surface
 
-  ### M2: Test D assertion does not verify specific error code
-  - **File**: mcp/artifact-server/src/__tests__/remote-adapter.test.ts:356
-  - **Issue**: Assertion 'err instanceof StorageAdapterError' is too weak. ConnectionError extends StorageAdapterError, so the assertion passes even if the wrong error type is thrown.
-  - **Fix**: Add 'err.code === "HTTP_401"' check alongside instance check.
+  - **File**: `mcp/artifact-server/src/types.ts:11`
+  - **Issue**: The comment says "Not wired from server.ts yet — that is a follow-up work item." `server.ts` constructs `ToolContext` at line 170 (`state.ctx = { db: newDb, drizzleDb: newDrizzle, ideateDir: dir, adapter }`) with no `session_id`, `cycle`, or `phase`. Every `tool_usage` row will have `NULL` for these three columns until the follow-up work item ships. The MCP tool's `inputSchema` advertises `session_id`, `cycle`, and `phase` as useful filter fields (tools/index.ts:253-255), and `ARCHITECTURE.md:484` describes them as active context — but they are non-functional silently.
+  - **Suggested fix**: Add a comment to the `inputSchema` properties for `session_id`, `cycle`, and `phase` in `tools/index.ts` noting they are not yet populated by the server and will always return no filtered results. Alternatively, track the follow-up as a work item with an explicit WI identifier referenced from `types.ts`.
 
-  ### M3: WI-831 regression test fixture uses different id pattern than WI-797 fixture
-  - **File**: mcp/artifact-server/src/__tests__/tools.test.ts:1117
-  - **Issue**: WI-831 fixture (cycle 204) uses id:spec-adherence-204; WI-797 fixture (cycle 200) uses id:spec-adherence unsuffixed. Inconsistent pattern for future fixture authors.
-  - **Fix**: Normalize cycle 200 fixture to id:spec-adherence-200.
+  ### M2: Report script ignores `config.backend` and always uses `LocalAdapter`
 
-  ### M4: executeOnceWithAuth does not wrap fetch() network errors as ConnectionError
-  - **File**: mcp/artifact-server/src/adapters/remote/client.ts:347
-  - **Issue**: executeOnceWithAuth calls fetch() without try/catch. A network failure on the post-rotation retry throws a raw TypeError that bypasses isRetryableError and propagates as an unclassified error. Sibling executeOnce wraps correctly at 260-274.
-  - **Fix**: Wrap fetch() call identically to executeOnce.
+  - **File**: `scripts/report-tool-usage.sh:151-170`
+  - **Issue**: The script unconditionally instantiates `new LocalAdapter(...)`. If a workspace is configured with `config.backend = "remote"`, the script opens the local `index.db` (which has no `tool_usage` rows for a remote-backend workspace) and silently reports zero rows rather than forwarding to the remote adapter or emitting an error.
+  - **Suggested fix**: After importing `server.js`, use `selectAdapter()` (already exported from `server.ts`) instead of hardcoding `LocalAdapter`. If the selected adapter is `RemoteAdapter`, either delegate properly or print a clear message: `Error: --report-tool-usage is not supported for remote backends.` and exit non-zero.
 
-  ## Test Results
-  - TypeScript: clean
-  - Test suite: 1440 passed, 339 skipped (equivalence tests need live server)
+  ### M3: `getToolUsage` is absent from the `adapter-contract.test.ts` contract test suite
+
+  - **File**: `mcp/artifact-server/src/__tests__/adapter-contract.test.ts` (method is entirely absent)
+  - **Issue**: `adapter-contract.test.ts` defines the behavioral contract that all `StorageAdapter` implementations must satisfy. `getToolUsage` is the only adapter method added in this phase that is not tested there. A future `RemoteAdapter` implementation could return rows in a different order, omit fields, or handle missing filters differently and the contract test would not catch it. The dedicated `local-getToolUsage.test.ts` and `tool-usage-tool.test.ts` cover the local path, but they do not substitute for the contract test's role.
+  - **Suggested fix**: Add a `getToolUsage` block to `runAdapterContractTests()` in `adapter-contract.test.ts` covering: (a) no filter returns all rows ordered by timestamp ASC; (b) `tool_name` filter; (c) `from`/`to` range (inclusive); (d) empty result for non-matching filter.
+
+  ### M4: `both`-view truncation behavior (aggregate covers all rows, detail covers only `limit` rows) is undocumented
+
+  - **File**: `mcp/artifact-server/src/tools/tool-usage.ts:153-161`
+  - **Issue**: In `view="both"` with truncation active, `aggregate` totals span all matched rows while `rows` is sliced to `limit`. A caller reading `rows` and computing their own totals will get a different number from `aggregate`. Neither `ARCHITECTURE.md:507` nor the GraphQL schema's `ToolUsageResult` comments explain that aggregate is computed from the full result set, not the truncated `rows` slice. The `both`-view test at `tool-usage-tool.test.ts:226` does not exercise the truncated case.
+  - **Suggested fix**: Add a JSDoc note above the `// view === "both"` branch at line 153 of `tool-usage.ts`: `// aggregate covers the full matched set; rows is the truncated slice. Callers must use total_count to determine if rows is incomplete.` Add a test case: `view: "both", limit: 2` against 5 seeded rows, asserting `rows.length === 2`, `total_count === 5`, `truncated === true`, and `aggregate[*].count` summing to 5 (not 2).
+
+  ### M5: `tools.test.ts` header says "11 tool handlers" — stale after PH-048 additions
+
+  - **File**: `mcp/artifact-server/src/__tests__/tools.test.ts:2`
+  - **Issue**: The file comment reads `Integration tests for all 11 tool handlers.` The file now contains describe blocks for at least 18 distinct handlers plus `ideate_get_config` tested via `handleTool`. `handleGetToolUsage` is not tested in this file at all.
+  - **Suggested fix**: Update the header to reflect the current number of handlers covered, and add `handleGetToolUsage` to the file or note its dedicated test file (`tool-usage-tool.test.ts`).
+
+  ### M6: Report script `--limit 0` silently reverts to 1000
+
+  - **File**: `scripts/report-tool-usage.sh:77-80` and `mcp/artifact-server/src/tools/tool-usage.ts:87-89`
+  - **Issue**: The bash validation accepts `0` as a valid value for `--limit` (regex `^[0-9]+$` matches `"0"`; error message says "positive integer" but 0 is not positive). When `LIMIT=0` is passed to the inline Node script, `if (env.LIMIT)` evaluates as true (string `"0"` is truthy in JS), so `args.limit = 0` is set. In `tool-usage.ts`, `rawLimit <= 0` maps to `limit = 1000`. The user sees 1000 rows when they specified 0.
+  - **Suggested fix**: Change the bash validation regex to `^[1-9][0-9]*$` (excludes zero), or change the Node script check to `if (env.LIMIT && env.LIMIT !== "0")`.
+
+  ## Unmet Acceptance Criteria
+
+  None.
 
   ## Requires Human Review
-  - P-87.yaml written via MCP (ideate_write_artifact), not direct Write tool call. The file is untracked, no git history. Static review cannot confirm the write tool used; MCP call log or autopilot session journal for cycle 9 must be checked.
-content_hash: 3573d063d1e7ba7f91c97f0ad0459f4b80d4b7ca4424bad09102b9754e383474
-token_count: 1243
+
+  None. All acceptance criteria in the phase scope are machine-verifiable, and all were verified by dynamic test execution or static code inspection.
+content_hash: d1cedfb3d0ba87c0ac0479b777336fef1736b5161a8cd9f0a9e4c430a4f1660f
+token_count: 1935
 file_path: .ideate/cycles/068/code-quality.yaml
 verdict: Pass
 phase: PH-046
 scope: differential cycle 8 (commits b799ccc..3377298)
-summary: Cycle 8 delta is functionally correct. All 99 adapter-contract tests pass; tsc clean. Doc-vs-code discrepancies are limited to selectAdapter type-parameter omissions and a misleading test comment. No Critical or Significant findings.
+summary: "M1: Test comment line range stale after WI-841. M2: Version history table incomplete. All 1444 tests pass."
 findings:
   critical: 0
   significant: 0
-  minor: 4
+  minor: 2
 cycle: 28
 cycle_modified: 27
 review_mode: full

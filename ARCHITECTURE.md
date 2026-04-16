@@ -175,7 +175,6 @@ Each extension table has `id TEXT PRIMARY KEY REFERENCES nodes(id) ON DELETE CAS
 | `module_specs` | `module_spec` | `name`, `scope`, `provides` (JSON), `requires` (JSON), `boundary_rules` (JSON) |
 | `research_findings` | `research_finding` | `topic`, `date`, `content`, `sources` (JSON) |
 | `journal_entries` | `journal_entry` | `phase`, `date`, `title`, `work_item`, `content` |
-| `metrics_events` | `metrics_event` | `event_name`, `timestamp`, `payload` (JSON) |
 | `interview_questions` | `interview_question` | `interview_id`, `question`, `answer`, `domain`, `seq` |
 | `proxy_human_decisions` | `proxy_human_decision` | `cycle`, `trigger`, `triggered_by` (JSON), `decision`, `rationale`, `status` |
 | `document_artifacts` | `decision_log`, `cycle_summary`, `review_manifest`, `architecture`, `overview`, `execution_strategy`, `guiding_principles`, `constraints`, `research`, `interview` | `title`, `cycle`, `content` |
@@ -373,7 +372,9 @@ interface ToolContext {
 
 The raw `db` is used for recursive CTE queries and other SQL that Drizzle cannot express. `drizzleDb` is used for CRUD operations. Both operate on the same underlying SQLite file.
 
-### 22 tools in 10 categories
+### 21 tools in 10 categories
+
+Phase PH-048 adjusted this surface: two legacy metrics tools (`ideate_emit_metric`, `ideate_get_metrics`) were removed and one narrowly-scoped telemetry tool (`ideate_get_tool_usage`) was added, for a net change of −1 from the pre-phase baseline of 22. See [MCP boundary instrumentation](#mcp-boundary-instrumentation) below.
 
 ```
 Context tools (3)
@@ -394,6 +395,9 @@ Analysis tools (3)
   ideate_get_domain_state         — policies + decisions + questions for one or more domains
   ideate_get_workspace_status       — high-level summary: cycle, work item counts, recent journal
 
+Telemetry tools (1)
+  ideate_get_tool_usage           — query the tool_usage table (aggregate / detail / both), filtered by tool, session, cycle, phase, or timestamp range
+
 Write tools (5)
   ideate_append_journal           — Append entry to the project journal. Use after significant work. Returns confirmation string.
   ideate_archive_cycle            — Archive a completed review cycle with its summary artifacts. Use after review completes. Returns confirmation string.
@@ -403,10 +407,6 @@ Write tools (5)
 
 Events tools (1)
   ideate_emit_event               — fire hooks registered for a given event name
-
-Metrics tools (2) — soft-deprecated as of WI-790 (see D-211)
-  ideate_get_metrics              — historical reads from the metrics_events SQLite table; functional for backward-compatible access.
-  ideate_emit_metric              — no-op; emission is disabled but the tool stays registered to avoid breaking existing skill code. New analytics must not depend on metric emission.
 
 Config tools (2)
   ideate_get_config               — Parsed project config with defaults (agent_budgets, model_overrides, ppr). Use for token budget, model selection, and PPR settings. Returns JSON config object.
@@ -431,7 +431,7 @@ New MCP tools require unit tests before merge. Test files are co-located with so
 - Error paths: missing required parameters, invalid inputs
 - Edge cases: empty inputs, boundary conditions
 
-Critical infrastructure tools (events, metrics, bootstrap, index) must have complete test coverage. Tests follow the vitest pattern established in `tools.test.ts` — each test creates a fresh temp-file SQLite database with `createSchema` applied and a ToolContext assembled from the temp DB and artifact directory.
+Critical infrastructure tools (events, bootstrap, index, telemetry) must have complete test coverage. Tests follow the vitest pattern established in `tools.test.ts` — each test creates a fresh temp-file SQLite database with `createSchema` applied and a ToolContext assembled from the temp DB and artifact directory.
 
 ### Hybrid query pattern
 
@@ -466,6 +466,47 @@ skill calls ideate_write_work_items
   → upsertNode() + upsertExtension() + extractEdges()
   → return YAML results list with id and result
 ```
+
+### MCP boundary instrumentation
+
+The server captures operational telemetry for every MCP tool call at the dispatch boundary. The design is narrow and deliberately scoped to call-level accounting — not domain knowledge, not agent-side emission, and not latency.
+
+**What is captured.** Every tool invocation records one row into the `tool_usage` SQLite table with the following columns:
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `id` | INTEGER PK | Autoincrement row identifier |
+| `tool_name` | TEXT | The MCP tool called (e.g. `ideate_artifact_query`) |
+| `request_tokens` | INTEGER NULL | cl100k_base token count of the serialized arguments |
+| `response_tokens` | INTEGER NULL | cl100k_base token count of the serialized response |
+| `request_bytes` | INTEGER | Byte length of `JSON.stringify(args)` |
+| `response_bytes` | INTEGER | Byte length of `JSON.stringify(response)` |
+| `session_id` | TEXT NULL | Session identifier from `ToolContext`, if set |
+| `cycle` | INTEGER NULL | Cycle number from `ToolContext`, if set |
+| `phase` | TEXT NULL | Phase ID from `ToolContext`, if set |
+| `timestamp` | TEXT | ISO 8601 instant when the tool was invoked |
+
+`tool_usage` is a standalone operational table — it is not part of the artifact graph (P-33). It has no foreign-key relationships with `nodes` and is not reflected in the edges table or the indexer. Per D-210, it lives outside the node/extension schema because the telemetry describes runtime behaviour, not planning artifacts.
+
+**What is NOT captured, and why.**
+
+- **Latency / duration**: intentionally omitted. Wall-clock time varies with machine load and does not reliably reflect tool cost. Token/byte counts are the stable cost signal we care about.
+- **Agent-side emission**: the deprecated `ideate_emit_metric` path was removed in PH-048 per D-211. Agents no longer emit metrics directly; all telemetry originates at the server's MCP boundary.
+- **Exact Anthropic token counts**: `request_tokens` / `response_tokens` are cl100k_base approximations produced by `js-tiktoken`. They do not match the exact token counts Anthropic bills on. They are a consistent *relative* measure suitable for trend analysis, regression detection, and workload profiling — not for cost reconciliation.
+
+**Dispatch wrapper.** `instrumentToolDispatch` (`src/tools/instrumentation.ts`) wraps every tool handler in the dispatch switch. It:
+
+1. Captures `JSON.stringify(args)` and computes request bytes/tokens.
+2. Awaits the handler.
+3. On success, captures `JSON.stringify(result)` and computes response bytes/tokens.
+4. On handler throw, stringifies the error (`{"error": "..."}`) and captures its bytes/tokens, then re-throws the original error.
+5. Inserts one row into `tool_usage` via `insertToolUsage`.
+
+**Fail-soft guarantee.** If the telemetry insert itself fails, the error is caught, logged via `log.warn`, and swallowed. The handler's result (or error) is still returned to the caller. Telemetry failures never break tool calls. The wrapper also short-circuits when `ctx.drizzleDb` is absent (bootstrap / dormant mode): the handler runs normally, and no row is recorded.
+
+**Query surface: `ideate_get_tool_usage`.** The telemetry query tool delegates to `ctx.adapter.getToolUsage(filter)` and returns aggregate rollups, raw detail rows, or both, as JSON. Filter fields (all optional, AND-combined): `tool_name`, `session_id`, `cycle`, `phase`, `from` (ISO lower bound), `to` (ISO upper bound). View options: `aggregate` (default), `detail`, `both`. Detail view caps rows at `limit` (default 1000, max 10000) and reports `total_count` plus a `truncated` flag.
+
+**Report script.** `scripts/report-tool-usage.sh` is the operator-facing wrapper around `ideate_get_tool_usage`. It parses `--cycle`, `--phase`, `--session`, `--tool`, `--from`, `--to`, `--limit`, and `--top` flags; locates the workspace `.ideate/` directory by walking up from the current directory; invokes the adapter through the built server; and renders a human-readable report with totals, top-N most-called tools, and a per-tool breakdown table.
 
 ### StorageAdapter
 
@@ -788,14 +829,13 @@ Based on the context assembly research (`context-assembly-strategies.yaml`, Ques
 | `mcp/artifact-server/src/watcher.ts` | `ArtifactWatcher` class (chokidar wrapper with debounce) |
 | `mcp/artifact-server/src/hooks.ts` | Hook registry loading, execution, variable substitution, `fireEvent` |
 | `mcp/artifact-server/src/ppr.ts` | Personalized PageRank (`computePPR`) for context assembly from seed nodes |
-| `mcp/artifact-server/src/tools/index.ts` | `ToolContext`, TOOLS array (22 definitions), `handleTool` dispatcher |
+| `mcp/artifact-server/src/tools/index.ts` | `ToolContext`, TOOLS array (20 definitions), `handleTool` dispatcher |
 | `mcp/artifact-server/src/tools/context.ts` | `handleGetWorkItemContext`, `handleGetContextPackage`, `handleAssembleContext` |
 | `mcp/artifact-server/src/tools/query.ts` | `ideate_artifact_query` (filter mode + recursive CTE traversal), `ideate_get_next_id` (cycle-scoped ID generation) |
 | `mcp/artifact-server/src/tools/execution.ts` | `ideate_get_execution_status`, `ideate_get_review_manifest` |
 | `mcp/artifact-server/src/tools/analysis.ts` | `ideate_get_convergence_status`, `ideate_get_domain_state`, `ideate_get_workspace_status` (with `view` param: workspace/project/phase), `buildProjectView`, `buildPhaseView` |
 | `mcp/artifact-server/src/tools/write.ts` | `ideate_append_journal`, `ideate_archive_cycle`, `ideate_write_work_items`, `ideate_update_work_items`, `ideate_write_artifact` |
 | `mcp/artifact-server/src/tools/events.ts` | `ideate_emit_event` (hook dispatch) |
-| `mcp/artifact-server/src/tools/metrics.ts` | `ideate_get_metrics` (agent/work_item/cycle aggregations) |
 | `mcp/artifact-server/src/tools/autopilot-state.ts` | `ideate_manage_autopilot_state` (get or update autopilot session state) |
 | `mcp/artifact-server/src/tools/config.ts` | `handleUpdateConfig` (deep-merge patch into config.json with validation) |
 | `mcp/artifact-server/src/adapter.ts` | `StorageAdapter` interface, error classes (`StorageAdapterError`, `NotFoundError`, etc.), `selectAdapter` factory |

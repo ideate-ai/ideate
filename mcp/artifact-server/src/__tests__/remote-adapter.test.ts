@@ -18,6 +18,7 @@ import { selectAdapter } from "../server.js";
 import { RemoteAdapter } from "../adapters/remote/index.js";
 import { ConnectionError, StorageAdapterError } from "../adapter.js";
 import { GraphQLClient } from "../adapters/remote/client.js";
+import { log } from "../logger.js";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -429,6 +430,38 @@ describe("tokenProvider 401 rotation", () => {
         (err as StorageAdapterError).code === "AUTH_FAILURE" &&
         (err as StorageAdapterError).message.includes("fake-endpoint");
     });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// getToolUsage stub (WI-855)
+// ---------------------------------------------------------------------------
+
+describe("RemoteAdapter.getToolUsage — stub behavior", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("returns an empty array without contacting the remote backend", async () => {
+    const adapter = new RemoteAdapter({
+      endpoint: "http://fake-endpoint/graphql",
+      org_id: "test-org",
+      codebase_id: "test-codebase",
+    });
+
+    // Ensure no HTTP call is made — the stub should short-circuit.
+    const fetchSpy = vi.spyOn(globalThis, "fetch");
+    // Guard the observability requirement: the spec requires log.warn on the stub path.
+    const warnSpy = vi.spyOn(log, "warn").mockImplementation(() => {});
+
+    const rows = await adapter.getToolUsage();
+    expect(rows).toEqual([]);
+
+    const rowsFiltered = await adapter.getToolUsage({ tool_name: "ideate_query" });
+    expect(rowsFiltered).toEqual([]);
+
+    expect(fetchSpy).not.toHaveBeenCalled();
+    expect(warnSpy).toHaveBeenCalledWith("remote", expect.stringContaining("stub"));
   });
 });
 

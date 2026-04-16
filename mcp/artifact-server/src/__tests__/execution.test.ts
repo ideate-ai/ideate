@@ -42,7 +42,6 @@ beforeEach(async () => {
     "constraints",
     "modules",
     "research",
-    "metrics",
     "interviews",
     "projects",
     "phases",

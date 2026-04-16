@@ -737,7 +737,8 @@ Count nodes grouped by a dimension. Filter by type, status, etc. Return array of
 - Null keys become `"unknown"`.
 
 **Current RemoteAdapter behavior**:
-- Sends `nodeCounts(filter, groupBy)` query.
+- For `severity` grouping with `filter.type === 'finding'`: uses `artifactQuery` to fetch all finding nodes for the cycle (up to 10000-result cap), then applies a client-side post-filter to exclude resolved findings (`addressed_by !== null && addressed_by !== undefined`), and aggregates by severity. This matches the 2-clause exclusion rule in `_countFindingsBySeverity` (introduced by WI-871), treating empty string `""` as resolved (both clauses pass, so `continue` executes).
+- For all other group_by values: sends `nodeCounts(filter, groupBy)` query.
 
 **Server behavior** (`resolvers/queries/status.ts`):
 - Builds Cypher with GROUP BY on the mapped property field.
@@ -813,8 +814,8 @@ Return finding counts by severity for a cycle, and the cycle summary document co
 - Reads content from the `da_content` column of `document_artifacts`; if the JSON blob has a `content` string field, that field value is returned. Otherwise the raw blob is returned.
 
 **Current RemoteAdapter behavior**:
-- Sends `convergenceStatus(cycleNumber)` query.
-- Maps `findingsBySeverity` array to a Record.
+- Finding counts: uses `artifactQuery` to fetch all finding nodes for the cycle (up to 10000-result cap), then applies a client-side post-filter (`addressed_by !== null && addressed_by !== undefined`) to exclude resolved findings — including empty-string `addressed_by` values (both clauses pass, so `continue` executes). Aggregates remaining findings by severity.
+- Cycle summary content: delegates to `convergenceStatus(cycleNumber)` query, then parses the JSON blob to extract the inner `content` string field if present (WI-860 fix).
 
 **Server behavior** (`resolvers/queries/status.ts`):
 - Queries Finding nodes with matching cycle and org.

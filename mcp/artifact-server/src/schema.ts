@@ -5,8 +5,8 @@ import * as fs from "fs";
 // Schema version
 // ---------------------------------------------------------------------------
 
-// SQLite user_version for the artifact index schema. Note: CONFIG_SCHEMA_VERSION in config.ts is a separate version for the .ideate/config.json format (D-79).
-export const CURRENT_SCHEMA_VERSION = 5;
+// SQLite user_version for the artifact index schema. CONFIG_SCHEMA_VERSION in config.ts must stay synced (asserted by config.test.ts:46).
+export const CURRENT_SCHEMA_VERSION = 7;
 
 // ---------------------------------------------------------------------------
 // Edge type enumeration
@@ -77,7 +77,7 @@ export const EDGE_TYPE_REGISTRY: Record<EdgeType, EdgeTypeSpec> = {
   },
   relates_to: {
     description: "Artifact relates to a specific work item",
-    source_types: ["finding", "metrics_event", "journal_entry"],
+    source_types: ["finding", "journal_entry"],
     target_types: ["work_item"],
     yaml_field: "work_item",
   },
@@ -272,31 +272,6 @@ export interface JournalEntry extends ArtifactCommon {
   content: string;
 }
 
-export interface MetricsEvent extends ArtifactCommon {
-  type: "metrics_event";
-  event_name: string;
-  timestamp: string;
-  payload: Record<string, unknown>;
-  // Token accounting
-  input_tokens?: number;
-  output_tokens?: number;
-  cache_read_tokens?: number;
-  cache_write_tokens?: number;
-  // Output quality signals
-  outcome?: string;
-  finding_count?: number;
-  finding_severities?: string;
-  first_pass_accepted?: number;
-  rework_count?: number;
-  // Cycle-level aggregates
-  work_item_total_tokens?: number;
-  cycle_total_tokens?: number;
-  cycle_total_cost_estimate?: string;
-  convergence_cycles?: number;
-  // Context composition
-  context_artifact_ids?: string;
-}
-
 export interface DocumentArtifact extends ArtifactCommon {
   type:
     | "decision_log"
@@ -376,7 +351,6 @@ export type Artifact =
   | ModuleSpec
   | ResearchFinding
   | JournalEntry
-  | MetricsEvent
   | DocumentArtifact
   | InterviewQuestion
   | ProxyHumanDecision
@@ -563,30 +537,6 @@ export function createSchema(db: Database.Database): void {
       )
     `);
 
-    // -- metrics_events --
-    db.exec(`
-      CREATE TABLE IF NOT EXISTS metrics_events (
-        id                         TEXT PRIMARY KEY REFERENCES nodes(id) ON DELETE CASCADE,
-        event_name                 TEXT NOT NULL,
-        timestamp                  TEXT,
-        payload                    TEXT,
-        input_tokens               INTEGER,
-        output_tokens              INTEGER,
-        cache_read_tokens          INTEGER,
-        cache_write_tokens         INTEGER,
-        outcome                    TEXT,
-        finding_count              INTEGER,
-        finding_severities         TEXT,
-        first_pass_accepted        INTEGER,
-        rework_count               INTEGER,
-        work_item_total_tokens     INTEGER,
-        cycle_total_tokens         INTEGER,
-        cycle_total_cost_estimate  TEXT,
-        convergence_cycles         INTEGER,
-        context_artifact_ids       TEXT
-      )
-    `);
-
     // -- document_artifacts --
     db.exec(`
       CREATE TABLE IF NOT EXISTS document_artifacts (
@@ -659,6 +609,27 @@ export function createSchema(db: Database.Database): void {
       )
     `);
     db.exec(`CREATE INDEX IF NOT EXISTS idx_phases_project ON phases(project)`);
+
+    // ----- tool_usage — standalone operational telemetry table -----
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS tool_usage (
+        id              INTEGER PRIMARY KEY AUTOINCREMENT,
+        tool_name       TEXT NOT NULL,
+        request_tokens  INTEGER,
+        response_tokens INTEGER,
+        request_bytes   INTEGER NOT NULL,
+        response_bytes  INTEGER NOT NULL,
+        session_id      TEXT,
+        cycle           INTEGER,
+        phase           TEXT,
+        timestamp       TEXT NOT NULL
+      )
+    `);
+    db.exec(`CREATE INDEX IF NOT EXISTS idx_tool_usage_tool_name ON tool_usage(tool_name)`);
+    db.exec(`CREATE INDEX IF NOT EXISTS idx_tool_usage_timestamp ON tool_usage(timestamp)`);
+    db.exec(`CREATE INDEX IF NOT EXISTS idx_tool_usage_session ON tool_usage(session_id)`);
+    db.exec(`CREATE INDEX IF NOT EXISTS idx_tool_usage_cycle ON tool_usage(cycle)`);
+    db.exec(`CREATE INDEX IF NOT EXISTS idx_tool_usage_phase ON tool_usage(phase)`);
 
     // ----- Universal edges table -----
     db.exec(`

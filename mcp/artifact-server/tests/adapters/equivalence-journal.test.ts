@@ -57,7 +57,6 @@ async function createJournalTestSetup(): Promise<JournalTestSetup> {
     "constraints",
     "modules",
     "research",
-    "metrics",
     "interviews",
     "projects",
     "phases",
@@ -290,7 +289,7 @@ async function createTxLocalSetup(): Promise<TxTestSetup> {
   const ideateDir = path.join(tmpDir, ".ideate");
   for (const sub of [
     "work-items", "policies", "decisions", "questions", "principles",
-    "constraints", "modules", "research", "metrics", "interviews",
+    "constraints", "modules", "research", "interviews",
     "projects", "phases", "plan", "steering", "domains",
     "archive/cycles", "archive/incremental",
   ]) {

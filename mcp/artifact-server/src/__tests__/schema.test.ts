@@ -76,7 +76,7 @@ describe("createSchema — nodes table", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Extension tables — 16 tables, each with FK to nodes(id)
+// Extension tables — 15 tables, each with FK to nodes(id)
 // ---------------------------------------------------------------------------
 
 describe("createSchema — extension tables", () => {
@@ -91,7 +91,6 @@ describe("createSchema — extension tables", () => {
     "module_specs",
     "research_findings",
     "journal_entries",
-    "metrics_events",
     "document_artifacts",
     "interview_questions",
     "projects",
@@ -99,7 +98,7 @@ describe("createSchema — extension tables", () => {
     "phases",
   ];
 
-  it("creates all 16 extension tables", () => {
+  it("creates all 15 extension tables", () => {
     const db = freshDb();
     const tables = tableNames(db);
     for (const name of extensionTables) {
@@ -107,7 +106,7 @@ describe("createSchema — extension tables", () => {
     }
     const dbTables = tableNames(db);
     const dbExtensionTables = dbTables
-      .filter((t) => !["nodes", "edges", "node_file_refs"].includes(t) && !t.startsWith("sqlite_"))
+      .filter((t) => !["nodes", "edges", "node_file_refs", "tool_usage"].includes(t) && !t.startsWith("sqlite_"))
       .sort();
     expect(dbExtensionTables).toEqual([...extensionTables].sort());
   });
@@ -277,20 +276,6 @@ describe("createSchema — ON DELETE CASCADE (nodes → extension)", () => {
     db.prepare(`DELETE FROM nodes WHERE id = 'J-023-001'`).run();
     const after9 = db.prepare(`SELECT id FROM journal_entries WHERE id = 'J-023-001'`).get();
     expect(after9).toBeUndefined();
-  });
-
-  it("deleting a node cascades to metrics_events extension row", () => {
-    const db = freshDb();
-    db.pragma("foreign_keys = ON");
-    db.prepare(
-      `INSERT INTO nodes (id, type, content_hash, file_path) VALUES ('MET-001', 'metric', 'hash', '/tmp/met-001.yaml')`
-    ).run();
-    db.prepare(
-      `INSERT INTO metrics_events (id, event_name) VALUES ('MET-001', 'work_item.completed')`
-    ).run();
-    db.prepare(`DELETE FROM nodes WHERE id = 'MET-001'`).run();
-    const after10 = db.prepare(`SELECT id FROM metrics_events WHERE id = 'MET-001'`).get();
-    expect(after10).toBeUndefined();
   });
 
   it("deleting a node cascades to document_artifacts extension row", () => {
@@ -500,18 +485,18 @@ describe("createSchema — node_file_refs table", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Schema version — CURRENT_SCHEMA_VERSION is 5
+// Schema version — CURRENT_SCHEMA_VERSION is 7
 // ---------------------------------------------------------------------------
 
 describe("createSchema — schema version", () => {
-  it("CURRENT_SCHEMA_VERSION is 5", () => {
-    expect(CURRENT_SCHEMA_VERSION).toBe(5);
+  it("CURRENT_SCHEMA_VERSION is 7", () => {
+    expect(CURRENT_SCHEMA_VERSION).toBe(7);
   });
 
-  it("sets user_version = 5 after createSchema", () => {
+  it("sets user_version = 7 after createSchema", () => {
     const db = freshDb();
     const version = db.pragma("user_version", { simple: true }) as number;
-    expect(version).toBe(5);
+    expect(version).toBe(7);
   });
 });
 
@@ -888,49 +873,6 @@ describe("createSchema — journal_entries table", () => {
 });
 
 // ---------------------------------------------------------------------------
-// metrics_events table
-// ---------------------------------------------------------------------------
-
-describe("createSchema — metrics_events table", () => {
-  it("has all 18 expected columns", () => {
-    const db = freshDb();
-    const cols = columnNames(db, "metrics_events");
-    for (const col of [
-      "id", "event_name", "timestamp", "payload",
-      "input_tokens", "output_tokens", "cache_read_tokens", "cache_write_tokens",
-      "outcome", "finding_count", "finding_severities", "first_pass_accepted", "rework_count",
-      "work_item_total_tokens", "cycle_total_tokens", "cycle_total_cost_estimate",
-      "convergence_cycles", "context_artifact_ids",
-    ]) {
-      expect(cols, `expected metrics_events to have column '${col}'`).toContain(col);
-    }
-  });
-
-  it("NOT NULL constraints: event_name is required; all other non-PK columns are nullable", () => {
-    const db = freshDb();
-    type ColInfo = { name: string; notnull: number };
-    const colInfo = db.prepare("PRAGMA table_info('metrics_events')").all() as ColInfo[];
-    const byName = Object.fromEntries(colInfo.map((c) => [c.name, c.notnull]));
-
-    // Required (NOT NULL)
-    for (const col of ["event_name"]) {
-      expect(byName[col], `expected '${col}' to be NOT NULL`).toBe(1);
-    }
-
-    // Nullable
-    for (const col of [
-      "timestamp", "payload", "input_tokens", "output_tokens",
-      "cache_read_tokens", "cache_write_tokens", "outcome", "finding_count",
-      "finding_severities", "first_pass_accepted", "rework_count",
-      "work_item_total_tokens", "cycle_total_tokens", "cycle_total_cost_estimate",
-      "convergence_cycles", "context_artifact_ids",
-    ]) {
-      expect(byName[col], `expected '${col}' to be nullable`).toBe(0);
-    }
-  });
-});
-
-// ---------------------------------------------------------------------------
 // interview_questions table
 // ---------------------------------------------------------------------------
 
@@ -1034,7 +976,7 @@ describe("checkSchemaVersion", () => {
     try {
       {
         const db = new Database(dbPath);
-        db.pragma("user_version = 99"); // stale — current is 5
+        db.pragma("user_version = 99"); // stale — current is 6
         db.close();
       }
 
@@ -1058,9 +1000,9 @@ describe("checkSchemaVersion", () => {
     }
   });
 
-  it("returns true when user_version matches CURRENT_SCHEMA_VERSION (5)", () => {
+  it("returns true when user_version matches CURRENT_SCHEMA_VERSION (6)", () => {
     const db = new Database(":memory:");
-    db.pragma(`user_version = ${CURRENT_SCHEMA_VERSION}`); // 5
+    db.pragma(`user_version = ${CURRENT_SCHEMA_VERSION}`); // 6
     const result = checkSchemaVersion(db, "/nonexistent/path/not/used.db");
     expect(result).toBe(true);
     db.close();

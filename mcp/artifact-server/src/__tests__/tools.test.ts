@@ -1,5 +1,5 @@
 /**
- * tools.test.ts — Integration tests for all 11 tool handlers.
+ * tools.test.ts — Integration tests for tool handlers (see tools/index.ts for the full list).
  *
  * Architecture:
  * - Each test creates a fresh temp-file SQLite DB with createSchema applied.
@@ -28,7 +28,6 @@ import { handleAppendJournal, handleArchiveCycle, handleWriteWorkItems, handleUp
 import { upsertExtensionRow } from "../db-helpers.js";
 import { indexFiles } from "../indexer.js";
 import { handleTool, signalIndexReady } from "../tools/index.js";
-import { handleEmitMetric } from "../tools/metrics.js";
 import { handleBootstrapWorkspace } from "../tools/bootstrap.js";
 import { handleManageAutopilotState } from "../tools/autopilot-state.js";
 import { CONFIG_SCHEMA_VERSION } from "../config.js";
@@ -3041,38 +3040,6 @@ describe("integration: append_journal → artifact_query sync", () => {
 });
 
 // ---------------------------------------------------------------------------
-// handleEmitMetric
-// ---------------------------------------------------------------------------
-
-describe("handleEmitMetric", () => {
-  it("returns deprecation message and creates no file or DB row (no-op)", async () => {
-    const payload = { event_name: "test", input_tokens: 1234, phase: "execute" };
-    const result = await handleEmitMetric(ctx, { payload });
-
-    expect(result).toBe("Metric emission deprecated — event not recorded.");
-
-    // No YAML file written
-    const metricsDir = path.join(artifactDir, "metrics");
-    const files = fs.existsSync(metricsDir)
-      ? fs.readdirSync(metricsDir).filter(f => f.endsWith(".yaml"))
-      : [];
-    expect(files).toHaveLength(0);
-
-    // metrics.jsonl must NOT exist
-    const metricsPath = path.join(artifactDir, "metrics.jsonl");
-    expect(fs.existsSync(metricsPath)).toBe(false);
-
-    // No SQLite row inserted
-    const rows = ctx.db!.prepare("SELECT COUNT(*) as cnt FROM metrics_events").get() as { cnt: number };
-    expect(rows.cnt).toBe(0);
-  });
-
-  it("throws when payload is missing", async () => {
-    await expect(handleEmitMetric(ctx, {})).rejects.toThrow("Missing required parameter: payload");
-  });
-});
-
-// ---------------------------------------------------------------------------
 // handleBootstrapWorkspace
 // ---------------------------------------------------------------------------
 
@@ -3596,14 +3563,6 @@ describe("P-46: TYPE_TO_EXTENSION_TABLE completeness", () => {
     { type: "module_spec", id: "MS-p46", content: { name: "p46-module" }, tableName: "module_specs" },
     { type: "research_finding", id: "RF-p46", content: { topic: "test", content: "test content" }, tableName: "research_findings" },
     {
-      type: "metrics_event", id: "ME-p46",
-      content: { event_name: "test-event" },
-      tableName: "metrics_events",
-      checkFields: (row) => {
-        expect(row.event_name).toBe("test-event");
-      },
-    },
-    {
       type: "interview_question", id: "IQ-p46",
       content: { interview_id: "refine-001", question: "q?", answer: "a-answer", seq: 1 },
       tableName: "interview_questions",
@@ -3674,35 +3633,8 @@ describe("P-46: TYPE_TO_EXTENSION_TABLE completeness", () => {
 });
 
 // ---------------------------------------------------------------------------
-// WI-491: metrics_event and interview_question dispatch branches
+// WI-491: interview_question dispatch branch
 // ---------------------------------------------------------------------------
-describe("handleWriteArtifact — metrics_event dispatch branch", () => {
-  it("populates both nodes and metrics_events extension table", async () => {
-    // Skills send flat payloads; queryable fields (agent_type, work_item, etc.)
-    // are at the top level of content, not nested in a sub-object.
-    await handleWriteArtifact(ctx, {
-      type: "metrics_event",
-      id: "ME-491-001",
-      content: {
-        agent_type: "wi_complete",
-        work_item: "WI-001",
-        skill: "execute",
-      },
-    });
-
-    const nodeRow = ctx.db!.prepare("SELECT * FROM nodes WHERE id = ?").get("ME-491-001") as Record<string, unknown>;
-    expect(nodeRow).toBeTruthy();
-    expect(nodeRow.type).toBe("metrics_event");
-
-    const extRow = ctx.db!.prepare("SELECT event_name, payload FROM metrics_events WHERE id = ?").get("ME-491-001") as Record<string, unknown>;
-    expect(extRow).toBeTruthy();
-    expect(extRow.event_name).toBe("wi_complete");
-    const parsed = JSON.parse(extRow.payload as string);
-    expect(parsed.work_item).toBe("WI-001");
-    expect(parsed.agent_type).toBe("wi_complete");
-  });
-});
-
 describe("handleWriteArtifact — interview_question dispatch branch", () => {
   it("populates both nodes and interview_questions extension table", async () => {
     await handleWriteArtifact(ctx, {

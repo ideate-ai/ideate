@@ -1,0 +1,14 @@
+id: F-WI-001-002
+type: finding
+title: Unresolved finding — null addressed_by (severity equivalence fixture)
+severity: significant
+work_item: WI-001
+verdict: fail
+cycle: 2
+reviewer: code-reviewer
+description: >-
+  Fixture finding with addressed_by null. Must be counted by both
+  LocalAdapter (SQL IS NULL) and RemoteAdapter (client-side post-filter).
+addressed_by: null
+cycle_created: 2
+cycle_modified: null

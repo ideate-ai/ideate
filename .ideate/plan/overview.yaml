@@ -1,6 +1,6 @@
 id: overview
 type: overview
-title: "Cycle 23 — PH-041 Completion: Validation Deduplication + Test Coverage"
+title: "Change Plan: Cycle 28 follow-ups + convergence-checker fix"
 change_plan: |-
   Address three minor carry-forward findings from cycle 20 review. No architecture changes, no new technology.
 
@@ -13,8 +13,8 @@ change_plan: |-
   **What is NOT changing**: adapter.ts, reader.ts, any production code, adapter-contract.md (unless null-status question behavior is found to be incorrectly documented).
 
   **New work items**: WI-745, WI-746.
-content_hash: d7e75e66ac22cdcd656758072391ab048b0032acf7b22915af411e2d5be0f424
-token_count: 2998
+content_hash: f03d1499e75be2dab9caa40a09e2ae703c131283b283ec0e7fab020201b9992f
+token_count: 3290
 what_is_changing: 1. New ValidatingAdapter class (src/validating.ts) implementing StorageAdapter with comprehensive input validation for all 21 interface methods. 2. server.ts wraps adapter construction in ValidatingAdapter. 3. Inline validation removed from LocalAdapter and RemoteAdapter. 4. Existing validation test files updated to test through the wrapper.
 trigger: Phase transition from PH-017 (Documentation & Cleanup). Driven by the goal of ensuring adapter parity as a prerequisite for the YAML-to-database transition.
 changes:
@@ -66,7 +66,7 @@ body: |-
   ## Expected impact
 
   All three test files pass cleanly. schema.test.ts correctly reflects the 16-table schema. write-transaction.test.ts covers the Phase 2 cleanup branch. migrations.test.ts covers error and multi-step scenarios.
-summary: Introduce a ValidatingAdapter decorator that centralizes all StorageAdapter input validation. This replaces duplicated inline validation currently spread across LocalAdapter (writer.ts) and RemoteAdapter (index.ts), creating a single source of truth for input validation rules.
+summary: Close the cycle 28 capstone findings (6 Minor code-quality + 1 Significant spec-adherence + 2 gap-analyst) and ship the convergence-checker bug fix triaged on 2026-04-16. Two-phase plan (PH-048, PH-049) under project PR-002.
 scope_in:
   - mcp/artifact-server/src/__tests__/schema.test.ts
   - mcp/artifact-server/src/__tests__/write-transaction.test.ts
@@ -108,41 +108,56 @@ description: |-
 
   This cycle resolves only the findings that block PH-041's phase goal. reader.ts/index.ts cleanup is a carry-forward item for a future phase.
 content: |
-  # Cycle 29 Change Plan — Documentation Sync for Cycle 28 Decisions
+  # Change Plan: Cycle 28 follow-ups + convergence-checker fix
 
-  ## What is changing
+  ## Trigger
 
-  Three one-line documentation/metadata fixes that align project docs with decisions recorded in cycle 28. No source behavior changes — all three items update text or tool annotations to match what the code already does.
+  Cycle 28 capstone review closed with verdict 'Pass with Follow-ups' and produced:
+  - 6 Minor code-reviewer findings (M1-M6) against the tool_usage telemetry surface
+  - 1 Significant spec-adherence finding (S1) flagging WI-852's scope referenced a nonexistent doc path
+  - 2 gap-analyst findings (SG1 telemetry surface undocumented in architecture-overview; SG2 cross-refs S1)
 
-  ## Why
+  During cycle 28, spec-reviewer and gap-analyst both hit turn-budget exhaustion mid-investigation.
 
-  Cycle 28 delivered two substantive changes under PH-044:
-  - **D-210** — max_nodes is now a post-sort result-count cap at the adapter traverse layer (WI-789).
-  - **D-211** — Metrics emission is soft-deprecated (WI-790).
-
-  The cycle 28 gap-analyst and code-reviewer surfaced three places where documentation and tool metadata still described the old behavior. This refinement closes those gaps.
+  Separately, a new bug was triaged on 2026-04-16 as WI-860: ideate_get_convergence_status returns condition_b:false when a workspace cycle slot contains unrelated legacy archive artifacts, blocking autopilot convergence detection.
 
   ## Scope
 
-  **In scope**:
-  - `mcp/artifact-server/docs/adapter-contract.md:223` — max_nodes description (WI-791).
-  - `ARCHITECTURE.md:408-409` — metrics tools descriptions (WI-792).
-  - `mcp/artifact-server/src/tools/index.ts` — `ideate_emit_metric` readOnlyHint annotation (WI-793).
+  ### In
+  - Wire tool_usage writer to populate session_id/cycle/phase columns (WI-861)
+  - Fix scripts/report-tool-usage.sh backend selection (WI-862) and --limit 0 handling (WI-866)
+  - Add getToolUsage adapter-contract coverage (WI-863)
+  - Document both-view truncation semantics (WI-864)
+  - Refresh stale tools.test.ts header (WI-865)
+  - Add operational telemetry surface documentation to architecture-overview.md (WI-867)
+  - Fix convergence-checker false negatives from legacy cycle-slot artifacts (WI-860)
+  - Housekeeping: close WI-850 and WI-852 as done (functionally complete from prior execution), bump reviewer budgets (spec-reviewer 100→180, gap-analyst 200→250)
 
-  **Out of scope**:
-  - Any source behavior change (all three are text/metadata only).
-  - Removing handleGetMetrics (future cycle, per D-211).
-  - Telemetry replacement design (future PH-047 candidate, per PH-044 intent).
+  ### Out
+  - Resurrecting the removed metrics system — P-33 and D-211 stand
+  - Broad architecture changes
+  - New guiding principles or constraints
 
-  ## Expected impact
+  ## Impact
 
-  - Readers of adapter-contract.md and ARCHITECTURE.md get accurate descriptions.
-  - MCP clients surface `ideate_emit_metric` as read-only, matching its no-op behavior.
-  - No runtime or test-behavior changes.
+  PH-048 completes the tool_usage telemetry surface (writer correctness, script correctness, contract coverage, documentation, test hygiene) so reporting data is trustworthy and maintainable.
 
-  ## New work items
+  PH-049 closes the last cycle-28 gap (SG1) and unblocks autopilot convergence from spurious false negatives driven by stale cycle-slot artifacts.
 
-  WI-791, WI-792, WI-793 — all assigned to PH-044, all chore-class, all low-complexity.
+  Config update (reviewer budgets) reduces the probability of cycle-N+1 reviewers exhausting turns before reaching verdict.
+
+  ## Phase structure
+
+  - **PH-048 Tool-usage corrections** (6 items: WI-861..WI-866)
+    - Batched parallel, parallelism 3, worktrees
+    - Two waves due to file-scope overlap: wave 1 (WI-861, WI-862, WI-865); wave 2 (WI-863, WI-864, WI-866)
+  - **PH-049 Doc surface + convergence fix** (2 items: WI-867, WI-860)
+    - Full parallel, disjoint scopes, runs after PH-048
+
+  ## References
+  - Cycle 28 summary, code-quality, spec-adherence, gap-analysis, decision-log (already archived)
+  - Work items: WI-860, WI-861, WI-862, WI-863, WI-864, WI-865, WI-866, WI-867
+  - Domain policies: P-33 (operational telemetry outside graph), D-210 (tool_usage standalone), D-211 (remove agent-side emit_metric)
 name: PH-046 — PH-045 cycle-9 follow-ups
 project: PR-002
 phase: PH-046

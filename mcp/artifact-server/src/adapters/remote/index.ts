@@ -28,8 +28,8 @@ import type {
   BatchMutateInput,
   BatchMutateResult,
   AdapterConfig,
-  MetricsEventRow,
-  MetricsEventProperties,
+  ToolUsageFilter,
+  ToolUsageRow,
 } from "../../adapter.js";
 
 import { ConnectionError, ValidationError, StorageAdapterError } from "../../adapter.js";
@@ -66,7 +66,6 @@ const EXTENSION_COLUMNS: Record<string, string[]> = {
   module_spec: ["name", "scope", "provides", "requires", "boundary_rules"],
   research_finding: ["topic", "date", "content", "sources"],
   journal_entry: ["phase", "date", "title", "work_item", "content"],
-  metrics_event: ["event_name", "timestamp", "payload", "input_tokens", "output_tokens", "cache_read_tokens", "cache_write_tokens", "outcome", "finding_count", "finding_severities", "first_pass_accepted", "rework_count", "work_item_total_tokens", "cycle_total_tokens", "cycle_total_cost_estimate", "convergence_cycles", "context_artifact_ids"],
   interview_question: ["interview_id", "question", "answer", "domain", "seq"],
   proxy_human_decision: ["cycle", "trigger", "triggered_by", "decision", "rationale", "timestamp", "status"],
   project: ["name", "description", "intent", "scope_boundary", "success_criteria", "appetite", "steering", "horizon", "status", "current_phase_id"],
@@ -99,12 +98,6 @@ const FIELD_FALLBACKS: Record<string, Record<string, string[]>> = {
   phase: {
     name: ["title"],          // doc.name ?? doc.title
     project: ["project_id"], // doc.project ?? doc.project_id
-  },
-  metrics_event: {
-    // T-13: indexer uses ?? '' chain; we apply same fallback here for putNode parity
-    // event_name: null + agent_type: "reviewer" => "reviewer"
-    // event_name: null + agent_type: null => "" (empty string per SQLite NOT NULL)
-    event_name: ["agent_type", ""],
   },
   journal_entry: {
     // Server stores skill/entry_type/body; LocalAdapter expects phase/title/content
@@ -206,7 +199,6 @@ function mapGqlNodeToNode(gql: GqlArtifactNode): Node {
 
         if (allowed) {
           // Apply indexer field-name fallbacks (matches buildExtensionRow in indexer.ts)
-          // T-13: handles ?? '' pattern for NOT NULL columns (e.g., metrics_events.event_name)
           const fallbacks = FIELD_FALLBACKS[artifactType];
           if (fallbacks) {
             for (const [target, sources] of Object.entries(fallbacks)) {
@@ -260,18 +252,6 @@ function mapGqlNodeToNode(gql: GqlArtifactNode): Node {
             }
           }
 
-          // Compute derived fields that the indexer builds from raw YAML
-          if (artifactType === "metrics_event" && properties["payload"] === null) {
-            // indexer.ts computes payload from top-level fields
-            const payloadFields = ["agent_type", "skill", "phase", "work_item", "model", "wall_clock_ms", "turns_used", "cycle"];
-            const computed: Record<string, unknown> = {};
-            for (const f of payloadFields) {
-              if (f in contentObj && contentObj[f] !== undefined && contentObj[f] !== null) {
-                computed[f] = contentObj[f];
-              }
-            }
-            properties["payload"] = Object.keys(computed).length > 0 ? JSON.stringify(computed) : null;
-          }
         } else {
           // Unknown type — pass through non-metadata fields
           const METADATA_KEYS = new Set([
@@ -1031,136 +1011,6 @@ export class RemoteAdapter implements StorageAdapter {
     };
   }
 
-  /**
-   * Fetch metrics events via two round-trips (queryNodes + getNodes);
-   * filters (including cycle) are applied in TypeScript. O(n) scan.
-   *
-   * Remote backend stub: the ideate-server GraphQL API does not yet expose a
-   * dedicated metricsEvents query. This implementation falls back to the
-   * queryNodes + getNodes two-step pattern (same as the pre-WI-808 path)
-   * to preserve correctness while keeping the adapter interface clean.
-   *
-   * When the remote backend adds a metricsEvents query this stub should be
-   * replaced with a single GraphQL call matching the LocalAdapter JOIN shape.
-   */
-  async getMetricsEvents(filter?: NodeFilter): Promise<MetricsEventRow[]> {
-    // Step 1: fetch all metrics_event node IDs
-    const METRICS_FETCH_LIMIT = 100_000;
-    const queryResult = await this.queryNodes(
-      { type: "metrics_event" },
-      METRICS_FETCH_LIMIT,
-      0
-    );
-
-    const ids = queryResult.nodes.map(({ node }) => node.id);
-    if (ids.length === 0) return [];
-
-    // Step 2: fetch full nodes (properties include all metrics_events columns)
-    const nodesMap = await this.getNodes(ids);
-
-    const EMPTY_PROPERTIES: MetricsEventProperties = {
-      event_name: null,
-      timestamp: null,
-      payload: null,
-      input_tokens: null,
-      output_tokens: null,
-      cache_read_tokens: null,
-      cache_write_tokens: null,
-      outcome: null,
-      finding_count: null,
-      finding_severities: null,
-      first_pass_accepted: null,
-      rework_count: null,
-      work_item_total_tokens: null,
-      cycle_total_tokens: null,
-      cycle_total_cost_estimate: null,
-      convergence_cycles: null,
-      context_artifact_ids: null,
-    };
-
-    function num(v: unknown): number | null {
-      if (v === null || v === undefined) return null;
-      if (typeof v === "number") return v;
-      const n = Number(v);
-      return isNaN(n) ? null : n;
-    }
-    function str(v: unknown): string | null {
-      if (v === null || v === undefined) return null;
-      return String(v);
-    }
-
-    let results: MetricsEventRow[] = Array.from(nodesMap.values()).map((node) => {
-      const p = node.properties;
-      const properties: MetricsEventProperties = {
-        ...EMPTY_PROPERTIES,
-        event_name: typeof p.event_name === "string" ? p.event_name : str(p.event_name),
-        timestamp: str(p.timestamp),
-        payload: str(p.payload),
-        input_tokens: num(p.input_tokens),
-        output_tokens: num(p.output_tokens),
-        cache_read_tokens: num(p.cache_read_tokens),
-        cache_write_tokens: num(p.cache_write_tokens),
-        outcome: str(p.outcome),
-        finding_count: num(p.finding_count),
-        finding_severities: str(p.finding_severities),
-        first_pass_accepted: num(p.first_pass_accepted),
-        rework_count: num(p.rework_count),
-        work_item_total_tokens: num(p.work_item_total_tokens),
-        cycle_total_tokens: num(p.cycle_total_tokens),
-        cycle_total_cost_estimate: str(p.cycle_total_cost_estimate),
-        convergence_cycles: num(p.convergence_cycles),
-        context_artifact_ids: str(p.context_artifact_ids),
-      };
-      const { properties: _props, ...nodeMeta } = node;
-      return { node: nodeMeta, properties };
-    });
-
-    // Apply TypeScript-side filters (matching LocalAdapter behavior)
-    if (filter) {
-      if (filter.cycle !== undefined && filter.cycle !== null) {
-        results = results.filter((r) => r.node.cycle_created === filter.cycle);
-      }
-      if (filter.agent_type !== undefined) {
-        results = results.filter((r) => {
-          if (!r.properties.payload) return false;
-          try {
-            const p = JSON.parse(r.properties.payload) as Record<string, unknown>;
-            return p.agent_type === filter.agent_type;
-          } catch { return false; }
-        });
-      }
-      if (filter.work_item !== undefined) {
-        results = results.filter((r) => {
-          if (!r.properties.payload) return false;
-          try {
-            const p = JSON.parse(r.properties.payload) as Record<string, unknown>;
-            return p.work_item === filter.work_item;
-          } catch { return false; }
-        });
-      }
-      if (filter.phase !== undefined) {
-        results = results.filter((r) => {
-          if (!r.properties.payload) return false;
-          try {
-            const p = JSON.parse(r.properties.payload) as Record<string, unknown>;
-            return p.phase === filter.phase;
-          } catch { return false; }
-        });
-      }
-    }
-
-    // Sort: timestamp ASC, id ASC (matches LocalAdapter order)
-    results.sort((a, b) => {
-      const tA = a.properties.timestamp ?? "";
-      const tB = b.properties.timestamp ?? "";
-      if (tA < tB) return -1;
-      if (tA > tB) return 1;
-      return a.node.id.localeCompare(b.node.id);
-    });
-
-    return results;
-  }
-
   async nextId(type: NodeType, cycle?: number): Promise<string> {
     const data = await this.client.query<{ nextId: string }>(
       `query NextId($type: NodeType!, $cycle: Int) {
@@ -1241,6 +1091,14 @@ export class RemoteAdapter implements StorageAdapter {
     filter: NodeFilter,
     group_by: "status" | "type" | "domain" | "severity"
   ): Promise<Array<{ key: string; count: number }>> {
+    // WI-871: When grouping by severity for findings, the server-side nodeCounts
+    // does not exclude resolved findings (addressed_by IS NOT NULL). Apply a
+    // client-side post-filter matching LocalAdapter's SQL: WHERE addressed_by IS NULL.
+    // This is the same technique used in getConvergenceData (lines ~1291-1304).
+    if (group_by === "severity" && filter.type === "finding") {
+      return this._countFindingsBySeverity(filter);
+    }
+
     const data = await this.client.query<{
       nodeCounts: Array<{ key: string; count: number }>;
     }>(
@@ -1277,6 +1135,60 @@ export class RemoteAdapter implements StorageAdapter {
     }
 
     return data.nodeCounts;
+  }
+
+  /**
+   * Count unresolved findings grouped by severity, excluding those whose
+   * addressed_by field is non-null or non-empty (empty string is treated as
+   * resolved, matching the local adapter SQL behavior where addressed_by IS NULL
+   * is FALSE for empty string). Mirrors LocalAdapter's SQL:
+   *   WHERE e.addressed_by IS NULL
+   * Applied as a client-side post-filter on the GraphQL artifactQuery response.
+   */
+  private async _countFindingsBySeverity(
+    filter: NodeFilter
+  ): Promise<Array<{ key: string; count: number }>> {
+    const filterInput: Record<string, unknown> = { type: "FINDING" };
+    if (filter.cycle !== undefined && filter.cycle !== null) {
+      filterInput.cycle = filter.cycle;
+    }
+
+    const findingsData = await this.client.query<{
+      artifactQuery: {
+        edges: Array<{
+          node: GqlArtifactNode & { content?: string };
+        }>;
+      };
+    }>(
+      `query CountFindingsBySeverity($filter: NodeFilterInput) {
+        artifactQuery(filter: $filter, first: 10000) {
+          edges {
+            node {
+              ${ARTIFACT_NODE_FIELDS_WITH_CONTENT}
+            }
+          }
+        }
+      }`,
+      { filter: filterInput }
+    );
+
+    // Count unresolved findings by severity.
+    // A finding is resolved when addressed_by is non-null (mirrors SQL IS NULL).
+    const counts: Record<string, number> = {};
+    for (const edge of findingsData.artifactQuery.edges) {
+      const node = mapGqlNodeToNode(edge.node);
+      const addressedBy = node.properties["addressed_by"];
+      // Skip resolved findings — matches LocalAdapter SQL: WHERE e.addressed_by IS NULL
+      if (addressedBy !== null && addressedBy !== undefined) {
+        continue;
+      }
+      const severity = node.properties["severity"] as string | null;
+      if (severity) {
+        counts[severity] = (counts[severity] ?? 0) + 1;
+      }
+    }
+
+    return Object.entries(counts).map(([key, count]) => ({ key, count }));
   }
 
   /**
@@ -1394,29 +1306,68 @@ export class RemoteAdapter implements StorageAdapter {
     findings_by_severity: Record<string, number>;
     cycle_summary_content: string | null;
   }> {
-    const data = await this.client.query<{
+    // WI-860: The server-side convergenceStatus query counts all findings for
+    // a cycle without filtering out resolved ones (addressed_by IS NOT NULL).
+    // To match LocalAdapter behavior (which now excludes resolved findings),
+    // we perform client-side filtering: fetch individual finding nodes for
+    // the cycle and exclude those with addressed_by set, then aggregate by
+    // severity. We still delegate cycleSummaryContent to the server query.
+    const serverData = await this.client.query<{
       convergenceStatus: {
-        findingsBySeverity: Array<{ key: string; count: number }>;
         cycleSummaryContent: string | null;
       };
     }>(
       `query ConvergenceStatus($cycleNumber: Int!) {
         convergenceStatus(cycleNumber: $cycleNumber) {
-          findingsBySeverity { key count }
           cycleSummaryContent
         }
       }`,
       { cycleNumber: cycle }
     );
 
+    // Fetch all finding nodes for this cycle to perform client-side filtering
+    const findingsData = await this.client.query<{
+      artifactQuery: {
+        edges: Array<{
+          node: GqlArtifactNode & { content?: string };
+        }>;
+      };
+    }>(
+      `query FindingsByCycle($filter: NodeFilterInput) {
+        artifactQuery(filter: $filter, first: 10000) {
+          edges {
+            node {
+              ${ARTIFACT_NODE_FIELDS_WITH_CONTENT}
+            }
+          }
+        }
+      }`,
+      {
+        filter: {
+          type: "FINDING",
+          cycle,
+        },
+      }
+    );
+
+    // Count findings by severity, excluding those with addressed_by set
     const findings_by_severity: Record<string, number> = {};
-    for (const gc of data.convergenceStatus.findingsBySeverity) {
-      findings_by_severity[gc.key] = gc.count;
+    for (const edge of findingsData.artifactQuery.edges) {
+      const node = mapGqlNodeToNode(edge.node);
+      const addressedBy = node.properties["addressed_by"];
+      // Skip resolved findings (addressed_by is set and non-null, including empty string)
+      if (addressedBy !== null && addressedBy !== undefined) {
+        continue;
+      }
+      const severity = node.properties["severity"] as string | null;
+      if (severity) {
+        findings_by_severity[severity] = (findings_by_severity[severity] ?? 0) + 1;
+      }
     }
 
     // Parse the content JSON blob to extract inner content field (S8 fix)
     let cycle_summary_content: string | null = null;
-    const rawContent = data.convergenceStatus.cycleSummaryContent;
+    const rawContent = serverData.convergenceStatus.cycleSummaryContent;
     if (rawContent != null) {
       try {
         const parsed = JSON.parse(rawContent) as Record<string, unknown>;
@@ -1507,5 +1458,16 @@ export class RemoteAdapter implements StorageAdapter {
 
   async removeFiles(_paths: string[]): Promise<void> {
     // no-op: remote index is maintained server-side
+  }
+
+  async getToolUsage(_filter?: ToolUsageFilter): Promise<ToolUsageRow[]> {
+    // Stub: the remote GraphQL backend does not yet expose a tool_usage endpoint.
+    // Return an empty array so callers that tolerate missing telemetry don't fail;
+    // the log.warn records that the stub path was taken for observability.
+    log.warn(
+      "remote",
+      "getToolUsage: stub returning [] (remote backend does not yet expose tool_usage endpoint)"
+    );
+    return [];
   }
 }

@@ -120,31 +120,6 @@ export const journalEntries = sqliteTable("journal_entries", {
   content: text("content"),
 });
 
-export const metricsEvents = sqliteTable("metrics_events", {
-  id: text("id").primaryKey().references(() => nodes.id, { onDelete: "cascade" }),
-  event_name: text("event_name").notNull(),
-  timestamp: text("timestamp"),
-  payload: text("payload"),
-  // Token accounting
-  input_tokens: integer("input_tokens"),
-  output_tokens: integer("output_tokens"),
-  cache_read_tokens: integer("cache_read_tokens"),
-  cache_write_tokens: integer("cache_write_tokens"),
-  // Output quality signals
-  outcome: text("outcome"),
-  finding_count: integer("finding_count"),
-  finding_severities: text("finding_severities"),
-  first_pass_accepted: integer("first_pass_accepted"),
-  rework_count: integer("rework_count"),
-  // Cycle-level aggregates
-  work_item_total_tokens: integer("work_item_total_tokens"),
-  cycle_total_tokens: integer("cycle_total_tokens"),
-  cycle_total_cost_estimate: text("cycle_total_cost_estimate"),
-  convergence_cycles: integer("convergence_cycles"),
-  // Context composition
-  context_artifact_ids: text("context_artifact_ids"),
-});
-
 export const documentArtifacts = sqliteTable("document_artifacts", {
   id: text("id").primaryKey().references(() => nodes.id, { onDelete: "cascade" }),
   title: text("title"),
@@ -200,6 +175,23 @@ export const phases = sqliteTable("phases", {
 });
 
 // ---------------------------------------------------------------------------
+// toolUsage — operational telemetry table (standalone, not a node-extension)
+// ---------------------------------------------------------------------------
+
+export const toolUsage = sqliteTable("tool_usage", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  tool_name: text("tool_name").notNull(),
+  request_tokens: integer("request_tokens"),
+  response_tokens: integer("response_tokens"),
+  request_bytes: integer("request_bytes").notNull(),
+  response_bytes: integer("response_bytes").notNull(),
+  session_id: text("session_id"),
+  cycle: integer("cycle"),
+  phase: text("phase"),
+  timestamp: text("timestamp").notNull(),
+});
+
+// ---------------------------------------------------------------------------
 // edges — universal edge table (no source_type / target_type)
 // ---------------------------------------------------------------------------
 
@@ -239,7 +231,6 @@ export type AnyTable =
   | typeof moduleSpecs
   | typeof researchFindings
   | typeof journalEntries
-  | typeof metricsEvents
   | typeof documentArtifacts
   | typeof interviewQuestions
   | typeof proxyHumanDecisions
@@ -262,7 +253,6 @@ export const TYPE_TO_EXTENSION_TABLE: Record<string, AnyTable> = {
   module_spec:        moduleSpecs,
   research_finding:   researchFindings,
   journal_entry:      journalEntries,
-  metrics_event:      metricsEvents,
   decision_log:       documentArtifacts,
   cycle_summary:      documentArtifacts,
   review_output:      documentArtifacts,

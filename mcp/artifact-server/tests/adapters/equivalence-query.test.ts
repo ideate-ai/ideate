@@ -65,7 +65,6 @@ suite("Equivalence — query and aggregation operations", () => {
       "phase",
       "finding",
       "journal_entry",
-      "metrics_event",
       "research_finding",
     ];
 
@@ -303,6 +302,37 @@ expect(sortByKey(local)).toEqual(sortByKey(remote));
   });
 
   // -------------------------------------------------------------------------
+  // countNodes — grouped by severity, excluding resolved findings (WI-871)
+  // -------------------------------------------------------------------------
+
+  describe("countNodes — grouped by severity — excludes resolved findings", () => {
+    it("returns identical counts grouped by severity for type=finding", async () => {
+      // Fixture cycle 002 contains three findings of severity=significant:
+      //   F-WI-001-002: addressed_by=null   → counted by both adapters
+      //   F-WI-001-003: addressed_by=WI-001 → excluded by both adapters (resolved)
+      //   F-WI-001-004: addressed_by=""     → excluded by both adapters (empty string)
+      //
+      // LocalAdapter uses SQL: WHERE e.addressed_by IS NULL
+      // RemoteAdapter uses client-side post-filter: skip when addressed_by !== null && !== undefined
+      // Both must produce the same count (equivalence).
+      const [local, remote] = await Promise.all([
+        adapters.local.countNodes({ type: "finding" }, "severity"),
+        adapters.remote.countNodes({ type: "finding" }, "severity"),
+      ]);
+
+      // (a) Both adapters return identical counts
+      expect(sortByKey(local)).toEqual(sortByKey(remote));
+
+      // (b) Only the null-addressed_by finding (F-WI-001-002) is counted.
+      //     severity=significant count must be exactly 1.
+      const localSignificant = local.find((r) => r.key === "significant");
+      const remoteSignificant = remote.find((r) => r.key === "significant");
+      expect(localSignificant?.count).toBe(1);
+      expect(remoteSignificant?.count).toBe(1);
+    });
+  });
+
+  // -------------------------------------------------------------------------
   // getDomainState — policies, decisions, questions per domain
   // -------------------------------------------------------------------------
 
@@ -354,6 +384,44 @@ expect(sortByKey(local)).toEqual(sortByKey(remote));
   });
 
   // -------------------------------------------------------------------------
+  // getConvergenceData — empty-string addressed_by parity (cycle 2, WI-873)
+  // -------------------------------------------------------------------------
+
+  describe("getConvergenceData — empty-string addressed_by parity (cycle 2)", () => {
+    // Cycle 2 contains three findings of severity=significant:
+    //   F-WI-001-002: addressed_by=null    → MUST be counted by both adapters
+    //   F-WI-001-003: addressed_by=WI-001  → resolved, MUST be excluded
+    //   F-WI-001-004: addressed_by=""      → resolved (empty string), MUST be excluded
+    //
+    // This test codifies the parity requirement for the empty-string edge case:
+    // LocalAdapter excludes via SQL `addressed_by IS NULL` (empty string is IS NULL=FALSE).
+    // RemoteAdapter excludes via 2-clause JS filter `!== null && !== undefined` (empty
+    // string passes both, so continue executes — same exclusion result).
+
+    it("(a) findings_by_severity is identical between local and remote for cycle 2", async () => {
+      const [local, remote] = await Promise.all([
+        adapters.local.getConvergenceData(2),
+        adapters.remote.getConvergenceData(2),
+      ]);
+
+      expect(local.findings_by_severity).toEqual(remote.findings_by_severity);
+    });
+
+    it("(b) only the null addressed_by finding counts — significant === 1 for cycle 2", async () => {
+      const [local, remote] = await Promise.all([
+        adapters.local.getConvergenceData(2),
+        adapters.remote.getConvergenceData(2),
+      ]);
+
+      // Only F-WI-001-002 (addressed_by=null) should be counted.
+      // F-WI-001-003 (addressed_by=WI-001) and F-WI-001-004 (addressed_by="")
+      // must both be excluded.
+      expect(local.findings_by_severity["significant"]).toBe(1);
+      expect(remote.findings_by_severity["significant"]).toBe(1);
+    });
+  });
+
+  // -------------------------------------------------------------------------
   // getConvergenceData — finding counts and summary content for cycle 1
   // -------------------------------------------------------------------------
 
@@ -387,13 +455,13 @@ expect(sortByKey(local)).toEqual(sortByKey(remote));
       }
     });
 
-    it("fixture has at least one finding in cycle 1 with known severity", async () => {
+    it("resolved findings in cycle 1 are excluded from convergence counts", async () => {
       const [local, remote] = await Promise.all([
         adapters.local.getConvergenceData(1),
         adapters.remote.getConvergenceData(1),
       ]);
 
-      // F-WI-001-001 has severity=significant — at least one finding must appear
+      // F-WI-001-001 has addressed_by=WI-001 — resolved findings must be excluded
       const localTotal = Object.values(local.findings_by_severity).reduce(
         (sum, n) => sum + n,
         0
@@ -402,8 +470,8 @@ expect(sortByKey(local)).toEqual(sortByKey(remote));
         (sum, n) => sum + n,
         0
       );
-      expect(localTotal).toBeGreaterThanOrEqual(1);
-      expect(remoteTotal).toBeGreaterThanOrEqual(1);
+      expect(localTotal).toBe(0);
+      expect(remoteTotal).toBe(0);
       expect(localTotal).toBe(remoteTotal);
     });
   });

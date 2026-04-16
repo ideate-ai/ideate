@@ -39,7 +39,6 @@ import {
   type ResearchFindingRow,
   type ModuleSpecRow,
   type FindingRow,
-  type MetricsEventRow,
   type InterviewQuestionRow,
   type ProjectRow,
   type PhaseRow,
@@ -56,7 +55,6 @@ import {
   upsertResearchFinding,
   upsertModuleSpec,
   upsertFinding,
-  upsertMetricsEvent,
   upsertInterviewQuestion,
   upsertProject,
   upsertPhase as upsertPhaseRow,
@@ -139,8 +137,6 @@ export function resolveArtifactPath(ideateDir: string, type: string, id: string,
       return path.join(ideateDir, "modules", `${id}.yaml`);
     case "research_finding":
       return path.join(ideateDir, "research", `${id}.yaml`);
-    case "metrics_event":
-      return path.join(ideateDir, "metrics", `${id}.yaml`);
     case "interview_question":
       return path.join(ideateDir, "interviews", `${id}.yaml`);
     case "interview":
@@ -300,43 +296,6 @@ function upsertExtensionTableRow(
       title: (content.title as string | null) ?? null,
     };
     upsertFinding(drizzleDb, findingRow);
-  } else if (type === "metrics_event") {
-    const writePayloadFields = ["agent_type", "skill", "phase", "work_item", "model", "wall_clock_ms", "turns_used", "cycle"] as const;
-    const writeComputedPayload: Record<string, unknown> = {};
-    for (const field of writePayloadFields) {
-      const v = content[field];
-      if (v !== undefined && v !== null) writeComputedPayload[field] = v;
-    }
-    const writeStoredPayload = Object.keys(writeComputedPayload).length > 0
-      ? JSON.stringify(writeComputedPayload)
-      : null;
-    const meRow: MetricsEventRow = {
-      id,
-      event_name: typeof content.agent_type === "string"
-        ? (content.agent_type as string)
-        : (content.event_name as string) ?? "",
-      timestamp: (content.timestamp as string | null) ?? null,
-      payload: writeStoredPayload,
-      input_tokens: (content.input_tokens as number | null) ?? null,
-      output_tokens: (content.output_tokens as number | null) ?? null,
-      cache_read_tokens: (content.cache_read_tokens as number | null) ?? null,
-      cache_write_tokens: (content.cache_write_tokens as number | null) ?? null,
-      outcome: (content.outcome as string | null) ?? null,
-      finding_count: (content.finding_count as number | null) ?? null,
-      finding_severities: content.finding_severities
-        ? (typeof content.finding_severities === "string"
-            ? content.finding_severities
-            : JSON.stringify(content.finding_severities))
-        : null,
-      first_pass_accepted: (content.first_pass_accepted as number | null) ?? null,
-      rework_count: (content.rework_count as number | null) ?? null,
-      work_item_total_tokens: (content.work_item_total_tokens as number | null) ?? null,
-      cycle_total_tokens: (content.cycle_total_tokens as number | null) ?? null,
-      cycle_total_cost_estimate: (content.cycle_total_cost_estimate as string | null) ?? null,
-      convergence_cycles: (content.convergence_cycles as number | null) ?? null,
-      context_artifact_ids: content.context_artifact_ids ? JSON.stringify(content.context_artifact_ids) : null,
-    };
-    upsertMetricsEvent(drizzleDb, meRow);
   } else if (type === "interview_question") {
     const iqRow: InterviewQuestionRow = {
       id,

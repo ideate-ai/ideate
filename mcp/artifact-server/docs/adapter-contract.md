@@ -314,24 +314,6 @@ Query nodes by type and filters with pagination.
 
 ---
 
-#### `getMetricsEvents(filter?: NodeFilter): Promise<MetricsEventRow[]>`
-
-Fetch all metrics event rows matching the optional filter.
-
-**Parameters:**
-- `filter` (optional): Node filter criteria. Supported fields:
-  - `cycle`: matched against `node.cycle_created`
-  - `agent_type`: matched inside the payload JSON field
-  - `work_item`: matched inside the payload JSON field (exact match)
-  - `phase`: matched inside the payload JSON field
-
-**Returns:**
-- Array of `MetricsEventRow` objects ordered by `timestamp ASC, id ASC`. Returns `[]` (empty array, not null) when no events match. Never throws.
-
-**Remote behavior:** Fetches all `metrics_event` nodes via two round-trips (`queryNodes` + `getNodes`), then applies all filters (including `cycle`) in TypeScript. This is an O(n) scan; cycle-filter SQL pushdown is local-only.
-
----
-
 #### `nextId(type: NodeType, cycle?: number): Promise<string>`
 
 Generate the next available ID for a given node type.
@@ -413,6 +395,8 @@ Count nodes grouped by a dimension.
 **Returns:**
 - Array of `{ key, count }` objects
 
+**Contract (per P-88):** When `group_by === 'severity'` and `filter.type === 'finding'`, implementations MUST exclude findings whose `addressed_by` field is non-null, non-empty from all counts. Only unresolved findings (those with `addressed_by` IS NULL) are counted toward severity totals.
+
 ---
 
 #### `getDomainState(domains?: string[]): Promise<Map<string, DomainState>>`
@@ -435,8 +419,10 @@ Get convergence status for a cycle.
 - `cycle`: Cycle number
 
 **Returns:**
-- `findings_by_severity`: Record of severity → count
+- `findings_by_severity`: Record of severity → count (unresolved findings only)
 - `cycle_summary_content`: String or null
+
+**Contract (per P-88):** Implementations MUST exclude findings whose `addressed_by` field is set (non-null, non-empty) from all severity counts. Only unresolved findings count toward convergence blockers.
 
 ---
 
@@ -674,7 +660,6 @@ type NodeType =
   | "module_spec"
   | "research_finding"
   | "journal_entry"
-  | "metrics_event"
   | "interview_question"
   | "proxy_human_decision"
   | "project"
@@ -747,6 +732,7 @@ LocalAdapter and RemoteAdapter must behave identically in the following aspects:
 
 **Test Coverage:**
 - `tests/adapters/adapter-equivalence.test.ts`
+- `tests/adapters/equivalence-query.test.ts`
 - `tests/adapters/seed-ids-validation.test.ts`
 - `tests/adapters/always-include-types-validation.test.ts`
 - `tests/adapters/local-adapter-validation.test.ts`
@@ -777,6 +763,8 @@ LocalAdapter and RemoteAdapter must behave identically in the following aspects:
 
 | Version | Date | Changes |
 |---------|------|---------|
+| 3.3 | 2026-04-16 | Fixed empty-string addressed_by parity in getConvergenceData RemoteAdapter (WI-873); added getConvergenceData(2) equivalence test |
+| 3.2 | 2026-04-16 | Updated countNodes severity path to use artifactQuery + client-side post-filter (WI-872) |
 | 3.1 | 2026-04-15 | Added AUTH_FAILURE error type (WI-838) |
 | 3.0 | 2026-04-06 | Added comprehensive validation layer and error codes |
 | 2.0 | 2026-03-20 | Added PPR-based context assembly |

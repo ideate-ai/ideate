@@ -45,7 +45,6 @@ async function createSetup(): Promise<TestSetup> {
     "constraints",
     "modules",
     "research",
-    "metrics",
     "interviews",
     "projects",
     "phases",

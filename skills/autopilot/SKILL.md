@@ -264,48 +264,13 @@ If any reviewer session fails or produces no output:
 
 ---
 
-# Metrics Instrumentation
+# Turns Tracking and Budget Warning
 
-After each agent spawn (via the Agent tool), emit a metric via `ideate_emit_metric({payload: {...}})`. Best-effort only: if the call fails, continue without interruption.
-
-**Metric fields** (passed as `payload` to `ideate_emit_metric`):
-
-- `timestamp` — ISO 8601 when the agent was spawned
-- `phase` — e.g., `"6a"`, `"6b"`
-- `cycle` — current 1-based cycle number
-- `agent_type` — e.g., `"worker"`, `"code-reviewer"`, `"spec-reviewer"`, `"gap-analyst"`, `"journal-keeper"`, `"proxy-human"`
-- `model` — model string passed to Agent tool
-- `work_item` — work item slug for workers and their paired code-reviewer; `null` for reviewers
-- `wall_clock_ms` — elapsed ms between Agent tool invocation and return
-- `context_files_read` — absolute file paths explicitly provided in the agent's prompt
-- `mcp_tools_called` — array of strings. Names of MCP tools called to assemble context for this agent spawn (e.g., `["ideate_get_context_package", "ideate_get_artifact_context"]`). Empty array `[]` if no MCP tools were called.
-- `outcome` — optional (null if not available). For `code-reviewer` entries (phase `"6a"`): `"pass"` if the incremental review verdict is Pass with no rework, `"rework"` if the verdict is Pass after rework, `"fail"` if the verdict is Fail. For all other agent types: `null`.
-- `finding_count` — optional (null if not available). For `code-reviewer` entries (phase `"6a"`): total findings from the incremental review. For reviewer entries (phase `"6b"`, agent types `"code-reviewer"`, `"spec-reviewer"`, `"gap-analyst"`): total findings from that reviewer's output. Null for `worker`, `journal-keeper`, `domain-curator`, and `proxy-human` entries, and null if output cannot be parsed.
-- `finding_severities` — optional (null if not available). Object with keys `critical`, `significant`, `minor` and integer values. Populated for `code-reviewer` phase `"6a"` entries and reviewer phase `"6b"` entries. Null for all other agent types and null if output cannot be parsed.
-- `first_pass_accepted` — optional (null if not available). For `code-reviewer` entries (phase `"6a"`): `true` if the incremental review passes with no rework required, `false` otherwise. Null for all other agent types.
-- `rework_count` — optional (null if not available). For `worker` entries: the number of fix-and-re-review cycles completed for this work item (0 if the first review passed without rework). Null for all other agent types.
-
-**Token and turn count fields**: Set `turns_used`, `input_tokens`, `output_tokens`, `cache_read_tokens`, `cache_write_tokens` to `null`. These fields are not extractable from Agent tool responses — the Agent tool returns only the subagent's final text, not its token usage. When hook-based extraction is implemented (via SubagentStop hooks), these instructions will be updated.
-
-Before each Agent tool call, record which MCP tool calls (if any) were made to assemble context for that spawn. Include the tool names in the `mcp_tools_called` array. If no MCP tools were called, use an empty array `[]`.
-
-Record timestamp immediately before the Agent tool call; compute `wall_clock_ms` after it returns.
-
-**Turns tracking and budget warning**: Use the maxTurns value from `{config}.agent_budgets` for each agent type (`code-reviewer`, `spec-reviewer`, `gap-analyst`, `journal-keeper`, `domain-curator`, `architect`, `researcher`, `proxy-human`). If config was not loaded or the agent type is not present in `agent_budgets`, use the agent's frontmatter default. This warning is currently inactive because `turns_used` is null. It will activate when hook-based turn extraction is implemented. If `turns_used` is non-null and the agent's maxTurns is known, compute the utilization: `turns_used / maxTurns`. If utilization > 0.80, append a warning to the current journal entry (via `ideate_append_journal`):
+Use the maxTurns value from `{config}.agent_budgets` for each agent type (`code-reviewer`, `spec-reviewer`, `gap-analyst`, `journal-keeper`, `domain-curator`, `architect`, `researcher`, `proxy-human`). If config was not loaded or the agent type is not present in `agent_budgets`, use the agent's frontmatter default. This warning is currently inactive because `turns_used` is null. It will activate when hook-based turn extraction is implemented. If `turns_used` is non-null and the agent's maxTurns is known, compute the utilization: `turns_used / maxTurns`. If utilization > 0.80, append a warning to the current journal entry (via `ideate_append_journal`):
 
 > Agent {agent_type} used {turns_used}/{maxTurns} turns ({pct}%) — near budget limit
 
 where `{pct}` is `round(turns_used / maxTurns * 100)`. This warning is best-effort — if the journal call fails, continue without interruption.
-
-Phase documents contain per-cycle and overall journal summary instructions. If `ideate_emit_metric` calls failed, note "metrics unavailable" in the journal summary.
-
-**Convergence summary fields**: When the loop exits (converged or max-cycles reached), the activity report and final journal entry must include the following summary fields derived from `ideate_get_metrics`:
-
-- `convergence_cycles` — integer. The number of cycles completed before convergence (or before the cycle limit was reached). Equal to `cycles_completed` from `ideate_manage_autopilot_state({action: "get"})`.
-- `cycle_total_tokens` — integer or null. Call `ideate_get_metrics({scope: "cycle"})` and sum all token fields across cycles for this autopilot session. Null if metrics are unavailable or token fields are all null.
-- `cycle_total_cost_estimate` — string or null. A human-readable cost estimate string (e.g., `"~$4.20"`) derived from `cycle_total_tokens` using current published model pricing for the models used. Null if token data is unavailable or pricing cannot be determined.
-
-These three fields are optional (null if not available). Include them in the Phase 9 activity report Run Summary and in the journal entry written at the end of Phase 9.
 
 ---
 
@@ -340,9 +305,7 @@ Before executing, verify this skill document satisfies the MCP abstraction bound
 - [x] Appetite exhaustion triggers Andon → proxy-human, not a silent stop
 - [x] Phase transition invokes refine.md Phase Transition section (not the full refine loop)
 - [x] Proxy-human decisions recorded via `ideate_write_artifact({type: "proxy_human_decision", ...})`, not direct file writes
-- [x] All metrics emitted via `ideate_emit_metric`, not appended to any file
 - [x] Finding writes use `ideate_write_artifact` — asserted in "What You Do Not Do"; review.md phase doc confirms
 - [x] Journal reads use `ideate_artifact_query({type: "journal_entry"})`
-- [x] Convergence summary uses `ideate_get_metrics` for aggregated data
 - [x] Quality summary uses structured MCP data, not manual file parsing — satisfied in review.md phase doc
 - [x] Review manifest retrieved via `ideate_artifact_query`, not path-based reads — satisfied in review.md phase doc

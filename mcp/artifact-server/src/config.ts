@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
 import path from "path";
 import { log } from "./logger.js";
 
-export const CONFIG_SCHEMA_VERSION = 5;
+export const CONFIG_SCHEMA_VERSION = 7;
 
 /**
  * Schema for .ideate/config.json
@@ -118,7 +118,6 @@ export const IDEATE_SUBDIRS = [
   "interviews",
   "cycles",
   "domains",
-  "metrics",
   "projects",
   "phases",
 ] as const;

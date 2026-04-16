@@ -2,7 +2,7 @@
  * equivalence-crud.test.ts — Node CRUD and edge operation equivalence tests.
  *
  * Validates that LocalAdapter and RemoteAdapter return identical results for:
- *   - getNode (all ~20 fixture artifacts)
+ *   - getNode (all 17 fixture artifacts)
  *   - getNodes (batch of 5+ IDs)
  *   - readNodeContent (all fixture artifacts, compared as parsed objects)
  *   - getEdges (outgoing, incoming, both)
@@ -54,8 +54,6 @@ const ALL_FIXTURE_IDS = [
   "PH-002",
   "F-WI-001-001",
   "J-001-001",
-  "ME-001",
-  "ME-002",
   "RF-001",
 ] as const;
 

@@ -19,6 +19,7 @@ import path from "path";
 
 import { createSchema } from "../schema.js";
 import * as dbSchema from "../db.js";
+import { insertToolUsage } from "../db-helpers.js";
 import { LocalAdapter } from "../adapters/local/index.js";
 import { ValidatingAdapter } from "../validating.js";
 import type {
@@ -26,6 +27,8 @@ import type {
   MutateNodeInput,
   NodeType,
   Edge,
+  ToolUsageRow,
+  ToolUsageInsert,
 } from "../adapter.js";
 import { ImmutableFieldError, ValidationError } from "../adapter.js";
 
@@ -39,6 +42,19 @@ export interface AdapterContractOptions {
    * where traverse() is not yet implemented (e.g. LocalAdapter before WI-554).
    */
   skipTraverse?: boolean;
+
+  /**
+   * Optional callback to insert tool_usage rows into the backing store before
+   * each getToolUsage contract test. Called with a set of seed rows that the
+   * contract test will then query.
+   *
+   * When omitted (e.g. RemoteAdapter stub), the getToolUsage tests run against
+   * an empty store and assert on shape/empty-result semantics only.
+   *
+   * @param rows - Rows to insert. The callback is responsible for committing
+   *               them to whichever backing store the adapter uses.
+   */
+  seedToolUsage?: (rows: ToolUsageInsert[]) => void | Promise<void>;
 }
 
 /**
@@ -1318,6 +1334,169 @@ export function runAdapterContractTests(
         expect(data).toHaveProperty("cycle_summary_content");
         expect(typeof data.findings_by_severity).toBe("object");
       });
+
+      // WI-860: Regression tests — resolved findings (addressed_by set) must not
+      // block convergence. Only unresolved findings (addressed_by IS NULL) count.
+
+      it("getConvergenceData excludes findings with addressed_by set (resolves convergence false-negative)", async () => {
+        // Seed: 2 significant findings for cycle 100
+        // One resolved (addressed_by set), one unresolved
+        await adapter.putNode({
+          id: "F-100-001",
+          type: "finding",
+          cycle: 100,
+          properties: {
+            severity: "significant",
+            work_item: "WI-001",
+            verdict: "Fail",
+            cycle: 100,
+            reviewer: "test-reviewer",
+            addressed_by: null,
+          },
+        });
+        await adapter.putNode({
+          id: "F-100-002",
+          type: "finding",
+          cycle: 100,
+          properties: {
+            severity: "significant",
+            work_item: "WI-001",
+            verdict: "Fail",
+            cycle: 100,
+            reviewer: "test-reviewer",
+            addressed_by: "PH-001",
+          },
+        });
+
+        const data = await adapter.getConvergenceData(100);
+        // Only the unresolved finding (F-100-001) should be counted
+        expect(data.findings_by_severity["significant"]).toBe(1);
+      });
+
+      it("getConvergenceData counts all findings when none are resolved (passing behavior preserved)", async () => {
+        // Seed: 2 minor findings for cycle 101, both unresolved (addressed_by null)
+        await adapter.putNode({
+          id: "F-101-001",
+          type: "finding",
+          cycle: 101,
+          properties: {
+            severity: "minor",
+            work_item: "WI-001",
+            verdict: "Fail",
+            cycle: 101,
+            reviewer: "test-reviewer",
+            addressed_by: null,
+          },
+        });
+        await adapter.putNode({
+          id: "F-101-002",
+          type: "finding",
+          cycle: 101,
+          properties: {
+            severity: "minor",
+            work_item: "WI-001",
+            verdict: "Fail",
+            cycle: 101,
+            reviewer: "test-reviewer",
+            addressed_by: null,
+          },
+        });
+
+        const data = await adapter.getConvergenceData(101);
+        // Both unresolved findings should be counted
+        expect(data.findings_by_severity["minor"]).toBe(2);
+      });
+
+      // WI-868: Regression tests — countNodes severity path must also exclude
+      // resolved findings, and getConvergenceData must reject empty-string addressed_by.
+
+      it("countNodes with group_by='severity' excludes findings where addressed_by is set (non-null or empty string)", async () => {
+        // Seed: 3 critical findings for cycle 102
+        // One unresolved (addressed_by null), one resolved with a value, one resolved with empty string
+        await adapter.putNode({
+          id: "F-102-001",
+          type: "finding",
+          cycle: 102,
+          properties: {
+            severity: "critical",
+            work_item: "WI-001",
+            verdict: "Fail",
+            cycle: 102,
+            reviewer: "test-reviewer",
+            addressed_by: null,
+          },
+        });
+        await adapter.putNode({
+          id: "F-102-002",
+          type: "finding",
+          cycle: 102,
+          properties: {
+            severity: "critical",
+            work_item: "WI-001",
+            verdict: "Fail",
+            cycle: 102,
+            reviewer: "test-reviewer",
+            addressed_by: "PH-001",
+          },
+        });
+        await adapter.putNode({
+          id: "F-102-003",
+          type: "finding",
+          cycle: 102,
+          properties: {
+            severity: "critical",
+            work_item: "WI-001",
+            verdict: "Fail",
+            cycle: 102,
+            reviewer: "test-reviewer",
+            addressed_by: "",
+          },
+        });
+
+        const counts = await adapter.countNodes(
+          { type: "finding", cycle: 102 },
+          "severity"
+        );
+        // Only the unresolved finding (F-102-001) should be counted
+        const criticalEntry = counts.find((c) => c.key === "critical");
+        expect(criticalEntry).toBeDefined();
+        expect(criticalEntry!.count).toBe(1);
+      });
+
+      it("getConvergenceData excludes findings with addressed_by='' (empty string)", async () => {
+        // Seed: 2 significant findings for cycle 103
+        // One unresolved (addressed_by null), one with empty-string addressed_by
+        await adapter.putNode({
+          id: "F-103-001",
+          type: "finding",
+          cycle: 103,
+          properties: {
+            severity: "significant",
+            work_item: "WI-001",
+            verdict: "Fail",
+            cycle: 103,
+            reviewer: "test-reviewer",
+            addressed_by: null,
+          },
+        });
+        await adapter.putNode({
+          id: "F-103-002",
+          type: "finding",
+          cycle: 103,
+          properties: {
+            severity: "significant",
+            work_item: "WI-001",
+            verdict: "Fail",
+            cycle: 103,
+            reviewer: "test-reviewer",
+            addressed_by: "",
+          },
+        });
+
+        const data = await adapter.getConvergenceData(103);
+        // Only the truly unresolved finding (F-103-001) should be counted
+        expect(data.findings_by_severity["significant"]).toBe(1);
+      });
     });
 
     // -----------------------------------------------------------------------
@@ -1388,308 +1567,6 @@ export function runAdapterContractTests(
         expect(node).not.toBeNull();
         expect(node!.id).toBe(id);
         expect(node!.type).toBe("journal_entry");
-      });
-    });
-
-    // -----------------------------------------------------------------------
-    // getMetricsEvents (contract) — WI-827
-    //
-    // Covers the six required filter combinations:
-    //   1. Empty store → []
-    //   2. cycle filter
-    //   3. agent_type filter
-    //   4. Combined (cycle + agent_type) AND semantics
-    //   5. work_item filter
-    //   6. phase filter
-    //
-    // These tests run against LocalAdapter unconditionally and against
-    // RemoteAdapter when a live test server is available (see
-    // remote-contract.test.ts). In standard CI without a live server,
-    // only LocalAdapter coverage is active.
-    //
-    // Write path: putNode with type "metrics_event" stores agent_type inside
-    // the payload JSON field. cycle_created is set via MutateNodeInput.cycle.
-    // -----------------------------------------------------------------------
-
-    describe("getMetricsEvents (contract)", () => {
-      // Helper: write a metrics event node via the adapter's putNode.
-      // - id: unique node ID (e.g. "ME-CT-01")
-      // - cycle: cycle_created value; passed both as MutateNodeInput.cycle
-      //   and as properties.cycle_created so the LocalAdapter writer stores it
-      //   correctly regardless of CYCLE_SCOPED_TYPES membership.
-      // - agentType: stored in payload.agent_type via the writer
-      // - workItem: stored in payload.work_item via the writer
-      // - phase: stored in payload.phase via the writer
-      // - timestamp: ISO timestamp string for ordering assertions
-      async function writeMetricsEvent(
-        a: StorageAdapter,
-        opts: {
-          id: string;
-          cycle: number;
-          agentType?: string;
-          eventName?: string;
-          timestamp?: string;
-          workItem?: string;
-          phase?: string;
-        }
-      ): Promise<void> {
-        const props: Record<string, unknown> = {
-          event_name: opts.eventName ?? "test_event",
-          timestamp: opts.timestamp ?? "2026-01-01T00:00:00.000Z",
-          cycle_created: opts.cycle,
-        };
-        if (opts.agentType !== undefined) {
-          props.agent_type = opts.agentType;
-        }
-        if (opts.workItem !== undefined) {
-          props.work_item = opts.workItem;
-        }
-        if (opts.phase !== undefined) {
-          props.phase = opts.phase;
-        }
-        await a.putNode({
-          id: opts.id,
-          type: "metrics_event",
-          cycle: opts.cycle,
-          properties: props,
-        });
-      }
-
-      // 1. Empty result — getMetricsEvents on empty store returns []
-      it("returns [] (not null, not undefined) when no metrics events exist", async () => {
-        const results = await adapter.getMetricsEvents();
-        expect(Array.isArray(results)).toBe(true);
-        expect(results).toHaveLength(0);
-      });
-
-      // 2. Cycle filter — write events across cycles 1, 2, 3; filter by cycle=2
-      it("cycle filter returns only events from the specified cycle", async () => {
-        await writeMetricsEvent(adapter, {
-          id: "ME-CT-C01",
-          cycle: 1,
-          agentType: "code-reviewer",
-          timestamp: "2026-01-01T00:01:00.000Z",
-        });
-        await writeMetricsEvent(adapter, {
-          id: "ME-CT-C02",
-          cycle: 2,
-          agentType: "architect",
-          timestamp: "2026-01-01T00:02:00.000Z",
-        });
-        await writeMetricsEvent(adapter, {
-          id: "ME-CT-C03",
-          cycle: 3,
-          agentType: "domain-curator",
-          timestamp: "2026-01-01T00:03:00.000Z",
-        });
-
-        const results = await adapter.getMetricsEvents({ cycle: 2 });
-
-        expect(Array.isArray(results)).toBe(true);
-        expect(results).toHaveLength(1);
-        expect(results[0].node.id).toBe("ME-CT-C02");
-        expect(results[0].node.cycle_created).toBe(2);
-        expect(results[0].node.type).toBe("metrics_event");
-      });
-
-      // 3. agent_type filter — write events with different agent_types
-      it("agent_type filter returns only events with matching payload.agent_type", async () => {
-        await writeMetricsEvent(adapter, {
-          id: "ME-CT-A01",
-          cycle: 1,
-          agentType: "worker-agent",
-          timestamp: "2026-02-01T00:01:00.000Z",
-        });
-        await writeMetricsEvent(adapter, {
-          id: "ME-CT-A02",
-          cycle: 1,
-          agentType: "reviewer-agent",
-          timestamp: "2026-02-01T00:02:00.000Z",
-        });
-        await writeMetricsEvent(adapter, {
-          id: "ME-CT-A03",
-          cycle: 2,
-          agentType: "worker-agent",
-          timestamp: "2026-02-01T00:03:00.000Z",
-        });
-
-        const results = await adapter.getMetricsEvents({ agent_type: "worker-agent" });
-
-        expect(Array.isArray(results)).toBe(true);
-        const ids = results.map((r) => r.node.id).sort();
-        expect(ids).toContain("ME-CT-A01");
-        expect(ids).toContain("ME-CT-A03");
-        expect(ids).not.toContain("ME-CT-A02");
-
-        // Verify payload carries agent_type
-        for (const row of results.filter((r) => ["ME-CT-A01", "ME-CT-A03"].includes(r.node.id))) {
-          expect(row.properties.payload).not.toBeNull();
-          const payload = JSON.parse(row.properties.payload!) as Record<string, unknown>;
-          expect(payload.agent_type).toBe("worker-agent");
-        }
-      });
-
-      // 4. Combined filters — cycle + agent_type compose AND semantics
-      it("combined cycle + agent_type filters apply AND semantics", async () => {
-        await writeMetricsEvent(adapter, {
-          id: "ME-CT-D01",
-          cycle: 5,
-          agentType: "executor",
-          timestamp: "2026-03-01T00:01:00.000Z",
-        });
-        await writeMetricsEvent(adapter, {
-          id: "ME-CT-D02",
-          cycle: 5,
-          agentType: "curator",
-          timestamp: "2026-03-01T00:02:00.000Z",
-        });
-        await writeMetricsEvent(adapter, {
-          id: "ME-CT-D03",
-          cycle: 6,
-          agentType: "executor",
-          timestamp: "2026-03-01T00:03:00.000Z",
-        });
-
-        // Only ME-CT-D01 matches both cycle=5 AND agent_type="executor"
-        const results = await adapter.getMetricsEvents({
-          cycle: 5,
-          agent_type: "executor",
-        });
-
-        expect(Array.isArray(results)).toBe(true);
-        expect(results).toHaveLength(1);
-        expect(results[0].node.id).toBe("ME-CT-D01");
-        expect(results[0].node.cycle_created).toBe(5);
-
-        const payload = JSON.parse(results[0].properties.payload!) as Record<string, unknown>;
-        expect(payload.agent_type).toBe("executor");
-      });
-
-      // 5. work_item filter — write events with different work_item values
-      it("filters by work_item correctly", async () => {
-        await writeMetricsEvent(adapter, {
-          id: "ME-CT-WI01",
-          cycle: 10,
-          agentType: "worker-agent",
-          workItem: "WI-001",
-          timestamp: "2026-05-01T00:01:00.000Z",
-        });
-        await writeMetricsEvent(adapter, {
-          id: "ME-CT-WI02",
-          cycle: 10,
-          agentType: "worker-agent",
-          workItem: "WI-002",
-          timestamp: "2026-05-01T00:02:00.000Z",
-        });
-        await writeMetricsEvent(adapter, {
-          id: "ME-CT-WI03",
-          cycle: 11,
-          agentType: "reviewer-agent",
-          workItem: "WI-001",
-          timestamp: "2026-05-01T00:03:00.000Z",
-        });
-
-        const results = await adapter.getMetricsEvents({ work_item: "WI-001" });
-
-        expect(Array.isArray(results)).toBe(true);
-        const ids = results.map((r) => r.node.id).sort();
-        expect(ids).toContain("ME-CT-WI01");
-        expect(ids).toContain("ME-CT-WI03");
-        expect(ids).not.toContain("ME-CT-WI02");
-
-        // Verify payload carries work_item
-        for (const row of results.filter((r) => ["ME-CT-WI01", "ME-CT-WI03"].includes(r.node.id))) {
-          expect(row.properties.payload).not.toBeNull();
-          const payload = JSON.parse(row.properties.payload!) as Record<string, unknown>;
-          expect(payload.work_item).toBe("WI-001");
-        }
-      });
-
-      // 6. phase filter — write events with different phase values
-      it("filters by phase correctly", async () => {
-        await writeMetricsEvent(adapter, {
-          id: "ME-CT-PH01",
-          cycle: 20,
-          agentType: "worker-agent",
-          phase: "PH-045",
-          timestamp: "2026-06-01T00:01:00.000Z",
-        });
-        await writeMetricsEvent(adapter, {
-          id: "ME-CT-PH02",
-          cycle: 20,
-          agentType: "worker-agent",
-          phase: "PH-046",
-          timestamp: "2026-06-01T00:02:00.000Z",
-        });
-        await writeMetricsEvent(adapter, {
-          id: "ME-CT-PH03",
-          cycle: 21,
-          agentType: "reviewer-agent",
-          phase: "PH-045",
-          timestamp: "2026-06-01T00:03:00.000Z",
-        });
-
-        const results = await adapter.getMetricsEvents({ phase: "PH-045" });
-
-        expect(Array.isArray(results)).toBe(true);
-        const ids = results.map((r) => r.node.id).sort();
-        expect(ids).toContain("ME-CT-PH01");
-        expect(ids).toContain("ME-CT-PH03");
-        expect(ids).not.toContain("ME-CT-PH02");
-
-        // Verify payload carries phase
-        for (const row of results.filter((r) => ["ME-CT-PH01", "ME-CT-PH03"].includes(r.node.id))) {
-          expect(row.properties.payload).not.toBeNull();
-          const payload = JSON.parse(row.properties.payload!) as Record<string, unknown>;
-          expect(payload.phase).toBe("PH-045");
-        }
-      });
-
-      // Shape contract — returned rows must conform to MetricsEventRow structure
-      it("returned rows have the correct MetricsEventRow shape (node + properties)", async () => {
-        await writeMetricsEvent(adapter, {
-          id: "ME-CT-SH01",
-          cycle: 7,
-          agentType: "shape-tester",
-          timestamp: "2026-04-01T00:01:00.000Z",
-        });
-
-        const results = await adapter.getMetricsEvents({ cycle: 7 });
-
-        expect(results).toHaveLength(1);
-        const row = results[0];
-
-        // node shape
-        expect(typeof row.node.id).toBe("string");
-        expect(row.node.type).toBe("metrics_event");
-        expect(row.node.cycle_created).toBe(7);
-
-        // properties shape — all MetricsEventProperties keys must be present
-        // and known-written fields must carry the correct types
-        expect(row.properties).toHaveProperty("event_name");
-        expect(typeof row.properties.event_name).toBe("string");
-        expect(row.properties).toHaveProperty("timestamp");
-        expect(row.properties).toHaveProperty("payload");
-        expect(row.properties).toHaveProperty("input_tokens");
-        expect(row.properties).toHaveProperty("output_tokens");
-        expect(row.properties).toHaveProperty("cache_read_tokens");
-        expect(row.properties).toHaveProperty("cache_write_tokens");
-        expect(row.properties).toHaveProperty("outcome");
-        expect(row.properties).toHaveProperty("finding_count");
-        expect(row.properties).toHaveProperty("finding_severities");
-        expect(row.properties).toHaveProperty("first_pass_accepted");
-        expect(row.properties).toHaveProperty("rework_count");
-        expect(row.properties).toHaveProperty("work_item_total_tokens");
-        expect(row.properties).toHaveProperty("cycle_total_tokens");
-        expect(row.properties).toHaveProperty("cycle_total_cost_estimate");
-        expect(row.properties).toHaveProperty("convergence_cycles");
-        expect(row.properties).toHaveProperty("context_artifact_ids");
-
-        // typeof checks for known-written scalar fields
-        // event_name is written as "test_event" (string)
-        expect(typeof row.properties.event_name).toBe("string");
-        // cycle_created is returned on the node as a number
-        expect(typeof row.node.cycle_created).toBe("number");
       });
     });
 
@@ -1929,6 +1806,361 @@ export function runAdapterContractTests(
         });
       });
     });
+
+    // -----------------------------------------------------------------------
+    // getToolUsage contract (WI-863)
+    //
+    // Verifies that getToolUsage returns correctly-shaped ToolUsageRow objects
+    // and that filters (session_id, cycle, phase) AND-combine correctly.
+    //
+    // When seedToolUsage is provided (LocalAdapter), rows are pre-inserted and
+    // the full filter suite runs. When it is absent (RemoteAdapter stub), the
+    // empty-result path is exercised instead.
+    // -----------------------------------------------------------------------
+
+    describe("getToolUsage", () => {
+      // Seed rows used across all filter tests.
+      const SEED_ROWS: ToolUsageInsert[] = [
+        {
+          tool_name: "ideate_artifact_query",
+          request_tokens: 100,
+          response_tokens: 200,
+          request_bytes: 512,
+          response_bytes: 1024,
+          session_id: "sess-a",
+          cycle: 1,
+          phase: "execute",
+          timestamp: "2026-04-10T10:00:00.000Z",
+        },
+        {
+          tool_name: "ideate_artifact_query",
+          request_tokens: 150,
+          response_tokens: 300,
+          request_bytes: 768,
+          response_bytes: 2048,
+          session_id: "sess-a",
+          cycle: 1,
+          phase: "execute",
+          timestamp: "2026-04-10T11:00:00.000Z",
+        },
+        {
+          tool_name: "ideate_write_artifact",
+          request_tokens: 80,
+          response_tokens: 160,
+          request_bytes: 400,
+          response_bytes: 800,
+          session_id: "sess-b",
+          cycle: 2,
+          phase: "review",
+          timestamp: "2026-04-11T09:00:00.000Z",
+        },
+        {
+          tool_name: "ideate_write_artifact",
+          request_tokens: null,
+          response_tokens: null,
+          request_bytes: 300,
+          response_bytes: 600,
+          session_id: "sess-b",
+          cycle: 2,
+          phase: "review",
+          timestamp: "2026-04-11T14:00:00.000Z",
+        },
+        {
+          tool_name: "ideate_artifact_query",
+          request_tokens: 200,
+          response_tokens: 400,
+          request_bytes: 900,
+          response_bytes: 1800,
+          session_id: "sess-c",
+          cycle: 2,
+          phase: "execute",
+          timestamp: "2026-04-12T08:00:00.000Z",
+        },
+      ];
+
+      // -----------------------------------------------------------------------
+      // Shape — runs regardless of whether seedToolUsage is provided
+      // -----------------------------------------------------------------------
+
+      it("getToolUsage() resolves to an array without error", async () => {
+        await expect(adapter.getToolUsage()).resolves.toBeInstanceOf(Array);
+      });
+
+      it("getToolUsage() with empty filter resolves to an array without error", async () => {
+        await expect(adapter.getToolUsage({})).resolves.toBeInstanceOf(Array);
+      });
+
+      it("getToolUsage rows have correct shape when rows exist", async () => {
+        if (!options.seedToolUsage) return; // skip shape check when adapter has no seed hook
+        await options.seedToolUsage(SEED_ROWS);
+
+        const rows = await adapter.getToolUsage();
+        expect(rows.length).toBeGreaterThan(0);
+
+        for (const row of rows) {
+          // Required numeric id
+          expect(typeof row.id).toBe("number");
+          // Required string fields
+          expect(typeof row.tool_name).toBe("string");
+          expect(typeof row.timestamp).toBe("string");
+          // Required numeric byte fields
+          expect(typeof row.request_bytes).toBe("number");
+          expect(typeof row.response_bytes).toBe("number");
+          // Nullable token fields
+          expect(
+            row.request_tokens === null || typeof row.request_tokens === "number"
+          ).toBe(true);
+          expect(
+            row.response_tokens === null || typeof row.response_tokens === "number"
+          ).toBe(true);
+          // Nullable context fields (wired by WI-861)
+          expect(
+            row.session_id === null || typeof row.session_id === "string"
+          ).toBe(true);
+          expect(row.cycle === null || typeof row.cycle === "number").toBe(true);
+          expect(row.phase === null || typeof row.phase === "string").toBe(true);
+        }
+      });
+
+      // -----------------------------------------------------------------------
+      // Aggregate view — unfiltered; all rows returned
+      // -----------------------------------------------------------------------
+
+      it("aggregate view: no filter returns all seeded rows", async () => {
+        if (!options.seedToolUsage) return;
+        await options.seedToolUsage(SEED_ROWS);
+
+        const rows = await adapter.getToolUsage();
+        expect(rows).toHaveLength(SEED_ROWS.length);
+      });
+
+      it("aggregate view: rows are ordered by timestamp ASC", async () => {
+        if (!options.seedToolUsage) return;
+        await options.seedToolUsage(SEED_ROWS);
+
+        const rows = await adapter.getToolUsage();
+        const timestamps = rows.map((r) => r.timestamp);
+        expect(timestamps).toEqual([...timestamps].sort());
+      });
+
+      // -----------------------------------------------------------------------
+      // Detail view — filtered; subset of rows
+      // -----------------------------------------------------------------------
+
+      it("detail view: filter by session_id returns only matching rows", async () => {
+        if (!options.seedToolUsage) return;
+        await options.seedToolUsage(SEED_ROWS);
+
+        const rows = await adapter.getToolUsage({ session_id: "sess-a" });
+        // SEED_ROWS rows 0 and 1 both have session_id "sess-a"
+        expect(rows).toHaveLength(2);
+        for (const row of rows) {
+          expect(row.session_id).toBe("sess-a");
+        }
+      });
+
+      it("detail view: filter by cycle returns only matching rows", async () => {
+        if (!options.seedToolUsage) return;
+        await options.seedToolUsage(SEED_ROWS);
+
+        const rows = await adapter.getToolUsage({ cycle: 1 });
+        // Rows 0 and 1 have cycle=1
+        expect(rows).toHaveLength(2);
+        for (const row of rows) {
+          expect(row.cycle).toBe(1);
+        }
+      });
+
+      it("detail view: filter by phase returns only matching rows", async () => {
+        if (!options.seedToolUsage) return;
+        await options.seedToolUsage(SEED_ROWS);
+
+        const rows = await adapter.getToolUsage({ phase: "review" });
+        // Rows 2 and 3 have phase="review"
+        expect(rows).toHaveLength(2);
+        for (const row of rows) {
+          expect(row.phase).toBe("review");
+        }
+      });
+
+      // -----------------------------------------------------------------------
+      // Filter combination — AND semantics; intersection of criteria
+      // -----------------------------------------------------------------------
+
+      it("filter combination: session_id + cycle filters are AND-combined", async () => {
+        if (!options.seedToolUsage) return;
+        await options.seedToolUsage(SEED_ROWS);
+
+        // sess-a AND cycle=1 → rows 0 and 1 only
+        const rows = await adapter.getToolUsage({ session_id: "sess-a", cycle: 1 });
+        expect(rows).toHaveLength(2);
+        for (const row of rows) {
+          expect(row.session_id).toBe("sess-a");
+          expect(row.cycle).toBe(1);
+        }
+      });
+
+      it("filter combination: cycle + phase filters are AND-combined", async () => {
+        if (!options.seedToolUsage) return;
+        await options.seedToolUsage(SEED_ROWS);
+
+        // cycle=2 AND phase="execute" → row 4 only (sess-c, ideate_artifact_query)
+        const rows = await adapter.getToolUsage({ cycle: 2, phase: "execute" });
+        expect(rows).toHaveLength(1);
+        expect(rows[0].cycle).toBe(2);
+        expect(rows[0].phase).toBe("execute");
+        expect(rows[0].session_id).toBe("sess-c");
+      });
+
+      // -----------------------------------------------------------------------
+      // No-match path — filter with no matches returns empty array (not an error)
+      // -----------------------------------------------------------------------
+
+      it("no-match: filter with no matching rows returns empty array", async () => {
+        if (!options.seedToolUsage) {
+          // Even without seeding, a non-matching filter must return []
+          const rows = await adapter.getToolUsage({ session_id: "nonexistent-session-xyz" });
+          expect(rows).toBeInstanceOf(Array);
+          expect(rows).toHaveLength(0);
+          return;
+        }
+        await options.seedToolUsage(SEED_ROWS);
+
+        const rows = await adapter.getToolUsage({ session_id: "nonexistent-session-xyz" });
+        expect(rows).toBeInstanceOf(Array);
+        expect(rows).toHaveLength(0);
+      });
+
+      // -----------------------------------------------------------------------
+      // Adapter truncation — the adapter contract covers (a) no silent
+      // truncation from the adapter itself and (b) correctness of returned rows
+      // at any size. Limit truncation (handler-level slicing via rows.slice(0,
+      // limit) in tool-usage.ts) is a handler concern, not an adapter concern:
+      // ToolUsageFilter has no `limit` field. This test verifies the adapter
+      // does not silently cap results.
+      // -----------------------------------------------------------------------
+
+      it("no silent truncation: adapter returns all rows without capping at any threshold", async () => {
+        if (!options.seedToolUsage) return;
+
+        // Insert 50 rows with unique timestamps
+        const manyRows: ToolUsageInsert[] = Array.from({ length: 50 }, (_, i) => ({
+          tool_name: "ideate_artifact_query",
+          request_tokens: i,
+          response_tokens: i * 2,
+          request_bytes: 100 + i,
+          response_bytes: 200 + i,
+          session_id: "sess-limit",
+          cycle: 1,
+          phase: "execute",
+          // Use padded minute offsets so ordering is deterministic
+          timestamp: `2026-04-15T${String(Math.floor(i / 60)).padStart(2, "0")}:${String(i % 60).padStart(2, "0")}:00.000Z`,
+        }));
+        await options.seedToolUsage(manyRows);
+
+        const rows = await adapter.getToolUsage({ session_id: "sess-limit" });
+        expect(rows).toHaveLength(50);
+        // Verify rows are ordered by timestamp ASC
+        const timestamps = rows.map((r) => r.timestamp);
+        expect(timestamps).toEqual([...timestamps].sort());
+      });
+
+      // -----------------------------------------------------------------------
+      // Context field round-trip (WI-861) — session_id, cycle, phase populated
+      // -----------------------------------------------------------------------
+
+      it("context fields round-trip: session_id, cycle, and phase survive insert→query", async () => {
+        if (!options.seedToolUsage) return;
+
+        const row: ToolUsageInsert = {
+          tool_name: "ideate_context_tool",
+          request_tokens: 42,
+          response_tokens: 84,
+          request_bytes: 256,
+          response_bytes: 512,
+          session_id: "sess-roundtrip",
+          cycle: 7,
+          phase: "refine",
+          timestamp: "2026-04-15T12:00:00.000Z",
+        };
+        await options.seedToolUsage([row]);
+
+        const rows = await adapter.getToolUsage({ session_id: "sess-roundtrip" });
+        expect(rows).toHaveLength(1);
+
+        const r = rows[0];
+        expect(r.session_id).toBe("sess-roundtrip");
+        expect(r.cycle).toBe(7);
+        expect(r.phase).toBe("refine");
+        expect(r.tool_name).toBe("ideate_context_tool");
+        expect(r.request_tokens).toBe(42);
+        expect(r.response_tokens).toBe(84);
+        expect(r.request_bytes).toBe(256);
+        expect(r.response_bytes).toBe(512);
+        expect(r.timestamp).toBe("2026-04-15T12:00:00.000Z");
+      });
+
+      // -----------------------------------------------------------------------
+      // Null tolerance — null token values do not cause errors or wrong shape
+      // -----------------------------------------------------------------------
+
+      it("null token fields: rows with null request/response tokens are returned correctly", async () => {
+        if (!options.seedToolUsage) return;
+
+        const row: ToolUsageInsert = {
+          tool_name: "ideate_null_tokens",
+          request_tokens: null,
+          response_tokens: null,
+          request_bytes: 100,
+          response_bytes: 200,
+          session_id: "sess-null",
+          cycle: null,
+          phase: null,
+          timestamp: "2026-04-15T13:00:00.000Z",
+        };
+        await options.seedToolUsage([row]);
+
+        const rows = await adapter.getToolUsage({ session_id: "sess-null" });
+        expect(rows).toHaveLength(1);
+        expect(rows[0].request_tokens).toBeNull();
+        expect(rows[0].response_tokens).toBeNull();
+        expect(rows[0].cycle).toBeNull();
+        expect(rows[0].phase).toBeNull();
+      });
+
+      // -----------------------------------------------------------------------
+      // Negative shape (AC-4) — ValidatingAdapter rejects malformed rows
+      //
+      // Constructs a minimal stub whose getToolUsage returns a row with a
+      // missing required field (tool_name: undefined), wraps it in
+      // ValidatingAdapter, and asserts that ValidatingAdapter throws rather
+      // than silently propagating the corrupt row.
+      // -----------------------------------------------------------------------
+
+      it("negative shape: ValidatingAdapter throws when inner adapter returns row with missing tool_name", async () => {
+        // Build a stub that returns a single malformed row (tool_name missing)
+        const malformedRow = {
+          id: 1,
+          tool_name: undefined as unknown as string,
+          timestamp: "2026-04-15T00:00:00.000Z",
+          request_tokens: null,
+          response_tokens: null,
+          request_bytes: 0,
+          response_bytes: 0,
+          session_id: null,
+          cycle: null,
+          phase: null,
+        };
+
+        const stubAdapter = {
+          ...adapter, // inherit all methods from the real adapter
+          getToolUsage: async (): Promise<ToolUsageRow[]> => [malformedRow as ToolUsageRow],
+        } as StorageAdapter;
+
+        const validating = new ValidatingAdapter(stubAdapter);
+        await expect(validating.getToolUsage()).rejects.toThrow();
+      });
+    });
   });
 }
 
@@ -1941,9 +2173,11 @@ describe("LocalAdapter", () => {
   const state: {
     tmpDir: string;
     db: Database.Database | null;
+    drizzleDb: ReturnType<typeof drizzle<typeof dbSchema>> | null;
   } = {
     tmpDir: "",
     db: null,
+    drizzleDb: null,
   };
 
   runAdapterContractTests(
@@ -1965,7 +2199,6 @@ describe("LocalAdapter", () => {
         "constraints",
         "modules",
         "research",
-        "metrics",
         "interviews",
         "projects",
         "phases",
@@ -1991,6 +2224,7 @@ describe("LocalAdapter", () => {
       createSchema(db);
 
       const drizzleDb = drizzle(db, { schema: dbSchema });
+      state.drizzleDb = drizzleDb;
 
       const raw = new LocalAdapter({ db, drizzleDb, ideateDir });
       const adapter = new ValidatingAdapter(raw);
@@ -2004,10 +2238,23 @@ describe("LocalAdapter", () => {
         // ignore
       }
       state.db = null;
+      state.drizzleDb = null;
       if (state.tmpDir) {
         fs.rmSync(state.tmpDir, { recursive: true, force: true });
         state.tmpDir = "";
       }
     },
+    {
+      // Provide a seedToolUsage hook that inserts rows via insertToolUsage
+      // using the drizzleDb from the most recently created adapter instance.
+      seedToolUsage: (rows: ToolUsageInsert[]) => {
+        if (!state.drizzleDb) {
+          throw new Error("seedToolUsage called before adapter was created");
+        }
+        for (const row of rows) {
+          insertToolUsage(state.drizzleDb, row);
+        }
+      },
+    }
   );
 });

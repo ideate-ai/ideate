@@ -8,5 +8,8 @@ file: mcp/artifact-server/src/__tests__/remote-adapter.test.ts
 line: 387
 cycle: 29
 cycle_modified: 27
-content_hash: 594bc392d937a8ee7f6b4ef019ac3687476bd37a4db49d5e16533d43ffad5aee
-token_count: 134
+content_hash: b0478e49ea4f06326685b8bd9c3dae1c7fb760da67556480d0b9611434ee1d7f
+token_count: 201
+status: resolved
+addressed_by: PH-046
+resolution_note: "Fixed by commit 1a0d686: Test F at remote-adapter.test.ts:417 now asserts expect(fetchSpy).toHaveBeenCalledTimes(2)."

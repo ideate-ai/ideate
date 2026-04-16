@@ -1,10 +1,10 @@
 id: code-quality
 type: cycle_summary
 reviewer: code-reviewer
-content: |-
-  ## Verdict: Fail
+content: |
+  ## Verdict: Pass
 
-  WI-832 codified the P-87 recovery protocol but left P-87's own verification criterion partially unmet: the execute.md worker prompt does not include the explicit 'do not write .ideate/ directly' prohibition that P-87 requires worker-spawning skills to contain.
+  The test suite ran cleanly — 1473 tests passed, 0 failures across all 42 active test files. The telemetry pipeline holds end-to-end: context is read in readTelemetryContext, wired in initServer, inserted via instrumentToolDispatch, and queryable through handleGetToolUsage. No Critical or Significant findings.
 
   ## Critical Findings
 
@@ -12,71 +12,30 @@ content: |-
 
   ## Significant Findings
 
-  ### S1: P-87 verification criterion not satisfied — execute.md worker prompt missing .ideate/ write prohibition
-  - **File**: skills/autopilot/phases/execute.md:78-86
-  - **Issue**: P-87's verification states: 'At design time, ensure worker-spawning skills instruct workers not to write .ideate/ directly.' The worker-prompt list in execute.md contains seven bullets but none prohibit direct .ideate/ writes. The GP-14 enforcement paragraph at line 51 addresses the parent orchestrator's MCP calls, not the worker's behavior.
-  - **Impact**: Workers will continue to fall back to Write/Edit for .ideate/ mutations because their prompt does not prohibit it. Every such violation requires parent re-sync, but the root cause persists.
-  - **Suggested fix**: Add to the worker-prompt list: 'Do not write files under .ideate/ directly — all .ideate/ mutations must go through MCP tools (ideate_write_artifact, ideate_update_work_items, ideate_append_journal).'
+  None.
 
   ## Minor Findings
 
-  ### M1: Dead reference to non-existent adapter-interface.md in test comment
-  - **File**: mcp/artifact-server/src/__tests__/remote-adapter.test.ts:222
-  - **Issue**: Comment references 'adapter-interface.md Section 7' but the file does not exist under docs/. Actual docs: adapter-contract.md, ppr-alignment-research.md, tls-configuration.md.
-  - **Fix**: Update reference to adapter-contract.md or remove.
+  ### M1: ValidatingAdapter.getToolUsage skips validation of required byte fields
+  - File: mcp/artifact-server/src/validating.ts:635-664
+  - Issue: Validator checks id, tool_name, timestamp but not request_bytes / response_bytes, which are non-nullable in ToolUsageRow. A malformed adapter returning undefined would pass validation and propagate to buildAggregates producing NaN totals silently.
+  - Fix: Add guards for request_bytes and response_bytes after the timestamp check; add a corresponding negative-shape test.
 
-  ### M2: Test D assertion does not verify specific error code
-  - **File**: mcp/artifact-server/src/__tests__/remote-adapter.test.ts:356
-  - **Issue**: Assertion 'err instanceof StorageAdapterError' is too weak. ConnectionError extends StorageAdapterError, so the assertion passes even if the wrong error type is thrown.
-  - **Fix**: Add 'err.code === "HTTP_401"' check alongside instance check.
+  ### M2: --limit flag in report-tool-usage.sh is a no-op; help text misleading
+  - File: scripts/report-tool-usage.sh:29-31 and :129
+  - Issue: Script hardcodes view='aggregate'. The aggregate view path ignores limit entirely. Help text implies --limit N affects what is returned but it has no effect.
+  - Fix: Either remove --limit from the script, or update help text to 'Reserved; has no effect when the report uses aggregate view (default).'
 
-  ### M3: WI-831 regression test fixture uses different id pattern than WI-797 fixture
-  - **File**: mcp/artifact-server/src/__tests__/tools.test.ts:1117
-  - **Issue**: WI-831 fixture (cycle 204) uses id:spec-adherence-204; WI-797 fixture (cycle 200) uses id:spec-adherence unsuffixed. Inconsistent pattern for future fixture authors.
-  - **Fix**: Normalize cycle 200 fixture to id:spec-adherence-200.
+  ## Unmet Acceptance Criteria
 
-  ### M4: executeOnceWithAuth does not wrap fetch() network errors as ConnectionError
-  - **File**: mcp/artifact-server/src/adapters/remote/client.ts:347
-  - **Issue**: executeOnceWithAuth calls fetch() without try/catch. A network failure on the post-rotation retry throws a raw TypeError that bypasses isRetryableError and propagates as an unclassified error. Sibling executeOnce wraps correctly at 260-274.
-  - **Fix**: Wrap fetch() call identically to executeOnce.
-
-  ## Test Results
-  - TypeScript: clean
-  - Test suite: 1440 passed, 339 skipped (equivalence tests need live server)
+  None.
 
   ## Requires Human Review
-  - P-87.yaml written via MCP (ideate_write_artifact), not direct Write tool call. The file is untracked, no git history. Static review cannot confirm the write tool used; MCP call log or autopilot session journal for cycle 9 must be checked.
-content_hash: d873a8c3e1a1ba88c9b7e310e7aba43a92ff1278619358e7339541b54b5916e4
-token_count: 1274
+
+  - WI-866: README 'Tool usage reporting' section accurately describes behavior — requires project owner/tech lead review.
+  - WI-865: Removal of handleEmitMetric test blocks does not obscure live coverage — requires tech lead sign-off that no metrics_events dispatch remains outside the deleted blocks.
+content_hash: db982ec2d2b7beb6429cb5e731369443f284b1aafd82549c02feaa05a22e6794
+token_count: 503
 file_path: .ideate/cycles/068/code-quality.yaml
-verdict: Fail
-phase: PH-046
-scope: differential cycle 8 (commits b799ccc..3377298)
-summary: "S1: executeOnceWithAuth ConnectionError is retried by outer execute() loop (WI-837 introduced retryable error type). S2: Test F missing fetch call count assertion. S3: 401 without tokenProvider throws retryable ConnectionError (pre-existing). M1: adapter-contract.md plain Error caveat may be stale. M2: Test F name redundantly states 'not raw TypeError'."
-findings:
-  critical: 0
-  significant: 3
-  minor: 2
 cycle: 29
 cycle_modified: 27
-review_mode: full
-findings_count:
-  critical: 0
-  significant: 2
-  minor: 3
-mode: differential
-start_commit: b71455540fcec06e960e3d9631814cccf65704bf
-test_status: 1417 pass / 0 fail; tsc clean
-critical_findings: []
-significant_findings: []
-minor_findings:
-  - "M1: executeOnceWithAuth lacks JSON parse error guard (client.ts:379) — pre-existing parity gap with executeOnce. Fix: wrap response.json() in try/catch throwing StorageAdapterError(PARSE_ERROR)."
-  - "M2: Test F asserts only instanceof ConnectionError, not message content. Test E asserts both. Suggested: add message.includes('fake-endpoint')."
-  - "M3: adapter-contract.md version metadata not updated after WI-838 — still shows Version 3.0, Last Updated 2026-04-06."
-  - "M4: WI attribution footnote (Introduced in WI-833...) present in adapter-interface.md but absent from adapter-contract.md."
-test_results: 1443 tests pass, 0 failures
-work_items:
-  - WI-835
-  - WI-836
-  - WI-837
-  - WI-838

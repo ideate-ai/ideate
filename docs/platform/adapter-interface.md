@@ -148,7 +148,7 @@ interface NodeFilter {
   phase?: string;
   work_item?: string;
   work_item_type?: string;
-  /** Agent type filter — used by getMetricsEvents; matched inside payload JSON. */
+  /** Agent type filter — matched inside payload JSON. */
   agent_type?: string;
 }
 
@@ -226,44 +226,6 @@ interface BatchMutateResult {
   results: MutateNodeResult[];
   /** Any validation errors (e.g., DAG cycles, scope collisions). */
   errors: Array<{ id: string; error: string }>;
-}
-
-// ---------------------------------------------------------------------------
-// MetricsEvent types — used by getMetricsEvents
-// ---------------------------------------------------------------------------
-
-/**
- * Properties of a metrics_event node. All fields nullable because rows may
- * be sparsely populated depending on the event category.
- */
-interface MetricsEventProperties {
-  event_name: string | null;
-  timestamp: string | null;
-  payload: string | null;
-  input_tokens: number | null;
-  output_tokens: number | null;
-  cache_read_tokens: number | null;
-  cache_write_tokens: number | null;
-  outcome: string | null;
-  finding_count: number | null;
-  finding_severities: string | null;
-  first_pass_accepted: number | null;
-  rework_count: number | null;
-  work_item_total_tokens: number | null;
-  cycle_total_tokens: number | null;
-  cycle_total_cost_estimate: string | null;
-  convergence_cycles: number | null;
-  context_artifact_ids: string | null;
-}
-
-/**
- * A single metrics event row: node metadata + typed extension properties.
- * Returned by getMetricsEvents to eliminate the N+1 fetchExtensionProperties
- * pattern.
- */
-interface MetricsEventRow {
-  node: NodeMeta;
-  properties: MetricsEventProperties;
 }
 ```
 
@@ -418,6 +380,11 @@ interface StorageAdapter {
   /**
    * Count nodes grouped by a dimension (status, type, domain, severity).
    * Used by analysis handlers (workspace status, convergence, domain state).
+   *
+   * When `group_by` is `'severity'` and `filter.type === 'finding'`, findings
+   * whose `addressed_by` field is non-null, non-empty are excluded from all
+   * counts. Only unresolved findings (addressed_by IS NULL) are counted
+   * (per P-88).
    */
   countNodes(
     filter: NodeFilter,
@@ -442,23 +409,10 @@ interface StorageAdapter {
   >;
 
   /**
-   * Fetch all metrics_event rows matching the optional filter.
-   *
-   * Filters (all optional):
-   *   - cycle: matched against node.cycle_created
-   *   - agent_type: matched inside the payload JSON field
-   *   - work_item: matched inside the payload JSON field (exact match)
-   *   - phase: matched inside the payload JSON field
-   *
-   * Results are ordered timestamp ASC, id ASC.
-   *
-   * @returns Array of MetricsEventRow; returns [] when no events match.
-   */
-  getMetricsEvents(filter?: NodeFilter): Promise<MetricsEventRow[]>;
-
-  /**
    * Get convergence status for a cycle: finding counts by severity,
    * principle violation verdict.
+   * Findings with a non-null, non-empty addressed_by are excluded from all counts;
+   * only unresolved findings count toward convergence blockers (per P-88).
    */
   getConvergenceData(cycle: number): Promise<{
     findings_by_severity: Record<string, number>;
@@ -609,20 +563,6 @@ interface StorageAdapter {
 | Idempotency | Calling `archiveCycle` on a cycle that has already been archived is a no-op (no error). |
 | Return value | Returns a human-readable summary string (e.g. `"Archived cycle 3: 2 work items, 4 incremental reviews moved."`). On an already-archived cycle, returns a `"0 work items, 0 incremental reviews moved"` message. |
 
-### 4.8 `getMetricsEvents`
-
-| Aspect | Behavior |
-|---|---|
-| Empty result | When no events match the filter, returns `[]`. Never throws. |
-| Ordering | Results are ordered timestamp ASC, id ASC. |
-| Return shape | Each element is `{ node: NodeMeta, properties: MetricsEventProperties }`. |
-| cycle filter | `LocalAdapter` applies SQL-side (`WHERE n.cycle_created = ?`). `RemoteAdapter` applies TypeScript-side alongside all other filters (see RemoteAdapter note below). |
-| agent_type filter | Both adapters apply TypeScript-side: matches `payload.agent_type` inside the JSON payload field. Events with null or unparseable payload are excluded. |
-| work_item filter | Both adapters apply TypeScript-side: exact match against `payload.work_item` inside the JSON payload field. |
-| phase filter | Both adapters apply TypeScript-side: exact match against `payload.phase` inside the JSON payload field. |
-| Combined filters | Multiple filter fields compose AND semantics: an event must satisfy all provided filter conditions to be included. |
-| RemoteAdapter note (D-210) | The remote backend does not yet expose a dedicated metrics events query. RemoteAdapter issues two round-trips: one `queryNodes` call to fetch all `metrics_event` node IDs, then one `getNodes` call to fetch full properties. The `cycle` filter (and all payload filters) are applied in TypeScript after both calls complete. This produces correct results at a performance cost relative to LocalAdapter's single-JOIN path. When the remote backend adds a native metrics events query, the stub should be replaced with a single round-trip. |
-
 ---
 
 ## 5. Error Handling Contract
@@ -734,7 +674,6 @@ class MissingCycleError extends StorageAdapterError {
 | `batchMutate` | `CycleDetectedError`, `ScopeCollisionError`, `StorageAdapterError` | Per-item errors in result |
 | `countNodes` | Never | -- |
 | `getDomainState` | Never | -- |
-| `getMetricsEvents` | Never — returns `[]`; transport errors for RemoteAdapter follow standard `client.query` semantics | -- |
 | `getConvergenceData` | Never | -- |
 | `initialize` | `ConnectionError`, `StorageAdapterError` | -- |
 | `shutdown` | Never (best-effort) | -- |

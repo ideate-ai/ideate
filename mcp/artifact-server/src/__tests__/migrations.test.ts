@@ -25,16 +25,16 @@ afterEach(() => {
 // ---------------------------------------------------------------------------
 
 describe("runPendingMigrations", () => {
-  it("is a no-op when config schema_version already equals target (5)", () => {
-    writeConfig(ideateDir, { schema_version: 5 });
+  it("is a no-op when config schema_version already equals target (7)", () => {
+    writeConfig(ideateDir, { schema_version: 7 });
 
     const result = runPendingMigrations(ideateDir);
 
     expect(result.migrationsRun).toBe(0);
     expect(result.errors).toHaveLength(0);
-    // schema_version must remain 5
+    // schema_version must remain 7
     const config = readRawConfig(ideateDir);
-    expect(config.schema_version).toBe(5);
+    expect(config.schema_version).toBe(7);
   });
 
   it("runs v4→v5 migration when config schema_version is 4", () => {
@@ -248,7 +248,7 @@ describe("runPendingMigrations — multi-step chain", () => {
       // Both steps ran in order
       expect(migrationsCalled).toEqual(["v3→v4", "v4→v5"]);
 
-      // Final schema_version is the target (5)
+      // Final schema_version is 5 — the v5→v6 bump has no migration entry, and the silent-bump path only fires when migrationsRun===0, so a v3-origin workspace stops at 5 on this startup.
       const config = readRawConfig(ideateDir);
       expect(config.schema_version).toBe(5);
     } finally {
@@ -264,8 +264,8 @@ describe("runPendingMigrations — multi-step chain", () => {
 
 describe("runPendingMigrations — already at target version", () => {
   it("runs no migrations and calls no migrate functions when schema_version equals the target", () => {
-    // Start at the current target version (5)
-    writeConfig(ideateDir, { schema_version: 5 });
+    // Start at the current target version (7)
+    writeConfig(ideateDir, { schema_version: 7 });
 
     // Wrap every migration's migrate function to detect if any are called
     const called: string[] = [];
@@ -289,7 +289,7 @@ describe("runPendingMigrations — already at target version", () => {
 
       // schema_version stays at target
       const config = readRawConfig(ideateDir);
-      expect(config.schema_version).toBe(5);
+      expect(config.schema_version).toBe(7);
     } finally {
       MIGRATIONS.forEach((m, i) => {
         m.migrate = originals[i];

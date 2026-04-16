@@ -1,141 +1,114 @@
 id: summary
 type: cycle_summary
-content: |-
-  # Review Summary — Cycle 28 (PH-044 capstone)
+content: |
+  # Capstone Review Summary — Cycle 28 / PH-048
 
-  **Phase**: PH-044 (StorageAdapter refactor — P1 follow-ups from RF-clean-interface-proposal)
-  **Project**: PR-002 (StorageAdapter refactor)
-  **Scope**: 2 work items, both merged and tested
-  **Verdict**: **Pass**
+  **Phase**: PH-048 "Quality Metrics Rebuild"  
+  **Work items**: WI-843 – WI-859 (17 items, all done)  
+  **Verdict**: **Pass with documentation follow-ups**
 
-  ## Work Items Reviewed
+  ## Top-Level Assessment
 
-  | WI | Title | Incremental | Capstone | Merge |
-  |---|---|---|---|---|
-  | WI-789 | max_nodes semantic alignment (D4 resolution) | Pass (F-WI-789-001) | Pass | 8a296af |
-  | WI-790 | Soft-deprecate metrics emission infrastructure | Pass (F-WI-790-001) | Pass | 6a027cb |
+  PH-048 delivered its scope: remove the failed metrics experiment (ideate_emit_metric / ideate_get_metrics / metrics_events) and replace it with narrow MCP-boundary instrumentation (tool_usage table, instrumentToolDispatch wrapper, ideate_get_tool_usage). The code-reviewer issued an unambiguous **Pass** with 1432 passing tests, no critical or significant findings. Two reviewers (spec-adherence, gap-analysis) hit their turn budgets and returned **Incomplete** verdicts, but the partial findings they did surface do not rise to critical.
 
   ## Reviewer Verdicts
 
   | Reviewer | Verdict | Critical | Significant | Minor |
   |---|---|---|---|---|
-  | code-reviewer | Pass | 0 | 0 | 3 (M1, M2, M3) |
-  | spec-reviewer | Pass | 0 | 0 | 0 |
-  | gap-analyst | Pass | 0 | 0 | 4 (II1, MI1, MI2, MI3) |
-  | **Aggregate** | **Pass** | **0** | **0** | **7** |
+  | code-reviewer | Pass | 0 | 0 | 6 |
+  | spec-reviewer | Incomplete (budget exhausted) | 0 | 1 | 0 |
+  | gap-analyst | Incomplete (budget exhausted) | 0 | 2 | unknown |
 
-  ## Test Status
+  ## Critical Findings
 
-  - Full test suite: 1388 pass, 0 fail
-  - pnpm build: green
-  - 37 test files passed, 5 skipped (pre-existing Docker-gated equivalence suites)
+  None.
 
-  ## Minor Findings (all 7)
+  ## Significant Findings
 
-  ### Code-reviewer
-  - **M1**: `handleGetMetrics` uses `ctx.db.prepare` directly (Leak 7). Pre-existing, deferred by WI-790 spec. Suggested: add TODO referencing the deferral decision.
-  - **M2**: `max_nodes` + `always_include_types` interact differently between LocalAdapter and RemoteAdapter. Consistent with D-5 design boundary. Deferred to WI-D2 (future equivalence cleanup per RF-clean-interface-proposal).
-  - **M3**: `ideate_emit_metric` MCP annotation `readOnlyHint: false` misdescribes the no-op. One-field fix.
+  ### F-028-S1: WI-852 / WI-859 scope declaration names a nonexistent file
+  - **Source**: spec-adherence S1, gap-analysis SG2 (convergent)
+  - Both work items list `docs/platform/ARCHITECTURE.md` in scope. No such file exists. Actual target: repo-root `ARCHITECTURE.md`. Work was executed correctly against the right file; only the scope metadata is inaccurate.
 
-  ### Gap-analyst
-  - **II1**: `docs/adapter-contract.md:223` still describes old abort semantic. One-line fix next cycle.
-  - **MI1**: `ARCHITECTURE.md:408-409` lists metrics tools with pre-deprecation descriptions. Two-line fix next cycle.
-  - **MI2**: No D-* domain record for max_nodes semantic resolution. Domain curator task this cycle.
-  - **MI3**: No D-* domain record for metrics soft-deprecation. Domain curator task this cycle. Q-157 should be updated to resolved-by-soft-deprecation.
+  ### F-028-S2: Platform-facing doc lacks telemetry surface coverage
+  - **Source**: gap-analysis SG1
+  - `docs/platform/architecture-overview.md` has no mention of `tool_usage` or `ideate_get_tool_usage`. Platform readers learning from this doc would not discover the new telemetry surface.
 
-  ## Decisions Recorded (D-028-01..06)
+  ## Minor Findings (all from code-reviewer)
 
-  1. **D-028-01**: Pure-slice semantic for `max_nodes` adopted (Option b). Graph-size abort removed.
-  2. **D-028-02**: D6 (always_include_types case forwarding) dropped from scope — confirmed correct implementation.
-  3. **D-028-03**: Soft-deprecate metrics infrastructure rather than fix Leak 7. Hard removal deferred to PH-047-candidate.
-  4. **D-028-04**: Retain `maxNodes` in `PPROptions` as no-op for backward compatibility.
-  5. **D-028-05**: Accept out-of-scope `tools.test.ts` touch for WI-790 — minimal test-file alignment causally required.
-  6. **D-028-06**: M2 adapter asymmetry classified as pre-existing design boundary consistent with D-5, not a regression.
+  - **M1**: `session_id` / `cycle` / `phase` columns exist but are not populated by server.ts. Filter params are silently non-functional.
+  - **M2**: `report-tool-usage.sh` hardcodes LocalAdapter; remote-backend workspaces silently report zero.
+  - **M3**: `getToolUsage` missing from `adapter-contract.test.ts` suite.
+  - **M4**: `both`-view truncation behavior undocumented (aggregate spans all rows, rows sliced to limit).
+  - **M5**: `tools.test.ts` header says "11 handlers" — stale.
+  - **M6**: `--limit 0` in bash validation silently reverts to 1000.
 
-  ## Open Questions Carried Forward (OQ-028-01..08)
+  ## Phase Convergence
 
-  1. M2 adapter asymmetry (`max_nodes` + `always_include_types`) — future equivalence cleanup (WI-D2 candidate)
-  2. Leak 7 (`handleGetMetrics` ctx.db.prepare) — PH-047-candidate
-  3. `readOnlyHint: false` annotation mismatch — next cycle
-  4. adapter-contract.md line 223 documentation drift — next cycle
-  5. ARCHITECTURE.md lines 408-409 documentation drift — next cycle
-  6. Missing D-* record for max_nodes semantic — curator pass
-  7. Missing D-* record for metrics soft-deprecation; Q-157 needs update — curator pass
-  8. PH-047-candidate scope/timing — user decision
+  **Condition A** (zero critical/significant from the only complete reviewer): Pass.  
+  **Condition B** (principle adherence verdict): Partial — spec-reviewer incomplete, but partial coverage confirmed D-210, P-33, GP-14 compliance for inspected areas.  
+  **Phase convergence**: **Yes, with documentation follow-ups.** No rework blocks PH-048 completion. Two significant findings (F-028-S1, F-028-S2) and six minor findings are documentation / test-coverage issues addressable in a single small refinement cycle.
 
-  ## Recommended Next Cycle Scope
+  ## Project Progress
 
-  **Small documentation cleanup WI** (bundled): adapter-contract.md line 223 + ARCHITECTURE.md lines 408-409 + M3 `readOnlyHint` fix + M1 TODO comment referencing D-028-03. All four are small; combining into one PR minimizes churn.
+  PH-048 was a YAGNI-driven maintenance phase closing a failed experiment. The replacement instrumentation (tool_usage table, MCP-boundary dispatch wrapper, report-tool-usage.sh) is installed, working, and tested at each layer. The project's strategic arc toward standalone-PM evolution is unaffected — PH-048 was a hygiene phase.
 
-  **Domain curator tasks** (this cycle): write D-* records for D-028-01 (max_nodes semantic) and D-028-03 (metrics soft-deprecation); update Q-157 resolution.
+  ## Recommended Follow-up
 
-  **Deferred to future phase**: PH-047-candidate (metrics rebuild — hard removal + replacement telemetry); WI-D2-candidate (equivalence test cleanup for M2 adapter asymmetry).
+  **Option A (single refinement cycle, small scope)**: Bundle F-028-S1, F-028-S2, and M1–M6 into one follow-up phase. Total estimated work: 6–8 small WIs, mostly doc + test additions.
 
-  ## Phase Convergence Assessment
+  **Option B (defer)**: Accept current state; address items opportunistically as they surface in user-facing work. No immediate risk.
 
-  PH-044 cycle count: 1 (this review is the first capstone on the phase). Circuit breaker threshold: 5. Below threshold — phase is converging normally.
+  **Option C (re-run incomplete reviewers)**: Respawn spec-reviewer and gap-analyst with expanded turn budgets (e.g., 180) or scoped prompts to resolve the unexplored coverage (GP-8 fail-soft trace, round-trip integration test, P-44 verification) before closing the cycle.
 
-  PH-044 goal: "Close two P1 items from RF-clean-interface-proposal" — both closed (D4 via WI-789, metrics soft-deprecation via WI-790; D6 dismissed with justification). Phase is effectively complete on intent.
+  ## Open Questions for User
 
-  ## References
+  See decision-log for full list (OQ-028P48-01 through OQ-028P48-10). The three that require user decisions (not just technical follow-up):
 
-  - Capstone artifacts: `code-quality`, `spec-adherence`, `gap-analysis`, `decision-log` under cycle 28
-  - Incremental findings: F-WI-789-001, F-WI-790-001 (cycle 27)
-  - Merge commits: 8a296af (WI-789), 6a027cb (WI-790)
-  - Originating research: RF-clean-interface-proposal
-content_hash: 24a9086ba7cb19be1f95068729ae0a4d482608e8bfd53a51eccf78ec363e8f2b
-token_count: 1896
+  - **OQ-028P48-02** (retention policy): how should tool_usage table growth be bounded?
+  - **OQ-028P48-04** (scope path fix): correct WI-852/WI-859 scope metadata, or accept as known limitation?
+  - **OQ-028P48-05** (platform doc): is `docs/platform/architecture-overview.md` a parallel canonical source, or a supplement pointing to root?
+content_hash: 6300adaf4b2012148b393948e6542620e467438601ac0c20750b17c605947a90
+token_count: 1453
 file_path: .ideate/cycles/068/summary.yaml
 cycle: 28
-phase: PH-017
-phase_name: Documentation & Cleanup
-date: 2026-04-13
-scope: "9 work items (WI-754 through WI-762): test-quality fixes eliminating vacuous assertions, adding missing coverage, correcting documentation"
-overall_verdict: Pass
+verdict: Pass with Follow-ups
+scope: differential (last_full=6, interval=3)
+work_items_completed:
+  - WI-828
+  - WI-829
+  - WI-830
+source_commits:
+  start: b799ccc
+  end: "3377298"
 reviewer_verdicts:
-  code-reviewer: Pass
-  spec-reviewer: Pass
-  gap-analyst: Pass
-critical_findings: 0
-significant_findings: 0
-minor_findings: 9
-carry_forward_gaps:
-  - id: CF1
-    title: 8 extension tables lack column-structure tests
-  - id: CF2
-    title: 4 extension tables have partial column-structure tests
-  - id: CF3
-    title: 10 of 16 extension tables lack CASCADE tests
-  - id: CF4
-    title: ALL_NODE_TYPES.length hardcoded count assertion
-acceptance_criteria_status: All machine-verifiable AC for WI-754 through WI-762 satisfied
-test_results: 1217 tests passed, 0 failures
-requires_human_review:
-  - "WI-759: Confirm WI-754.yaml acceptance criteria accurately describes sqlite_* filter approach"
-convergence_assessment: Phase converging well. All in-scope work items pass all three review perspectives. Remaining gaps are outside PH-017 scope and suitable for future phases.
+  code-reviewer:
+    verdict: Pass
+    findings:
+      critical: 0
+      significant: 0
+      minor: 3
+  spec-reviewer:
+    verdict: Pass
+    findings:
+      critical: 0
+      significant: 0
+      minor: 0
+    principle_violation_verdict: Pass
+  gap-analyst:
+    verdict: Fail
+    findings:
+      critical: 0
+      significant: 2
+      minor: 1
+    retry_note: First attempt returned partial output stuck on cycle-7 meta-analysis; retry with bounded prompt produced findings.
+significant_findings:
+  - id: C8-GA-S1
+    title: Worker GP-14 violation recovery pattern is undocumented
+  - id: C8-GA-S2
+    title: tokenProvider documented in AdapterConfig but has no regression test
+cycle_7_finding_closure: All 13 cycle-7 capstone findings verified closed by WI-828/WI-829/WI-830
+next_steps: "Phase 6d refinement: WI-832 (worker GP-14 recovery policy), WI-833 (tokenProvider regression test). Minor findings tracked for batching."
 cycle_modified: 27
-project: PR-002
-verdict: Pass
-work_items_reviewed:
-  - WI-763
-  - WI-764
-  - WI-765
-  - WI-766
-  - WI-767
-work_item_titles:
-  WI-763: Add reserved keyword documentation comments to schema.ts
-  WI-764: Add column-structure tests for 8 untested extension tables
-  WI-765: Expand 4 partial column-structure tests to full coverage
-  WI-766: Add ON DELETE CASCADE tests for 10 extension tables
-  WI-767: Remove hardcoded ALL_NODE_TYPES.length count assertion
-key_findings_summary: "All findings are minor. Three clusters: (1) reserved keyword comment accuracy — constraints mislabeled as reserved, trigger quoting overstated; (2) pattern consistency — 10 extension table describe blocks omit cols.length assertion established by nodes table; projects/phases lack NOT NULL tests; (3) naming — WI-767 test name 'is readonly array' doesn't match assertions."
-carry_forward:
-  - Correct reserved keyword comments in schema.ts (M1, M2)
-  - Add cols.length assertions to 10 extension table describe blocks (N1, MI2)
-  - Add NOT NULL tests for projects and phases tables (M3, MI2)
-  - Add NOT NULL tests for interview_questions (MI3)
-  - Rename 'is readonly array' test to match assertions (M4)
-  - Add idx_nodes_type_file_path to index tests (MI1)
-convergence_trend: Zero critical, zero significant — cleanest cycle since cycle 20. Phase PH-017 is converging. Residual gaps are mechanical (column counts, NOT NULL assertions) rather than architectural.
-reviewer: coordinator
-title: Review Summary — Cycle 28 (PH-044 capstone)
+phase: PH-048
+phase_name: Quality Metrics Rebuild
+date: 2026-04-16

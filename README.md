@@ -187,7 +187,6 @@ What each skill reads and writes through MCP tools:
 | `triage` | `ideate_artifact_query` (phase, work_items) | `ideate_write_work_items` | work item intake |
 | `status` | `ideate_get_workspace_status` | none | read-only views |
 | `settings` | `ideate_get_config` | `ideate_update_config` | runtime configuration |
-| `report` | `ideate_get_workspace_status`, `ideate_artifact_query`, `ideate_get_metrics`, `ideate_get_domain_state` | none | project reports |
 
 Skills access artifacts exclusively through MCP tools. Direct file reads by skills are not permitted.
 
@@ -499,28 +498,6 @@ Migrates an existing artifact directory to the v3 YAML-backed structure.
 ```bash
 ./scripts/migrate-to-v3.sh [--dry-run] [--verbose] path/to/specs
 ```
-
----
-
-## Reporting Scripts
-
-> **Note**: `report-cycle.sh`, `report-cost.sh`, and `report-executive.sh` are deprecated and will exit 1 with an error message. `report.sh` is also deprecated. Use the `ideate_get_metrics` MCP tool instead.
-
-### `report.sh` (deprecated)
-
-Previously generated a full metrics report. Now exits 1 with a deprecation message. Use `ideate_get_metrics` MCP tool instead.
-
-### `report-cycle.sh` (deprecated)
-
-Previously generated a cycle-focused report. Now exits 1 with a deprecation message. Use `ideate_get_metrics` MCP tool instead.
-
-### `report-cost.sh` (deprecated)
-
-Previously generated a token cost report. Now exits 1 with a deprecation message. Use `ideate_get_metrics` MCP tool instead.
-
-### `report-executive.sh` (deprecated)
-
-Previously generated a high-level executive summary. Now exits 1 with a deprecation message. Use `ideate_get_metrics` MCP tool instead.
 
 ---
 

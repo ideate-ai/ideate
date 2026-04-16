@@ -13,6 +13,9 @@ import * as path from "path";
 import type Database from "better-sqlite3";
 import type { DrizzleDb } from "../../db-helpers.js";
 
+import { and, asc, eq, gte, lte } from "drizzle-orm";
+import * as dbSchema from "../../db.js";
+
 import type {
   Node,
   NodeMeta,
@@ -22,8 +25,8 @@ import type {
   QueryResult,
   Edge,
   EdgeType,
-  MetricsEventRow,
-  MetricsEventProperties,
+  ToolUsageFilter,
+  ToolUsageRow,
 } from "../../adapter.js";
 import { ValidationError } from "../../adapter.js";
 
@@ -96,10 +99,6 @@ const TYPE_EXTENSION_INFO: Record<
   journal_entry: {
     table: "journal_entries",
     summaryExpr: "'[' || e.phase || '] ' || e.title",
-  },
-  metrics_event: {
-    table: "metrics_events",
-    summaryExpr: "e.event_name",
   },
   decision_log: {
     table: "document_artifacts",
@@ -238,7 +237,7 @@ export class LocalReaderAdapter {
 
   constructor(
     private readonly db: Database.Database,
-    private readonly _drizzleDb: DrizzleDb,
+    private readonly drizzleDb: DrizzleDb,
     private readonly ideateDir: string
   ) {}
 
@@ -532,133 +531,6 @@ export class LocalReaderAdapter {
   }
 
   // -----------------------------------------------------------------------
-  // getMetricsEvents — single-JOIN query (eliminates N+1 pattern, CR-S2)
-  // -----------------------------------------------------------------------
-
-  async getMetricsEvents(filter?: NodeFilter): Promise<MetricsEventRow[]> {
-    // Build WHERE clauses. Cycle lives on nodes.cycle_created and is pushed
-    // to SQL. The remaining filter dimensions (agent_type, work_item, phase)
-    // live inside the JSON payload field and are applied TypeScript-side after
-    // the query returns.
-    const whereClauses: string[] = ["n.type = 'metrics_event'"];
-    const params: (string | number)[] = [];
-
-    if (filter?.cycle !== undefined && filter.cycle !== null) {
-      whereClauses.push("n.cycle_created = ?");
-      params.push(filter.cycle);
-    }
-
-    const whereClause = "WHERE " + whereClauses.join(" AND ");
-
-    type RawRow = NodeRow & MetricsEventProperties;
-
-    const rows = this.db
-      .prepare(
-        `SELECT
-           n.id,
-           n.type,
-           n.status,
-           n.cycle_created,
-           n.cycle_modified,
-           n.content_hash,
-           n.token_count,
-           n.file_path,
-           m.event_name,
-           m.timestamp,
-           m.payload,
-           m.input_tokens,
-           m.output_tokens,
-           m.cache_read_tokens,
-           m.cache_write_tokens,
-           m.outcome,
-           m.finding_count,
-           m.finding_severities,
-           m.first_pass_accepted,
-           m.rework_count,
-           m.work_item_total_tokens,
-           m.cycle_total_tokens,
-           m.cycle_total_cost_estimate,
-           m.convergence_cycles,
-           m.context_artifact_ids
-         FROM nodes n
-         JOIN metrics_events m ON m.id = n.id
-         ${whereClause}
-         ORDER BY m.timestamp ASC, n.id ASC`
-      )
-      .all(...params) as RawRow[];
-
-    const currentCycle = this.fetchCurrentCycle();
-
-    let results: MetricsEventRow[] = rows.map((row) => {
-      // Apply current cycle as cycle_modified default (matches getNode behavior)
-      const cycleModified = row.cycle_modified ?? (currentCycle ?? null);
-      const nodeMeta: NodeMeta = {
-        id: row.id,
-        type: row.type as NodeType,
-        status: row.status,
-        cycle_created: row.cycle_created,
-        cycle_modified: cycleModified,
-        content_hash: row.content_hash,
-        token_count: row.token_count,
-      };
-      const properties: MetricsEventProperties = {
-        event_name: row.event_name,
-        timestamp: row.timestamp,
-        payload: row.payload,
-        input_tokens: row.input_tokens,
-        output_tokens: row.output_tokens,
-        cache_read_tokens: row.cache_read_tokens,
-        cache_write_tokens: row.cache_write_tokens,
-        outcome: row.outcome,
-        finding_count: row.finding_count,
-        finding_severities: row.finding_severities,
-        first_pass_accepted: row.first_pass_accepted,
-        rework_count: row.rework_count,
-        work_item_total_tokens: row.work_item_total_tokens,
-        cycle_total_tokens: row.cycle_total_tokens,
-        cycle_total_cost_estimate: row.cycle_total_cost_estimate,
-        convergence_cycles: row.convergence_cycles,
-        context_artifact_ids: row.context_artifact_ids,
-      };
-      return { node: nodeMeta, properties };
-    });
-
-    // Apply TypeScript-side filters for payload-resident fields
-    // (agent_type, work_item, phase live inside the JSON payload column).
-    if (filter) {
-      if (filter.agent_type !== undefined) {
-        results = results.filter((r) => {
-          if (!r.properties.payload) return false;
-          try {
-            const p = JSON.parse(r.properties.payload) as Record<string, unknown>;
-            return p.agent_type === filter.agent_type;
-          } catch { return false; }
-        });
-      }
-      if (filter.work_item !== undefined) {
-        results = results.filter((r) => {
-          if (!r.properties.payload) return false;
-          try {
-            const p = JSON.parse(r.properties.payload) as Record<string, unknown>;
-            return p.work_item === filter.work_item;
-          } catch { return false; }
-        });
-      }
-      if (filter.phase !== undefined) {
-        results = results.filter((r) => {
-          if (!r.properties.payload) return false;
-          try {
-            const p = JSON.parse(r.properties.payload) as Record<string, unknown>;
-            return p.phase === filter.phase;
-          } catch { return false; }
-        });
-      }
-    }
-
-    return results;
-  }
-
-  // -----------------------------------------------------------------------
   // queryGraph — traverses the edge graph from an origin node up to a depth
   // -----------------------------------------------------------------------
 
@@ -929,6 +801,7 @@ export class LocalReaderAdapter {
         if (filter.type === "finding") {
           joinClause = "LEFT JOIN findings e ON e.id = n.id";
           groupExpr = "e.severity";
+          whereClauses.push("e.addressed_by IS NULL");
           if (filter.cycle !== undefined && filter.cycle !== null) {
             whereClauses.push("e.cycle = ?");
             params.push(filter.cycle);
@@ -1049,10 +922,13 @@ export class LocalReaderAdapter {
     findings_by_severity: Record<string, number>;
     cycle_summary_content: string | null;
   }> {
-    // Get per-severity finding counts for this cycle
+    // Get per-severity finding counts for this cycle.
+    // Include only findings where addressed_by IS NULL (unresolved) — findings
+    // with addressed_by set have been declared resolved and should not block convergence.
+    // (WI-860: fix convergence false-negative from legacy resolved findings)
     const severityRows = this.db
       .prepare(
-        `SELECT severity, COUNT(*) as count FROM findings WHERE cycle = ? GROUP BY severity`
+        `SELECT severity, COUNT(*) as count FROM findings WHERE cycle = ? AND addressed_by IS NULL GROUP BY severity`
       )
       .all(cycle) as Array<{ severity: string; count: number }>;
 
@@ -1233,6 +1109,44 @@ export class LocalReaderAdapter {
     }
 
     return result;
+  }
+
+  // -----------------------------------------------------------------------
+  // getToolUsage — query tool_usage telemetry rows with optional filters
+  // -----------------------------------------------------------------------
+
+  async getToolUsage(filter?: ToolUsageFilter): Promise<ToolUsageRow[]> {
+    const conditions = [];
+
+    if (filter?.tool_name !== undefined) {
+      conditions.push(eq(dbSchema.toolUsage.tool_name, filter.tool_name));
+    }
+    if (filter?.session_id !== undefined) {
+      conditions.push(eq(dbSchema.toolUsage.session_id, filter.session_id));
+    }
+    if (filter?.cycle !== undefined) {
+      conditions.push(eq(dbSchema.toolUsage.cycle, filter.cycle));
+    }
+    if (filter?.phase !== undefined) {
+      conditions.push(eq(dbSchema.toolUsage.phase, filter.phase));
+    }
+    if (filter?.from !== undefined) {
+      conditions.push(gte(dbSchema.toolUsage.timestamp, filter.from));
+    }
+    if (filter?.to !== undefined) {
+      conditions.push(lte(dbSchema.toolUsage.timestamp, filter.to));
+    }
+
+    const query = this.drizzleDb
+      .select()
+      .from(dbSchema.toolUsage)
+      .orderBy(asc(dbSchema.toolUsage.timestamp), asc(dbSchema.toolUsage.id));
+
+    const rows = conditions.length > 0
+      ? await query.where(and(...conditions))
+      : await query;
+
+    return rows as ToolUsageRow[];
   }
 
   // -----------------------------------------------------------------------

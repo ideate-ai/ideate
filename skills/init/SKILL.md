@@ -105,7 +105,7 @@ Prompt for the architect:
 >
 > Focus on understanding what exists so that a lightweight init interview can ask informed questions about the project's purpose, principles, and constraints — without asking questions the code already answers.
 
-Wait for the architect's analysis before proceeding. After the architect returns, record a metrics entry (see Metrics Instrumentation).
+Wait for the architect's analysis before proceeding.
 
 ---
 
@@ -592,8 +592,6 @@ The researcher returns findings in its response (it does not write to disk). Aft
 1. Write the findings via `ideate_write_artifact` with type `research` and id `research-{topic-slug}`
 2. Read and integrate the findings as described above
 
-After each researcher agent returns, record a metrics entry (see Metrics Instrumentation).
-
 If no subagent capability or session-spawner MCP server is available, note the topics that would benefit from research and continue. You can still leverage your training knowledge but flag that live research was not performed.
 
 ## 4P.6 Completion Detection
@@ -738,7 +736,7 @@ The architect will produce:
 - An architecture artifact — component map, data flow, module specifications, interface contracts, execution order, design tensions
 - Module spec artifacts — one per module with Scope, Provides, Requires, Boundary Rules, Internal Design Notes
 
-**Wait for the architect to complete.** The architect runs in the foreground because its output is required before decomposition can begin. After it returns, record a metrics entry (see Metrics Instrumentation).
+**Wait for the architect to complete.** The architect runs in the foreground because its output is required before decomposition can begin.
 
 ## 6P.2 Review Architect Output
 
@@ -785,7 +783,7 @@ Spawn one `ideate:decomposer` agent per module, in parallel, each with `model: o
 - Relevant research findings — call `ideate_artifact_query({type: "research"})` to retrieve them
 - The starting work item number for that module's range — call `ideate_get_next_id({type: "work_item"})` to get the next available number, then allocate ranges to avoid collisions
 
-Each decomposer produces work items with placeholder numbers. After each decomposer returns, record a metrics entry (see Metrics Instrumentation). After all decomposers complete, you reconcile: assign final sequential numbers, resolve cross-module dependencies (replacing interface references with concrete work item designations), and run the full validation suite.
+Each decomposer produces work items with placeholder numbers. After all decomposers complete, you reconcile: assign final sequential numbers, resolve cross-module dependencies (replacing interface references with concrete work item designations), and run the full validation suite.
 
 ## 7P.2 Work Item Numbering
 
@@ -1154,19 +1152,6 @@ ideate_append_journal({
 
 Call `ideate_get_workspace_status()` to confirm all artifacts are present. Then present the plan summary (from Phase 9P.2) if not already presented.
 
-Write a final metrics journal entry via `ideate_append_journal`:
-
-```
-ideate_append_journal({
-  skill: "init",
-  date: "{today's date}",
-  entry_type: "plan-metrics",
-  body: "Agents spawned: {total} ({breakdown by type})\nTotal wall-clock: {total_ms}ms\nModels used: {list}\nSlowest agent: {type} ({ms}ms)"
-})
-```
-
-If metrics could not be emitted, note "metrics unavailable" and omit the breakdown.
-
 ---
 
 # ============================================================
@@ -1191,37 +1176,6 @@ Not every decision needs user input. Use this framework to determine what to ask
 - The user has already expressed a preference that covers this case
 
 When you make a decision without asking, do not announce it during the interview. Record it in the architecture or work item specs. The user can review it in the artifacts.
-
----
-
-# METRICS INSTRUMENTATION
-
-After each agent spawn (via the Agent tool), call `ideate_emit_metric` with the metric payload. Best-effort only: if the call fails, continue without interruption.
-
-**Metric payload fields:**
-
-- `timestamp` — ISO 8601 when the agent was spawned.
-- `skill` — `"init"` (constant for this skill).
-- `phase` — phase identifier (e.g., `"4I"` for init architect, `"4P.5"` for plan researcher, `"6P.1"` for plan architect, `"7P.1"` for plan decomposer).
-- `cycle` — `0` (init always runs at cycle 0).
-- `agent_type` — the agent definition name (e.g., `"researcher"`, `"architect"`, `"decomposer"`).
-- `model` — model string passed to Agent tool (e.g., `"sonnet"`, `"opus"`).
-- `work_item` — `null` (init skill agents are not tied to individual work items).
-- `wall_clock_ms` — elapsed ms between Agent tool invocation and return.
-- `context_files_read` — absolute paths of files explicitly provided in the agent's prompt, or artifact designations.
-- `mcp_tools_called` — array of MCP tool names called to assemble context for this agent spawn. Empty array `[]` if no MCP tools were called.
-
-**Token and turn count fields**: Set `turns_used`, `input_tokens`, `output_tokens`, `cache_read_tokens`, `cache_write_tokens` to `null`. These fields are not extractable from Agent tool responses — the Agent tool returns only the subagent's final text, not its token usage. When hook-based extraction is implemented (via SubagentStop hooks), these instructions will be updated.
-
-Before each Agent tool call, record which MCP tool calls (if any) were made to assemble context for that spawn. Include the tool names in the `mcp_tools_called` array.
-
-Record timestamp immediately before the Agent tool call; compute `wall_clock_ms` after it returns.
-
-**Turns tracking and budget warning**: This warning is currently inactive because `turns_used` is null. It will activate when hook-based turn extraction is implemented. If `turns_used` is non-null and the agent's maxTurns is known, compute the utilization: `turns_used / maxTurns`. If utilization > 0.80, append a warning journal entry (via `ideate_append_journal`):
-
-> Agent {agent_type} used {turns_used}/{maxTurns} turns ({pct}%) — near budget limit
-
-where `{pct}` is `round(turns_used / maxTurns * 100)`. This warning is best-effort — if the journal call fails, continue without interruption.
 
 ---
 
@@ -1291,16 +1245,15 @@ Before considering the init skill complete, verify the following invariants:
 3. **Both flows call ideate_bootstrap_workspace**: Phase 3 calls `ideate_bootstrap_workspace()` regardless of mode.
 4. **Init mode produces steering artifacts only**: Guiding principles, constraints, interview transcript, domain layer, one project artifact, one phase artifact. No work items, architecture, overview, execution strategy, or module specs.
 5. **Plan mode produces full plan artifacts**: Guiding principles, constraints, interview, research, architecture, overview, execution strategy, module specs (if applicable), work items, phase artifacts (one per logical phase), one project artifact, and domain layer.
-6. **No direct file I/O**: Every artifact was written through an MCP tool (`ideate_write_artifact`, `ideate_append_journal`, `ideate_emit_metric`, `ideate_bootstrap_workspace`). No Write tool calls targeting the artifact directory.
+6. **No direct file I/O**: Every artifact was written through an MCP tool (`ideate_write_artifact`, `ideate_append_journal`, `ideate_bootstrap_workspace`). No Write tool calls targeting the artifact directory.
 7. **No path references**: No instructions reference filesystem paths within the artifact directory. All artifacts are identified by type and designation (e.g., GP-01, C-02, interview-init-001).
 8. **Bootstrap via MCP**: The artifact directory was created by `ideate_bootstrap_workspace`, not by manual directory creation.
 9. **Designations, not filenames**: Artifacts are referenced by their designation (GP-01, C-01, D-1, P-1, Q-1, WI-001, PR-001, PH-001, interview-init-001, interview-plan-001) throughout, never by filename.
-10. **Metrics via MCP**: Metric entries are emitted through `ideate_emit_metric`, not appended to a file directly.
-11. **Journal via MCP**: Journal entries are written through `ideate_append_journal`, not as direct YAML file writes.
-12. **All agent references use ideate: qualified names**: Agents are referenced as `ideate:architect`, `ideate:researcher`, `ideate:decomposer` — not bare names.
-13. **GP-14 self-check**: This skill does not reference `.ideate/` paths, directory structures, or `.yaml` filenames. Artifacts are referenced by designation only.
-14. **Project artifact created in both modes**: A project artifact (type `project`) is written via `ideate_write_artifact` after the interview completes in both init mode (Phase 5I.5) and plan mode (Phase 4P.8). IDs are obtained via `ideate_get_next_id({type: "project"})`.
-15. **Phase artifacts created in both modes**: Phase artifacts (type `phase`) are written via `ideate_write_artifact`. Init mode creates a single phase with `phase_type=implementation` and empty `work_items` (Phase 6I.5). Plan mode creates one phase per logical group, populated with `work_items` after user approval (Phase 7P.5).
-16. **Project horizon populated**: After phase artifacts are created, the project artifact's `horizon.current` field is updated to reference the first phase ID. This update is performed in both modes.
-17. **IDs via ideate_get_next_id**: Project and phase IDs are never hardcoded. Each is obtained by calling `ideate_get_next_id({type: "project"})` and `ideate_get_next_id({type: "phase"})` respectively.
-18. **Correct workspace tool names**: All workspace status checks use `ideate_get_workspace_status`. All bootstrap calls use `ideate_bootstrap_workspace`. No deprecated tool names appear anywhere in this skill.
+10. **Journal via MCP**: Journal entries are written through `ideate_append_journal`, not as direct YAML file writes.
+11. **All agent references use ideate: qualified names**: Agents are referenced as `ideate:architect`, `ideate:researcher`, `ideate:decomposer` — not bare names.
+12. **GP-14 self-check**: This skill does not reference `.ideate/` paths, directory structures, or `.yaml` filenames. Artifacts are referenced by designation only.
+13. **Project artifact created in both modes**: A project artifact (type `project`) is written via `ideate_write_artifact` after the interview completes in both init mode (Phase 5I.5) and plan mode (Phase 4P.8). IDs are obtained via `ideate_get_next_id({type: "project"})`.
+14. **Phase artifacts created in both modes**: Phase artifacts (type `phase`) are written via `ideate_write_artifact`. Init mode creates a single phase with `phase_type=implementation` and empty `work_items` (Phase 6I.5). Plan mode creates one phase per logical group, populated with `work_items` after user approval (Phase 7P.5).
+15. **Project horizon populated**: After phase artifacts are created, the project artifact's `horizon.current` field is updated to reference the first phase ID. This update is performed in both modes.
+16. **IDs via ideate_get_next_id**: Project and phase IDs are never hardcoded. Each is obtained by calling `ideate_get_next_id({type: "project"})` and `ideate_get_next_id({type: "phase"})` respectively.
+17. **Correct workspace tool names**: All workspace status checks use `ideate_get_workspace_status`. All bootstrap calls use `ideate_bootstrap_workspace`. No deprecated tool names appear anywhere in this skill.

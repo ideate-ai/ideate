@@ -31,7 +31,6 @@ enum NodeType {
   MODULE_SPEC
   RESEARCH_FINDING
   JOURNAL_ENTRY
-  METRICS_EVENT
   INTERVIEW_QUESTION
   PROXY_HUMAN_DECISION
   PROJECT
@@ -165,17 +164,17 @@ enum EventName {
   ANDON_TRIGGERED
 }
 
-enum MetricScope {
-  AGENT
-  WORK_ITEM
-  CYCLE
-}
-
 enum UserRole {
   OWNER
   ADMIN
   MEMBER
   VIEWER
+}
+
+enum ToolUsageView {
+  AGGREGATE
+  DETAIL
+  BOTH
 }
 
 # ---------------------------------------------------------------------------
@@ -529,33 +528,6 @@ type JournalEntry implements ArtifactNode {
   title: String
 }
 
-type MetricsEvent implements ArtifactNode {
-  id: ID!
-  artifactId: String!
-  type: NodeType!
-  orgId: ID!
-  codebaseId: ID!
-  status: String
-  cycleCreated: Int
-  cycleModified: Int
-  contentHash: String!
-  tokenCount: Int
-  createdAt: DateTime!
-  updatedAt: DateTime!
-  content: String
-  edges(direction: EdgeDirection = BOTH, types: [EdgeType!]): [Edge!]!
-
-  eventName: String!
-  timestamp: String
-  payload: JSON
-  inputTokens: Int
-  outputTokens: Int
-  cacheReadTokens: Int
-  cacheWriteTokens: Int
-  outcome: String
-  findingCount: Int
-}
-
 type InterviewQuestion implements ArtifactNode {
   id: ID!
   artifactId: String!
@@ -621,6 +593,57 @@ type Document implements ArtifactNode {
   docType: DocumentSubtype!
   title: String
   cycle: Int
+}
+
+# ---------------------------------------------------------------------------
+# Operational Telemetry (MCP boundary instrumentation — not part of the graph)
+# ---------------------------------------------------------------------------
+
+"""
+A single tool_usage row. Recorded by the server's MCP dispatch wrapper for
+every tool invocation. Not an ArtifactNode — this table is standalone
+operational telemetry and does not participate in the artifact graph.
+
+Token fields (requestTokens, responseTokens) are cl100k_base approximations
+produced by js-tiktoken. They are NOT exact Anthropic billing token counts;
+they are a consistent relative measure for trend analysis and workload
+profiling. Latency/duration is not captured by design.
+"""
+type ToolUsage {
+  id: Int!
+  toolName: String!
+  requestTokens: Int
+  responseTokens: Int
+  requestBytes: Int!
+  responseBytes: Int!
+  sessionId: String
+  cycle: Int
+  phase: String
+  timestamp: DateTime!
+}
+
+"""Per-tool aggregate rollup over a filtered set of tool_usage rows."""
+type ToolUsageAggregate {
+  toolName: String!
+  count: Int!
+  requestTokensTotal: Int!
+  responseTokensTotal: Int!
+  requestBytesTotal: Int!
+  responseBytesTotal: Int!
+}
+
+"""Result of a toolUsage query. Shape varies by view."""
+type ToolUsageResult {
+  """Filters that were applied (echoed back for traceability)."""
+  filters: JSON!
+  """Populated when view is AGGREGATE or BOTH."""
+  aggregate: [ToolUsageAggregate!]
+  """Populated when view is DETAIL or BOTH. Capped at the effective limit."""
+  rows: [ToolUsage!]
+  """Total rows matched before limit truncation. Populated for DETAIL/BOTH."""
+  totalCount: Int
+  """True if rows were truncated by the limit. Populated for DETAIL/BOTH."""
+  truncated: Boolean
 }
 
 # ---------------------------------------------------------------------------
@@ -785,28 +808,6 @@ type ExecutionStatus {
 }
 
 # ---------------------------------------------------------------------------
-# Metrics Aggregation Types
-# ---------------------------------------------------------------------------
-
-type MetricsResult {
-  agent: [MetricAggregate!]
-  workItem: [MetricAggregate!]
-  cycle: [MetricAggregate!]
-}
-
-type MetricAggregate {
-  key: String!
-  totalInputTokens: Int
-  totalOutputTokens: Int
-  totalCacheReadTokens: Int
-  totalCacheWriteTokens: Int
-  findingCount: Int
-  firstPassAccepted: Int
-  reworkCount: Int
-  eventCount: Int!
-}
-
-# ---------------------------------------------------------------------------
 # Input Types — Queries
 # ---------------------------------------------------------------------------
 
@@ -852,13 +853,6 @@ input TraversalInput {
 
   """Node types to always include regardless of PPR score."""
   alwaysIncludeTypes: [NodeType!]
-}
-
-input MetricFilterInput {
-  cycle: Int
-  workItem: String
-  agentType: String
-  phase: String
 }
 
 # ---------------------------------------------------------------------------
@@ -943,13 +937,17 @@ input EmitEventInput {
   codebaseId: ID
 }
 
-input EmitMetricInput {
-  metricName: String!
-  value: Float!
-  unit: String
-  payload: JSON
+"""
+Filter parameters for the toolUsage query. All fields are optional and
+AND-combined. `from` and `to` are inclusive ISO 8601 timestamp bounds.
+"""
+input ToolUsageFilterInput {
+  toolName: String
+  sessionId: String
   cycle: Int
-  codebaseId: ID
+  phase: String
+  from: DateTime
+  to: DateTime
 }
 
 # ---------------------------------------------------------------------------
@@ -1103,12 +1101,6 @@ type Query {
   reviewManifest(cycleNumber: Int): JSON
 
   """
-  Aggregated metrics by scope.
-  Mirrors ideate_get_metrics.
-  """
-  metrics(scope: MetricScope, filter: MetricFilterInput): MetricsResult!
-
-  """
   Generate the next available ID for a given node type.
   Maps to StorageAdapter.nextId().
   Mirrors ideate_get_next_id.
@@ -1120,6 +1112,26 @@ type Query {
   Mirrors ideate_get_config.
   """
   config(codebaseId: ID): JSON!
+
+  # --- Operational Telemetry ---
+
+  """
+  Query the tool_usage telemetry table.
+  Mirrors ideate_get_tool_usage.
+  Maps to StorageAdapter.getToolUsage().
+
+  Notes:
+  - Token counts are cl100k_base approximations, not exact Anthropic counts.
+  - No latency or duration is recorded by design.
+  - The remote server stub returns an empty result set until the backend
+    telemetry store is implemented. LocalAdapter returns real rows.
+  """
+  toolUsage(
+    filter: ToolUsageFilterInput
+    view: ToolUsageView = AGGREGATE
+    """Maximum rows returned in the DETAIL view (default 1000, clamped to 10000)."""
+    limit: Int = 1000
+  ): ToolUsageResult!
 
   # --- Tenant Queries ---
 
@@ -1212,19 +1224,13 @@ type Mutation {
   """
   archiveCycle(cycleNumber: Int!): Boolean!
 
-  # --- Events / Metrics ---
+  # --- Events ---
 
   """
   Fire registered hooks for an event.
   Mirrors ideate_emit_event.
   """
   emitEvent(input: EmitEventInput!): EventResult!
-
-  """
-  Record a metric event.
-  Mirrors ideate_emit_metric.
-  """
-  emitMetric(input: EmitMetricInput!): MutateNodeResult!
 
   # --- Config ---
 

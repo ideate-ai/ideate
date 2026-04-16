@@ -174,7 +174,7 @@ Wait for all three to complete. After each reviewer returns, extract the finding
 - After **spec-reviewer** returns: call `ideate_write_artifact({type: "cycle_summary", id: "spec-adherence", content: {cycle: {cycle_number}, reviewer: "spec-reviewer", content: <findings from response>}})`.
 - After **gap-analyst** returns: call `ideate_write_artifact({type: "cycle_summary", id: "gap-analysis", content: {cycle: {cycle_number}, reviewer: "gap-analyst", content: <findings from response>}})`.
 
-After writing all three artifacts, verify the writes succeeded before proceeding. For each reviewer (`code-reviewer`, `spec-reviewer`, `gap-analyst`), emit a metric via `ideate_emit_metric({payload: {phase: "6b", agent_type: "{reviewer}", ...}})`. Best-effort only: if the call fails, continue without interruption. **Token and turn count fields**: Set `turns_used`, `input_tokens`, `output_tokens`, `cache_read_tokens`, `cache_write_tokens` to `null` (not extractable from Agent tool responses). **Budget warning**: Currently inactive — activates when hook-based extraction is implemented. Also set `finding_count` to the total findings from the reviewer's output (null if unparseable) and `finding_severities` to `{"critical": N, "significant": N, "minor": N}` (null if unparseable). Set `outcome`, `first_pass_accepted`, and `rework_count` to `null` for all phase `"6b"` entries.
+After writing all three artifacts, verify the writes succeeded before proceeding.
 
 ### Spawn Journal-Keeper (After Reviewers Complete)
 
@@ -202,8 +202,6 @@ After writing all three artifacts, verify the writes succeeded before proceeding
 
 After the journal-keeper returns, extract the output from the agent's response and write it via MCP: call `ideate_write_artifact({type: "cycle_summary", id: "decision-log", content: {cycle: {cycle_number}, reviewer: "journal-keeper", content: <output from response>}})`.
 
-Then emit a metric via `ideate_emit_metric({payload: {phase: "6b", agent_type: "journal-keeper", ...}})`. Best-effort only: if the call fails, continue without interruption. Set `turns_used`, `input_tokens`, `output_tokens`, `cache_read_tokens`, `cache_write_tokens` to `null` (not extractable from Agent tool responses). Set `finding_count`, `finding_severities`, `outcome`, `first_pass_accepted`, and `rework_count` to `null` for journal-keeper entries.
-
 ### Collect Review Findings
 
 Retrieve all four review artifacts via MCP: call `ideate_artifact_query({type: "cycle_summary", cycle: {cycle_number}})` to retrieve code-quality, spec-adherence, gap-analysis, and decision-log artifacts for this cycle.
@@ -223,43 +221,7 @@ After computing `last_cycle_findings`, call `ideate_emit_event` with:
 
 Where `{total_finding_count}` = `critical_count + significant_count + minor_count`. This call is best-effort — if it fails, continue without interruption.
 
-### Emit Quality Summary
-
-Best-effort: if any step below fails, skip it and continue without blocking.
-
-> **Note**: The autopilot review phase does not produce a separate summary artifact (unlike standalone `/ideate:review`). Per-reviewer counts are derived directly from the in-memory reviewer output content. The emitted metric schema is structurally identical to `skills/review/SKILL.md` — the `by_reviewer` derivation method differs only because the summary artifact is not available at this point in the autopilot execution flow.
-
-**Derive counts**:
-
-1. **Severity counts** — use `last_cycle_findings` already computed in "Collect Review Findings":
-   - `findings.by_severity.critical`: `last_cycle_findings.critical_count`
-   - `findings.by_severity.significant`: `last_cycle_findings.significant_count`
-   - `findings.by_severity.minor`: `last_cycle_findings.minor_count`
-   - `findings.by_severity.suggestion`: count `### Suggestion` headings across all three reviewer artifact contents
-   - `findings.total`: sum of the four severity counts
-
-2. **Per-reviewer counts** — each reviewer uses different heading conventions; parse accordingly from the in-memory artifact content already retrieved in "Collect Review Findings":
-   - `findings.by_reviewer.code-reviewer`: count `### C` (critical), `### S` (significant), `### M` (minor) headings in the code-quality artifact content.
-   - `findings.by_reviewer.spec-reviewer`: in the spec-adherence artifact content, count `### D` headings as significant; count `### P` headings as significant if the `**Principle Violation Verdict**` line says `Fail`; count `### U` and `### N` headings as minor.
-   - `findings.by_reviewer.gap-analyst`: in the gap-analysis artifact content, count occurrences of `**Severity**: Critical` (critical), `**Severity**: Significant` (significant), `**Severity**: Minor` (minor).
-   - If an artifact cannot be retrieved, use `{"critical":0,"significant":0,"minor":0}` for that reviewer.
-
-3. **Category counts** — classify each finding into exactly one category using these rules (apply in order):
-   - `requirements_missed`: gap-analyst critical/significant findings with words "missing", "absent", "not implemented", "requirement", "not present", "never built", "no implementation", "omitted"
-   - `bugs_introduced`: code-reviewer critical and significant findings
-   - `principles_violated`: spec-reviewer findings (any severity) mentioning "principle", "violates", "violation", "constraint"
-   - `implementation_gaps`: gap-analyst minor findings, or gap-analyst findings with "incomplete", "partial", "not connected", "missing integration"
-   - `other`: anything else
-
-4. **work_items_reviewed**: Count distinct work item rows in the review manifest (retrieved via `ideate_artifact_query({type: "cycle_summary", id: "review-manifest", cycle: {cycle_number}})`). Use `null` if the manifest is absent or cannot be parsed.
-
-5. **andon_events**: Call `ideate_artifact_query({type: "journal_entry"})` to retrieve the most recent journal entries (last 20 entries). Count entries for cycle `{cycle_number}` that mention "Andon" (case-insensitive). Default to 0 if journal entries cannot be retrieved.
-
-**Emit the event**: Call `ideate_emit_metric({payload: {timestamp: "<ISO8601>", event_type: "quality_summary", skill: "autopilot", cycle: N, findings: {total: N, by_severity: {critical: N, significant: N, minor: N, suggestion: N}, by_reviewer: {"code-reviewer": {critical: N, significant: N, minor: N}, "spec-reviewer": {critical: N, significant: N, minor: N}, "gap-analyst": {critical: N, significant: N, minor: N}}, by_category: {requirements_missed: N, bugs_introduced: N, principles_violated: N, implementation_gaps: N, other: N}}, work_items_reviewed: N, andon_events: N}})`.
-
-If the call fails, log `quality_summary event skipped: {reason}` and continue. Do not retry.
-
-### Spawn Domain Curator (After Quality Summary Emitted)
+### Spawn Domain Curator
 
 **ideate:domain-curator**
 - Model: opus
@@ -284,8 +246,6 @@ Wait for the curator to complete. After the curator returns:
 3. Update the domain index: call `ideate_write_artifact({type: "domain_index", content: {current_cycle: {cycle_number}}})`.
 4. Verify that at least one domain artifact was written. If not, note the failure in the journal.
 
-Emit a metric via `ideate_emit_metric({payload: {phase: "6b", agent_type: "domain-curator", ...}})`. Best-effort only: if the call fails, continue without interruption. Set `turns_used`, `input_tokens`, `output_tokens`, `cache_read_tokens`, `cache_write_tokens` to `null` (not extractable from Agent tool responses). Set `finding_count`, `finding_severities`, `outcome`, `first_pass_accepted`, and `rework_count` to `null` for domain-curator entries.
-
 ### Archive Cycle (After Domain Curator)
 
 Call `ideate_archive_cycle({cycle_number})` — archives completed work items and findings into the cycle directory. This is equivalent to the standalone review skill's Phase 7.5 archival.
@@ -306,18 +266,6 @@ Critical findings: {N}
 Significant findings: {N}
 Minor findings: {N}
 ```
-
-Also append a per-cycle metrics summary:
-
-```markdown
-## [autopilot] {date} — Cycle {N} metrics summary
-Agents spawned: {N total} ({N} workers, {N} code-reviewers, {N} reviewers)
-Total wall-clock: {total_ms}ms
-Models used: {list of distinct models}
-Slowest agent: {agent_type} — {work_item or "N/A"} — {ms}ms
-```
-
-If `ideate_emit_metric` calls failed, note "metrics unavailable" and omit the breakdowns.
 
 ### Phase Convergence Check and Project Progress Assessment
 
@@ -374,7 +322,6 @@ Return to the controller with `last_cycle_findings`. The controller will run Pha
 - Cycle summaries (code-quality, spec-adherence, gap-analysis, decision-log) — via `ideate_write_artifact`
 - Review manifest — via `ideate_write_artifact`
 - Journal entries (review summary + metrics summary + project progress) — via `ideate_append_journal`
-- Metrics — one entry per agent spawned + quality_summary event, via `ideate_emit_metric`
 - Domain layer (policies, decisions, questions) — updated by domain-curator via `ideate_write_artifact`
 
 ## Self-Check

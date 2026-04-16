@@ -271,7 +271,7 @@ The worker prompt must also include this self-check instruction (≤200 words):
 Execute one work item at a time, in dependency order.
 
 1. Select the next work item whose dependencies are all complete
-2. Build the work item (in the main session or via a single subagent). After the agent returns, record a metrics entry (see Metrics Instrumentation).
+2. Build the work item (in the main session or via a single subagent).
 3. On completion, trigger incremental review (Phase 7)
 4. Handle review findings (Phase 8)
 5. Update journal (Phase 10)
@@ -284,7 +284,7 @@ If multiple items have satisfied dependencies, choose by the ordering in the exe
 Execute work items in groups from the execution strategy. Within each group, spawn one subagent per work item, up to the parallelism limit.
 
 1. Start with Group 1 from the execution strategy
-2. For each item in the group, spawn a subagent with the worker context described above. After each agent returns, record a metrics entry (see Metrics Instrumentation).
+2. For each item in the group, spawn a subagent with the worker context described above.
 3. If the group has more items than the parallelism limit, execute in sub-batches within the group
 4. Wait for all items in the group to complete
 5. Trigger incremental reviews for all completed items (Phase 7)
@@ -368,7 +368,7 @@ The code-reviewer performs an incremental review scoped to the files touched by 
 
 **Non-blocking**: The review runs while other work items continue. In batched parallel mode, reviews for items in the current group run concurrently with each other. In team mode, a review does not block other teammates from picking up new work items. In sequential mode, the review runs before the next work item begins (it is inherently blocking since only one item runs at a time).
 
-Write the review result via `ideate_write_artifact({type: "finding", work_item: "{WI}", content: ...})`. The server assigns the designation (e.g., F-{WI}-001) and files it in the current cycle automatically. After the code-reviewer returns, record a metrics entry (see Metrics Instrumentation).
+Write the review result via `ideate_write_artifact({type: "finding", work_item: "{WI}", content: ...})`. The server assigns the designation (e.g., F-{WI}-001) and files it in the current cycle automatically.
 
 The review follows the format defined in the artifact conventions:
 
@@ -643,51 +643,6 @@ The user can re-run `/ideate:execute` to resume. The skill should detect already
 
 ---
 
-# Metrics Instrumentation
-
-After each agent spawn (via the Agent tool), emit a metric via `ideate_emit_metric`. Best-effort only: if the call fails, continue without interruption.
-
-**Metric fields** (passed to `ideate_emit_metric`):
-
-- `timestamp` — ISO 8601 when the agent was spawned.
-- `skill` — `"execute"` (constant for this skill).
-- `phase` — phase identifier where the spawn occurred (e.g., `"6a"`, `"7"`).
-- `agent_type` — the agent definition name: `"worker"` for work item workers, `"code-reviewer"` for incremental reviews.
-- `model` — model string passed to Agent tool (e.g., `"sonnet"`).
-- `work_item` — work item designation (e.g., `"WI-005"`) for workers and their paired code-reviewer; `null` for other agents.
-- `wall_clock_ms` — elapsed ms between Agent tool invocation and return.
-- `context_files_read` — absolute file paths explicitly provided in the agent's prompt.
-- `mcp_tools_called` — array of strings. Names of MCP tools called to assemble context for this agent spawn (e.g., `["ideate_get_context_package", "ideate_get_artifact_context"]`). Empty array `[]` if no MCP tools were called.
-- `outcome` — optional (null if not available). For `code-reviewer` entries: `"pass"` if the incremental review verdict is Pass with no rework, `"rework"` if the verdict is Pass after rework, `"fail"` if the verdict is Fail. For `worker` entries: `null`.
-- `finding_count` — optional (null if not available). For `code-reviewer` entries: total number of findings across all severities from the incremental review. Null for `worker` entries.
-- `finding_severities` — optional (null if not available). For `code-reviewer` entries: object with keys `critical`, `significant`, `minor` and integer values derived from the incremental review. Null for `worker` entries.
-- `first_pass_accepted` — optional (null if not available). For `code-reviewer` entries: `true` if the review passes with no rework required (Verdict: Pass and no findings were fixed before review), `false` otherwise. Null for `worker` entries.
-- `rework_count` — optional (null if not available). For `worker` entries: the number of fix-and-re-review cycles completed for this work item (0 if the first review passed without rework). Null for `code-reviewer` entries and other agents.
-
-**Token and turn count fields**: Set `turns_used`, `input_tokens`, `output_tokens`, `cache_read_tokens`, `cache_write_tokens` to `null`. These fields are not extractable from Agent tool responses — the Agent tool returns only the subagent's final text, not its token usage. When hook-based extraction is implemented (via SubagentStop hooks), these instructions will be updated.
-
-Before each Agent tool call, record which MCP tool calls (if any) were made to assemble context for that spawn. Include the tool names in the `mcp_tools_called` array. If no MCP tools were called, use an empty array `[]`.
-
-Record timestamp immediately before the Agent tool call; compute `wall_clock_ms` after it returns.
-
-**Turns tracking and budget warning**: Use the maxTurns value from `{config}.agent_budgets` for each agent type (`code-reviewer`, `worker`). If config was not loaded or the agent type is not present in `agent_budgets`, use the agent's frontmatter default. This warning is currently inactive because `turns_used` is null. It will activate when hook-based turn extraction is implemented. If `turns_used` is non-null and the agent's maxTurns is known, compute the utilization: `turns_used / maxTurns`. If utilization > 0.80, append a warning to the journal entry for this work item (via `ideate_append_journal`):
-
-> Agent {agent_type} used {turns_used}/{maxTurns} turns ({pct}%) — near budget limit
-
-where `{pct}` is `round(turns_used / maxTurns * 100)`. This warning is best-effort — if the journal call fails, continue without interruption.
-
-**Journal summary**: At the end of Phase 12 (before presenting the final summary), append via `ideate_append_journal`:
-
-> ## [execute] {date} — Metrics summary
-> Agents spawned: {N total} ({N} workers, {N} code-reviewers)
-> Total wall-clock: {total_ms}ms
-> Models used: {list of distinct models}
-> Slowest agent: {agent_type} — {work_item} — {ms}ms
-
-If `ideate_emit_metric` calls failed, note "metrics unavailable" and omit the breakdown.
-
----
-
 # What You Do Not Do
 
 - You do not make design decisions. If the spec does not answer a question, you flag it via Andon cord.
@@ -710,7 +665,6 @@ This skill document satisfies the MCP abstraction boundary (GP-14):
 - [x] No `.ideate/` path references remain in this document
 - [x] No `.yaml` filename references remain (e.g., `architecture.yaml`, `execution-strategy.yaml`)
 - [x] Findings are written via `ideate_write_artifact`, not to file paths
-- [x] Metrics are emitted via `ideate_emit_metric`, not written to `metrics.jsonl`
 - [x] Principles and constraints are accessed via MCP tools, not path references
 - [x] Work item format description references MCP tools, not YAML syntax
 - [x] Phase 1 uses `ideate_get_workspace_status()` instead of `ideate_get_project_status()`

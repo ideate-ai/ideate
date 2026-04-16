@@ -14,14 +14,15 @@ import { handleGetExecutionStatus, handleGetReviewManifest } from "./execution.j
 import { handleGetConvergenceStatus, handleGetDomainState, handleGetWorkspaceStatus } from "./analysis.js";
 import { handleAppendJournal, handleArchiveCycle, handleWriteWorkItems, handleUpdateWorkItems, handleWriteArtifact } from "./write.js";
 import { handleEmitEvent } from "./events.js";
-import { handleEmitMetric, handleGetMetrics } from "./metrics.js";
 import { handleBootstrapWorkspace } from "./bootstrap.js";
 import { handleManageAutopilotState } from "./autopilot-state.js";
 import { handleUpdateConfig } from "./config.js";
+import { handleGetToolUsage } from "./tool-usage.js";
 import { getConfigWithDefaults } from "../config.js";
+import { instrumentToolDispatch } from "./instrumentation.js";
 
 // ---------------------------------------------------------------------------
-// TOOLS — all 22 tool definitions with inputSchema
+// TOOLS — all 20 tool definitions with inputSchema
 // ---------------------------------------------------------------------------
 
 export const TOOLS: Tool[] = [
@@ -181,7 +182,7 @@ export const TOOLS: Tool[] = [
   {
     name: "ideate_get_convergence_status",
     description:
-      "Convergence status: open findings by severity, addressed counts. Use to check if cycle converged. Returns ~300 chars.",
+      "Convergence status: unresolved finding counts by severity and principle verdict (findings with addressed_by set are excluded). Use to check if cycle converged.",
     inputSchema: {
       type: "object",
       properties: {
@@ -231,6 +232,37 @@ export const TOOLS: Tool[] = [
           type: "string",
           enum: ["workspace", "project", "phase"],
           description: "View perspective. Default: workspace.",
+        },
+      },
+      required: [],
+    },
+    annotations: {
+      readOnlyHint: true,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
+  },
+  {
+    name: "ideate_get_tool_usage",
+    description:
+      "Query MCP tool_usage telemetry. Returns per-tool_name aggregates (count + token/byte totals), raw rows (capped at limit), or both. Filters: tool_name, session_id, cycle, phase, from, to (ISO timestamps, inclusive). Default view=aggregate.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        tool_name: { type: "string" },
+        session_id: { type: "string" },
+        cycle: { type: "integer" },
+        phase: { type: "string" },
+        from: { type: "string", description: "ISO 8601 timestamp (inclusive lower bound)." },
+        to: { type: "string", description: "ISO 8601 timestamp (inclusive upper bound)." },
+        view: {
+          type: "string",
+          enum: ["aggregate", "detail", "both"],
+          description: "Default 'aggregate'.",
+        },
+        limit: {
+          type: "integer",
+          description: "Max rows for detail view. Default 1000, max 10000.",
         },
       },
       required: [],
@@ -463,51 +495,6 @@ export const TOOLS: Tool[] = [
     },
   },
   {
-    name: "ideate_get_metrics",
-    description:
-      "Deprecated — reads historical data only. Aggregated metrics. Scopes: agent (tokens/findings), work_item (acceptance), cycle (convergence). Omit scope for all. Returns JSON.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        scope: {
-          type: "string",
-          enum: ["agent", "work_item", "cycle"],
-          description:
-            "Aggregation scope. 'agent' = per-agent-type aggregates, 'work_item' = per-work-item aggregates, 'cycle' = per-cycle aggregates. Omit to return all three.",
-        },
-        filter: {
-          type: "object",
-          description: "Optional filter to narrow the events included in aggregation.",
-          properties: {
-            cycle: {
-              type: "integer",
-              description: "Include only events from this cycle number.",
-            },
-            work_item: {
-              type: "string",
-              description: "Include only events whose payload references this work item ID.",
-            },
-            agent_type: {
-              type: "string",
-              description: "Include only events whose payload.agent_type field equals this value.",
-            },
-            phase: {
-              type: "string",
-              description: "Include only events whose payload references this phase.",
-            },
-          },
-          additionalProperties: false,
-        },
-      },
-      required: [],
-    },
-    annotations: {
-      readOnlyHint: true,
-      idempotentHint: true,
-      openWorldHint: false,
-    },
-  },
-  {
     name: "ideate_assemble_context",
     description:
       "PPR-ranked context within token budget. Use before agent tasks. Seeds from artifact IDs. Returns markdown + metadata (sized to budget).",
@@ -564,28 +551,6 @@ export const TOOLS: Tool[] = [
     },
     annotations: {
       readOnlyHint: false,
-      destructiveHint: false,
-      idempotentHint: false,
-      openWorldHint: false,
-    },
-  },
-  {
-    name: "ideate_emit_metric",
-    description:
-      "Deprecated — emits no events. Record a metric event for the current session. Use for all metric emissions. Returns confirmation string.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        payload: {
-          type: "object",
-          description:
-            "Metric payload to record. Any JSON-serializable object.",
-        },
-      },
-      required: ["payload"],
-    },
-    annotations: {
-      readOnlyHint: true,
       destructiveHint: false,
       idempotentHint: false,
       openWorldHint: false,
@@ -715,70 +680,67 @@ export async function handleTool(
   await indexReady; // block until index rebuild completes
   switch (name) {
     case "ideate_get_artifact_context":
-      return handleGetArtifactContext(ctx, _args);
+      return instrumentToolDispatch(ctx, name, _args, () => handleGetArtifactContext(ctx, _args));
 
     case "ideate_get_context_package":
-      return handleGetContextPackage(ctx, _args);
+      return instrumentToolDispatch(ctx, name, _args, () => handleGetContextPackage(ctx, _args));
 
     case "ideate_get_config":
-      return JSON.stringify(getConfigWithDefaults(ctx.ideateDir), null, 2);
+      return instrumentToolDispatch(ctx, name, _args, () => Promise.resolve(JSON.stringify(getConfigWithDefaults(ctx.ideateDir), null, 2)));
 
     case "ideate_artifact_query":
-      return handleArtifactQuery(ctx, _args);
+      return instrumentToolDispatch(ctx, name, _args, () => handleArtifactQuery(ctx, _args));
 
     case "ideate_get_execution_status":
-      return handleGetExecutionStatus(ctx, _args);
+      return instrumentToolDispatch(ctx, name, _args, () => handleGetExecutionStatus(ctx, _args));
 
     case "ideate_get_review_manifest":
-      return handleGetReviewManifest(ctx, _args);
+      return instrumentToolDispatch(ctx, name, _args, () => handleGetReviewManifest(ctx, _args));
 
     case "ideate_get_convergence_status":
-      return handleGetConvergenceStatus(ctx, _args);
+      return instrumentToolDispatch(ctx, name, _args, () => handleGetConvergenceStatus(ctx, _args));
 
     case "ideate_get_domain_state":
-      return handleGetDomainState(ctx, _args);
+      return instrumentToolDispatch(ctx, name, _args, () => handleGetDomainState(ctx, _args));
 
     case "ideate_get_workspace_status":
-      return handleGetWorkspaceStatus(ctx, _args);
+      return instrumentToolDispatch(ctx, name, _args, () => handleGetWorkspaceStatus(ctx, _args));
+
+    case "ideate_get_tool_usage":
+      return instrumentToolDispatch(ctx, name, _args, () => handleGetToolUsage(ctx, _args));
 
     case "ideate_append_journal":
-      return handleAppendJournal(ctx, _args);
+      return instrumentToolDispatch(ctx, name, _args, () => handleAppendJournal(ctx, _args));
 
     case "ideate_archive_cycle":
-      return handleArchiveCycle(ctx, _args);
+      return instrumentToolDispatch(ctx, name, _args, () => handleArchiveCycle(ctx, _args));
 
     case "ideate_write_work_items":
-      return handleWriteWorkItems(ctx, _args);
+      return instrumentToolDispatch(ctx, name, _args, () => handleWriteWorkItems(ctx, _args));
 
     case "ideate_update_work_items":
-      return handleUpdateWorkItems(ctx, _args);
+      return instrumentToolDispatch(ctx, name, _args, () => handleUpdateWorkItems(ctx, _args));
 
     case "ideate_write_artifact":
-      return handleWriteArtifact(ctx, _args);
+      return instrumentToolDispatch(ctx, name, _args, () => handleWriteArtifact(ctx, _args));
 
     case "ideate_assemble_context":
-      return handleAssembleContext(ctx, _args);
+      return instrumentToolDispatch(ctx, name, _args, () => handleAssembleContext(ctx, _args));
 
     case "ideate_emit_event":
-      return handleEmitEvent(ctx, _args);
-
-    case "ideate_get_metrics":
-      return handleGetMetrics(ctx, _args);
-
-    case "ideate_emit_metric":
-      return handleEmitMetric(ctx, _args);
+      return instrumentToolDispatch(ctx, name, _args, () => handleEmitEvent(ctx, _args));
 
     case "ideate_bootstrap_workspace":
-      return handleBootstrapWorkspace(ctx, _args);
+      return instrumentToolDispatch(ctx, name, _args, () => handleBootstrapWorkspace(ctx, _args));
 
     case "ideate_get_next_id":
-      return handleGetNextId(ctx, _args);
+      return instrumentToolDispatch(ctx, name, _args, () => handleGetNextId(ctx, _args));
 
     case "ideate_manage_autopilot_state":
-      return handleManageAutopilotState(ctx, _args);
+      return instrumentToolDispatch(ctx, name, _args, () => handleManageAutopilotState(ctx, _args));
 
     case "ideate_update_config":
-      return handleUpdateConfig(ctx, _args);
+      return instrumentToolDispatch(ctx, name, _args, () => handleUpdateConfig(ctx, _args));
 
     default:
       throw new Error(`Unknown tool: ${name}`);

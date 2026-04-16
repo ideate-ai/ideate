@@ -34,7 +34,6 @@ import {
   ALL_EDGE_TYPES,
   ValidationError,
   ImmutableFieldError,
-  MetricsEventRow,
 } from "../adapter.js";
 import { ValidatingAdapter, CYCLE_SCOPED_TYPES } from "../validating.js";
 import type { EdgeType } from "../schema.js";
@@ -151,11 +150,6 @@ function createMockAdapter(): MockAdapter {
       return minimalQueryResult;
     },
 
-    async getMetricsEvents(filter?: NodeFilter): Promise<MetricsEventRow[]> {
-      calls.push({ method: "getMetricsEvents", args: [filter] });
-      return [];
-    },
-
     async indexFiles(paths: string[]): Promise<void> {
       calls.push({ method: "indexFiles", args: [paths] });
     },
@@ -197,6 +191,11 @@ function createMockAdapter(): MockAdapter {
     async appendJournalEntry(args) {
       calls.push({ method: "appendJournalEntry", args: [args] });
       return "J-001-001";
+    },
+
+    async getToolUsage(filter) {
+      calls.push({ method: "getToolUsage", args: [filter] });
+      return [];
     },
   };
 }
@@ -1628,6 +1627,27 @@ describe("removeFiles", () => {
     expect(mock.calls[0]).toEqual({
       method: "removeFiles",
       args: [["path/to/file.yaml"]],
+    });
+  });
+});
+
+describe("getToolUsage", () => {
+  it("passes filter through to inner adapter", async () => {
+    const filter = { tool_name: "ideate_query", cycle: 1 };
+    await adapter.getToolUsage(filter);
+    expect(mock.calls).toHaveLength(1);
+    expect(mock.calls[0]).toEqual({
+      method: "getToolUsage",
+      args: [filter],
+    });
+  });
+
+  it("passes undefined filter through to inner adapter", async () => {
+    await adapter.getToolUsage();
+    expect(mock.calls).toHaveLength(1);
+    expect(mock.calls[0]).toEqual({
+      method: "getToolUsage",
+      args: [undefined],
     });
   });
 });

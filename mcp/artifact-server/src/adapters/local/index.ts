@@ -18,7 +18,8 @@ import type {
   GraphQuery,
   QueryResult,
   NodeFilter,
-  MetricsEventRow,
+  ToolUsageFilter,
+  ToolUsageRow,
 } from "../../adapter.js";
 import { indexFiles as indexerIndexFiles, removeFiles as indexerRemoveFiles } from "../../indexer.js";
 import { ValidationError } from "../../adapter.js";
@@ -120,10 +121,6 @@ export class LocalAdapter extends LocalWriterAdapter implements StorageAdapter {
     return this.reader.queryNodes(filter, limit, offset);
   }
 
-  async getMetricsEvents(filter?: NodeFilter): Promise<MetricsEventRow[]> {
-    return this.reader.getMetricsEvents(filter);
-  }
-
   async indexFiles(paths: string[]): Promise<void> {
     indexerIndexFiles(this.db, this.drizzleDb, paths);
   }
@@ -174,6 +171,10 @@ export class LocalAdapter extends LocalWriterAdapter implements StorageAdapter {
     cycle_summary_content: string | null;
   }> {
     return this.reader.getConvergenceData(cycle);
+  }
+
+  async getToolUsage(filter?: ToolUsageFilter): Promise<ToolUsageRow[]> {
+    return this.reader.getToolUsage(filter);
   }
 
   // -------------------------------------------------------------------------

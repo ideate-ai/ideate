@@ -1,58 +1,52 @@
 id: spec-adherence
 type: cycle_summary
 reviewer: spec-reviewer
-content: |-
-  ## Verdict
+content: |
+  # Capstone Spec Adherence Review — PH-048 (Cycle 28)
 
-  **Principle Adherence Verdict**: Pass (no principle violations)
-  **Criteria Fulfillment**: Partial — 2 literal unmet criteria, both with documented justifications.
+  ## Verdict: Incomplete
 
-  ## Architecture Deviations
+  **Reviewer session exhausted its turn budget (maxTurns=100, 133 tool uses over 365s) before synthesizing a final verdict.** Investigation covered most of the checklist (P-33, D-210, D-211, WI-855 structural checks, documentation scope). A single concrete finding was isolated before the session terminated. No final verdict — treat adherence as partially verified.
 
-  None. Component placement, interface contracts, and dependency boundaries all match what the architecture specifies.
+  ## Critical Findings
 
-  ## Unmet Acceptance Criteria
+  None identified in partial output.
 
-  ### WI-831 criterion: test location
-  - Criterion stated: 'Regression test added to adapter-contract.test.ts or convergence-specific suite'
-  - Actual: test was added to mcp/artifact-server/src/__tests__/tools.test.ts at cycle 204 (not cycle 2).
-  - Finding F-WI-831-001 documents the cycle-number deviation (collision avoidance with WI-824 fixtures at 201-203) but does not address the test-file-location deviation.
-  - Impact: low — test exercises the correct code path.
+  ## Significant Findings
 
-  ### WI-832 criterion: P-87 sources
-  - Criterion stated: 'cites GP-14 as the boundary declaration, P-52 as the fix-the-tool principle, and WI-830 + J-071-42X (cycle-8 journal) as the first observed instance.'
-  - Actual: P-87.yaml sources list WI-830, WI-832, C8-GA-S1, GP-14, P-52. The J-071-42X journal references are absent; C8-GA-S1 (the gap-analysis finding from cycle 8) is substituted.
-  - Operationally equivalent — C8-GA-S1 references the same event — but literal deviation from criterion.
-  - Finding F-WI-832-001 rejected S1/M1 about metadata but did not address citation substitution.
+  ### S1: WI-852 and WI-859 scope `docs/platform/ARCHITECTURE.md` — this file does not exist
 
-  ## Principle Violations
+  - **File**: WI-852 and WI-859 work item scope declarations
+  - **Issue**: Both work items name `docs/platform/ARCHITECTURE.md` in their file scope, but no such file exists in the repository. The actual docs that were updated are:
+    - `/ARCHITECTURE.md` (repo root) — contains the instrumentation sections referenced in acceptance criteria
+    - `docs/platform/architecture-overview.md` — does NOT mention `tool_usage` or `ideate_get_tool_usage`
+  - **Impact**: Scope statements do not match what was modified. Work items were executed against the root `ARCHITECTURE.md` (which was the right target), but the scope declarations refer to a nonexistent path. This is a documentation accuracy issue in the work item records themselves — not a code defect.
+  - **Suggested fix**: Either correct the scope field in WI-852 and WI-859 to point to `ARCHITECTURE.md` (root), or expand the scope to include both `ARCHITECTURE.md` and `docs/platform/architecture-overview.md` and update the platform doc to reference `ideate_get_tool_usage`. The preferred fix depends on whether `docs/platform/architecture-overview.md` is meant to be the canonical platform doc or a separate narrative.
 
-  None.
+  ## Minor Findings
 
-  ## Principle Adherence Evidence
+  None isolated before turn budget exhaustion.
 
-  - **GP-14 (MCP Abstraction Boundary)**: All cycle 9 artifact writes (P-87, WI-831/832 updates, F-WI-831-001, F-WI-832-001) carry cycle_modified and content_hash fields populated by the MCP layer. Direct file writes do not produce those fields.
-  - **P-86 (da.cycle is not a provenance guard)**: getConvergenceData at reader.ts:1093-1100 selects only rows whose file_path ends with /spec-adherence.yaml or /summary.yaml. Comment block at 1083-1092 explicitly documents this.
+  ## Coverage Confirmed (partial)
 
-  ## Undocumented Additions
+  From the reviewer's transcript before termination:
+  - WI-855 adherence: `getToolUsage` stub in `remote/index.ts` confirmed NOT in `EXTENSION_COLUMNS` or `FIELD_FALLBACKS` — matches D-210 (tool_usage is not a node).
+  - Test file `local-getToolUsage.test.ts` covers filter semantics, range inclusivity, AND-combination.
+  - `remote-adapter.test.ts:437+` covers WI-855 stub behavior (returns [] with log.warn).
 
-  ### U1: executeOnceWithAuth method in GraphQL client
-  - **Location**: mcp/artifact-server/src/adapters/remote/client.ts:343-383
-  - **Description**: Separate private method added to handle retry after token rotation. Distinct from executeOnce in that it does not re-enter token rotation logic (no tokenProvider guard), preventing an infinite rotation loop.
-  - **Risk**: WI-833 scope listed only the test file, but production change to client.ts (line 284 + executeOnceWithAuth) was a rework driven by test findings. The method itself is implementation detail, not a public interface, so no adapter contract violation. Documented in WI-833 resolution string.
-  - **Recommendation**: Retrospective scope annotation on WI-833 or clarifying note in adapter-interface.md documenting the rotation-guard architecture.
+  ## Coverage Gaps (not reached before termination)
 
-  ## Naming/Pattern Inconsistencies
+  - Full P-44 (tool_usage standalone table) verification across schema / migration / indexer.
+  - GP-8 (no silent failures) end-to-end trace through `instrumentToolDispatch`.
+  - GP-14 (MCP abstraction boundary) systematic grep for any `.ideate/metrics/` references outside legacy history.
+  - YAGNI principle check: confirm no scaffolding for future features was added outside the phase scope.
+  - Interface contracts section in `ARCHITECTURE.md` vs actual adapter signatures.
 
-  None beyond the cycle 200 / 201-204 fixture id pattern already noted in code-quality M3.
+  ## Requires Human Review
 
-  ## Actionable Summary
-
-  1. **WI-831 criterion 5 (test location)**: deviation from stated scope; test works but file location not addressed in finding. Low risk.
-  2. **WI-832 criterion 2 (P-87 sources)**: literal deviation. Recommend updating criterion to accept C8-GA-S1 substitute, or adding J-071-42X refs to P-87 sources in follow-up.
-  3. **U1 (executeOnceWithAuth)**: unscoped production method. Recommend retrospective scope annotation or clarifying note in adapter-interface.md.
-content_hash: a4aed6ec10dc2096cdc960950099ee3745130e23d8774986f905ace331f3ef59
-token_count: 2750
+  - The reviewer did not reach a final verdict. If adherence certainty is required, re-run the reviewer with an expanded turn budget (e.g., maxTurns=180) or a scoped prompt that skips already-confirmed areas.
+content_hash: 7185351ebb5039312914f65a796b04f63dca35b2e3b320077b707808769030e4
+token_count: 2731
 file_path: .ideate/cycles/068/spec-adherence.yaml
 verdict: Pass
 phase: PH-046
@@ -178,3 +172,8 @@ adherence_evidence:
   - "P-85: AUTH_FAILURE documented in both adapter-contract.md and adapter-interface.md Section 5.3"
   - "P-86: symmetric regression test at tools.test.ts:1144 confirms canonical-only selection in both directions"
   - "P-87: verification criterion met — execute.md worker prompt includes prohibition bullet, re-sync procedure defined"
+observations:
+  - WI-837 criterion 2 stale after WI-840 superseded it
+  - WI-838 criterion re Section 7 stale after rework to Section 5.3
+  - AUTH_FAILURE heading style inconsistent with sibling sections
+  - StorageAdapterError('CONNECTION_ERROR') non-retryable path undocumented

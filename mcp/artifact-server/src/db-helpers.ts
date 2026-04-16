@@ -11,6 +11,7 @@ import Database from "better-sqlite3";
 import { BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
 import { eq, notInArray, getTableName as drizzleGetTableName } from "drizzle-orm";
 import * as dbSchema from "./db.js";
+import type { ToolUsageInsert } from "./adapter.js";
 
 // ---------------------------------------------------------------------------
 // Shared artifact hash computation
@@ -52,7 +53,6 @@ export {
   moduleSpecs,
   researchFindings,
   journalEntries,
-  metricsEvents,
   documentArtifacts,
   interviewQuestions,
   proxyHumanDecisions,
@@ -60,6 +60,7 @@ export {
   phases,
   edges,
   nodeFileRefs,
+  toolUsage,
 } from "./db.js";
 
 // ---------------------------------------------------------------------------
@@ -198,28 +199,6 @@ export interface JournalEntryRow {
   title: string | null;
   work_item: string | null;
   content: string | null;
-}
-
-/** Row type for metrics_events table */
-export interface MetricsEventRow {
-  id: string;
-  event_name: string;
-  timestamp: string | null;
-  payload: string | null;
-  input_tokens: number | null;
-  output_tokens: number | null;
-  cache_read_tokens: number | null;
-  cache_write_tokens: number | null;
-  outcome: string | null;
-  finding_count: number | null;
-  finding_severities: string | null;
-  first_pass_accepted: number | null;
-  rework_count: number | null;
-  work_item_total_tokens: number | null;
-  cycle_total_tokens: number | null;
-  cycle_total_cost_estimate: string | null;
-  convergence_cycles: number | null;
-  context_artifact_ids: string | null;
 }
 
 /** Row type for document_artifacts table */
@@ -408,11 +387,6 @@ export function upsertJournalEntry(db: DrizzleDb, row: JournalEntryRow): void {
   genericUpsert(db, dbSchema.journalEntries, row as unknown as Record<string, unknown>);
 }
 
-/** Upsert a metrics event row. */
-export function upsertMetricsEvent(db: DrizzleDb, row: MetricsEventRow): void {
-  genericUpsert(db, dbSchema.metricsEvents, row as unknown as Record<string, unknown>);
-}
-
 /** Upsert a document artifact row. */
 export function upsertDocumentArtifact(db: DrizzleDb, row: DocumentArtifactRow): void {
   genericUpsert(db, dbSchema.documentArtifacts, row as unknown as Record<string, unknown>);
@@ -468,6 +442,28 @@ export function insertFileRef(db: DrizzleDb, row: NodeFileRefRow): void {
     })
     .onConflictDoNothing()
     .run();
+}
+
+/**
+ * Insert a tool_usage telemetry row. Wrapped in a transaction per P-44
+ * (atomic writes). The id field is omitted so SQLite autoincrement assigns it.
+ */
+export function insertToolUsage(db: DrizzleDb, row: ToolUsageInsert): void {
+  db.transaction((tx) => {
+    tx.insert(dbSchema.toolUsage)
+      .values({
+        tool_name: row.tool_name,
+        request_tokens: row.request_tokens,
+        response_tokens: row.response_tokens,
+        request_bytes: row.request_bytes,
+        response_bytes: row.response_bytes,
+        session_id: row.session_id,
+        cycle: row.cycle,
+        phase: row.phase,
+        timestamp: row.timestamp,
+      })
+      .run();
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -623,10 +619,6 @@ export function upsertExtensionRow(
       break;
     case "journal_entries":
       upsertJournalEntry(db, { id, ...row } as JournalEntryRow);
-      break;
-    case "metrics_events":
-      assertRequiredFields(tableName, row, "event_name");
-      upsertMetricsEvent(db, { id, ...row } as MetricsEventRow);
       break;
     case "document_artifacts":
       upsertDocumentArtifact(db, { id, ...row } as DocumentArtifactRow);

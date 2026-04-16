@@ -2,95 +2,63 @@ id: gap-analysis
 type: cycle_summary
 reviewer: gap-analyst
 content: |-
+  # Gap Analysis — PH-049 Capstone (cycle 30)
+
   ## Missing Requirements from Interview
 
-  None. No interview transcript was provided for this cycle; work items were specified directly.
+  None.
 
   ## Unhandled Edge Cases
 
-  ### EC1: Symmetric stale-verdict — legacy Pass file alongside canonical Fail
-  - **Severity**: Significant
-  - **Component**: mcp/artifact-server/src/__tests__/tools.test.ts, mcp/artifact-server/src/adapters/local/reader.ts
-  - **Scenario**: Cycle directory contains a legacy SA-NNN.yaml with Verdict:Pass alongside canonical spec-adherence.yaml with Verdict:Fail. Implementation uses 'adherenceRow ?? summaryRow' to prefer canonical (likely correct) but no regression test exercises this direction. All four regression tests (cycles 201-204) protect against 'legacy Fail masks canonical Pass.' None protect against 'legacy Pass masks canonical Fail.'
-  - **Risk**: A future refactor that reverses adherenceRow priority would produce false convergence — the more dangerous failure mode — with no test to catch it.
-  - **Recommendation**: Address now — mirror of WI-831 bug.
-
-  ### EC2: tokenProvider itself throws — unhandled rejection path
-  - **Severity**: Significant
-  - **Component**: mcp/artifact-server/src/adapters/remote/client.ts:278, mcp/artifact-server/src/__tests__/remote-adapter.test.ts
-  - **Scenario**: tokenProvider called at line 278 with 'await this.tokenProvider()'. If the implementation throws (e.g., OAuth refresh endpoint down), exception propagates uncaught. Caller receives an untyped error rather than StorageAdapterError with meaningful code.
-  - **Coverage gap**: Tests B and C cover null/undefined returns. Test D covers 401 on retry. No test covers tokenProvider rejecting with an Error.
-  - **Recommendation**: Address now. A throwing tokenProvider should produce StorageAdapterError (AUTH_FAILURE or TOKEN_PROVIDER_ERROR).
+  ### EC1: countNodes severity path does not filter resolved findings (Significant)
+  - **Component**: mcp/artifact-server/src/adapters/local/reader.ts
+  - **Scenario**: handleGetWorkspaceStatus calls ctx.adapter.countNodes({ type: 'finding', cycle: N }, 'severity'). The countNodes case 'severity' branch at lines 800-807 applies only a cycle filter and does not append AND e.addressed_by IS NULL. A finding with addressed_by set is included in workspace status counts even though getConvergenceData (the authoritative convergence path) excludes it.
+  - **Current behavior**: handleGetWorkspaceStatus over-counts findings for cycles with resolved findings. Workspace status shows inflated count that contradicts converged: true.
+  - **Expected behavior**: countNodes when called with { type: 'finding' } and group_by: 'severity' should exclude addressed findings, OR handleGetWorkspaceStatus should delegate to getConvergenceData for that section.
+  - **Recommendation**: Address now — direct extension of WI-860 fix. An autopilot agent reading workspace status after getConvergenceStatus returns converged:true will see contradictory information.
 
   ## Incomplete Integrations
 
-  ### II1: AUTH_FAILURE error code not documented in adapter-contract.md or adapter-interface.md
-  - **Severity**: Significant
-  - **Interface**: StorageAdapterError error code registry
-  - **Producer**: mcp/artifact-server/src/adapters/remote/client.ts:284-287 (code: 'AUTH_FAILURE')
-  - **Consumer**: mcp/artifact-server/docs/adapter-contract.md (error code table lines 552-590), docs/platform/adapter-interface.md Section 7
-  - **Gap**: adapter-contract.md lists all known StorageAdapterError codes (NOT_FOUND, IMMUTABLE_FIELD, TYPE_MISMATCH, CYCLE_DETECTED, SCOPE_COLLISION, CONNECTION_ERROR, MISSING_CYCLE, VALIDATION_ERROR). AUTH_FAILURE is absent from both the table and the error-class section. Test file comments reference 'adapter-interface.md Section 7 (AdapterConfig.tokenProvider)' but AUTH_FAILURE is absent there too.
-  - **Recommendation**: Address now — WI-833 introduced a new named error code that is part of the adapter's public error surface. Update both adapter-contract.md and adapter-interface.md.
+  ### II1: Equivalence fixture getConvergenceData assertion will fail after WI-860 (Significant)
+  - **Producer**: tests/adapters/fixtures/equivalence/.ideate/cycles/001/findings/F-WI-001-001.yaml
+  - **Consumer**: tests/adapters/equivalence-query.test.ts line 404
+  - **Gap**: F-WI-001-001 has addressed_by: WI-001. After WI-860, LocalAdapter.getConvergenceData excludes it. Test asserts expect(localTotal).toBeGreaterThanOrEqual(1). Assertion is logically inverted by WI-860: a resolved finding must NOT appear. Correct post-fix assertion is expect(localTotal).toBe(0).
+  - **Recommendation**: Address now — equivalence test is the cross-adapter regression guard for getConvergenceData. Must be updated to encode post-WI-860 contract.
 
-  ### II2: RemoteAdapter.initialize() loses AUTH_FAILURE code when tokenProvider rotation fails at init time
-  - **Severity**: Minor
-  - **Interface**: RemoteAdapter.initialize() in mcp/artifact-server/src/adapters/remote/index.ts:476-497
-  - **Gap**: When initialize() fires Ping and server returns 401 with tokenProvider configured, client.ts throws StorageAdapterError('AUTH_FAILURE'). The catch block in index.ts does not match ConnectionError, falls through to includes('401') check at line 487, re-wraps as ConnectionError. AUTH_FAILURE code is silently lost.
-  - **Recommendation**: Defer — diagnostic regression, not functional. Document in follow-up.
+  ### II2: Adapter contract documentation missing the addressed_by IS NULL filtering guarantee (Significant)
+  - **Producer**: local/reader.ts and remote/index.ts
+  - **Consumer**: mcp/artifact-server/docs/adapter-contract.md and docs/platform/adapter-interface.md
+  - **Gap**: Neither doc (adapter-contract.md lines 412-422 or adapter-interface.md lines 406-413) mentions the WI-860 filtering requirement. Any future adapter implementation following only the contract doc will produce the old behavior.
+  - **Recommendation**: Address now — filtering behavior is a semantic contract, not an implementation detail. Both docs need a clause under getConvergenceData stating: 'Only findings where addressed_by is null are counted. Findings with a non-null addressed_by are resolved and must be excluded from all counts.'
+
+  ### II3: adapter.ts interface JSDoc for getConvergenceData missing filtering contract (Minor)
+  - **Producer**: mcp/artifact-server/src/adapter.ts:480-487
+  - **Consumer**: All StorageAdapter implementors
+  - **Gap**: JSDoc does not mention that resolved findings (addressed_by IS NOT NULL) are excluded. ValidatingAdapter (passes through to inner.getConvergenceData) cannot enforce the filtering invariant via its own guard.
+  - **Recommendation**: Address now — adding a one-line note 'Only findings where addressed_by is null are counted' closes the documentation gap at its source.
 
   ## Missing Infrastructure
 
-  ### MI1: P-87 recovery procedure does not cover GP-14 read violations
-  - **Severity**: Minor
-  - **Gap**: P-87 is scoped to 'writes directly under .ideate/ using Write/Edit tools.' GP-14 covers both reads and writes (execute.md line 51: 'Do NOT fall back to reading, grepping, or globbing .ideate/ files directly'). A worker that reads .ideate/ directly bypasses MCP just as a write does, but P-87 gives no recovery procedure.
-  - **Recommendation**: Defer — read-bypass is less harmful than write-bypass. Extend P-87 or add P-88 in a follow-up cycle.
+  ### MI1: ideate_get_convergence_status tool description misleading (Minor)
+  - **Gap**: Tool description at tools/index.ts:185 says 'Convergence status: open findings by severity, addressed counts.' The phrase 'addressed counts' suggests a count of addressed findings that is not emitted in the output. Output only emits unresolved counts filtered via addressed_by IS NULL.
+  - **Recommendation**: Address now — change to 'Convergence status: unresolved findings by severity (resolved findings excluded), principle verdict.'
 
-  ### MI2: P-87 re-sync gives no guidance for ID conflicts during parent MCP re-issue
-  - **Severity**: Minor
-  - **Gap**: execute.md GP-14 Violation Re-Sync section says parent must re-issue each .ideate/ write via MCP. Does not address ID collisions (e.g., worker wrote P-87.yaml directly when P-87 already existed via MCP).
-  - **Recommendation**: Defer — edge-within-edge (GP-14 violation + ID collision). Add note routing ID-collision re-sync failures to proxy-human.
+  ## Implicit Requirements
 
-  ### MI3: No diagnostic logging in getConvergenceData or handleGetConvergenceStatus
-  - **Severity**: Minor
-  - **Gap**: Neither reader.ts (getConvergenceData) nor tools/analysis.ts (handleGetConvergenceStatus) emit debug/info logs when canonical file is absent, legacy file is ignored, or cycle_summary_content returns null. WI-797 bug would have been diagnosable faster with such logging.
-  - **Recommendation**: Defer — observability improvement for a future cycle.
+  ### IR1: Telemetry section does not cross-reference adapter-contract.md or adapter-interface.md (Minor)
+  - **Expectation**: A reader of new Section 8 who wants to understand the adapter interface for getToolUsage would expect a reference to adapter contract documentation.
+  - **Current state**: Section references tools/tool-usage.ts. Does not link to mcp/artifact-server/docs/adapter-contract.md or docs/platform/adapter-interface.md.
+  - **Recommendation**: Defer — polish item.
 
-  ## Summary
+  ### IR2: No test covering countNodes severity path for resolved-finding scenario (Significant)
+  - **Expectation**: After WI-860 introduces 'resolved findings don't count', both convergence path and workspace status path should have test coverage for the resolved/unresolved distinction.
+  - **Current state**: New regression tests cover getConvergenceData only. No test asserting that countNodes({ type: 'finding', cycle: N }, 'severity') includes or excludes resolved findings.
+  - **Recommendation**: Address now alongside EC1 — seed a cycle with one resolved and one unresolved finding; assert handleGetWorkspaceStatus reports only the unresolved count.
 
-  - **Significant findings**: 3 (EC1, EC2, II1)
-  - **Minor findings**: 4 (II2, MI1, MI2, MI3)
-  - **Critical findings**: 0
-
-  All three Significant findings are direct follow-ups to cycle-9 work and should drive the refinement cycle.
-content_hash: c8bb9a195c69debad4fe6b4c5a649570e86913c5a73aff2448d2fb465febffaa
-token_count: 1777
+  ## Verdict: Fail — 7 significant gaps across code, tests, and documentation
+content_hash: dc314dc292ccc9fda21e61e5fa7196e62ef816cc80f7cf51b64c8b9371cf0a00
+token_count: 1380
 file_path: .ideate/cycles/068/gap-analysis.yaml
-verdict: Fail
-phase: PH-046
-scope: differential cycle 8 (commits b799ccc..3377298)
-summary: "EC1 (Significant): No test for 401-without-tokenProvider → AUTH_FAILURE. MI1 (Significant): AUTH_FAILURE docs misdescribe trigger surface after WI-840. EC2: initialize() re-wraps AUTH_FAILURE as ConnectionError — pre-existing, deferred to horizon.later."
-findings:
-  critical: 0
-  significant: 2
-  minor: 0
 cycle: 30
 cycle_modified: 27
-review_mode: full
-findings_count:
-  critical: 0
-  significant: 3
-  minor: 3
-mode: differential
-start_commit: b71455540fcec06e960e3d9631814cccf65704bf
-critical_findings: []
-significant_findings:
-  - "EC1: executeOnceWithAuth (client.ts:379) calls response.json() without try/catch. executeOnce wraps this identically at lines 322-328. A non-JSON response on the auth-retry path throws raw TypeError instead of StorageAdapterError(PARSE_ERROR). Three-line fix mirroring executeOnce."
-  - "II1: Test D (remote-adapter.test.ts:356-358) asserts only instanceof StorageAdapterError for the second-401 path. Both adapter-contract.md and adapter-interface.md document that this throws HTTP_401, not AUTH_FAILURE. The assertion does not verify the code — a regression could silently change it. One-line fix: add .code === 'HTTP_401' to the toSatisfy predicate."
-minor_findings:
-  - "MI1: Test F missing message assertion — weaker than sibling Test E. Cosmetic."
-  - "MI2: adapter-contract.md version history and header date not updated after WI-838 — shows 3.0/2026-04-06 instead of 3.1/2026-04-15."
-work_items:
-  - WI-835
-  - WI-836
-  - WI-837
-  - WI-838
+verdict: Fail

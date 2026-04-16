@@ -43,7 +43,6 @@ async function createLocalAdapter(): Promise<LocalAdapterSetup> {
     "constraints",
     "modules",
     "research",
-    "metrics",
     "interviews",
     "projects",
     "phases",

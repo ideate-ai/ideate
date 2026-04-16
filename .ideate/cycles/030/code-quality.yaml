@@ -2,9 +2,11 @@ id: code-quality
 type: cycle_summary
 reviewer: code-reviewer
 content: |-
-  ## Verdict: Fail
+  # Code Quality Review — PH-049 Capstone (cycle 30)
 
-  WI-832 codified the P-87 recovery protocol but left P-87's own verification criterion partially unmet: the execute.md worker prompt does not include the explicit 'do not write .ideate/ directly' prohibition that P-87 requires worker-spawning skills to contain.
+  ## Verdict: Pass
+
+  The two work items deliver their stated objectives: the convergence false-negative bug is fixed for the primary (SQLite/local) code path, and the architecture overview accurately documents the operational telemetry surface. No issue causes incorrect behavior under observed production inputs. One significant adapter parity gap exists between the SQL filter and the remote client-side filter for the empty-string edge case, but there is no evidence this edge case occurs in practice.
 
   ## Critical Findings
 
@@ -12,71 +14,46 @@ content: |-
 
   ## Significant Findings
 
-  ### S1: P-87 verification criterion not satisfied — execute.md worker prompt missing .ideate/ write prohibition
-  - **File**: skills/autopilot/phases/execute.md:78-86
-  - **Issue**: P-87's verification states: 'At design time, ensure worker-spawning skills instruct workers not to write .ideate/ directly.' The worker-prompt list in execute.md contains seven bullets but none prohibit direct .ideate/ writes. The GP-14 enforcement paragraph at line 51 addresses the parent orchestrator's MCP calls, not the worker's behavior.
-  - **Impact**: Workers will continue to fall back to Write/Edit for .ideate/ mutations because their prompt does not prohibit it. Every such violation requires parent re-sync, but the root cause persists.
-  - **Suggested fix**: Add to the worker-prompt list: 'Do not write files under .ideate/ directly — all .ideate/ mutations must go through MCP tools (ideate_write_artifact, ideate_update_work_items, ideate_append_journal).'
+  ### S1: Adapter parity gap — local SQL IS NULL misses empty-string addressed_by
+  - **File**: mcp/artifact-server/src/adapters/local/reader.ts:930
+  - **Issue**: The local SQL filter uses `addressed_by IS NULL`, which only excludes SQL NULL. The remote adapter's client-side filter at index.ts:1297 uses `addressedBy !== null && addressedBy !== undefined && addressedBy !== ""`, which additionally excludes empty string. If a finding reaches SQLite with `addressed_by = ""` (possible: `toStrOrNull("") = ""` in indexer.ts:116-118, writer.ts:295 stores `(content.addressed_by as string | null) ?? null` — preserves "" because ?? only catches null/undefined), the local adapter counts it as unresolved (correct) while the remote adapter excludes it as resolved (incorrect).
+  - **Impact**: Divergent behavior between adapters violates the adapter contract. False-negative for remote deployments if `addressed_by: ""` is encountered.
+  - **Suggested fix**: Change the SQL to `WHERE cycle = ? AND (addressed_by IS NULL OR addressed_by = '')`. Alternatively, normalize in writer.ts:295 using `||` instead of `??`. Normalization is preferable.
 
   ## Minor Findings
 
-  ### M1: Dead reference to non-existent adapter-interface.md in test comment
-  - **File**: mcp/artifact-server/src/__tests__/remote-adapter.test.ts:222
-  - **Issue**: Comment references 'adapter-interface.md Section 7' but the file does not exist under docs/. Actual docs: adapter-contract.md, ppr-alignment-research.md, tls-configuration.md.
-  - **Fix**: Update reference to adapter-contract.md or remove.
+  ### M1: Regression test does not cover empty-string addressed_by edge case
+  - **File**: adapter-contract.test.ts:1341
+  - **Issue**: The two new tests seed `addressed_by: null` and `addressed_by: "PH-001"`. No test covers `addressed_by: ""`, the exact value that would expose S1.
+  - **Suggested fix**: Add a third regression test case seeding `addressed_by: ""` and asserting it is excluded.
 
-  ### M2: Test D assertion does not verify specific error code
-  - **File**: mcp/artifact-server/src/__tests__/remote-adapter.test.ts:356
-  - **Issue**: Assertion 'err instanceof StorageAdapterError' is too weak. ConnectionError extends StorageAdapterError, so the assertion passes even if the wrong error type is thrown.
-  - **Fix**: Add 'err.code === "HTTP_401"' check alongside instance check.
+  ### M2: Remote getConvergenceData performs two serial GraphQL round-trips
+  - **File**: mcp/artifact-server/src/adapters/remote/index.ts:1253
+  - **Issue**: The refactored method issues convergenceStatus query followed by artifactQuery. No semantic dependency between them.
+  - **Suggested fix**: Issue both with `Promise.all`.
 
-  ### M3: WI-831 regression test fixture uses different id pattern than WI-797 fixture
-  - **File**: mcp/artifact-server/src/__tests__/tools.test.ts:1117
-  - **Issue**: WI-831 fixture (cycle 204) uses id:spec-adherence-204; WI-797 fixture (cycle 200) uses id:spec-adherence unsuffixed. Inconsistent pattern for future fixture authors.
-  - **Fix**: Normalize cycle 200 fixture to id:spec-adherence-200.
+  ### M3: first: 10000 findings cap has no overflow guard or warning
+  - **File**: mcp/artifact-server/src/adapters/remote/index.ts:1275
+  - **Issue**: Findings query capped at 10,000. If a cycle has >10,000 findings, counts will be silently incorrect. Local SQL has no such cap. No truncation indication.
+  - **Suggested fix**: Warn or throw when `edges.length === 10000`.
 
-  ### M4: executeOnceWithAuth does not wrap fetch() network errors as ConnectionError
-  - **File**: mcp/artifact-server/src/adapters/remote/client.ts:347
-  - **Issue**: executeOnceWithAuth calls fetch() without try/catch. A network failure on the post-rotation retry throws a raw TypeError that bypasses isRetryableError and propagates as an unclassified error. Sibling executeOnce wraps correctly at 260-274.
-  - **Fix**: Wrap fetch() call identically to executeOnce.
+  ## Unmet Acceptance Criteria
 
-  ## Test Results
-  - TypeScript: clean
-  - Test suite: 1440 passed, 339 skipped (equivalence tests need live server)
+  None. All three stated success criteria are satisfied:
+  1. tool_usage surface is documented in Section 8 of architecture-overview.md with P-33 and D-211 cross-references. (D-211 is correct; the spec's D-210 was an error.)
+  2. ideate_get_convergence_status no longer returns condition_a: false from stale resolved artifacts under the local (SQLite) adapter.
+  3. Regression tests covering the reproducer are present in adapter-contract.test.ts (lines 1341–1412) and run via the contract harness against LocalAdapter.
 
   ## Requires Human Review
-  - P-87.yaml written via MCP (ideate_write_artifact), not direct Write tool call. The file is untracked, no git history. Static review cannot confirm the write tool used; MCP call log or autopilot session journal for cycle 9 must be checked.
-content_hash: bfe5fe1cfe5810e0705cfa7fc0f049fda7b7331b100a5876d30865ade8c8477c
-token_count: 1232
+
+  - **D-211 cross-reference substitution**: The WI-867 spec cited D-210, but D-210 governs max_nodes and is unrelated to telemetry. The worker substituted D-211 (metrics soft-deprecation). Verify D-211 is the intended cross-reference.
+
+  ## Principle Violation Verdict: Pass
+
+  No direct .ideate/ file edits. All changes under mcp/artifact-server/src/ and docs/platform/. P-33 correctly applied. Adapter abstraction pattern followed.
+content_hash: bc8e5d475b1d4437d23d7613d018fb2846bab84f83473ed1985dc68381194f0c
+token_count: 1040
 file_path: .ideate/cycles/068/code-quality.yaml
-verdict: Pass
-phase: PH-046
-scope: differential cycle 8 (commits b799ccc..3377298)
-summary: "M1: AUTH_FAILURE docs missing third trigger (401-without-tokenProvider). M2: No test for 401-without-tokenProvider path. M3: AUTH_FAILURE heading style inconsistent. All 1443 tests pass."
-findings:
-  critical: 0
-  significant: 0
-  minor: 3
 cycle: 30
 cycle_modified: 27
-review_mode: full
-findings_count:
-  critical: 0
-  significant: 2
-  minor: 3
-mode: differential
-start_commit: b71455540fcec06e960e3d9631814cccf65704bf
-test_status: 1417 pass / 0 fail; tsc clean
-critical_findings: []
-significant_findings: []
-minor_findings:
-  - "M1: executeOnceWithAuth lacks JSON parse error guard (client.ts:379) — pre-existing parity gap with executeOnce. Fix: wrap response.json() in try/catch throwing StorageAdapterError(PARSE_ERROR)."
-  - "M2: Test F asserts only instanceof ConnectionError, not message content. Test E asserts both. Suggested: add message.includes('fake-endpoint')."
-  - "M3: adapter-contract.md version metadata not updated after WI-838 — still shows Version 3.0, Last Updated 2026-04-06."
-  - "M4: WI attribution footnote (Introduced in WI-833...) present in adapter-interface.md but absent from adapter-contract.md."
-test_results: 1443 tests pass, 0 failures
-work_items:
-  - WI-835
-  - WI-836
-  - WI-837
-  - WI-838
+verdict: Pass

@@ -1,0 +1,14 @@
+id: F-WI-001-003
+type: finding
+title: Resolved finding — non-empty addressed_by (severity equivalence fixture)
+severity: significant
+work_item: WI-001
+verdict: fail
+cycle: 2
+reviewer: code-reviewer
+description: >-
+  Fixture finding with addressed_by set to a work-item ID. Must NOT be counted
+  by either adapter (resolved finding).
+addressed_by: WI-001
+cycle_created: 2
+cycle_modified: null

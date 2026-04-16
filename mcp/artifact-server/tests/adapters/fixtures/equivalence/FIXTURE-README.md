@@ -337,6 +337,57 @@ the legacy title-fallback path. The `amendment_history` array is also populated.
 - `relates_to`: F-WI-001-001 → WI-001 (via `work_item` field)
 - `addressed_by`: F-WI-001-001 → WI-001 (via `addressed_by` field)
 
+#### F-WI-001-002 — `cycles/002/findings/F-WI-001-002.yaml`
+| Field          | Value                                              |
+|----------------|----------------------------------------------------|
+| id             | F-WI-001-002                                       |
+| type           | finding                                            |
+| title          | "Unresolved finding — null addressed_by (severity equivalence fixture)" |
+| severity       | significant                                        |
+| work_item      | WI-001                                             |
+| verdict        | fail                                               |
+| cycle          | 2                                                  |
+| reviewer       | code-reviewer                                      |
+| addressed_by   | null                                               |
+| cycle_created  | 2                                                  |
+| cycle_modified | null                                               |
+
+**Purpose:** Unresolved finding. Must be counted by both adapters in `getConvergenceData(2)` and `countNodes({type:"finding"}, "severity")`. Tests the null-addressed_by baseline path.
+
+#### F-WI-001-003 — `cycles/002/findings/F-WI-001-003.yaml`
+| Field          | Value                                              |
+|----------------|----------------------------------------------------|
+| id             | F-WI-001-003                                       |
+| type           | finding                                            |
+| title          | "Resolved finding — non-empty addressed_by (severity equivalence fixture)" |
+| severity       | significant                                        |
+| work_item      | WI-001                                             |
+| verdict        | fail                                               |
+| cycle          | 2                                                  |
+| reviewer       | code-reviewer                                      |
+| addressed_by   | WI-001                                             |
+| cycle_created  | 2                                                  |
+| cycle_modified | null                                               |
+
+**Purpose:** Resolved finding (non-empty addressed_by). Must be excluded by both adapters. Tests the normal resolved-finding exclusion path.
+
+#### F-WI-001-004 — `cycles/002/findings/F-WI-001-004.yaml`
+| Field          | Value                                              |
+|----------------|----------------------------------------------------|
+| id             | F-WI-001-004                                       |
+| type           | finding                                            |
+| title          | "Resolved finding — empty-string addressed_by (severity equivalence fixture)" |
+| severity       | significant                                        |
+| work_item      | WI-001                                             |
+| verdict        | fail                                               |
+| cycle          | 2                                                  |
+| reviewer       | code-reviewer                                      |
+| addressed_by   | ""                                                 |
+| cycle_created  | 2                                                  |
+| cycle_modified | null                                               |
+
+**Purpose:** Resolved finding with empty-string addressed_by. Must be excluded by both adapters (per P-88). This is the core edge case for WI-873: LocalAdapter SQL `IS NULL` excludes it; RemoteAdapter 2-clause filter (`!== null && !== undefined`) also excludes it since `""` passes both clauses, causing `continue` to execute.
+
 ---
 
 ### Journal Entries
@@ -352,44 +403,6 @@ the legacy title-fallback path. The `amendment_history` array is also populated.
 | work_item      | WI-001                                 |
 | cycle_created  | 1                                      |
 | cycle_modified | null                                   |
-
----
-
-### Metrics Events
-
-#### ME-001 — `metrics/ME-001.yaml`
-| Field          | Value                              |
-|----------------|------------------------------------|
-| id             | ME-001                             |
-| type           | metrics_event                      |
-| event_name     | work_item_complete                 |
-| agent_type     | worker                             |
-| timestamp      | "2026-04-01T10:00:00Z"             |
-| input_tokens   | 15200                              |
-| output_tokens  | 3400                               |
-| outcome        | pass                               |
-| finding_count  | 1                                  |
-| cycle_created  | 1                                  |
-| cycle_modified | null                               |
-
-**Purpose:** both `event_name` and `agent_type` are set. The indexer's precedence rule
-(`event_name ?? agent_type`) means `event_name` ("work_item_complete") wins and is
-stored in `metrics_events.event_name`. This verifies that precedence is respected.
-
-#### ME-002 — `metrics/ME-002.yaml`
-| Field          | Value                |
-|----------------|----------------------|
-| id             | ME-002               |
-| type           | metrics_event        |
-| event_name     | null                 |
-| agent_type     | reviewer             |
-| timestamp      | "2026-04-01T10:05:00Z" |
-| cycle_created  | 1                    |
-| cycle_modified | null                 |
-
-**Purpose:** `event_name` is null but `agent_type` is set. The indexer maps
-`event_name ?? agent_type` to `metrics_events.event_name`, so the stored value
-is "reviewer". This verifies the fallback path.
 
 ---
 
@@ -467,5 +480,3 @@ is "reviewer". This verifies the fallback path.
 | Project with current_phase_id          | PR-001              |
 | Finding with title                     | F-WI-001-001        |
 | Decision with null title and null source | D-02              |
-| ME with both event_name and agent_type | ME-001 (event_name wins) |
-| ME with null event_name, agent_type set | ME-002 (agent_type used) |

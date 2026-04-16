@@ -63,7 +63,6 @@ async function createLocalSetup(): Promise<LocalSetup> {
     "constraints",
     "modules",
     "research",
-    "metrics",
     "interviews",
     "projects",
     "phases",

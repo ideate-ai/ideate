@@ -8,5 +8,8 @@ file: mcp/artifact-server/src/adapters/remote/client.ts
 line: 366
 cycle: 29
 cycle_modified: 27
-content_hash: c242606e8db031393d7f438fa4de426ad2f6aa7f1956e272a52370fb81c5fa31
-token_count: 152
+content_hash: 084eb4b17f2bb0da0d7ca26f80caaf699ba8c8cbfcac836451395c09e5c36a14
+token_count: 236
+status: resolved
+addressed_by: PH-046
+resolution_note: "Fixed by commit 1a0d686: executeOnceWithAuth now throws StorageAdapterError (not ConnectionError) on network failure; code comment at client.ts:367-370 explicitly documents the change."

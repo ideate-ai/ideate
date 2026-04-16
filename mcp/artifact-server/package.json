@@ -21,6 +21,7 @@
     "better-sqlite3": "^12.8.0",
     "chokidar": "^3.6.0",
     "drizzle-orm": "^0.45.1",
+    "js-tiktoken": "^1.0.16",
     "yaml": "^2.7.0"
   },
   "devDependencies": {
