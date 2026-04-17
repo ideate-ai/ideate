@@ -1,0 +1,48 @@
+id: WI-876
+type: work_item
+title: Fix convergence-checker index staleness for addressed_by updates
+complexity: small
+scope:
+  - path: mcp/artifact-server/src/adapters/local/index.ts
+    op: edit
+  - path: mcp/artifact-server/src/convergence-checker.ts
+    op: edit
+  - path: mcp/artifact-server/tests/adapters/equivalence-query.test.ts
+    op: edit
+depends: []
+blocks: []
+criteria:
+  - "Reproducer test: write a finding with addressed_by=null, run convergence check, update finding with addressed_by=WI-XXX, re-run convergence check — second call MUST reflect the update"
+  - Root cause identified and documented (index refresh trigger, write-through semantics, or query-side read path)
+  - "Fix applied: convergence check reads current addressed_by state, not stale indexed state"
+  - Retroactively verify cycles 31 and 32 convergence queries now return correct counts
+  - Related to WI-874 (legacy-artifact-collision) — both touch convergence-checker data integrity; consider shared fix if root cause overlaps
+domain: null
+phase: null
+work_item_type: bug
+notes: |-
+  ## Context
+
+  Discovered during PR-002 / PH-049 autopilot closeout (cycle 33-34, 2026-04-16). Cycles 31 and 32 had findings (F-CYCLE-31-S1..S4, F-CYCLE-31-MI1, F-CYCLE-32-S1..S3, F-CYCLE-32-MI1..MI2) whose addressed_by fields were backfilled via WI-873 canonical MCP writes, but subsequent ideate_get_convergence_status(31) and (32) calls continued returning stale counts.
+
+  ## Reproducer
+
+  1. Write a finding with no addressed_by (or addressed_by: null)
+  2. Call ideate_get_convergence_status(CYCLE) — note unresolved count
+  3. Update the same finding artifact adding addressed_by: WI-XXX
+  4. Call ideate_get_convergence_status(CYCLE) again
+  5. Observe: count unchanged (stale)
+
+  ## Related
+
+  - WI-874: convergence-checker legacy-artifact-collision (different reproducer, same subsystem). Both should land in a unified convergence-checker hardening phase. A single fix may address both if the root cause is SQLite index refresh semantics.
+
+  ## Risk
+
+  Silent false-convergence or false-non-convergence in future autopilot runs. Was bypassed via proxy-human PHD-033-01 in cycle 34 but cannot be relied upon as a mitigation going forward.
+resolution: null
+status: pending
+cycle_created: 34
+cycle_modified: null
+content_hash: 23f5ec7b4959ffa70a76d9a1e2c041e21575596a21518c4ec88975bd93c3b3cb
+token_count: 572

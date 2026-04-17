@@ -11,5 +11,7 @@ file_refs:
   - mcp/artifact-server/docs/adapter-contract.md
 cycle: 33
 cycle_modified: 27
-content_hash: 2dfe4bcf2b084f9285fd726a3782240a9027a2b4b58515191c1c870e51b9098c
-token_count: 155
+content_hash: cdb16e9dd3db10dea4df50cffb44a01c44ab5ef01a8c410260ee8fff2dbcfe27
+token_count: 232
+resolution: dismissed
+resolution_note: Cosmetic only. Git log is the authoritative chronology; no user-facing impact. Filing a WI would cost more than the fix. Dismissed 2026-04-16 during PR-002 closeout triage.

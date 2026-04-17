@@ -11,5 +11,7 @@ file_refs:
   - mcp/artifact-server/src/adapters/remote/index.ts
 cycle: 33
 cycle_modified: 27
-content_hash: a98530d6eea2b70d015417740b6b06bf085319ebf539305de02bb4e07d16c248
-token_count: 250
+content_hash: e58a2463a5feee18a5e58683b41b5e2804af68f35438369767d4ade7ec0cbb05
+token_count: 346
+resolution: dismissed
+resolution_note: Retroactive scope audit produces no artifact — commit is already made. Code correctness verified in static review. Any learning (keep metrics additions atomic) belongs as a domain policy, not a WI. Dismissed 2026-04-16 during PR-002 closeout triage.
