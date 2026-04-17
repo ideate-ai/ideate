@@ -1,0 +1,15 @@
+id: Q-160
+type: domain_question
+title: "MCP cycle-slot collision: write semantics when autopilot cycle numbering reuses slots with existing content"
+domain: artifact-structure
+question: "Autopilot's internal cycle numbering (1, 2, 3...) reuses workspace cycle directory slots that may already contain unrelated archived artifacts. ideate_get_convergence_status parses any file containing 'verdict: Fail', even if the file is a legacy artifact from a different real cycle. What is the correct semantic: (a) convergence-checker disambiguates by content date/source/session-id; (b) autopilot maps internal cycles to next-available slots; (c) convergence-checker only reads named files (code-quality/spec-adherence/gap-analysis) and ignores legacy ID-named files?"
+derived_from:
+  - cycle: 28
+    finding: Triaged 2026-04-16 as bug (out of PH-050 scope per D-214). Originally observed during autopilot run 2026-04-14.
+established_cycle: 28
+impact: This is the actual root cause of the 2026-04-14 autopilot incident. Currently parked; PH-050 was re-scoped to parser resilience instead. Any future autopilot multi-cycle run may re-trigger the same failure.
+status: open
+reexamination_trigger: Before autopilot is next run on a workspace with existing cycle artifacts.
+cycle_modified: 27
+content_hash: 50057ee19d08bf38e03a6a828fa761caf7900f12724a4887308c3844ca48c073
+token_count: 320

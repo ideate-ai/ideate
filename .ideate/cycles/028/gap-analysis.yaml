@@ -2,77 +2,88 @@ id: gap-analysis
 type: cycle_summary
 reviewer: gap-analyst
 content: |
-  # Capstone Gap Analysis — PH-048 (Cycle 28)
+  # Gap Analysis — Cycle 28 (PH-050 capstone)
 
-  ## Verdict: Incomplete
+  Scope: WI-876, WI-877, WI-878, WI-879. 4 significant gaps.
 
-  **Reviewer session exhausted its turn budget before synthesizing a final verdict** (115 tool uses over 372s; maxTurns=200 was not hit — session may have terminated on wall-clock or another budget). Investigation progressed through work item enumeration and documentation surface checks but stopped before validating the full round-trip integration test (dispatch wrapper → tool_usage write → getToolUsage query → report script). No final gap list synthesized.
+  ## Verdict: Fail (completeness)
 
-  ## Critical Gaps
+  Parser hardening leaves two concrete format gaps and one P-33 coverage gap; autopilot has no handler for unknown-verdict, preserving the original 2026-04-14 failure mode.
 
-  None identified in partial output.
+  ## Critical Findings
+  None.
 
-  ## Significant Gaps
+  ## Significant Findings
 
-  ### SG1: `docs/platform/architecture-overview.md` does not mention `tool_usage` or `ideate_get_tool_usage`
+  ### EC1: `## Principle Adherence Evidence` heading triggers false-fail in step 2
+  - File: src/tools/analysis.ts
+  - Step 2 uses `heading.startsWith("principle adherence")`, matching `Principle Adherence Evidence`. The Evidence section body contains bullets (`- GP-14: ...`) that match the violation-detection regex, returning `fail`. Real-world spec-adherence artifacts in cycles 003, 004, 005, 006, 009, 024-026, 029, 030, 062 contain this section.
+  - **Corroborates code-reviewer S1.** High confidence. Reproduces the PH-050 target failure mode.
+  - Fix: exact-match allowed headings; add a fixture where Evidence section with bullets does NOT produce `fail`.
 
-  - **File**: `docs/platform/architecture-overview.md`
-  - **Gap**: The platform-level architecture overview contains no reference to the new `tool_usage` table, `ideate_get_tool_usage` MCP tool, or the MCP-boundary instrumentation mechanism. A reader learning the ideate platform from this doc would not discover that tool-usage telemetry exists. The root `ARCHITECTURE.md` has full coverage; the platform-facing doc does not.
-  - **Suggested fix**: Add a brief section to `docs/platform/architecture-overview.md` linking out to the root `ARCHITECTURE.md` MCP boundary instrumentation section, or duplicate the key facts (one SQLite table, boundary-emitted, surfaced via `ideate_get_tool_usage`).
+  ### EC2: `**Principle Adherence Verdict: Pass**` (all-bold including verdict) not matched by any step 1 pattern
+  - File: src/tools/analysis.ts
+  - Cycle 003 opens with `**Principle Adherence Verdict: Pass**` — the entire label + colon + verdict are inside one bold span. Step 1 covers `**Label**:`, `**Label:**`, and bare `Label:`. The all-bold-including-verdict format is not covered. Step 1 misses → step 2 fires → EC1 produces false fail.
+  - Fix: add `/\*\*Principle\s+(?:Adherence|Violation)\s+Verdict:\s*Pass\b[^*]*\*\*/i` as a fourth pattern; fixture with `**Principle Adherence Verdict: Pass** (commentary)`.
 
-  ### SG2: Scope path discrepancy in WI-852 / WI-859
+  ### EC5: rawSnippet (step 3 warning) not sanitized for absolute `.ideate/` paths
+  - File: src/tools/analysis.ts, src/__tests__/tools.test.ts
+  - P-33 test at tools.test.ts:4198 uses synthetic content (`"Verdict: unclear — no structured format present"`) with no path references. Real spec-adherence YAML files contain path refs like `mcp/artifact-server/src/tools/analysis.ts` in the first 200 chars. If the content passing step 3 has an absolute `.ideate/` path in the window, it leaks via `principle_verdict_warning`.
+  - Fix: either strip absolute paths from `rawSnippet` during construction, or add a test seeding content with an absolute `.ideate/` path in the first 200 chars and assert the warning is clean.
 
-  - **Finding cross-referenced from spec-adherence S1**: Both work items name `docs/platform/ARCHITECTURE.md` in scope but the file updated was `ARCHITECTURE.md` at the repo root. This is both a gap (the platform-level doc was not updated) and a spec-adherence issue (scope path is inaccurate).
+  ### II1: Autopilot Phase 6c has no handler for `principle_verdict: unknown` / `principle_verdict_warning`
+  - Interface: `ideate_get_convergence_status` → autopilot Phase 6c
+  - `handleGetConvergenceStatus` emits `principle_verdict: unknown` and `principle_verdict_warning` when step 3 fires. The autopilot skill reads only `converged`. A parse failure (diagnostic) is indistinguishable from a real violation — autopilot silently moves to refinement. This is **the residual systemic gap from 2026-04-14**. WI-876 hardened the parser but did not close the loop on what happens when the parser still falls through.
+  - Fix: Phase 6c in autopilot SKILL.md should surface `principle_verdict_warning` as an Andon condition when `converged: false` AND `principle_verdict: unknown`. A parse failure is not a principle violation.
 
-  ## Minor Gaps (partially explored)
+  ## Minor Findings
 
-  The reviewer began exploring but did not complete checks on:
-  - Whether the graphql-schema.graphql `ToolUsage` types are mirrored in any consumer documentation or client stub.
-  - Whether a retention policy is defined for `tool_usage` rows (unbounded growth concern).
-  - Whether the GP-8 fail-soft path is tested explicitly (i.e. a test that simulates `insertToolUsage` throwing and asserts the tool call still succeeds).
-  - Round-trip integration test: dispatch wrapper → real DB write → `ideate_get_tool_usage` query → row visible in report-tool-usage.sh output.
+  ### EC3/EC4: `principle_verdict_source` not asserted in any step 1, step 2, or step 3 test
+  - File: src/__tests__/tools.test.ts
+  - Tests check `principle_verdict` only. Source field is informational per WI-876 but its correctness is untested. A refactor could silently swap sources (step1 ↔ step2) and all tests pass.
+  - Fix: add `expect(result).toContain("principle_verdict_source: stepN")` to at least one canonical test per step.
 
-  ## Coverage Confirmed (partial)
+  ### EC6: Document with both Pass and Fail verdict lines — first-match semantics untested
+  - Code is correct (Pass alternation iterates before Fail) but untested. Low risk.
 
-  - All 17 work items in PH-048 are in `done` state.
-  - `mcp/artifact-server/README.md` lists `ideate_get_tool_usage`.
-  - `graphql-schema.graphql` contains `ToolUsage` types.
-  - Root `ARCHITECTURE.md` section on `session_id` / `cycle` / `phase` context (partial inspection — reviewer was mid-quote when terminated).
+  ### EC7: start.sh double-start creates orphan server process
+  - Low likelihood under normal MCP-host-managed use model. Defer to a documentation note in start.sh header.
 
-  ## Requires Human Review
+  ### EC8: restart.sh kills old server before confirming new build
+  - Documented workflow (`npm run build && sh scripts/restart.sh`) enforces order via `&&`. Recommend a doc note stating the assumption.
 
-  - Round-trip integration test coverage: confirm whether an end-to-end test exists (real DB, dispatch wrapper emission, subsequent read via handler).
-  - Retention policy for `tool_usage` table: is there a documented expectation of table growth, or a pruning mechanism planned as a follow-up?
-  - Session ID / cycle / phase wiring: is there an open follow-up work item tracking the server-side wiring that `types.ts:11` promises?
-content_hash: 40ec31210825c1637832fe04f07b344417f813fa72925c108a0c100b11054cb8
-token_count: 1233
+  ### II2: `principle_verdict_source` not consumed by any downstream agent/skill
+  - Field exists but is invisible. Diagnostic intent unrealized.
+
+  ### MI1: No troubleshooting section for SIGKILL failure / zombie processes
+  - Error message is self-describing for a developer audience. Rare scenario.
+
+  ### MI2: `start.sh` version-only rebuild caveat is buried mid-paragraph
+  - Critical warning should be promoted to a callout in deployment-notes.md.
+
+  ### IR2: `principle_verdict_source` absent from autopilot convergence journal
+  - Defer with II1.
+
+  ## Summary
+
+  Two reviewers cross-corroborated the step 2 `Principle Adherence Evidence` false-match (code-reviewer S1 = gap-analyst EC1). PH-050's parser hardening leaves two concrete format gaps that can reproduce the target failure mode. The most important systemic gap: autopilot still treats `principle_verdict: unknown` identically to `principle_verdict: fail`, preserving the 2026-04-14 behavior despite the parser being more resilient.
+content_hash: 8dfb4a19338dbab3413dcce6f04ba89a9b0179d6cea6a35a99454bd854e03e71
+token_count: 1605
 file_path: .ideate/cycles/068/gap-analysis.yaml
-verdict: Pass
-phase: PH-046
-scope: differential cycle 8 (commits b799ccc..3377298)
-summary: "EC1 and MI1 from cycle 3 confirmed closed by WI-841. Remaining minors: MI1 (attribution detail WI-840 vs WI-841), MI2 (version history incomplete), IR1 (PARSE_ERROR adapter origin doc). All deferred."
-findings:
-  critical: 0
-  significant: 0
-  minor: 3
 cycle: 28
 cycle_modified: 27
-review_mode: full
-findings_count:
+verdict: Fail
+scope: WI-873 completeness — missing coverage, infrastructure, edge cases
+summary: "10 of 11 acceptance criteria fully satisfied. One partial gap: WI-873 criterion 9 (wording standardization) incomplete — adapter-contract.md:398 countNodes clause retains non-null, non-undefined, and non-empty-string while getConvergenceData clause at adapter-contract.md:425 uses the shorter non-null, non-empty. All 10 finding back-fills present and correct. All 3 fixtures exist and are documented. No 3-clause filter pattern remains in codebase (grep-verified)."
+findings_summary:
   critical: 0
-  significant: 3
-  minor: 3
-mode: differential
-start_commit: b71455540fcec06e960e3d9631814cccf65704bf
-critical_findings: []
-significant_findings:
-  - "EC1: executeOnceWithAuth (client.ts:379) calls response.json() without try/catch. executeOnce wraps this identically at lines 322-328. A non-JSON response on the auth-retry path throws raw TypeError instead of StorageAdapterError(PARSE_ERROR). Three-line fix mirroring executeOnce."
-  - "II1: Test D (remote-adapter.test.ts:356-358) asserts only instanceof StorageAdapterError for the second-401 path. Both adapter-contract.md and adapter-interface.md document that this throws HTTP_401, not AUTH_FAILURE. The assertion does not verify the code — a regression could silently change it. One-line fix: add .code === 'HTTP_401' to the toSatisfy predicate."
-minor_findings:
-  - "MI1: Test F missing message assertion — weaker than sibling Test E. Cosmetic."
-  - "MI2: adapter-contract.md version history and header date not updated after WI-838 — shows 3.0/2026-04-06 instead of 3.1/2026-04-15."
-work_items:
-  - WI-835
-  - WI-836
-  - WI-837
-  - WI-838
+  significant: 0
+  minor: 1
+minor_findings_refs:
+  - F-CYCLE-33-MI1
+criteria_status:
+  total: 11
+  pass: 10
+  partial: 1
+  fail: 0
+regression_prevention_check: No remaining 3-clause !== '' filter patterns anywhere in mcp/artifact-server/src. Only 2 JS filter sites, both 2-clause correct. Two SQL filter sites in reader.ts, both immune to inversion bug.

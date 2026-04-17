@@ -1174,6 +1174,386 @@ describe("handleGetConvergenceStatus", () => {
     expect(result).toContain("principle_verdict: fail");
     expect(result).toContain("converged: false");
   });
+
+  // ---------------------------------------------------------------------------
+  // WI-876: parsePrincipleVerdict hardening — additional pattern coverage
+  // ---------------------------------------------------------------------------
+
+  it("WI-876: missing cycle_summary warning includes cycle dir path and checked filenames", async () => {
+    // Cycle 998 has no cycle_summary rows — warning must name the directory searched
+    // and the canonical filenames checked.
+    const result = await handleGetConvergenceStatus(ctx, { cycle_number: 998 });
+
+    expect(result).toContain("principle_verdict: unknown");
+    expect(result).toContain("condition_b: false");
+    expect(result).toContain("converged: false");
+    // Warning must include directory path
+    const warningLine = result.split("\n").find((l) => l.startsWith("principle_verdict_warning:"));
+    expect(warningLine).toBeDefined();
+    expect(warningLine).toContain("cycles");
+    expect(warningLine).toContain("998");
+    // Warning must include the checked filenames
+    expect(warningLine).toContain("spec-adherence.yaml");
+    expect(warningLine).toContain("summary.yaml");
+  });
+
+  it("WI-876: malformed cycle_summary warning includes content snippet", async () => {
+    // Insert a cycle_summary with content that doesn't match any accepted verdict pattern.
+    const cycleDir = path.join(artifactDir, "cycles", "300");
+    fs.mkdirSync(cycleDir, { recursive: true });
+    const filePath = path.join(cycleDir, "spec-adherence.yaml");
+    fs.writeFileSync(filePath, "id: spec-adherence-300\ntype: cycle_summary\ncycle: 300\n", "utf8");
+    insertNode("spec-adherence-300", "cycle_summary", { file_path: filePath, cycle_created: 300 });
+    const malformedContent = "Verdict: unclear — reviewer did not follow template";
+    db.prepare(
+      `INSERT OR REPLACE INTO document_artifacts (id, cycle, content) VALUES (?, ?, ?)`
+    ).run("spec-adherence-300", 300, malformedContent);
+
+    const result = await handleGetConvergenceStatus(ctx, { cycle_number: 300 });
+
+    expect(result).toContain("principle_verdict: unknown");
+    expect(result).toContain("condition_b: false");
+    // Warning must include a snippet of the actual content
+    const warningLine = result.split("\n").find((l) => l.startsWith("principle_verdict_warning:"));
+    expect(warningLine).toBeDefined();
+    expect(warningLine).toContain("unexpected format");
+    expect(warningLine).toContain("content snippet");
+    // The snippet must contain some of the actual content
+    expect(warningLine).toContain("Verdict: unclear");
+  });
+
+  it("WI-876: parsePrincipleVerdict accepts **Principle Adherence Verdict**: Pass (colon outside bold)", async () => {
+    // Pattern 1: **Principle Adherence Verdict**: Pass
+    const cycleDir = path.join(artifactDir, "cycles", "301");
+    fs.mkdirSync(cycleDir, { recursive: true });
+    const filePath = path.join(cycleDir, "spec-adherence.yaml");
+    fs.writeFileSync(filePath, "id: spec-adherence-301\ntype: cycle_summary\ncycle: 301\n", "utf8");
+    insertNode("spec-adherence-301", "cycle_summary", { file_path: filePath, cycle_created: 301 });
+    db.prepare(
+      `INSERT OR REPLACE INTO document_artifacts (id, cycle, content) VALUES (?, ?, ?)`
+    ).run("spec-adherence-301", 301, "**Principle Adherence Verdict**: Pass\n\nAll good.");
+
+    const result = await handleGetConvergenceStatus(ctx, { cycle_number: 301 });
+    expect(result).toContain("principle_verdict: pass");
+    expect(result).toContain("condition_b: true");
+  });
+
+  it("WI-876: parsePrincipleVerdict accepts **Principle Adherence Verdict:** Pass (colon inside bold)", async () => {
+    // Pattern 2: **Principle Adherence Verdict:** Pass
+    const cycleDir = path.join(artifactDir, "cycles", "302");
+    fs.mkdirSync(cycleDir, { recursive: true });
+    const filePath = path.join(cycleDir, "spec-adherence.yaml");
+    fs.writeFileSync(filePath, "id: spec-adherence-302\ntype: cycle_summary\ncycle: 302\n", "utf8");
+    insertNode("spec-adherence-302", "cycle_summary", { file_path: filePath, cycle_created: 302 });
+    db.prepare(
+      `INSERT OR REPLACE INTO document_artifacts (id, cycle, content) VALUES (?, ?, ?)`
+    ).run("spec-adherence-302", 302, "**Principle Adherence Verdict:** Pass\n\nAll good.");
+
+    const result = await handleGetConvergenceStatus(ctx, { cycle_number: 302 });
+    expect(result).toContain("principle_verdict: pass");
+    expect(result).toContain("condition_b: true");
+  });
+
+  it("WI-876: parsePrincipleVerdict accepts Principle Adherence Verdict: Pass (no bold)", async () => {
+    // Pattern 3: Principle Adherence Verdict: Pass (no bold markers)
+    const cycleDir = path.join(artifactDir, "cycles", "303");
+    fs.mkdirSync(cycleDir, { recursive: true });
+    const filePath = path.join(cycleDir, "spec-adherence.yaml");
+    fs.writeFileSync(filePath, "id: spec-adherence-303\ntype: cycle_summary\ncycle: 303\n", "utf8");
+    insertNode("spec-adherence-303", "cycle_summary", { file_path: filePath, cycle_created: 303 });
+    db.prepare(
+      `INSERT OR REPLACE INTO document_artifacts (id, cycle, content) VALUES (?, ?, ?)`
+    ).run("spec-adherence-303", 303, "Principle Adherence Verdict: Pass\n\nAll good.");
+
+    const result = await handleGetConvergenceStatus(ctx, { cycle_number: 303 });
+    expect(result).toContain("principle_verdict: pass");
+    expect(result).toContain("condition_b: true");
+  });
+
+  it("WI-876: parsePrincipleVerdict accepts **Principle Adherence Verdict**: Fail (colon outside bold, Fail)", async () => {
+    // Pattern 1 variant: Fail verdict
+    const cycleDir = path.join(artifactDir, "cycles", "304");
+    fs.mkdirSync(cycleDir, { recursive: true });
+    const filePath = path.join(cycleDir, "spec-adherence.yaml");
+    fs.writeFileSync(filePath, "id: spec-adherence-304\ntype: cycle_summary\ncycle: 304\n", "utf8");
+    insertNode("spec-adherence-304", "cycle_summary", { file_path: filePath, cycle_created: 304 });
+    db.prepare(
+      `INSERT OR REPLACE INTO document_artifacts (id, cycle, content) VALUES (?, ?, ?)`
+    ).run("spec-adherence-304", 304, "**Principle Adherence Verdict**: Fail\n\nViolation found.");
+
+    const result = await handleGetConvergenceStatus(ctx, { cycle_number: 304 });
+    expect(result).toContain("principle_verdict: fail");
+    expect(result).toContain("condition_b: false");
+  });
+
+  it("WI-876: parsePrincipleVerdict accepts case-insensitive verdict keywords (pass, PASS, Pass)", async () => {
+    // Case-insensitive: "PASS" and "pass" should both match
+    const cycleDir = path.join(artifactDir, "cycles", "305");
+    fs.mkdirSync(cycleDir, { recursive: true });
+    const filePath = path.join(cycleDir, "spec-adherence.yaml");
+    fs.writeFileSync(filePath, "id: spec-adherence-305\ntype: cycle_summary\ncycle: 305\n", "utf8");
+    insertNode("spec-adherence-305", "cycle_summary", { file_path: filePath, cycle_created: 305 });
+    db.prepare(
+      `INSERT OR REPLACE INTO document_artifacts (id, cycle, content) VALUES (?, ?, ?)`
+    ).run("spec-adherence-305", 305, "**Principle Adherence Verdict**: PASS\n\nAll good.");
+
+    const result = await handleGetConvergenceStatus(ctx, { cycle_number: 305 });
+    expect(result).toContain("principle_verdict: pass");
+    expect(result).toContain("condition_b: true");
+  });
+
+  it("WI-876 rejected variant: no verdict keyword at all → unknown", async () => {
+    // A line that has "Principle Adherence Verdict" but no Pass/Fail keyword
+    const cycleDir = path.join(artifactDir, "cycles", "306");
+    fs.mkdirSync(cycleDir, { recursive: true });
+    const filePath = path.join(cycleDir, "spec-adherence.yaml");
+    fs.writeFileSync(filePath, "id: spec-adherence-306\ntype: cycle_summary\ncycle: 306\n", "utf8");
+    insertNode("spec-adherence-306", "cycle_summary", { file_path: filePath, cycle_created: 306 });
+    db.prepare(
+      `INSERT OR REPLACE INTO document_artifacts (id, cycle, content) VALUES (?, ?, ?)`
+    ).run("spec-adherence-306", 306, "**Principle Adherence Verdict**: Conditional\n\nSome conditions apply.");
+
+    const result = await handleGetConvergenceStatus(ctx, { cycle_number: 306 });
+    expect(result).toContain("principle_verdict: unknown");
+    expect(result).toContain("condition_b: false");
+    // Should include a content snippet in the warning
+    const warningLine = result.split("\n").find((l) => l.startsWith("principle_verdict_warning:"));
+    expect(warningLine).toBeDefined();
+    expect(warningLine).toContain("content snippet");
+  });
+
+  it("WI-876 rejected variant: completely unrecognized format → unknown with snippet", async () => {
+    // Content that has no recognizable verdict pattern at all
+    const cycleDir = path.join(artifactDir, "cycles", "307");
+    fs.mkdirSync(cycleDir, { recursive: true });
+    const filePath = path.join(cycleDir, "spec-adherence.yaml");
+    fs.writeFileSync(filePath, "id: spec-adherence-307\ntype: cycle_summary\ncycle: 307\n", "utf8");
+    insertNode("spec-adherence-307", "cycle_summary", { file_path: filePath, cycle_created: 307 });
+    const unrecognized = "This is just free-form text without any verdict structure at all.";
+    db.prepare(
+      `INSERT OR REPLACE INTO document_artifacts (id, cycle, content) VALUES (?, ?, ?)`
+    ).run("spec-adherence-307", 307, unrecognized);
+
+    const result = await handleGetConvergenceStatus(ctx, { cycle_number: 307 });
+    expect(result).toContain("principle_verdict: unknown");
+    const warningLine = result.split("\n").find((l) => l.startsWith("principle_verdict_warning:"));
+    expect(warningLine).toBeDefined();
+    expect(warningLine).toContain("unexpected format");
+    expect(warningLine).toContain("content snippet");
+    expect(warningLine).toContain("free-form text");
+  });
+
+  // WI-878: S1 word-boundary tests — "Passed"/"Failed" must NOT match Pass/Fail
+  it("WI-878 S1: Verdict: Passed → unknown (word boundary prevents match)", async () => {
+    const cycleDir = path.join(artifactDir, "cycles", "310");
+    fs.mkdirSync(cycleDir, { recursive: true });
+    const filePath = path.join(cycleDir, "spec-adherence.yaml");
+    fs.writeFileSync(filePath, "id: spec-adherence-310\ntype: cycle_summary\ncycle: 310\n", "utf8");
+    insertNode("spec-adherence-310", "cycle_summary", { file_path: filePath, cycle_created: 310 });
+    db.prepare(
+      `INSERT OR REPLACE INTO document_artifacts (id, cycle, content) VALUES (?, ?, ?)`
+    ).run("spec-adherence-310", 310, "**Principle Adherence Verdict**: Passed\n\nSee details.");
+
+    const result = await handleGetConvergenceStatus(ctx, { cycle_number: 310 });
+    expect(result).toContain("principle_verdict: unknown");
+    expect(result).toContain("condition_b: false");
+  });
+
+  it("WI-878 S1: Verdict: Failed → unknown (word boundary prevents match)", async () => {
+    const cycleDir = path.join(artifactDir, "cycles", "311");
+    fs.mkdirSync(cycleDir, { recursive: true });
+    const filePath = path.join(cycleDir, "spec-adherence.yaml");
+    fs.writeFileSync(filePath, "id: spec-adherence-311\ntype: cycle_summary\ncycle: 311\n", "utf8");
+    insertNode("spec-adherence-311", "cycle_summary", { file_path: filePath, cycle_created: 311 });
+    db.prepare(
+      `INSERT OR REPLACE INTO document_artifacts (id, cycle, content) VALUES (?, ?, ?)`
+    ).run("spec-adherence-311", 311, "**Principle Adherence Verdict**: Failed\n\nSee details.");
+
+    const result = await handleGetConvergenceStatus(ctx, { cycle_number: 311 });
+    expect(result).toContain("principle_verdict: unknown");
+    expect(result).toContain("condition_b: false");
+  });
+
+  it("WI-878 S1: Verdict: Pass → pass (exact word boundary match)", async () => {
+    const cycleDir = path.join(artifactDir, "cycles", "312");
+    fs.mkdirSync(cycleDir, { recursive: true });
+    const filePath = path.join(cycleDir, "spec-adherence.yaml");
+    fs.writeFileSync(filePath, "id: spec-adherence-312\ntype: cycle_summary\ncycle: 312\n", "utf8");
+    insertNode("spec-adherence-312", "cycle_summary", { file_path: filePath, cycle_created: 312 });
+    db.prepare(
+      `INSERT OR REPLACE INTO document_artifacts (id, cycle, content) VALUES (?, ?, ?)`
+    ).run("spec-adherence-312", 312, "**Principle Adherence Verdict**: Pass\n\nAll clear.");
+
+    const result = await handleGetConvergenceStatus(ctx, { cycle_number: 312 });
+    expect(result).toContain("principle_verdict: pass");
+    expect(result).toContain("condition_b: true");
+  });
+
+  // WI-878: S2 step-2 section-body heuristic tests
+  it("WI-878 S2: ## Principle Adherence heading with Pass verdict in section body → pass (step2)", async () => {
+    // Step 2 heuristic: heading recognized, body is 'None.' → pass
+    const cycleDir = path.join(artifactDir, "cycles", "313");
+    fs.mkdirSync(cycleDir, { recursive: true });
+    const filePath = path.join(cycleDir, "spec-adherence.yaml");
+    fs.writeFileSync(filePath, "id: spec-adherence-313\ntype: cycle_summary\ncycle: 313\n", "utf8");
+    insertNode("spec-adherence-313", "cycle_summary", { file_path: filePath, cycle_created: 313 });
+    // Content uses ## Principle Adherence heading followed by "None." body
+    const content = "# Summary\n\nSome intro.\n\n## Principle Adherence\n\nNone.\n\n## Other Section\n\nstuff";
+    db.prepare(
+      `INSERT OR REPLACE INTO document_artifacts (id, cycle, content) VALUES (?, ?, ?)`
+    ).run("spec-adherence-313", 313, content);
+
+    const result = await handleGetConvergenceStatus(ctx, { cycle_number: 313 });
+    expect(result).toContain("principle_verdict: pass");
+    expect(result).toContain("principle_verdict_source: step2");
+    expect(result).toContain("condition_b: true");
+  });
+
+  it("WI-878 S2: ## Principle Adherence section with verdict line beyond window → falls through to step3 (unknown)", async () => {
+    // Step 2 heuristic: heading recognized, but verdict content is beyond STEP2_WINDOW_LINES
+    // non-empty lines, so step 2 should fall through to step 3 → unknown.
+    const cycleDir = path.join(artifactDir, "cycles", "314");
+    fs.mkdirSync(cycleDir, { recursive: true });
+    const filePath = path.join(cycleDir, "spec-adherence.yaml");
+    fs.writeFileSync(filePath, "id: spec-adherence-314\ntype: cycle_summary\ncycle: 314\n", "utf8");
+    insertNode("spec-adherence-314", "cycle_summary", { file_path: filePath, cycle_created: 314 });
+    // 21 non-empty lines in the section body before any verdict signal — exceeds window of 20
+    const bodyLines = Array.from({ length: 21 }, (_, i) => `line ${i + 1} content here`).join("\n");
+    const content = `# Summary\n\n## Principle Adherence\n\n${bodyLines}\n\nNone.\n`;
+    db.prepare(
+      `INSERT OR REPLACE INTO document_artifacts (id, cycle, content) VALUES (?, ?, ?)`
+    ).run("spec-adherence-314", 314, content);
+
+    const result = await handleGetConvergenceStatus(ctx, { cycle_number: 314 });
+    expect(result).toContain("principle_verdict: unknown");
+    expect(result).toContain("condition_b: false");
+  });
+
+  // WI-878: S2 YAML validity — warning field must be parseable YAML
+  it("WI-878 S2: principle_verdict_warning YAML is parseable by yaml.parse", async () => {
+    // A malformed (step3) summary with content that triggers YAML single-quote emission.
+    // The warning might contain single quotes (e.g. from content or pattern descriptions).
+    const yaml = await import("yaml");
+    const cycleDir = path.join(artifactDir, "cycles", "315");
+    fs.mkdirSync(cycleDir, { recursive: true });
+    const filePath = path.join(cycleDir, "spec-adherence.yaml");
+    fs.writeFileSync(filePath, "id: spec-adherence-315\ntype: cycle_summary\ncycle: 315\n", "utf8");
+    insertNode("spec-adherence-315", "cycle_summary", { file_path: filePath, cycle_created: 315 });
+    // Content includes a single quote to stress-test YAML escaping
+    const content = "Verdict: it's unclear what happened here; no structured verdict found.";
+    db.prepare(
+      `INSERT OR REPLACE INTO document_artifacts (id, cycle, content) VALUES (?, ?, ?)`
+    ).run("spec-adherence-315", 315, content);
+
+    const result = await handleGetConvergenceStatus(ctx, { cycle_number: 315 });
+    expect(result).toContain("principle_verdict: unknown");
+
+    // The full result should be parseable as YAML
+    const parsed = yaml.parse(result) as Record<string, unknown>;
+    expect(parsed).toBeDefined();
+    expect(typeof parsed["principle_verdict_warning"]).toBe("string");
+    // The parsed warning should contain the original content (with ' restored from '')
+    expect(parsed["principle_verdict_warning"] as string).toContain("it's unclear");
+  });
+
+  // WI-879 C1: multiline content in snippet must not break YAML single-quoted scalar
+  it("WI-879 C1: multiline content produces parseable YAML", async () => {
+    const yaml = await import("yaml");
+    const cycleDir = path.join(artifactDir, "cycles", "316");
+    fs.mkdirSync(cycleDir, { recursive: true });
+    const filePath = path.join(cycleDir, "spec-adherence.yaml");
+    fs.writeFileSync(filePath, "id: spec-adherence-316\ntype: cycle_summary\ncycle: 316\n", "utf8");
+    insertNode("spec-adherence-316", "cycle_summary", { file_path: filePath, cycle_created: 316 });
+    // "Passed" hits the \b rejection in step1 → falls through to step3 with embedded newlines
+    const content = "**Principle Adherence Verdict**: Passed\n\nSome trailing explanation.\n";
+    db.prepare(
+      `INSERT OR REPLACE INTO document_artifacts (id, cycle, content) VALUES (?, ?, ?)`
+    ).run("spec-adherence-316", 316, content);
+
+    const result = await handleGetConvergenceStatus(ctx, { cycle_number: 316 });
+
+    // Must be parseable as YAML (newlines in snippet would break single-quoted scalar without fix)
+    const parsed = yaml.parse(result) as Record<string, unknown>;
+    expect(parsed).toBeDefined();
+    expect(typeof parsed["principle_verdict_warning"]).toBe("string");
+    // Newlines collapsed to spaces — both fragments must appear in the warning
+    const warning = parsed["principle_verdict_warning"] as string;
+    expect(warning).toContain("Passed");
+    expect(warning).toContain("Some trailing");
+  });
+
+  // WI-878: S3 P-33 — missing-summary warning must not contain absolute paths
+  it("WI-878 S3: missing cycle_summary warning contains no absolute .ideate/ path (P-33)", async () => {
+    const PATH_LEAK_RE = /\/[\w/.-]*\.ideate\//;
+    // Cycle 997 has no data — triggers missing-summary code path
+    const result = await handleGetConvergenceStatus(ctx, { cycle_number: 997 });
+    expect(result).toContain("principle_verdict: unknown");
+    expect(result).not.toMatch(PATH_LEAK_RE);
+    // Should not contain any absolute path (starts with /)
+    const warningLine = result.split("\n").find((l) => l.startsWith("principle_verdict_warning:"));
+    expect(warningLine).toBeDefined();
+    // No absolute path component: no substring starting with / followed by word chars (filesystem root)
+    expect(warningLine).not.toMatch(/\/Users\/|\/home\/|\/tmp\/|\/var\//);
+  });
+
+  // WI-878: S5 retroactive — cycles 27..35 principle_verdict stays pass
+  // Note: cycles 27-35 are live production cycles. This test exercises the adapter
+  // with whatever data exists in the test DB (which starts empty). Since no fixture
+  // data exists for real cycles 27-35 in this unit test context, all will return
+  // "unknown" (no cycle_summary found). This is expected and documented here.
+  // The assertion is that the warning does NOT contain absolute paths (P-33),
+  // not that the verdict is "pass" (which would require fixture data).
+  it("WI-878 S5: cycles 27..35 — principle_verdict_warning contains no absolute paths", async () => {
+    const PATH_LEAK_RE = /\/[\w/.-]*\.ideate\//;
+    for (let cycle = 27; cycle <= 35; cycle++) {
+      const result = await handleGetConvergenceStatus(ctx, { cycle_number: cycle });
+      // principle_verdict is unknown (no fixture data) — that is expected and documented
+      const verdict = result.split("\n").find((l) => l.startsWith("principle_verdict:"))?.split(": ")[1]?.trim();
+      // All should be either pass (if data exists) or unknown (if not) — never a path leak
+      expect(["pass", "unknown", "fail"]).toContain(verdict);
+      // P-33: no absolute path in the response
+      expect(result).not.toMatch(PATH_LEAK_RE);
+    }
+  });
+
+  // WI-879 S1: S5 retroactive fixture test — cycle 998 seeded with "Pass" verdict must return pass
+  // Closes F-CYCLE-37-S1 by demonstrating retroactive verdict preservation for cycles
+  // that use "Pass" (the actual shape of cycles 27-35).
+  it("WI-879 S1: cycle seeded with 'Pass' verdict returns principle_verdict: pass", async () => {
+    const cycleDir = path.join(artifactDir, "cycles", "998");
+    fs.mkdirSync(cycleDir, { recursive: true });
+    const filePath = path.join(cycleDir, "spec-adherence.yaml");
+    fs.writeFileSync(filePath, "id: spec-adherence-998\ntype: cycle_summary\ncycle: 998\n", "utf8");
+    insertNode("spec-adherence-998", "cycle_summary", { file_path: filePath, cycle_created: 998 });
+    // Matches shape of real cycles 27-35: "Pass" (not "Passed") with trailing explanation
+    const content =
+      "## Summary\n\n## Principle Adherence\n\n**Principle Adherence Verdict**: Pass\n\nGP-14 upheld.";
+    db.prepare(
+      `INSERT OR REPLACE INTO document_artifacts (id, cycle, content) VALUES (?, ?, ?)`
+    ).run("spec-adherence-998", 998, content);
+
+    const result = await handleGetConvergenceStatus(ctx, { cycle_number: 998 });
+    expect(result).toContain("principle_verdict: pass");
+    expect(result).toContain("condition_b: true");
+  });
+
+  // WI-879 M3: Step 2 Fail branch — section body with bullet triggers fail via step2
+  it("WI-879 M3: ## Principle Adherence section with bullet body → fail (step2)", async () => {
+    const cycleDir = path.join(artifactDir, "cycles", "999");
+    fs.mkdirSync(cycleDir, { recursive: true });
+    const filePath = path.join(cycleDir, "spec-adherence.yaml");
+    fs.writeFileSync(filePath, "id: spec-adherence-999\ntype: cycle_summary\ncycle: 999\n", "utf8");
+    insertNode("spec-adherence-999", "cycle_summary", { file_path: filePath, cycle_created: 999 });
+    const content =
+      "## Summary\n\n## Principle Adherence\n\n### GP-14 Violation\n\n- Executor bypassed MCP.\n";
+    db.prepare(
+      `INSERT OR REPLACE INTO document_artifacts (id, cycle, content) VALUES (?, ?, ?)`
+    ).run("spec-adherence-999", 999, content);
+
+    const result = await handleGetConvergenceStatus(ctx, { cycle_number: 999 });
+    expect(result).toContain("principle_verdict: fail");
+    expect(result).toContain("principle_verdict_source: step2");
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -3801,5 +4181,36 @@ describe("P-33 compliance: no absolute .ideate/ paths in tool responses", () => 
     insertWorkItem("WI-P33-05", "P-33 workspace status item");
     const result = await handleGetWorkspaceStatus(ctx, {});
     expect(result).not.toMatch(PATH_LEAK_RE);
+  });
+
+  // WI-878 S6: handleGetConvergenceStatus — principle_verdict_warning must not contain absolute paths
+  it("handleGetConvergenceStatus response contains no .ideate/ path (missing summary code path)", async () => {
+    // Cycle 996 has no data — exercises the missing-summary warning path (S3 in analysis.ts).
+    const result = await handleGetConvergenceStatus(ctx, { cycle_number: 996 });
+    expect(result).not.toMatch(PATH_LEAK_RE);
+    // Also assert the warning line specifically does not leak
+    const warningLine = result.split("\n").find((l) => l.startsWith("principle_verdict_warning:"));
+    if (warningLine !== undefined) {
+      expect(warningLine).not.toMatch(PATH_LEAK_RE);
+    }
+  });
+
+  it("handleGetConvergenceStatus principle_verdict_warning contains no .ideate/ path (malformed content path)", async () => {
+    // Step 3 (malformed content) also emits a warning — confirm no path leak.
+    const cycleDir = path.join(artifactDir, "cycles", "995");
+    fs.mkdirSync(cycleDir, { recursive: true });
+    const filePath = path.join(cycleDir, "spec-adherence.yaml");
+    fs.writeFileSync(filePath, "id: spec-adherence-995\ntype: cycle_summary\ncycle: 995\n", "utf8");
+    insertNode("spec-adherence-995", "cycle_summary", { file_path: filePath, cycle_created: 995 });
+    db.prepare(
+      `INSERT OR REPLACE INTO document_artifacts (id, cycle, content) VALUES (?, ?, ?)`
+    ).run("spec-adherence-995", 995, "Verdict: unclear — no structured format present");
+
+    const result = await handleGetConvergenceStatus(ctx, { cycle_number: 995 });
+    expect(result).not.toMatch(PATH_LEAK_RE);
+    const warningLine = result.split("\n").find((l) => l.startsWith("principle_verdict_warning:"));
+    if (warningLine !== undefined) {
+      expect(warningLine).not.toMatch(PATH_LEAK_RE);
+    }
   });
 });

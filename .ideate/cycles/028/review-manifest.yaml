@@ -1,32 +1,25 @@
 id: review-manifest
 type: cycle_summary
-content: |
-  ## Review Manifest (Cycle 28)
+content: |-
+  ## Review Manifest (Cycle 28 — PH-050 phase-scoped capstone)
 
-  Phase: PH-044 — RemoteAdapter P1 divergence fixes
-  Scope: WI-789, WI-790
+  **Phase**: PH-050 — Convergence-checker hardening
+  **Intent**: Correct defects underlying 2026-04-14 autopilot condition_b:false incident. Reclassified from legacy-artifact collision (already fixed) into parser resilience (WI-876) + deployment hygiene (WI-877).
 
-  | # | ID | Title | File Scope | Incremental Verdict | Findings (C/S/M) |
-  |---|----|----|-----|----|----|
-  | 1 | WI-789 | max_nodes semantic alignment — pure result-count slice | mcp/artifact-server/src/ppr.ts; mcp/artifact-server/src/adapter.ts; mcp/artifact-server/src/adapters/local/context.ts; mcp/artifact-server/src/adapters/remote/index.ts; mcp/artifact-server/src/__tests__/ppr.test.ts; mcp/artifact-server/tests/adapters/equivalence-traverse.test.ts | Pass | 0/0/1 |
-  | 2 | WI-790 | Soft-deprecate metrics infrastructure | mcp/artifact-server/src/tools/metrics.ts; mcp/artifact-server/src/tools/index.ts; mcp/artifact-server/src/__tests__/metrics.test.ts; mcp/artifact-server/src/__tests__/tools.test.ts | Pass | 0/0/1 |
+  | WI | Title | MCP Status | File Scope | Autopilot Cycle | Incremental Verdict |
+  |----|-------|-----------|------------|------------------|---------------------|
+  | WI-876 | Harden parsePrincipleVerdict against missing/malformed cycle_summary | pending | src/tools/analysis.ts, src/__tests__/tools.test.ts | 1 | Pass |
+  | WI-877 | MCP server auto-reload on dist/ rebuild | pending | scripts/restart.sh, scripts/start.sh (new), docs/deployment-notes.md | 1 | Pass |
+  | WI-878 | Harden parsePrincipleVerdict regex + YAML + P-33 + Step2 tests | done | src/tools/analysis.ts, src/__tests__/tools.test.ts, scripts/restart.sh, docs/deployment-notes.md | 2 | Pass (1500 tests) |
+  | WI-879 | Fix multiline YAML regression, solidify S5 retroactive test, minor cleanups | done | src/tools/analysis.ts, src/__tests__/tools.test.ts, scripts/restart.sh, docs/deployment-notes.md | 3 | Pass (1503 tests) |
 
-  ## Incremental Findings (Cycle 27)
-  - F-WI-789-001 — minor, pass verdict, by main-session-incremental. All 5 ACs satisfied. No issues identified.
-  - F-WI-790-001 — minor, pass verdict, by main-session-incremental. All 5 ACs satisfied. Out-of-scope touch to __tests__/tools.test.ts documented and accepted.
-
-  ## Post-merge Verification
-  - Build: tsc clean
-  - Tests: 1388 passed, 332 skipped (Docker-dependent), 0 failed
-  - Merges: 8a296af (WI-789), 6a027cb (WI-790)
-  - Worktrees removed; branches deleted
-
-  ## Phase Steering (PH-044)
-  - Preserve adapter-agnostic behavior — LocalAdapter and RemoteAdapter produce equivalent results within the limits documented in D5
-  - Favor composition over new adapter methods (carried from PH-043)
-  - No new abstraction leaks — no ctx.db.prepare() in tool handlers, no casts to concrete adapter classes
-content_hash: 0c7ff421a4e52abf78a035e78237e194eeca6966e0c523072765a22b108c41e5
-token_count: 584
+  **Context**:
+  - WI-876 landed in commit 1a0d686 (PH-046 close commit, predates PH-050 formal start).
+  - WI-877, 878, 879 are in the working tree (uncommitted).
+  - Autopilot terminated at cycle 3 with condition_b=false due to a cycle-slot collision in MCP write path — reviewer content was Pass; parser read stale content. Separate bug triaged by user; NOT in scope for this capstone.
+  - Cycle 28 capstone is a phase-wide synthesis over all PH-050 deliverables, not a per-item re-review.
+content_hash: b815d0e050f63b5ab954bf14e61cbf112828b97abf9161c10d9191b1ddd76502
+token_count: 582
 file_path: .ideate/cycles/068/review-manifest.yaml
 cycle: 28
 scope: WI-759, WI-760, WI-761, WI-762
@@ -42,5 +35,3 @@ incremental_reviews:
   WI-761: pass
   WI-762: pass
 cycle_modified: 27
-reviewer: manifest
-phase: PH-041

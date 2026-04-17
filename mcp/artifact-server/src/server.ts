@@ -16,6 +16,7 @@ import { drizzle, BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
 import * as crypto from "crypto";
 import * as fs from "fs";
 import * as path from "path";
+import { fileURLToPath } from "url";
 import { parse as parseYaml } from "yaml";
 import type { ToolContext } from "./types.js";
 import type { StorageAdapter } from "./adapter.js";
@@ -30,6 +31,24 @@ import { rebuildIndex, RebuildStats } from "./indexer.js";
 import { runPendingMigrations } from "./migrations.js";
 import * as dbSchema from "./db.js";
 import { log } from "./logger.js";
+
+// ---------------------------------------------------------------------------
+// Startup build-stamp — emitted once when this module is first loaded.
+// Helps diagnose stale-require.cache incidents: the timestamp shows whether
+// the running process picked up the latest dist/ build.
+// See docs/deployment-notes.md for details on the 2026-04-16 incident.
+// ---------------------------------------------------------------------------
+
+(function logBuildStamp() {
+  try {
+    const serverPath = fileURLToPath(import.meta.url);
+    const mtime = fs.statSync(serverPath).mtime.toISOString();
+    log.info("ideate-mcp", `build timestamp=${mtime} source=${serverPath}`);
+  } catch {
+    // Non-fatal: if stat fails (e.g., in-memory test environments), skip.
+    log.info("ideate-mcp", "build timestamp=unknown source=unknown");
+  }
+})();
 
 // ---------------------------------------------------------------------------
 // ServerState — testable value object instead of module-level mutable vars

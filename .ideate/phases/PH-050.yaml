@@ -9,13 +9,15 @@ description: Fix two convergence-checker data-integrity bugs that surfaced durin
 work_items:
   - WI-874
   - WI-876
+  - WI-877
 appetite: 3
 success_criteria:
-  - WI-874 reproducer (legacy fail-verdict artifact in cycle slot) resolves to condition_b:Pass after fix
-  - WI-876 reproducer (addressed_by update not reflected in convergence query) resolves to correct count after fix
-  - "Root cause analysis documented: shared SQLite index refresh issue, or two distinct causes with separate fixes"
-  - "No regression: existing convergence tests pass; autopilot convergence behavior unchanged for clean workspaces"
-  - "Retroactive verification: cycles 31, 32, 33 convergence queries return correct counts after fix"
+  - WI-874 closed as already-addressed; canonical-only selector in reader.ts (WI-824) confirmed present and correct, no regression.
+  - WI-876 parsePrincipleVerdict returns diagnostic warnings (paths searched, content snippet) on missing/malformed cycle_summary instead of silent condition_b:false.
+  - WI-877 documents the stale-require.cache deployment issue and implements an auto-reload or explicit build-timestamp startup log.
+  - "No regression: existing convergence tests pass; autopilot convergence behavior unchanged for clean workspaces."
+  - "Retroactive verification: cycles 31, 32, 33 convergence queries produce diagnostic output that makes any remaining issue obvious, not silently unconverged."
 cycle_modified: 27
-content_hash: cca5c64b10947232858b53eedde621475344bd5b08c2f389d1ed8c8aa401c450
-token_count: 294
+content_hash: 6a64d45a79422b3dbc43e2b9449fa81af28f3bd3609a4fc7832401911fae9074
+token_count: 429
+intent: Correct the real defects underlying the 2026-04-14 autopilot condition_b:false incident. Spike reclassified the issue from legacy-artifact collision (already fixed) + index staleness (not actually a bug) into parser resilience (WI-876) + deployment hygiene (WI-877).

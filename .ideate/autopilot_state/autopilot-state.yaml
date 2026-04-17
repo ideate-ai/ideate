@@ -1,27 +1,27 @@
 id: autopilot-state
 type: autopilot_state
-cycles_completed: 5
-convergence_achieved: true
+cycles_completed: 3
+convergence_achieved: false
 started_at: 2026-04-16T00:00:00Z
-last_phase: 6c-ii
-last_cycle: 34
-deferred: false
-deferred_reason: null
-last_full_review_cycle: 1
+last_phase: 6c
+last_cycle: 3
+deferred: true
+deferred_reason: condition_b=false from cycle-slot collision bug in MCP parser; reviewer verdict content inspection shows Pass. User triaged underlying bug and started PH-047-candidate — autopilot loop terminated pending separate investigation.
+last_full_review_cycle: 0
 last_cycle_findings:
   critical: 0
   significant: 0
-  minor: 0
-total_items_executed: 7
+  minor: 2
+total_items_executed: 3
 full_review_interval: 3
-phases_completed: 2
-current_project: PR-002
+phases_completed: 0
+current_project: PR-001
 workspace_label: null
 cycle_modified: 27
-content_hash: 3db09c79c16835df56e859124e679fb1a02590d3d3b2e1b1a3be22e4cfba59f5
-token_count: 282
-cycle_1_start_commit: 1a0d686db6cc8b3a4f97ffbaeeaf86aef7a932ba
-cycle_1_end_commit: 1a0d686db6cc8b3a4f97ffbaeeaf86aef7a932ba
+content_hash: 9ad977e3205d7bb644599cead8b89ec2feb4e974c5a124921623acdd3f5f5f2b
+token_count: 337
+cycle_1_start_commit: fbb082527a67893c88261b3588613ed15b03cc8b
+cycle_1_end_commit: fbb082527a67893c88261b3588613ed15b03cc8b
 cycle_2_start_commit: 1a0d686db6cc8b3a4f97ffbaeeaf86aef7a932ba
 cycle_2_end_commit: 1a0d686db6cc8b3a4f97ffbaeeaf86aef7a932ba
 cycle_3_start_commit: 1a0d686db6cc8b3a4f97ffbaeeaf86aef7a932ba

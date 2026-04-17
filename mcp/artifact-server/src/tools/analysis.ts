@@ -42,35 +42,105 @@ interface PrincipleResult {
   warning?: string;
 }
 
+// Maximum characters to include in a Step 3 "unknown format" content snippet.
+const SNIPPET_MAX_CHARS = 200;
+
+/**
+ * Parse a principle adherence verdict from cycle summary content.
+ *
+ * Accepted patterns (step 1 — explicit tag, case-insensitive verdict keyword).
+ * Both "Principle Adherence Verdict" and "Principle Violation Verdict" headings
+ * are accepted (the latter is the legacy label). Each heading supports three
+ * formatting variants:
+ *
+ *   1. `**Principle Adherence Verdict**: Pass|Fail`
+ *      (label bold, colon outside bold)
+ *   2. `**Principle Adherence Verdict:** Pass|Fail`
+ *      (label + colon inside bold)
+ *   3. `Principle Adherence Verdict: Pass|Fail`
+ *      (no bold, colon after label)
+ *   4. `**Principle Violation Verdict**: Pass|Fail`
+ *      (legacy label — bold, colon outside bold)
+ *   5. `**Principle Violation Verdict:** Pass|Fail`
+ *      (legacy label — bold, colon inside bold)
+ *   6. `Principle Violation Verdict: Pass|Fail`
+ *      (legacy label — no bold)
+ *
+ * Note: verdicts other than Pass/Fail (e.g., Unknown, Inconclusive) produce verdict=unknown via the step3 fallback, not an explicit pattern match.
+ *
+ * Word-boundary anchors (`\b`) are applied after the verdict keyword so that
+ * "Passed" / "Failed" / "Passthrough" do NOT match the Pass / Fail keywords.
+ *
+ * Step 2 falls back to scanning `## Principle Violation` / `## Guiding Principle`
+ * / `## Principle Adherence` section bodies for emptiness (Pass) or
+ * subheadings/bullets (Fail). Only the first STEP2_WINDOW_LINES non-empty lines
+ * of the section body are examined; if the verdict line appears beyond the window
+ * Step 2 falls through to Step 3.
+ *
+ * Step 3 returns `unknown` with a warning that names the patterns tried and
+ * includes a ~200-char snippet of the actual content so callers can diagnose
+ * why parsing failed.
+ */
 function parsePrincipleVerdict(content: string): PrincipleResult {
-  // Step 1: look for explicit bold verdict tag
-  if (/\*\*Principle Violation Verdict\*\*:\s*Pass/i.test(content)) {
-    return { verdict: "pass", source: "step1" };
+  // Step 1: look for explicit verdict tag (Principle Adherence or Principle Violation,
+  // colon inside or outside bold, case-insensitive verdict keywords).
+  // Patterns cover: **Label**: verdict, **Label:** verdict, Label: verdict
+  // for both "Adherence" and "Violation" label variants.
+  // \b after Pass/Fail prevents "Passed"/"Failed"/"Passthrough" from matching.
+  const STEP1_PASS_RES = [
+    /\*\*Principle\s+(?:Adherence|Violation)\s+Verdict\*\*:\s*Pass\b/i,
+    /\*\*Principle\s+(?:Adherence|Violation)\s+Verdict:\*\*\s*Pass\b/i,
+    /(?<!\*)Principle\s+(?:Adherence|Violation)\s+Verdict:\s*Pass\b(?!\*)/i,
+  ];
+  const STEP1_FAIL_RES = [
+    /\*\*Principle\s+(?:Adherence|Violation)\s+Verdict\*\*:\s*Fail\b/i,
+    /\*\*Principle\s+(?:Adherence|Violation)\s+Verdict:\*\*\s*Fail\b/i,
+    /(?<!\*)Principle\s+(?:Adherence|Violation)\s+Verdict:\s*Fail\b(?!\*)/i,
+  ];
+
+  for (const re of STEP1_PASS_RES) {
+    if (re.test(content)) return { verdict: "pass", source: "step1" };
   }
-  if (/\*\*Principle Violation Verdict\*\*:\s*Fail/i.test(content)) {
-    return { verdict: "fail", source: "step1" };
+  for (const re of STEP1_FAIL_RES) {
+    if (re.test(content)) return { verdict: "fail", source: "step1" };
   }
 
-  // Step 2: find ## Principle Violation or ## Guiding Principle section
+  // Step 2: find ## Principle Adherence / ## Principle Violation / ## Guiding Principle section.
+  // Only the first STEP2_WINDOW_LINES non-empty lines of the section body are examined;
+  // if the verdict content appears beyond the window this step falls through to Step 3.
+  const STEP2_WINDOW_LINES = 20;
   const lines = content.split("\n");
   let inSection = false;
   const sectionBodyLines: string[] = [];
+  let nonEmptyCount = 0;
+  let windowExceeded = false;
 
   for (const line of lines) {
     if (/^##\s/.test(line)) {
       if (inSection) break; // hit next section
       const heading = line.replace(/^##\s+/, "").trim().toLowerCase();
-      if (heading.startsWith("principle violation") || heading.startsWith("guiding principle")) {
+      if (
+        heading.startsWith("principle adherence") ||
+        heading.startsWith("principle violation") ||
+        heading.startsWith("guiding principle")
+      ) {
         inSection = true;
       }
       continue;
     }
     if (inSection) {
       sectionBodyLines.push(line);
+      if (line.trim() !== "") {
+        nonEmptyCount++;
+        if (nonEmptyCount > STEP2_WINDOW_LINES) {
+          windowExceeded = true;
+          break;
+        }
+      }
     }
   }
 
-  if (inSection) {
+  if (inSection && !windowExceeded) {
     const body = sectionBodyLines.join("\n").trim();
     // "None." or empty body → Pass
     if (body === "" || /^none\.?\s*$/i.test(body)) {
@@ -80,11 +150,36 @@ function parsePrincipleVerdict(content: string): PrincipleResult {
     if (/^###\s/.test(body) || /^\s*-\s/.test(body)) {
       return { verdict: "fail", source: "step2" };
     }
-    // Body exists but not matching patterns — fall through to step 3
+    // Body exists but doesn't match Pass/Fail patterns — fall through to step 3
   }
 
-  // Step 3: unknown
-  return { verdict: "unknown", source: "step3", warning: "unexpected format" };
+  // Step 3: unknown — enumerate the patterns tried and include a content snippet
+  // so callers can diagnose why parsing failed.
+  // Use single-quoted YAML scalar with '' to escape any internal single quotes,
+  // ensuring the emitted YAML value is always parseable.
+  const rawSnippet = (
+    content.length > SNIPPET_MAX_CHARS
+      ? content.slice(0, SNIPPET_MAX_CHARS) + "..."
+      : content
+  ).replace(/\n/g, ' ').replace(/\s+/g, ' ').trim();
+  const patternsTriedDesc =
+    "**Principle Adherence Verdict**: Pass|Fail, " +
+    "**Principle Adherence Verdict:** Pass|Fail, " +
+    "Principle Adherence Verdict: Pass|Fail, " +
+    "**Principle Violation Verdict**: Pass|Fail, " +
+    "**Principle Violation Verdict:** Pass|Fail, " +
+    "Principle Violation Verdict: Pass|Fail, " +
+    "## Principle Adherence|Violation|Guiding Principle section body heuristic";
+  const warningText =
+    `unexpected format; patterns tried: ${patternsTriedDesc}; ` +
+    `content snippet: ${rawSnippet}`;
+  // Escape internal single quotes for YAML single-quoted scalar
+  const yamlSafeWarning = warningText.replace(/'/g, "''");
+  return {
+    verdict: "unknown",
+    source: "step3",
+    warning: yamlSafeWarning,
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -118,7 +213,19 @@ export async function handleGetConvergenceStatus(
 
   let principleResult: PrincipleResult;
   if (cycleSummaryContent === null) {
-    principleResult = { verdict: "unknown", source: "step3", warning: `no cycle_summary found for cycle ${cycleNumber}` };
+    // P-33: do NOT emit absolute paths. Use artifact-type + relative path + filenames only.
+    const checkedFiles = ["spec-adherence.yaml", "summary.yaml"];
+    const paddedCycle = String(cycleNumber).padStart(3, "0");
+    const warningText =
+      `no cycle_summary found for cycle ${cycleNumber}; ` +
+      `artifact type: cycle_summary; ` +
+      `relative path: cycles/${paddedCycle}; ` +
+      `checked filenames: ${checkedFiles.join(", ")}`;
+    principleResult = {
+      verdict: "unknown",
+      source: "step3",
+      warning: warningText.replace(/'/g, "''"),
+    };
   } else {
     principleResult = parsePrincipleVerdict(cycleSummaryContent);
   }
@@ -148,7 +255,9 @@ export async function handleGetConvergenceStatus(
   ];
 
   if (principleResult.warning) {
-    lines.push(`principle_verdict_warning: "${principleResult.warning}"`);
+    // Use single-quoted YAML scalar; internal single quotes are already escaped as ''
+    // by parsePrincipleVerdict, so this emission is always valid YAML.
+    lines.push(`principle_verdict_warning: '${principleResult.warning}'`);
   }
 
   return lines.join("\n");

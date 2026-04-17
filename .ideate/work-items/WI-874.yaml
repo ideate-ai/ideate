@@ -1,12 +1,10 @@
 id: WI-874
 type: work_item
 title: Fix convergence-checker false-negative from legacy artifact collision
-complexity: null
+complexity: unknown
 scope:
-  - path: mcp/artifact-server/src/tools/index.ts
-    op: modify
-  - path: mcp/artifact-server/src/adapters/local/reader.ts
-    op: modify
+  - mcp/artifact-server/src/tools/index.ts
+  - mcp/artifact-server/src/adapters/local/reader.ts
 depends: []
 blocks: []
 criteria:
@@ -20,23 +18,33 @@ domain: null
 phase: PH-050
 work_item_type: bug
 notes: |-
+  # WI-874 — Resolution
+
+  **Status**: Closed as already-addressed (2026-04-16).
+
+  ## Original context
+
   Discovered 2026-04-14 during autopilot run. cycles/002/SA-002.yaml (a March 29 archive from a prior session) collided with autopilot's internal cycle 2, causing the parser to read the old verdict.
 
-  Root cause: autopilot's internal cycle numbering (1, 2, 3...) reuses workspace cycle directory slots that may already contain unrelated archived artifacts from earlier sessions.
+  Fix options proposed:
+    (a) convergence-checker disambiguates by content date/source/session-id
+    (b) autopilot maps internal cycle numbers to next-available workspace cycle slots
+    (c) convergence-checker only reads canonically-named artifacts (spec-adherence, code-quality, gap-analysis), ignoring legacy ID-named files
 
-  Fix options (from reporter):
-    (a) convergence-checker should disambiguate by content date/source/session-id
-    (b) autopilot should map internal cycle numbers to next-available workspace cycle slots
-    (c) convergence-checker should only read named files (code-quality, spec-adherence, gap-analysis) and ignore legacy ID-named files (SA-NNN, CQ-NNN, GA-NNN)
+  ## Resolution
 
-  Option (c) is simplest and lowest-risk — current-session artifacts already use canonical names. Option (b) changes autopilot state semantics. Option (a) requires session-id plumbing that may not exist yet.
+  **Spike 2026-04-16 (PH-050)**: Option (c) is already implemented in reader.ts:969-974 via WI-824 (canonical-filename selector for getConvergenceData). The selector picks only `/spec-adherence.yaml` and `/summary.yaml` by filename suffix; legacy SA-NNN / CQ-NNN / GA-NNN files are invisible to the selector regardless of document_artifacts content.
 
-  Reproducer: run autopilot in a workspace where cycles/{NNN}/ contains a legacy SA-*/CQ-*/GA-* artifact with verdict:Fail; observe condition_b:false even with all passing current-cycle reviewers.
+  The observed 2026-04-14 `condition_b:false` symptom was NOT caused by legacy-artifact collision. Spike identified the actual cause: MCP server process had stale reader.js loaded in require.cache from before WI-860's `addressed_by IS NULL` filter landed in dist/. sqlite3 CLI confirmed DB had correct values; MCP returned old counts. The separate parser-drift concern (cycle 32 principle_verdict:unknown) is a real distinct bug, now tracked in rewritten WI-876.
 
-  Related: cycle 32 convergence parser also returned principle_verdict:unknown despite the artifact containing the exact expected text. Possibly the same root cause (reading a legacy artifact rather than the current one), possibly independent regex drift — investigate as part of this work item.
+  ## Verification
+
+  - reader.ts getConvergenceData (lines 969-974) contains canonical-filename selector, verified present in HEAD.
+  - No additional code change required for this WI's stated scope.
+  - Follow-up work (WI-876 rewrite, WI-877) filed separately for the real defects.
 resolution: null
-status: pending
-cycle_created: null
+status: done
+cycle_created: 33
 cycle_modified: null
-content_hash: 1d7a1cb266953eac33838946e711e892810de90ebaacd33ca682b1f591684d88
-token_count: 862
+content_hash: 0ec5b2429f7ccdf7fda214179ca0b1c1e034cf49ad738fb8d630c3381843d45f
+token_count: 926

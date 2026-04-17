@@ -1,48 +1,54 @@
 id: WI-876
 type: work_item
-title: Fix convergence-checker index staleness for addressed_by updates
+title: Harden parsePrincipleVerdict against missing/malformed cycle_summary
 complexity: small
 scope:
-  - path: mcp/artifact-server/src/adapters/local/index.ts
-    op: edit
-  - path: mcp/artifact-server/src/convergence-checker.ts
-    op: edit
-  - path: mcp/artifact-server/tests/adapters/equivalence-query.test.ts
-    op: edit
+  - mcp/artifact-server/src/tools/analysis.ts
+  - mcp/artifact-server/src/__tests__/tools.test.ts
 depends: []
 blocks: []
 criteria:
-  - "Reproducer test: write a finding with addressed_by=null, run convergence check, update finding with addressed_by=WI-XXX, re-run convergence check — second call MUST reflect the update"
-  - Root cause identified and documented (index refresh trigger, write-through semantics, or query-side read path)
-  - "Fix applied: convergence check reads current addressed_by state, not stale indexed state"
-  - Retroactively verify cycles 31 and 32 convergence queries now return correct counts
-  - Related to WI-874 (legacy-artifact-collision) — both touch convergence-checker data integrity; consider shared fix if root cause overlaps
+  - "Reproducer test: call handleGetConvergenceStatus against (a) a cycle with no spec-adherence/summary.yaml on disk; (b) a summary whose content does not match the expected '**Principle Adherence Verdict**: Pass|Fail|Unknown' pattern. Both must be covered by new unit tests."
+  - "Current behavior documented: missing summary → principle_verdict:unknown + warning 'no cycle_summary found for cycle N'; malformed → unknown + 'unexpected format'. Both silently produce condition_b:false which blocks convergence without surfacing the cause."
+  - "Fix: when principle_verdict is unknown because the summary is missing, include the cycle's directory path and list of files searched in the warning. When unknown because of format mismatch, include a snippet of the first 200 chars of the summary content so the caller can diagnose."
+  - "Fix: parsePrincipleVerdict must handle additional realistic markdown spellings that the current regex misses. Enumerate which variants are accepted in a JSDoc block above parsePrincipleVerdict. Add unit tests for each accepted variant and at least two rejected variants."
+  - "Retroactive verification: running ideate_get_convergence_status(31), (32), (33) against current workspace returns diagnostic warnings that make the root cause obvious (whether missing summary or format mismatch), not a silent condition_b:false."
+  - "No regression: existing convergence tests still pass; condition_a (finding counts) logic untouched."
 domain: null
 phase: PH-050
 work_item_type: bug
 notes: |-
-  ## Context
+  # WI-876 — Convergence parser resilience
 
-  Discovered during PR-002 / PH-049 autopilot closeout (cycle 33-34, 2026-04-16). Cycles 31 and 32 had findings (F-CYCLE-31-S1..S4, F-CYCLE-31-MI1, F-CYCLE-32-S1..S3, F-CYCLE-32-MI1..MI2) whose addressed_by fields were backfilled via WI-873 canonical MCP writes, but subsequent ideate_get_convergence_status(31) and (32) calls continued returning stale counts.
+  ## Real bug (not the originally-filed index staleness)
 
-  ## Reproducer
+  Original WI-876 reproducer ("addressed_by updates not reflected in convergence counts") turned out to be a stale MCP process issue, not an index staleness bug. The SQLite index is correct. Spike 2026-04-16 confirmed: sqlite3 CLI returns accurate counts; the MCP process had old code loaded in require.cache.
 
-  1. Write a finding with no addressed_by (or addressed_by: null)
-  2. Call ideate_get_convergence_status(CYCLE) — note unresolved count
-  3. Update the same finding artifact adding addressed_by: WI-XXX
-  4. Call ideate_get_convergence_status(CYCLE) again
-  5. Observe: count unchanged (stale)
+  The actual recurring defect revealed by that same spike is in `parsePrincipleVerdict` (tools/analysis.ts). It returns `unknown` with vague or missing diagnostics in two cases:
+
+  1. **Missing cycle_summary**: warning = 'no cycle_summary found for cycle N'. No indication of WHICH paths were checked or why none was picked up.
+  2. **Unexpected format**: warning = 'unexpected format'. Zero content from the summary itself.
+
+  Both produce silent `condition_b:false`, which blocks autopilot convergence without telling the user what's wrong. This causes phases to appear non-converging even when reviewers all pass.
+
+  ## Scope
+
+  - `tools/analysis.ts`: parsePrincipleVerdict + handleGetConvergenceStatus
+  - `__tests__/tools.test.ts`: new unit tests covering missing summary, malformed summary, each accepted regex variant, rejected variants
+
+  ## Out of scope
+
+  - Autopilot-level retry or circuit-breaker tweaks (handled elsewhere)
+  - SQLite/indexer changes (confirmed working correctly)
+  - MCP server reload behavior (WI-877)
 
   ## Related
 
-  - WI-874: convergence-checker legacy-artifact-collision (different reproducer, same subsystem). Both should land in a unified convergence-checker hardening phase. A single fix may address both if the root cause is SQLite index refresh semantics.
-
-  ## Risk
-
-  Silent false-convergence or false-non-convergence in future autopilot runs. Was bypassed via proxy-human PHD-033-01 in cycle 34 but cannot be relied upon as a mitigation going forward.
+  - WI-874 (closed): legacy-artifact collision — fix option c already shipped, no further action.
+  - WI-877: MCP auto-reload on dist rebuild — separate deployment hygiene concern.
 resolution: null
 status: pending
 cycle_created: 34
 cycle_modified: null
-content_hash: 40ecc20b8e7ac69f561ca02d13ca8c4fe65d518cf95914d4581e6840f2ae6559
-token_count: 572
+content_hash: 6319de1197ddc4b3766ac045bfeac83472acb06c83666a8019c4eb0742f20e96
+token_count: 873
