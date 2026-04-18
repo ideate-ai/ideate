@@ -1280,6 +1280,25 @@ describe("EDGE_TYPE_REGISTRY — belongs_to_cycle entry", () => {
 });
 
 // ---------------------------------------------------------------------------
+// EDGE_TYPE_REGISTRY — relates_to derivationPath documents regex-mining (WI-901)
+// ---------------------------------------------------------------------------
+
+describe("EDGE_TYPE_REGISTRY — relates_to derivationPath", () => {
+  it("relates_to entry has derivationPath set to 'regex_mine_journal_titles'", () => {
+    // The relates_to edge has two derivation paths for journal_entry sources:
+    // 1. yaml_field 'work_item' — the standard YAML field path
+    // 2. regex mining of the journal entry title — implemented in deriveJournalEntryEdges
+    // The derivationPath field documents the second path so a developer reading
+    // EDGE_TYPE_REGISTRY alone understands the full derivation behaviour.
+    expect(EDGE_TYPE_REGISTRY.relates_to.derivationPath).toBe("regex_mine_journal_titles");
+  });
+
+  it("relates_to yaml_field remains 'work_item' (no behavioural change)", () => {
+    expect(EDGE_TYPE_REGISTRY.relates_to.yaml_field).toBe("work_item");
+  });
+});
+
+// ---------------------------------------------------------------------------
 // CONTAINMENT_EDGE_TYPES — all members must be registered in EDGE_TYPES
 // ---------------------------------------------------------------------------
 

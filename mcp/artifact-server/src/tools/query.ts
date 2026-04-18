@@ -1,5 +1,5 @@
 import type { ToolContext } from "../types.js";
-import { TYPE_TO_EXTENSION_TABLE } from "../db.js";
+import { NODE_TYPE_ID_PREFIXES, QUERYABLE_NODE_TYPES } from "../node-type-registry.js";
 
 // ---------------------------------------------------------------------------
 // Adapter resolution
@@ -23,20 +23,7 @@ function getAdapter(ctx: ToolContext) {
 // handleGetNextId — return next available ID for an artifact type
 // ---------------------------------------------------------------------------
 
-const TYPE_PREFIX_MAP: Record<string, { prefix: string; padWidth: number }> = {
-  work_item: { prefix: "WI-", padWidth: 3 },
-  guiding_principle: { prefix: "GP-", padWidth: 2 },
-  constraint: { prefix: "C-", padWidth: 2 },
-  policy: { prefix: "P-", padWidth: 2 },
-  decision: { prefix: "D-", padWidth: 2 },
-  question: { prefix: "Q-", padWidth: 2 },
-  domain_policy: { prefix: "P-", padWidth: 2 },
-  domain_decision: { prefix: "D-", padWidth: 2 },
-  domain_question: { prefix: "Q-", padWidth: 2 },
-  proxy_human_decision: { prefix: "PHD-", padWidth: 2 },
-  project: { prefix: "PR-", padWidth: 3 },
-  phase: { prefix: "PH-", padWidth: 3 },
-};
+// TYPE_PREFIX_MAP replaced by NODE_TYPE_ID_PREFIXES from node-type-registry.ts
 
 export async function handleGetNextId(
   ctx: ToolContext,
@@ -49,9 +36,9 @@ export async function handleGetNextId(
     throw new Error("Missing required parameter: type");
   }
 
-  const mapping = TYPE_PREFIX_MAP[type];
+  const mapping = NODE_TYPE_ID_PREFIXES.get(type as import("../adapter.js").NodeType);
   if (!mapping) {
-    const validTypes = Object.keys(TYPE_PREFIX_MAP).join(", ");
+    const validTypes = Array.from(NODE_TYPE_ID_PREFIXES.keys()).join(", ");
     throw new Error(`Unknown type '${type}'. Valid types: ${validTypes}`);
   }
 
@@ -60,10 +47,10 @@ export async function handleGetNextId(
 }
 
 // ---------------------------------------------------------------------------
-// Valid artifact types
+// Valid artifact types — derived from QUERYABLE_NODE_TYPES (node-type-registry.ts)
 // ---------------------------------------------------------------------------
 
-const VALID_TYPES = Object.keys(TYPE_TO_EXTENSION_TABLE);
+const VALID_TYPES: ReadonlySet<string> = QUERYABLE_NODE_TYPES;
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -121,8 +108,9 @@ export async function handleArtifactQuery(
   }
 
   // Validate type
-  if (type && !VALID_TYPES.includes(type)) {
-    throw new Error(`Unknown type '${type}'. Valid types: ${VALID_TYPES.join(", ")}`);
+  if (type && !VALID_TYPES.has(type)) {
+    const validList = Array.from(VALID_TYPES).join(", ");
+    throw new Error(`Unknown type '${type}'. Valid types: ${validList}`);
   }
 
   // Validate depth

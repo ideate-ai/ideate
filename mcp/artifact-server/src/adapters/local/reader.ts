@@ -18,6 +18,7 @@ import { log } from "../../logger.js";
 import { and, asc, eq, gte, lte } from "drizzle-orm";
 import * as dbSchema from "../../db.js";
 import { CONTAINMENT_EDGE_TYPES } from "../../schema.js";
+import { NODE_TYPE_REGISTRY, NODE_TYPE_ID_PREFIXES } from "../../node-type-registry.js";
 
 import type {
   Node,
@@ -56,118 +57,11 @@ interface EdgeRow {
 }
 
 // ---------------------------------------------------------------------------
-// Extension table metadata (same as tools/query.ts TYPE_EXTENSION_INFO)
+// Extension table metadata — sourced from NODE_TYPE_REGISTRY (node-type-registry.ts).
+// Use NODE_TYPE_REGISTRY[type].extensionTableName and .summarySelector instead
+// of the former inline TYPE_EXTENSION_INFO map.
 // ---------------------------------------------------------------------------
 
-const TYPE_EXTENSION_INFO: Record<
-  string,
-  { table: string; summaryExpr: string }
-> = {
-  work_item: {
-    table: "work_items",
-    summaryExpr: "e.title",
-  },
-  finding: {
-    table: "findings",
-    summaryExpr: "e.severity || ' — ' || e.verdict || ' by ' || e.reviewer",
-  },
-  domain_policy: {
-    table: "domain_policies",
-    summaryExpr: "e.description",
-  },
-  domain_decision: {
-    table: "domain_decisions",
-    summaryExpr: "e.description",
-  },
-  domain_question: {
-    table: "domain_questions",
-    summaryExpr: "e.description",
-  },
-  guiding_principle: {
-    table: "guiding_principles",
-    summaryExpr: "e.name",
-  },
-  constraint: {
-    table: "constraints",
-    summaryExpr: "e.category || ': ' || e.description",
-  },
-  module_spec: {
-    table: "module_specs",
-    summaryExpr: "e.name",
-  },
-  research_finding: {
-    table: "research_findings",
-    summaryExpr: "e.topic",
-  },
-  journal_entry: {
-    table: "journal_entries",
-    summaryExpr: "'[' || e.phase || '] ' || e.title",
-  },
-  decision_log: {
-    table: "document_artifacts",
-    summaryExpr: "COALESCE(e.title, n.type)",
-  },
-  cycle_summary: {
-    table: "document_artifacts",
-    summaryExpr: "COALESCE(e.title, n.type)",
-  },
-  review_manifest: {
-    table: "document_artifacts",
-    summaryExpr: "COALESCE(e.title, n.type)",
-  },
-  review_output: {
-    table: "document_artifacts",
-    summaryExpr: "COALESCE(e.title, n.type)",
-  },
-  architecture: {
-    table: "document_artifacts",
-    summaryExpr: "COALESCE(e.title, n.type)",
-  },
-  overview: {
-    table: "document_artifacts",
-    summaryExpr: "COALESCE(e.title, n.type)",
-  },
-  execution_strategy: {
-    table: "document_artifacts",
-    summaryExpr: "COALESCE(e.title, n.type)",
-  },
-  guiding_principles: {
-    table: "document_artifacts",
-    summaryExpr: "COALESCE(e.title, n.type)",
-  },
-  constraints: {
-    table: "document_artifacts",
-    summaryExpr: "COALESCE(e.title, n.type)",
-  },
-  research: {
-    table: "document_artifacts",
-    summaryExpr: "COALESCE(e.title, n.type)",
-  },
-  interview: {
-    table: "document_artifacts",
-    summaryExpr: "COALESCE(e.title, n.type)",
-  },
-  interview_question: {
-    table: "interview_questions",
-    summaryExpr: "e.interview_id || ': ' || e.question",
-  },
-  domain_index: {
-    table: "document_artifacts",
-    summaryExpr: "COALESCE(e.title, n.type)",
-  },
-  proxy_human_decision: {
-    table: "proxy_human_decisions",
-    summaryExpr: "e.trigger || ' → ' || e.decision || ' [' || e.status || ']'",
-  },
-  project: {
-    table: "projects",
-    summaryExpr: "COALESCE(e.name, SUBSTR(e.intent, 1, 40))",
-  },
-  phase: {
-    table: "phases",
-    summaryExpr: "COALESCE(e.name, e.phase_type || ': ' || SUBSTR(e.intent, 1, 40))",
-  },
-};
 
 // ---------------------------------------------------------------------------
 // Column presence helpers (mirrors tools/query.ts hasColumn)
@@ -213,11 +107,11 @@ function fetchExtensionProperties(
   id: string,
   type: string
 ): Record<string, unknown> {
-  const info = TYPE_EXTENSION_INFO[type];
-  if (!info) return {};
+  const spec = NODE_TYPE_REGISTRY[type as NodeType];
+  if (!spec || !spec.extensionTableName) return {};
 
   const row = db
-    .prepare(`SELECT * FROM ${info.table} WHERE id = ?`)
+    .prepare(`SELECT * FROM ${spec.extensionTableName} WHERE id = ?`)
     .get(id) as Record<string, unknown> | undefined;
 
   if (!row) return {};
@@ -425,10 +319,10 @@ export class LocalReaderAdapter {
     let summaryExpr = "NULL";
     let extensionJoin = "";
 
-    if (type && TYPE_EXTENSION_INFO[type]) {
-      const info = TYPE_EXTENSION_INFO[type];
-      summaryExpr = info.summaryExpr;
-      extensionJoin = `LEFT JOIN ${info.table} e ON e.id = n.id`;
+    const typeSpec = type ? NODE_TYPE_REGISTRY[type as NodeType] : undefined;
+    if (type && typeSpec?.extensionTableName) {
+      summaryExpr = typeSpec.summarySelector ?? "NULL";
+      extensionJoin = `LEFT JOIN ${typeSpec.extensionTableName} e ON e.id = n.id`;
 
       if (filter.domain && hasColumn(type, "domain")) {
         whereClauses.push("e.domain = ?");
@@ -775,8 +669,8 @@ export class LocalReaderAdapter {
       case "domain": {
         // domain lives on extension tables
         if (filter.type && (filter.type.startsWith("domain_") || filter.type === "work_item" || filter.type === "interview_question")) {
-          const info = TYPE_EXTENSION_INFO[filter.type];
-          joinClause = `LEFT JOIN ${info.table} e ON e.id = n.id`;
+          const domainSpec = NODE_TYPE_REGISTRY[filter.type as NodeType];
+          joinClause = `LEFT JOIN ${domainSpec.extensionTableName} e ON e.id = n.id`;
           groupExpr = "e.domain";
         } else if (!filter.type) {
           // No type filter: query across all domain-bearing extension tables
@@ -1064,21 +958,9 @@ export class LocalReaderAdapter {
       }
     }
 
-    const TYPE_PREFIX_MAP: Record<string, { prefix: string; padWidth: number }> = {
-      work_item: { prefix: "WI-", padWidth: 3 },
-      guiding_principle: { prefix: "GP-", padWidth: 2 },
-      constraint: { prefix: "C-", padWidth: 2 },
-      domain_policy: { prefix: "P-", padWidth: 2 },
-      domain_decision: { prefix: "D-", padWidth: 2 },
-      domain_question: { prefix: "Q-", padWidth: 2 },
-      proxy_human_decision: { prefix: "PHD-", padWidth: 2 },
-      project: { prefix: "PR-", padWidth: 3 },
-      phase: { prefix: "PH-", padWidth: 3 },
-    };
-
     const CYCLE_SCOPED_ID_TYPES = ["proxy_human_decision"];
 
-    const mapping = TYPE_PREFIX_MAP[type];
+    const mapping = NODE_TYPE_ID_PREFIXES.get(type);
     if (!mapping) {
       throw new Error(`Unknown type '${type}' for ID generation`);
     }
@@ -1124,11 +1006,11 @@ export class LocalReaderAdapter {
     const byTable: Record<string, { ids: string[]; summaryExpr: string }> = {};
 
     for (const item of items) {
-      const info = TYPE_EXTENSION_INFO[item.type];
-      if (!info) continue;
-      const key = info.table;
+      const spec = NODE_TYPE_REGISTRY[item.type as NodeType];
+      if (!spec || !spec.extensionTableName || !spec.summarySelector) continue;
+      const key = spec.extensionTableName;
       if (!byTable[key]) {
-        byTable[key] = { ids: [], summaryExpr: info.summaryExpr };
+        byTable[key] = { ids: [], summaryExpr: spec.summarySelector };
       }
       byTable[key].ids.push(item.id);
     }

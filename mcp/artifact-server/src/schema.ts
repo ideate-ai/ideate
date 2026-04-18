@@ -42,6 +42,18 @@ export interface EdgeTypeSpec {
   source_types: string[]; // artifact type values matching ArtifactCommon.type
   target_types: string[]; // artifact type values (use "domain" for domain-name targets)
   yaml_field: string | null; // field name on source YAML, or null if set explicitly
+  /**
+   * Describes how this edge enters the graph when it is NOT derived purely
+   * from yaml_field (i.e. yaml_field alone does not fully explain the
+   * indexer behaviour). Present only when an additional derivation path
+   * exists alongside, or instead of, the yaml_field path.
+   *
+   * Possible values (informal):
+   *   "regex_mine_journal_titles" — edges are also derived from WI-NNN /
+   *       "Work item NNN" patterns found in the journal_entry title field.
+   *       See indexer.ts::deriveJournalEntryEdges for the implementation.
+   */
+  derivationPath?: string;
 }
 
 export const EDGE_TYPE_REGISTRY: Record<EdgeType, EdgeTypeSpec> = {
@@ -80,6 +92,13 @@ export const EDGE_TYPE_REGISTRY: Record<EdgeType, EdgeTypeSpec> = {
     source_types: ["finding", "journal_entry"],
     target_types: ["work_item"],
     yaml_field: "work_item",
+    // journal_entry sources have a SECOND derivation path beyond yaml_field:
+    // WI references embedded in the journal entry title are regex-mined and
+    // converted to additional relates_to edges. See deriveJournalEntryEdges
+    // in indexer.ts for the implementation. The yaml_field edge is also
+    // re-derived there (delete-and-rederive pattern) so that both sources
+    // remain consistent after a partial re-index.
+    derivationPath: "regex_mine_journal_titles",
   },
   addressed_by: {
     description: "Finding or question has been addressed by a work item",

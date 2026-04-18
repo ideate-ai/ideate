@@ -185,30 +185,6 @@ export class LocalAdapter extends LocalWriterAdapter implements StorageAdapter {
     return this.reader.getToolUsage(filter);
   }
 
-  // -------------------------------------------------------------------------
-  // Context assembly query methods — delegates to LocalContextAdapter
-  // These are used by tool handlers (tools/context.ts) when ctx.adapter is set.
-  // -------------------------------------------------------------------------
-
-  queryArchitectureDocument(): import("./context.js").DocumentArtifactRow | null {
-    return this.contextAdapter.queryArchitectureDocument();
-  }
-
-  queryGuidingPrinciples(): import("./context.js").GuidingPrincipleRow[] {
-    return this.contextAdapter.queryGuidingPrinciples();
-  }
-
-  queryConstraints(): import("./context.js").ConstraintRow[] {
-    return this.contextAdapter.queryConstraints();
-  }
-
-  queryActiveProject(): import("./context.js").ProjectRow | null {
-    return this.contextAdapter.queryActiveProject();
-  }
-
-  queryActivePhase(): import("./context.js").PhaseRow | null {
-    return this.contextAdapter.queryActivePhase();
-  }
 }
 
 // ---------------------------------------------------------------------------

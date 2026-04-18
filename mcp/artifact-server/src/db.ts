@@ -237,36 +237,5 @@ export type AnyTable =
   | typeof projects
   | typeof phases;
 
-// ---------------------------------------------------------------------------
-// TYPE_TO_EXTENSION_TABLE — maps YAML type string → Drizzle extension table
-// Used by buildRow dispatch in indexer.ts
-// ---------------------------------------------------------------------------
-
-export const TYPE_TO_EXTENSION_TABLE: Record<string, AnyTable> = {
-  work_item:          workItems,
-  finding:            findings,
-  domain_policy:      domainPolicies,
-  domain_decision:    domainDecisions,
-  domain_question:    domainQuestions,
-  guiding_principle:  guidingPrinciples,
-  constraint:         constraints,
-  module_spec:        moduleSpecs,
-  research_finding:   researchFindings,
-  journal_entry:      journalEntries,
-  decision_log:       documentArtifacts,
-  cycle_summary:      documentArtifacts,
-  review_output:      documentArtifacts,
-  review_manifest:    documentArtifacts,
-  architecture:       documentArtifacts,
-  overview:           documentArtifacts,
-  execution_strategy: documentArtifacts,
-  guiding_principles: documentArtifacts,
-  constraints:        documentArtifacts,
-  research:           documentArtifacts,
-  interview:          documentArtifacts,
-  domain_index:       documentArtifacts,
-  interview_question: interviewQuestions,
-  proxy_human_decision: proxyHumanDecisions,
-  project:            projects,
-  phase:              phases,
-};
+// TYPE_TO_EXTENSION_TABLE was moved to node-type-registry.ts (WI-903).
+// Import it from there: import { TYPE_TO_EXTENSION_TABLE } from "./node-type-registry.js"

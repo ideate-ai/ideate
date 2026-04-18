@@ -18,6 +18,7 @@ import path from "path";
 
 import { createSchema } from "../schema.js";
 import * as dbSchema from "../db.js";
+import { TYPE_TO_EXTENSION_TABLE as registryTypeToExtensionTable } from "../node-type-registry.js";
 import type { ToolContext } from "../types.js";
 import { LocalAdapter } from "../adapters/local/index.js";
 import { handleGetArtifactContext, handleGetContextPackage, handleAssembleContext } from "../tools/context.js";
@@ -4296,7 +4297,7 @@ describe("P-46: TYPE_TO_EXTENSION_TABLE completeness", () => {
   ];
 
   it("cases array covers all TYPE_TO_EXTENSION_TABLE types (except redirected) — bidirectional", () => {
-    const expectedTypes = Object.keys(dbSchema.TYPE_TO_EXTENSION_TABLE).filter(t => !EXCLUDED_TYPES.has(t));
+    const expectedTypes = Object.keys(registryTypeToExtensionTable).filter(t => !EXCLUDED_TYPES.has(t));
     const coveredTypes = cases.map(c => c.type);
     // Every registry type must have a test case
     for (const t of expectedTypes) {

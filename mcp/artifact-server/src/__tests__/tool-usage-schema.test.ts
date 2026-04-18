@@ -4,7 +4,7 @@ import { drizzle } from "drizzle-orm/better-sqlite3";
 import * as dbSchema from "../db.js";
 import { createSchema, CURRENT_SCHEMA_VERSION } from "../schema.js";
 import { insertToolUsage, toolUsage } from "../db-helpers.js";
-import { TYPE_TO_EXTENSION_TABLE } from "../db.js";
+import { TYPE_TO_EXTENSION_TABLE } from "../node-type-registry.js";
 import type { ToolUsageInsert } from "../adapter.js";
 
 // ---------------------------------------------------------------------------

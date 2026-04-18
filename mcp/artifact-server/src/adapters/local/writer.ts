@@ -22,7 +22,7 @@ import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
 import type Database from "better-sqlite3";
 import { eq, inArray, and } from "drizzle-orm";
 import { detectCycles } from "../../indexer.js";
-import { TYPE_TO_EXTENSION_TABLE } from "../../db.js";
+import { estimateTokens } from "../../token-utils.js";
 import * as dbSchema from "../../db.js";
 import {
   type DrizzleDb,
@@ -83,10 +83,6 @@ import { log } from "../../logger.js";
 
 function sha256(content: string): string {
   return crypto.createHash("sha256").update(content, "utf8").digest("hex");
-}
-
-function tokenCount(content: string): number {
-  return Math.floor(content.length / 4);
 }
 
 function ensureDir(dirPath: string): void {
@@ -551,7 +547,7 @@ export class LocalWriterAdapter {
     // Compute hash over content fields only
     const contentHash = computeArtifactHash(yamlObj);
     const yamlForTokens = stringifyYaml(yamlObj, { lineWidth: 0 });
-    const tokens = tokenCount(yamlForTokens);
+    const tokens = estimateTokens(yamlForTokens);
 
     // Add computed fields (no file_path in YAML)
     yamlObj.content_hash = contentHash;
@@ -576,7 +572,7 @@ export class LocalWriterAdapter {
         // Recompute hash and tokens for merged content
         const mergedContentHash = computeArtifactHash(finalYamlObj);
         const mergedYamlForTokens = stringifyYaml(finalYamlObj, { lineWidth: 0 });
-        const mergedTokens = tokenCount(mergedYamlForTokens);
+        const mergedTokens = estimateTokens(mergedYamlForTokens);
         finalYamlObj.content_hash = mergedContentHash;
         finalYamlObj.token_count = mergedTokens;
       } catch {
@@ -735,7 +731,7 @@ export class LocalWriterAdapter {
     // Recompute hash and token count
     const contentHash = computeArtifactHash(merged);
     const yamlForTokens = stringifyYaml(merged, { lineWidth: 0 });
-    const tokens = tokenCount(yamlForTokens);
+    const tokens = estimateTokens(yamlForTokens);
 
     merged.content_hash = contentHash;
     merged.token_count = tokens;
@@ -1119,7 +1115,7 @@ export class LocalWriterAdapter {
 
         const contentHash = computeArtifactHash(yamlObj);
         const yamlForTokens = stringifyYaml(yamlObj, { lineWidth: 0 });
-        const tokens = tokenCount(yamlForTokens);
+        const tokens = estimateTokens(yamlForTokens);
         yamlObj.content_hash = contentHash;
         yamlObj.token_count = tokens;
 
@@ -1523,7 +1519,7 @@ export class LocalWriterAdapter {
     };
     const yamlContent = stringifyYaml(entryObj);
     const contentHash = computeArtifactHash(entryObj as Record<string, unknown>);
-    const tokens = tokenCount(yamlContent);
+    const tokens = estimateTokens(yamlContent);
 
     try {
       fs.mkdirSync(path.dirname(filePath), { recursive: true });

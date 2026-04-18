@@ -1,6 +1,6 @@
 import { stringify as stringifyYaml } from "yaml";
 import type { ToolContext } from "../types.js";
-import { TYPE_TO_EXTENSION_TABLE } from "../db.js";
+import { TYPE_TO_EXTENSION_TABLE } from "../node-type-registry.js";
 
 // ---------------------------------------------------------------------------
 // Adapter resolution

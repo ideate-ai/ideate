@@ -10,6 +10,7 @@
 
 import * as fs from "fs";
 import { parse as parseYaml } from "yaml";
+import { estimateTokens } from "../../token-utils.js";
 import type { BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
 import type Database from "better-sqlite3";
 import type * as dbSchema from "../../db.js";
@@ -74,13 +75,6 @@ interface PhaseRow {
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
-
-/**
- * Estimate token count for a string using ~4 chars/token heuristic.
- */
-function estimateTokens(text: string): number {
-  return Math.ceil(text.length / 4);
-}
 
 /**
  * Read a file and return its raw text content. Returns empty string on error.

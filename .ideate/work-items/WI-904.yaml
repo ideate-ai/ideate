@@ -1,0 +1,34 @@
+id: WI-904
+type: work_item
+title: Refactor upsertExtensionTableRow to NODE_TYPE_REGISTRY-driven dispatch
+complexity: medium
+scope:
+  - path: mcp/artifact-server/src/adapters/local/writer.ts
+    op: edit
+  - path: mcp/artifact-server/src/node-type-registry.ts
+    op: edit
+  - path: mcp/artifact-server/src/__tests__/adapters/writer.test.ts
+    op: edit
+depends: []
+blocks: []
+criteria:
+  - upsertExtensionTableRow in writer.ts (currently 390-line if/else chain dispatching on node type) is replaced with NODE_TYPE_REGISTRY-driven dispatch
+  - NODE_TYPE_REGISTRY gains a buildRow field (or equivalent) per node type that returns the extension-table row shape for a given properties object
+  - Adding a new node type requires only adding a registry entry (plus the Drizzle table definition) — no edit to upsertExtensionTableRow
+  - "Regression test: roundtrip writes + reads for every node type produce identical results to the current behavior"
+  - Full vitest suite passes; tsc --noEmit passes
+domain: null
+phase: PH-057
+work_item_type: maintenance
+notes: |-
+  # WI-904 Implementation Notes
+
+  Carry-forward from PR-004 PH-054 cycle 79 (WI-903 scope-aware deferral). The 390-line if/else in writer.ts upsertExtensionTableRow was flagged in the 2026-04-17 full audit as spec M5 — a remaining touch-point for node-type addition that the registry consolidation did not reach. Close it in PH-057 Polish.
+
+  Filed against PH-057 since it is a hygiene refactor rather than Critical integrity.
+resolution: null
+status: pending
+cycle_created: 79
+cycle_modified: null
+content_hash: a67bda10eb289504bf7bb8f9f5773185e7a9c61f163d2ff48a005579f1194bdb
+token_count: 389

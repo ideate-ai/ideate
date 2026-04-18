@@ -6,7 +6,8 @@ import * as path from "path";
 import { parse as parseYaml } from "yaml";
 import { EDGE_TYPE_REGISTRY } from "./schema.js";
 import * as dbSchema from "./db.js";
-import { TYPE_TO_EXTENSION_TABLE } from "./db.js";
+import { TYPE_TO_EXTENSION_TABLE } from "./node-type-registry.js";
+import { estimateTokens } from "./token-utils.js";
 import {
   type DrizzleDb,
   type NodeRow,
@@ -53,11 +54,6 @@ export interface RebuildStats {
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
-
-function tokenCount(content: string): number {
-  // Rough approximation: characters / 4. No tokenizer dependency; expect ±50% accuracy.
-  return Math.floor(content.length / 4);
-}
 
 /** Recursively collect all files under dir */
 function walkDir(dir: string): string[] {
@@ -138,7 +134,7 @@ function buildNodeRow(doc: Row, content: string, filePath: string, hash: string)
     cycle_created: toNumOrNull(doc.cycle_created),
     cycle_modified: toNumOrNull(doc.cycle_modified),
     content_hash: hash,
-    token_count: tokenCount(content),
+    token_count: estimateTokens(content),
     file_path: filePath,
     status: toStrOrNull(doc.status),
   };
@@ -403,6 +399,12 @@ function extractEdges(
  * field) so the delete-and-rederive pattern doesn't clobber edges that the
  * EDGE_TYPE_REGISTRY already emitted during Phase 1.
  * Returns the number of edges inserted.
+ *
+ * This function implements the "regex_mine_journal_titles" derivation path
+ * documented on the relates_to entry in EDGE_TYPE_REGISTRY (schema.ts). The
+ * registry's derivationPath field exists specifically to surface that this
+ * second derivation path exists alongside the yaml_field path. Any developer
+ * reading EDGE_TYPE_REGISTRY should find their way here via that field.
  */
 export function deriveJournalEntryEdges(drizzleDb: DrizzleDb): number {
   // Include work_item so we can re-insert the yaml_field edge after the delete.
