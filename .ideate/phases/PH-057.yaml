@@ -1,0 +1,18 @@
+id: PH-057
+type: phase
+phase_type: implementation
+project: PR-004
+status: pending
+name: Polish + hygiene
+description: Close the remaining Minor findings and documentation drift items.
+work_items: []
+success_criteria:
+  - tsconfig.json has noUnusedLocals and noUnusedParameters enabled; existing violations resolved
+  - vitest.config.ts forceExit:true removed; any hanging handles fixed at source
+  - /ideate:report is either implemented as skills/report/SKILL.md or removed from README/GUIDE/QUICKSTART/CLAUDE.md
+  - plan.complete event fires at the end of /ideate:refine (in addition to /ideate:init)
+  - CONTRIBUTING.md (or equivalent section) documents the node-type-addition checklist and the self-hosted development workflow
+  - Remaining code-quality minors (N+1 in traverse, isLinkedByDepends pre-existing-edges seed, misleading await, dynamic NotFoundError imports, nextId consolidation) addressed or explicitly deferred
+cycle_modified: 27
+content_hash: b4e520b9d9470228ef1e8d136567eb4e5f8c2c4d11cfb8cd3b7454f42179065d
+token_count: 237

@@ -1,0 +1,17 @@
+id: PH-055
+type: phase
+phase_type: implementation
+project: PR-004
+status: pending
+name: Graph expressiveness
+description: Fill ontological gaps so common queries are graph-traversable instead of field-filtered.
+work_items: []
+success_criteria:
+  - work_item has `supersedes` / `superseded_by` edge support; indexer derives from a YAML field; regression test covers the lifecycle
+  - domain_policy and domain_decision can cite their originating finding via `derived_from`; curator agent writes the field
+  - PPR edge-type weights cover all registered edge types with documented rationale OR a default-weight policy is explicit
+  - belongs_to_domain FK semantics are resolved (either keep string target_ids and document the FK override, or introduce real domain nodes)
+  - Cycles-as-first-class-nodes decision recorded as a domain_decision with rationale
+cycle_modified: 27
+content_hash: 9ab33422f080012723874c373d275b2a7f450e5208f7e58c6846511ac1dfb0c7
+token_count: 218

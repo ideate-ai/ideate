@@ -1,0 +1,18 @@
+id: PH-053
+type: phase
+phase_type: implementation
+project: PR-004
+status: active
+started_date: 2026-04-17
+name: "Integrity: Critical fixes"
+description: "Close the 4 Critical findings from the 2026-04-17 full-audit. Highest-risk work first: data-loss bug, adapter shutdown, migration gaps, ontology phantom types."
+work_items: []
+success_criteria:
+  - fs.unlinkSync moved out of SQLite transaction callback in archiveCycleLocal; rollback path restores files
+  - adapter.shutdown() called on SIGINT/SIGTERM before state.db.close(); regression test covers both LocalAdapter and RemoteAdapter
+  - migrations.ts has explicit entries (or explicit no-op stubs with rationale) for versions 5→6 and 6→7; silent-bump fallback is only reached for truly-additive bumps
+  - CONTAINMENT_EDGE_TYPES is single-sourced (in schema.ts) and references only edge types registered in EDGE_TYPES; ppr.ts and reader.ts import from the canonical source
+  - Full vitest suite passes
+cycle_modified: 27
+content_hash: ad88fc1a5d5ce337248fab89f0a92bfe082db0999eb3b3cf6548bebe484bb5e6
+token_count: 244

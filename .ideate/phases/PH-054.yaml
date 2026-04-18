@@ -1,0 +1,18 @@
+id: PH-054
+type: phase
+phase_type: implementation
+project: PR-004
+status: pending
+name: Ontology consolidation
+description: Collapse duplicated constants and asymmetric interfaces into single sources. Reduce the cost of adding a new node type from 5-7 touch points to 1.
+work_items: []
+success_criteria:
+  - Single NODE_TYPE_REGISTRY (or equivalent) maps each NodeType → {extensionTable, buildRow, summaryExpr, prefix}; compile-time completeness enforced
+  - TYPE_EXTENSION_INFO, TYPE_PREFIX_MAP, CONTAINMENT_EDGE_TYPES, and token-count heuristic each have exactly one definition imported by all consumers
+  - LocalAdapter public methods either appear on StorageAdapter interface or are marked private
+  - RemoteAdapter contract tests run in CI via a mock server; coverage matches LocalAdapter surface
+  - "autopilot_state ontology asymmetry resolved: either registered in TYPE_TO_EXTENSION_TABLE or explicitly documented as excluded"
+  - relates_to derivation is fully driven by EDGE_TYPE_REGISTRY (no off-registry regex mining) or the mining path is documented in the registry
+cycle_modified: 27
+content_hash: ced226c4f0a628dbf0fab6cd10d060148256006e772c4c5edbe03e986ce5e373
+token_count: 274
