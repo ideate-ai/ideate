@@ -13,7 +13,7 @@ criteria:
   - "Q-161 is updated via ideate_write_artifact with type: question, id: Q-161, and the full current content merged with either: (a) status: resolved + resolution text citing WI-876/881 tests that assert principle_verdict_source for step1/2/3; or (b) status remains open but with a new reexamination_trigger reflecting the remaining sub-question (autopilot-consumer consumption of the field) and a known_partial_answer field noting that test-level provenance assertions now exist"
   - Before writing Q-161, the worker first reads the full current state via ideate_get_artifact_context (per the feedback_write_work_items_is_overwrite memory) and merges — Q-161 is NOT overwritten with a partial payload
 domain: null
-phase: PH-050
+phase: PH-052
 work_item_type: maintenance
 notes: |-
   Addresses F-CYCLE-28-S4 and F-CYCLE-28-S6.
@@ -27,9 +27,9 @@ notes: |-
   Alternative: Re-defer with updated trigger 'When autopilot is next modified to use or ignore principle_verdict_source.'
 
   File refs: skills/autopilot/phases/review.md:303 (Branch C preamble), .ideate/questions/Q-161.yaml (via MCP).
-resolution: null
-status: pending
+resolution: "Delivered during PH-050 execution (prior session). Verified in PH-052: review.md:305 contains the Q-159 inline sentence at Branch C preamble; self-check entry for Q-159 at line 422 unchanged. Q-161 updated via MCP with status=resolved, resolution citing WI-876/881/883 test provenance; all 15 prior fields preserved."
+status: done
 cycle_created: 28
-cycle_modified: null
-content_hash: 58f5c6fc64e1a590863e8aeeeb3bee7ce41ca33a8e50caaf3da90a16c73b6016
-token_count: 657
+cycle_modified: 27
+content_hash: 474911e693fc057786c9f9328069895cfbb81dd9a836f93cab48962f5623905b
+token_count: 758

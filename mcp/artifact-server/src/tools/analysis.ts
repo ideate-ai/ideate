@@ -50,8 +50,9 @@ const SNIPPET_MAX_CHARS = 200;
  *
  * Accepted patterns (step 1 — explicit tag, case-insensitive verdict keyword).
  * Both "Principle Adherence Verdict" and "Principle Violation Verdict" headings
- * are accepted (the latter is the legacy label). Each heading supports four
- * formatting variants:
+ * are accepted (the latter is the legacy label). The bare "Principle Verdict"
+ * heading is also accepted as a synonym (emitted by spec-reviewer skill and some
+ * agent prompts). Each heading supports four formatting variants:
  *
  *   1. `**Principle Adherence Verdict**: Pass|Fail`
  *      (label bold, colon outside bold)
@@ -70,6 +71,10 @@ const SNIPPET_MAX_CHARS = 200;
  *   8. `**Principle Violation Verdict: Pass**` / `**Principle Violation Verdict: Fail**`
  *      (legacy all-bold variant — same regex as 4, the `(?:Adherence|Violation)`
  *      alternation covers both label variants)
+ *   9. `Principle Verdict: Pass|Fail`
+ *      (bare synonym — no bold, no Adherence/Violation qualifier)
+ *  10. `**Principle Verdict: Pass**` / `**Principle Verdict: Fail**`
+ *      (bare synonym all-bold variant)
  *
  * Note: verdicts other than Pass/Fail (e.g., Unknown, Inconclusive) produce verdict=unknown via the step3 fallback, not an explicit pattern match.
  *
@@ -99,12 +104,18 @@ function parsePrincipleVerdict(content: string): PrincipleResult {
     /\*\*Principle\s+(?:Adherence|Violation)\s+Verdict:\*\*\s*Pass\b/i,
     /(?<!\*)Principle\s+(?:Adherence|Violation)\s+Verdict:\s*Pass\b(?!\*)/i,
     /\*\*Principle\s+(?:Adherence|Violation)\s+Verdict:\s*Pass\b\*\*/i,
+    // Bare synonym: "Principle Verdict:" (no Adherence/Violation qualifier)
+    /(?<!\*)Principle\s+Verdict:\s*Pass\b(?!\*)/i,
+    /\*\*Principle\s+Verdict:\s*Pass\b\*\*/i,
   ];
   const STEP1_FAIL_RES = [
     /\*\*Principle\s+(?:Adherence|Violation)\s+Verdict\*\*:\s*Fail\b/i,
     /\*\*Principle\s+(?:Adherence|Violation)\s+Verdict:\*\*\s*Fail\b/i,
     /(?<!\*)Principle\s+(?:Adherence|Violation)\s+Verdict:\s*Fail\b(?!\*)/i,
     /\*\*Principle\s+(?:Adherence|Violation)\s+Verdict:\s*Fail\b\*\*/i,
+    // Bare synonym: "Principle Verdict:" (no Adherence/Violation qualifier)
+    /(?<!\*)Principle\s+Verdict:\s*Fail\b(?!\*)/i,
+    /\*\*Principle\s+Verdict:\s*Fail\b\*\*/i,
   ];
 
   for (const re of STEP1_PASS_RES) {
@@ -183,6 +194,8 @@ function parsePrincipleVerdict(content: string): PrincipleResult {
     "**Principle Violation Verdict**: Pass|Fail, " +
     "**Principle Violation Verdict:** Pass|Fail, " +
     "Principle Violation Verdict: Pass|Fail, " +
+    "Principle Verdict: Pass|Fail (bare synonym), " +
+    "**Principle Verdict: Pass|Fail** (bare synonym all-bold), " +
     "## Principle Adherence|Violation|Guiding Principle (exact heading) section body heuristic";
   const warningText =
     `unexpected format; patterns tried: ${patternsTriedDesc}; ` +

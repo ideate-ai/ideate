@@ -1747,6 +1747,79 @@ describe("handleGetConvergenceStatus", () => {
     expect(result).toContain("condition_b: false");
   });
 
+  // WI-889 bare synonym tests — "Principle Verdict:" (no Adherence/Violation qualifier)
+  it("WI-889 bare synonym Pass: 'Principle Verdict: Pass' → verdict: pass (step1)", async () => {
+    // Bare pattern: /(?<!\*)Principle\s+Verdict:\s*Pass\b(?!\*)/i
+    // Tests the bare synonym form emitted by spec-reviewer skill and some agent prompts.
+    const cycleDir = path.join(artifactDir, "cycles", "334");
+    fs.mkdirSync(cycleDir, { recursive: true });
+    const filePath = path.join(cycleDir, "spec-adherence.yaml");
+    fs.writeFileSync(filePath, "id: spec-adherence-334\ntype: cycle_summary\ncycle: 334\n", "utf8");
+    insertNode("spec-adherence-334", "cycle_summary", { file_path: filePath, cycle_created: 334 });
+    db.prepare(
+      `INSERT OR REPLACE INTO document_artifacts (id, cycle, content) VALUES (?, ?, ?)`
+    ).run("spec-adherence-334", 334, "Principle Verdict: Pass\n\nGP-14 upheld.");
+
+    const result = await handleGetConvergenceStatus(ctx, { cycle_number: 334 });
+    expect(result).toContain("principle_verdict: pass");
+    expect(result).toContain("principle_verdict_source: step1");
+    expect(result).toContain("condition_b: true");
+  });
+
+  it("WI-889 bare synonym Fail: 'Principle Verdict: Fail' → verdict: fail (step1)", async () => {
+    // Bare pattern: /(?<!\*)Principle\s+Verdict:\s*Fail\b(?!\*)/i
+    // Tests the bare synonym fail form.
+    const cycleDir = path.join(artifactDir, "cycles", "335");
+    fs.mkdirSync(cycleDir, { recursive: true });
+    const filePath = path.join(cycleDir, "spec-adherence.yaml");
+    fs.writeFileSync(filePath, "id: spec-adherence-335\ntype: cycle_summary\ncycle: 335\n", "utf8");
+    insertNode("spec-adherence-335", "cycle_summary", { file_path: filePath, cycle_created: 335 });
+    db.prepare(
+      `INSERT OR REPLACE INTO document_artifacts (id, cycle, content) VALUES (?, ?, ?)`
+    ).run("spec-adherence-335", 335, "Principle Verdict: Fail\n\nGP-14 violated.");
+
+    const result = await handleGetConvergenceStatus(ctx, { cycle_number: 335 });
+    expect(result).toContain("principle_verdict: fail");
+    expect(result).toContain("principle_verdict_source: step1");
+    expect(result).toContain("condition_b: false");
+  });
+
+  it("WI-889 bare synonym all-bold Pass: '**Principle Verdict: Pass**' → verdict: pass (step1)", async () => {
+    // All-bold bare pattern: /\*\*Principle\s+Verdict:\s*Pass\b\*\*/i
+    // Tests the all-bold variant of the bare synonym pass form.
+    const cycleDir = path.join(artifactDir, "cycles", "336");
+    fs.mkdirSync(cycleDir, { recursive: true });
+    const filePath = path.join(cycleDir, "spec-adherence.yaml");
+    fs.writeFileSync(filePath, "id: spec-adherence-336\ntype: cycle_summary\ncycle: 336\n", "utf8");
+    insertNode("spec-adherence-336", "cycle_summary", { file_path: filePath, cycle_created: 336 });
+    db.prepare(
+      `INSERT OR REPLACE INTO document_artifacts (id, cycle, content) VALUES (?, ?, ?)`
+    ).run("spec-adherence-336", 336, "**Principle Verdict: Pass**\n\nGP-14 upheld.");
+
+    const result = await handleGetConvergenceStatus(ctx, { cycle_number: 336 });
+    expect(result).toContain("principle_verdict: pass");
+    expect(result).toContain("principle_verdict_source: step1");
+    expect(result).toContain("condition_b: true");
+  });
+
+  it("WI-889 bare synonym all-bold Fail: '**Principle Verdict: Fail**' → verdict: fail (step1)", async () => {
+    // All-bold bare pattern: /\*\*Principle\s+Verdict:\s*Fail\b\*\*/i
+    // Tests the all-bold variant of the bare synonym fail form.
+    const cycleDir = path.join(artifactDir, "cycles", "337");
+    fs.mkdirSync(cycleDir, { recursive: true });
+    const filePath = path.join(cycleDir, "spec-adherence.yaml");
+    fs.writeFileSync(filePath, "id: spec-adherence-337\ntype: cycle_summary\ncycle: 337\n", "utf8");
+    insertNode("spec-adherence-337", "cycle_summary", { file_path: filePath, cycle_created: 337 });
+    db.prepare(
+      `INSERT OR REPLACE INTO document_artifacts (id, cycle, content) VALUES (?, ?, ?)`
+    ).run("spec-adherence-337", 337, "**Principle Verdict: Fail**\n\nGP-14 violated.");
+
+    const result = await handleGetConvergenceStatus(ctx, { cycle_number: 337 });
+    expect(result).toContain("principle_verdict: fail");
+    expect(result).toContain("principle_verdict_source: step1");
+    expect(result).toContain("condition_b: false");
+  });
+
   it("WI-881 EC5: P-33 realistic fixture via handleWriteArtifact write path — warning must not leak absolute paths", async () => {
     // Criterion 4: seed content through the real write path (handleWriteArtifact with
     // type: cycle_summary) so content flows through actual file I/O, not a hand-assembled
