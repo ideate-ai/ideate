@@ -13,8 +13,8 @@ change_plan: |-
   **What is NOT changing**: adapter.ts, reader.ts, any production code, adapter-contract.md (unless null-status question behavior is found to be incorrectly documented).
 
   **New work items**: WI-745, WI-746.
-content_hash: f03d1499e75be2dab9caa40a09e2ae703c131283b283ec0e7fab020201b9992f
-token_count: 3290
+content_hash: 1e689d62dc013b5c5173b69d6e206ddd926e4f6dec6ca33c92e9af863cfeff7f
+token_count: 3238
 what_is_changing: 1. New ValidatingAdapter class (src/validating.ts) implementing StorageAdapter with comprehensive input validation for all 21 interface methods. 2. server.ts wraps adapter construction in ValidatingAdapter. 3. Inline validation removed from LocalAdapter and RemoteAdapter. 4. Existing validation test files updated to test through the wrapper.
 trigger: Phase transition from PH-017 (Documentation & Cleanup). Driven by the goal of ensuring adapter parity as a prerequisite for the YAML-to-database transition.
 changes:
@@ -107,57 +107,43 @@ description: |-
   ## Scope Boundary
 
   This cycle resolves only the findings that block PH-041's phase goal. reader.ts/index.ts cleanup is a carry-forward item for a future phase.
-content: |
-  # Change Plan: Cycle 28 follow-ups + convergence-checker fix
+content: |-
+  # PH-051: Convergence-detection cleanup
 
-  ## Trigger
+  ## What's changing
 
-  Cycle 28 capstone review closed with verdict 'Pass with Follow-ups' and produced:
-  - 6 Minor code-reviewer findings (M1-M6) against the tool_usage telemetry surface
-  - 1 Significant spec-adherence finding (S1) flagging WI-852's scope referenced a nonexistent doc path
-  - 2 gap-analyst findings (SG1 telemetry surface undocumented in architecture-overview; SG2 cross-refs S1)
+  Two narrowly-scoped reliability bugs in autopilot convergence detection surfaced during PH-050:
 
-  During cycle 28, spec-reviewer and gap-analyst both hit turn-budget exhaustion mid-investigation.
+  1. **Q-164 — MCP stale SQLite reads**: `ideate_get_convergence_status(29)` returned a Significant-findings count of 5 while a direct `sqlite3 index.db` query against the same file with the same WHERE clause returned 0. Both sides of the autopilot/DB boundary were reading the same file on disk; the tool and the DB disagreed. Autopilot had to manually override convergence to close PH-050.
+  2. **Q-160 — findings-table cycle-slot collision (residual)**: WI-824 already implemented option (c) (canonical-filename-only reads) for the `cycle_summary_content` half of the convergence check. The findings-table half remains exposed: legacy finding rows indexed with `cycle: N` from a prior workspace era would count against a re-used cycle N's `condition_a`.
 
-  Separately, a new bug was triaged on 2026-04-16 as WI-860: ideate_get_convergence_status returns condition_b:false when a workspace cycle slot contains unrelated legacy archive artifacts, blocking autopilot convergence detection.
+  ## Why
 
-  ## Scope
+  Autopilot's convergence signal has to be trustworthy. When the MCP tool output contradicts DB ground truth, the loop either falsely reports success or false-fails into unnecessary refinement cycles. PH-050 closed by manual override — that is not a sustainable position.
 
-  ### In
-  - Wire tool_usage writer to populate session_id/cycle/phase columns (WI-861)
-  - Fix scripts/report-tool-usage.sh backend selection (WI-862) and --limit 0 handling (WI-866)
-  - Add getToolUsage adapter-contract coverage (WI-863)
-  - Document both-view truncation semantics (WI-864)
-  - Refresh stale tools.test.ts header (WI-865)
-  - Add operational telemetry surface documentation to architecture-overview.md (WI-867)
-  - Fix convergence-checker false negatives from legacy cycle-slot artifacts (WI-860)
-  - Housekeeping: close WI-850 and WI-852 as done (functionally complete from prior execution), bump reviewer budgets (spec-reviewer 100→180, gap-analyst 200→250)
+  ## Scope boundary
 
-  ### Out
-  - Resurrecting the removed metrics system — P-33 and D-211 stand
-  - Broad architecture changes
-  - New guiding principles or constraints
+  - In scope: `mcp/artifact-server/src/adapters/local/reader.ts`, `mcp/artifact-server/src/adapters/local/writer.ts`, `mcp/artifact-server/src/tools/analysis.ts`, and a new regression test file for Q-164.
+  - Out of scope: autopilot skill-level changes (already uses workspace cycle numbers), RemoteAdapter parity (only LocalAdapter surfaces these bugs in practice), parser verdict logic (fully stabilized in PH-050).
 
-  ## Impact
+  ## Expected impact
 
-  PH-048 completes the tool_usage telemetry surface (writer correctness, script correctness, contract coverage, documentation, test hygiene) so reporting data is trustworthy and maintainable.
+  - Convergence-check results become deterministic post-write — no need to restart the MCP server mid-cycle to see updated finding counts.
+  - Autopilot no longer forced to manual-override convergence.
+  - Q-160 and Q-164 are closed with explicit decisions recorded in the domain layer.
 
-  PH-049 closes the last cycle-28 gap (SG1) and unblocks autopilot convergence from spurious false negatives driven by stale cycle-slot artifacts.
+  ## Work items
 
-  Config update (reviewer budgets) reduces the probability of cycle-N+1 reviewers exhausting turns before reaching verdict.
-
-  ## Phase structure
-
-  - **PH-048 Tool-usage corrections** (6 items: WI-861..WI-866)
-    - Batched parallel, parallelism 3, worktrees
-    - Two waves due to file-scope overlap: wave 1 (WI-861, WI-862, WI-865); wave 2 (WI-863, WI-864, WI-866)
-  - **PH-049 Doc surface + convergence fix** (2 items: WI-867, WI-860)
-    - Full parallel, disjoint scopes, runs after PH-048
+  - **WI-886** (spike) — Reproduce Q-164, identify root cause, produce diagnosis artifact
+  - **WI-887** (bug) — Fix Q-164 based on WI-886 diagnosis; regression test covers PH-050 cycle 2 scenario
+  - **WI-885** (bug, re-scoped) — Extend Q-160 hardening to findings-table branch; decision recorded on session-id provenance vs. archive-purge vs. slot-mapping
 
   ## References
-  - Cycle 28 summary, code-quality, spec-adherence, gap-analysis, decision-log (already archived)
-  - Work items: WI-860, WI-861, WI-862, WI-863, WI-864, WI-865, WI-866, WI-867
-  - Domain policies: P-33 (operational telemetry outside graph), D-210 (tool_usage standalone), D-211 (remove agent-side emit_metric)
+
+  - Q-160 (open) — cycle-slot collision
+  - Q-164 (open) — stale SQLite reads
+  - WI-824 (complete) — Q-160 option (c) already applied to cycle_summary_content path in reader.ts:969-974
+  - PH-050 (complete 2026-04-17) — convergence-checker parser hardening
 name: PH-046 — PH-045 cycle-9 follow-ups
 project: PR-002
 phase: PH-046

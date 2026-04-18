@@ -24,8 +24,8 @@ agent_configuration:
   code_reviewer_model: sonnet
   spec_reviewer_model: sonnet
   gap_analyst_model: sonnet
-content_hash: a5474a355407788b047167cc1abd4fa22ff119829263e864c494b7515429f4e2
-token_count: 1984
+content_hash: 4759742f29d2ce0b71f5405270e5dd727ee74a3ec830b993d9a09b1d682f7151
+token_count: 1314
 cycle: 27
 parallelism: 1
 worktree: true
@@ -53,90 +53,42 @@ agent_config:
   gap-analyst: sonnet
   domain-curator: opus
 notes: Six WIs total. Group 1 contains five WIs that touch disjoint file scopes (per the per-WI scope declarations) and can run in parallel under worktree isolation, capped at max_parallelism=3 (so one sub-batch). Group 2 holds WI-799 alone because it modifies the same file as WI-798 (mcp/artifact-server/src/context/ppr.ts) and the depends edge enforces sequencing. Capstone review at end of cycle as usual. P-85 (documentation surface enumeration) applies to all WIs — workers must scan for affected docs before declaring complete.
-content: |
-  # Execution Strategy — PH-048 Metrics Rebuild
+content: |-
+  # Execution Strategy — PH-051
 
   ## Mode
 
-  Batched parallel. Two sequential buckets (removal then build). Within each bucket, items run in parallel where file scope is non-overlapping; sequential where the same file is touched by multiple items.
+  Sequential. The 3 work items have a strict chain: WI-886 (diagnosis) → WI-887 (fix) → WI-885 (findings-table hardening, sequenced after WI-887 to avoid reader.ts file-scope collision).
 
   ## Parallelism
 
-  - Max parallel workers: 3
-  - Worktree isolation: enabled (git worktree per worker in all parallel batches)
-  - Rationale: three of the 17 items touch `mcp/artifact-server/src/tools/index.ts` and three touch Drizzle schema files; the rest are independent. Three workers fit the largest independent batch without churn.
+  Not applicable — sequential mode. Max parallelism: 1.
 
-  ## Review Cadence
+  ## Worktrees
 
-  - Per-item incremental review after every worker completes (standard)
-  - Full bucket checkpoint: after WI-852 completes, before starting WI-853, confirm clean TypeScript compile and test suite run — catches broken references that slipped past per-item reviews
-  - Capstone review at end of phase (PH-048) per standard /ideate:review flow
+  Disabled. Single-agent sequential execution; worktree overhead is unjustified for 3 items.
 
-  ## Bucket 1: Removal (WI-843 – WI-852)
+  ## Review cadence
 
-  ### Group 1a — Skill doc strip (parallel)
-  - **WI-843**: Strip emit_metric from skills/execute, review, refine, init SKILL.md
-  - **WI-844**: Strip emit_metric from skills/autopilot/* files
+  Incremental review after each work item. Capstone review at end of cycle. Autopilot-driven loop is appropriate: the scope is well-bounded and the convergence signal will exercise itself (WI-887's fix is what makes the autopilot loop itself reliable, so regression tests are the primary evidence, not autopilot output).
 
-  ### Group 1b — Core removal (sequential, depends on 1a)
-  - **WI-845**: Remove MCP tool registrations + delete metrics.ts  → depends on WI-843 + WI-844
-  - **WI-846**: Remove metricsEvents Drizzle table + schema registry  → depends on WI-845
-  - **WI-847**: Remove metrics_event indexer case  → depends on WI-846
-  - **WI-848**: Remove adapter interface method + local adapter + db-helpers  → depends on WI-846. Atomic bundle per P-44: edits adapter.ts, reader.ts, writer.ts, db-helpers.ts in a single worker to avoid intermediate broken TS compile.
-  - **WI-849**: Remove remote adapter stub  → depends on WI-848
+  ## Ordering
 
-  ### Group 1c — Cleanup (parallel after dependencies land)
-  - **WI-850**: Delete .ideate/metrics YAMLs + 4 legacy report scripts  → depends on WI-843 + WI-844 only (YAMLs are inert)
-  - **WI-851**: Delete metrics tests (874+286 lines) + clean 3 test files  → depends on WI-845 + WI-848 + WI-849
-  - **WI-852**: Remove metrics docs from ARCHITECTURE.md / README.md / graphql-schema.graphql  → depends on WI-845
+  1. **WI-886** — spike; produces a diagnosis research artifact. Gate on this before writing any code.
+  2. **WI-887** — bug fix based on WI-886; includes the Q-164 regression test and integration test.
+  3. **WI-885** — extends Q-160 hardening to findings table; adds cycle-slot-collision regression test.
 
-  ### Bucket 1 checkpoint
-
-  After WI-847, WI-849, WI-850, WI-851, WI-852 all land: TypeScript compile + test suite must be green. No references to `metricsEvents`, `metrics_events`, `emit_metric`, `get_metrics`, or `emit_metrics_entry` anywhere in codebase. Greppable verification criterion.
-
-  ## Bucket 2: Build (WI-853 – WI-859)
-
-  ### Group 2a — Foundation (sequential)
-  - **WI-853**: Design tool_usage schema + Drizzle + ToolUsageRow + insertToolUsage helper  → depends on WI-846 + WI-848 + WI-849 (must land after bucket 1)
-  - **WI-854**: Add getToolUsage to local adapter + StorageAdapter interface  → depends on WI-853
-  - **WI-855**: Add getToolUsage stub to remote adapter  → depends on WI-854
-
-  ### Group 2b — Instrumentation and tool (sequential)
-  - **WI-856**: tiktoken helper + fail-soft dispatch wrapper  → depends on WI-853 + WI-854
-  - **WI-857**: ideate_get_tool_usage MCP tool (aggregate/detail/both views, adapter-routed)  → depends on WI-854 + WI-856
-
-  ### Group 2c — Wrap-up (parallel, depends on 2b)
-  - **WI-858**: scripts/report-tool-usage.sh replacement (P-69 pair with WI-850)  → depends on WI-857
-  - **WI-859**: Documentation refresh (ARCHITECTURE.md, README.md, graphql-schema.graphql)  → depends on WI-852 + WI-857 + WI-858
-
-  ## Agent Configuration
-
-  - Workers: sonnet model (standard)
-  - Incremental code-reviewer: sonnet
-  - MaxTurns: use config.agent_budgets for each agent type
-
-  ## Dependency DAG
+  ## Dependency graph
 
   ```
-  843 \
-  844  \
-       → 845 → 846 → 847
-              ↓
-             848 → 849
-              ↓
-             851
-             852 (also depends on 845)
-  843+844 → 850
-
-  # Build bucket starts after 846+848+849
-  846+848+849 → 853 → 854 → 855
-                    ↓     ↓
-                   856 → 857 → 858
-                                ↓
-                          859 (also depends on 852)
+  WI-886 ──► WI-887 ──► WI-885
   ```
 
-  Acyclic. Verified.
+  ## Agent configuration
+
+  - Worker: standard ideate:worker (sonnet)
+  - Reviewers: code-reviewer, spec-reviewer, gap-analyst (sonnet)
+  - Spike worker (WI-886) may escalate to opus if better-sqlite3 internals need careful reasoning about WAL/checkpoint/snapshot semantics
 phase: PH-046
 agent_model: sonnet
 worktree_config:

@@ -1,52 +1,61 @@
 id: gap-analysis
 type: cycle_summary
 reviewer: gap-analyst
-content: |
+content: |-
   ## Verdict: Pass
 
-  No Critical or Significant gaps. Five Minor findings, all documentation or deferred-infrastructure.
+  All six F-CYCLE-28-S findings fully addressed. Three Minor gaps all deferred with rationale.
 
-  ## Missing Requirements from Interview
+  ## Missing Requirements
 
   None.
 
   ## Unhandled Edge Cases
 
-  ### EC1: Script fail-fast path for unreachable remote backend has no automated test (Minor)
-  - scripts/report-tool-usage.sh:229-239: when backend='remote' and endpoint is unreachable, rawAdapter.initialize() throws and script exits 2. Correct code path but no test in scripts/tests/ covers it.
-  - Recommendation: Defer. Path is straightforward try/catch/exit; RemoteAdapter not yet in production use.
+  ### EC1 (Minor, defer): P-33 compliance tests at lines 4424/4436 do not assert `principle_verdict_source`
+  - Two `handleGetConvergenceStatus` calls in P-33 describe block exercise step-3 path without source assertion. Out of F-CYCLE-28-S3 declared line scope (stopped at 4237). 39/41 test cases covered. Regression risk negligible.
+
+  ### EC2 (Minor, defer): CRLF line endings in step-2 body parsing
+  - `content.split("\n")` leaves trailing `\r` but `body = join("\n")` discards it. Step-2 patterns work correctly. No practical bug.
 
   ## Incomplete Integrations
 
-  ### II1: remote-contract.test.ts does not pass seedToolUsage, silently skipping RemoteAdapter getToolUsage seeded tests (Minor)
-  - Producer: adapter-contract.test.ts runAdapterContractTests factory (line 68).
-  - Consumer: remote-contract.test.ts line 66 — passes no options, so seedToolUsage is undefined.
-  - Every getToolUsage test that guards 'if (!options.seedToolUsage) return' is silently skipped. WI-863's AC says 'both LocalAdapter and RemoteAdapter pass the contract' but seeded tests cannot pass or fail — they are skipped. Two unconditional shape tests do run (trivially against the stub's empty array).
-  - Recommendation: Defer. Would become Significant once the remote endpoint is implemented. Update comment at adapter-contract.test.ts:1653 to say 'skipped (not deferred)'.
+  ### II1 (Minor, defer): `principle_verdict_source` has no runtime consumer
+  - review.md Phase 6c reads `converged`, `condition_a`, `condition_b`, `principle_verdict`, `principle_verdict_warning`. Does not read `principle_verdict_source`. Field has diagnostic value in test failures. Q-161 explicitly deferred this as a known accepted gap.
 
   ## Missing Infrastructure
 
-  ### MI1: config.json 'backend' field absent from README.md (Minor)
-  - Field branched in report-tool-usage.sh (WI-862) and server.ts selectAdapter. No user-facing doc.
-  - Recommendation: Defer until RemoteAdapter's tool_usage endpoint is implemented. Add 'Configuration' section covering backend, remote.endpoint, remote.org_id, remote.codebase_id.
-
-  ### MI2: getToolUsage method absent from docs/adapter-contract.md (Minor)
-  - All 18 other StorageAdapter interface methods documented; getToolUsage missing.
-  - Recommendation: Defer. Well-covered by contract tests and inline comments. Add during next doc-sync cycle.
-
-  ### MI3: ValidatingAdapter.getToolUsage validates only 3 of 9 row fields (Minor)
-  - Validates id, tool_name, timestamp. Does not validate session_id, cycle, phase, request_tokens, response_tokens, request_bytes, response_bytes.
-  - Recommendation: Defer. All current adapters produce correctly typed rows. Add type guards when RemoteAdapter's getToolUsage is implemented. Overlaps with code-reviewer M1 (request_bytes/response_bytes specifically).
+  None.
 
   ## Implicit Requirements
 
-  None. Phase scope was narrow and implementation-complete.
+  None.
 
-  ## Summary
+  ## Addressed Findings
 
-  The core telemetry pipeline — context read → wiring → insert → query → report — is tested end-to-end by new tests in telemetry-wiring.test.ts, instrumentation.test.ts, and tool-usage-tool.test.ts. The LocalAdapter contract is fully exercised with seedToolUsage. The RemoteAdapter stub is acknowledged. The --limit 0 guard is implemented and documented. PH-048 resolves all six cycle-28 minor findings without introducing new gaps of consequence.
-content_hash: 75af6cda2c00d9f57d10607f5f0324fafbfa88da50e42e830eb3b6c18dcd5a82
-token_count: 832
+  - S1 (missing /m flag): Fixed at analysis.ts:159; two regression tests added.
+  - S2 (P-33 fixture vacuous): Fixed with /workspace/.ideate path; PATH_LEAK_RE meta-assertion at 1768.
+  - S3 (provenance sweep): 39 source assertions cover all `principle_verdict:` lines within S3 scope.
+  - S4 (Q-159 body ref): Inserted at review.md:305 in Branch C preamble.
+  - S5 (Violation all-bold): Both Pass (cycle 332) and Fail (cycle 333) variants added.
+  - S6 (Q-161 update): status=resolved, resolved_cycle=28, resolution cites WI-876/881/883.
+content_hash: eb7c7ccdaa7a2339fd78b6bfd4096afe472d495583f17c023eadebaa61a68290
+token_count: 731
 file_path: .ideate/cycles/068/gap-analysis.yaml
 cycle: 29
 cycle_modified: 27
+verdict: Pass
+scope: WI-873 completeness — missing coverage, infrastructure, edge cases
+summary: "10 of 11 acceptance criteria fully satisfied. One partial gap: WI-873 criterion 9 (wording standardization) incomplete — adapter-contract.md:398 countNodes clause retains non-null, non-undefined, and non-empty-string while getConvergenceData clause at adapter-contract.md:425 uses the shorter non-null, non-empty. All 10 finding back-fills present and correct. All 3 fixtures exist and are documented. No 3-clause filter pattern remains in codebase (grep-verified)."
+findings_summary:
+  critical: 0
+  significant: 0
+  minor: 1
+minor_findings_refs:
+  - F-CYCLE-33-MI1
+criteria_status:
+  total: 11
+  pass: 10
+  partial: 1
+  fail: 0
+regression_prevention_check: No remaining 3-clause !== '' filter patterns anywhere in mcp/artifact-server/src. Only 2 JS filter sites, both 2-clause correct. Two SQL filter sites in reader.ts, both immune to inversion bug.

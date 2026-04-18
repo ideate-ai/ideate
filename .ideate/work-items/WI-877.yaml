@@ -32,9 +32,9 @@ notes: |
   ## Related
 
   - WI-874 (closed) and WI-876 (rewritten) both originated from this same incident.
-resolution: null
-status: pending
+resolution: "Closed 2026-04-16 after cycle 28 capstone review. Deliverables in ab0ca7c: new mcp/artifact-server/scripts/restart.sh (SIGTERM + 5s grace + SIGKILL escalation), new start.sh (auto-install + version-triggered rebuild), new docs/deployment-notes.md documenting the 2026-04-16 require.cache incident. Cycle 28 minor findings (M3 sed escape-set gaps, M4 grace period doc omission, M5 quote-nesting) tracked separately; out of PH-050 core scope."
+status: done
 cycle_created: 34
-cycle_modified: null
-content_hash: 918d373d115f29a4f73ee600197636e44698484a62479bd4bd126a8e88691718
-token_count: 604
+cycle_modified: 27
+content_hash: e887729166ec5dd11eb6d903058366b18d4fabfd4cc07bcb6a4386c973d88218
+token_count: 736

@@ -50,7 +50,7 @@ const SNIPPET_MAX_CHARS = 200;
  *
  * Accepted patterns (step 1 — explicit tag, case-insensitive verdict keyword).
  * Both "Principle Adherence Verdict" and "Principle Violation Verdict" headings
- * are accepted (the latter is the legacy label). Each heading supports three
+ * are accepted (the latter is the legacy label). Each heading supports four
  * formatting variants:
  *
  *   1. `**Principle Adherence Verdict**: Pass|Fail`
@@ -59,21 +59,27 @@ const SNIPPET_MAX_CHARS = 200;
  *      (label + colon inside bold)
  *   3. `Principle Adherence Verdict: Pass|Fail`
  *      (no bold, colon after label)
- *   4. `**Principle Violation Verdict**: Pass|Fail`
+ *   4. `**Principle Adherence Verdict: Pass**` / `**Principle Adherence Verdict: Fail**`
+ *      (all-bold — label, colon, and verdict keyword all inside bold tags)
+ *   5. `**Principle Violation Verdict**: Pass|Fail`
  *      (legacy label — bold, colon outside bold)
- *   5. `**Principle Violation Verdict:** Pass|Fail`
+ *   6. `**Principle Violation Verdict:** Pass|Fail`
  *      (legacy label — bold, colon inside bold)
- *   6. `Principle Violation Verdict: Pass|Fail`
+ *   7. `Principle Violation Verdict: Pass|Fail`
  *      (legacy label — no bold)
+ *   8. `**Principle Violation Verdict: Pass**` / `**Principle Violation Verdict: Fail**`
+ *      (legacy all-bold variant — same regex as 4, the `(?:Adherence|Violation)`
+ *      alternation covers both label variants)
  *
  * Note: verdicts other than Pass/Fail (e.g., Unknown, Inconclusive) produce verdict=unknown via the step3 fallback, not an explicit pattern match.
  *
  * Word-boundary anchors (`\b`) are applied after the verdict keyword so that
  * "Passed" / "Failed" / "Passthrough" do NOT match the Pass / Fail keywords.
  *
- * Step 2 falls back to scanning `## Principle Violation` / `## Guiding Principle`
- * / `## Principle Adherence` section bodies for emptiness (Pass) or
- * subheadings/bullets (Fail). Only the first STEP2_WINDOW_LINES non-empty lines
+ * Step 2 falls back to scanning exact headings `## Principle Adherence`,
+ * `## Principle Violation`, or `## Guiding Principle` section bodies for
+ * emptiness (Pass) or subheadings/bullets (Fail). The heading text must match
+ * exactly (no trailing words). Only the first STEP2_WINDOW_LINES non-empty lines
  * of the section body are examined; if the verdict line appears beyond the window
  * Step 2 falls through to Step 3.
  *
@@ -84,18 +90,21 @@ const SNIPPET_MAX_CHARS = 200;
 function parsePrincipleVerdict(content: string): PrincipleResult {
   // Step 1: look for explicit verdict tag (Principle Adherence or Principle Violation,
   // colon inside or outside bold, case-insensitive verdict keywords).
-  // Patterns cover: **Label**: verdict, **Label:** verdict, Label: verdict
+  // Patterns cover: **Label**: verdict, **Label:** verdict, Label: verdict,
+  // and **Label: verdict** (all-bold — verdict keyword inside bold closing tags)
   // for both "Adherence" and "Violation" label variants.
   // \b after Pass/Fail prevents "Passed"/"Failed"/"Passthrough" from matching.
   const STEP1_PASS_RES = [
     /\*\*Principle\s+(?:Adherence|Violation)\s+Verdict\*\*:\s*Pass\b/i,
     /\*\*Principle\s+(?:Adherence|Violation)\s+Verdict:\*\*\s*Pass\b/i,
     /(?<!\*)Principle\s+(?:Adherence|Violation)\s+Verdict:\s*Pass\b(?!\*)/i,
+    /\*\*Principle\s+(?:Adherence|Violation)\s+Verdict:\s*Pass\b\*\*/i,
   ];
   const STEP1_FAIL_RES = [
     /\*\*Principle\s+(?:Adherence|Violation)\s+Verdict\*\*:\s*Fail\b/i,
     /\*\*Principle\s+(?:Adherence|Violation)\s+Verdict:\*\*\s*Fail\b/i,
     /(?<!\*)Principle\s+(?:Adherence|Violation)\s+Verdict:\s*Fail\b(?!\*)/i,
+    /\*\*Principle\s+(?:Adherence|Violation)\s+Verdict:\s*Fail\b\*\*/i,
   ];
 
   for (const re of STEP1_PASS_RES) {
@@ -120,9 +129,9 @@ function parsePrincipleVerdict(content: string): PrincipleResult {
       if (inSection) break; // hit next section
       const heading = line.replace(/^##\s+/, "").trim().toLowerCase();
       if (
-        heading.startsWith("principle adherence") ||
-        heading.startsWith("principle violation") ||
-        heading.startsWith("guiding principle")
+        heading === "principle adherence" ||
+        heading === "principle violation" ||
+        heading === "guiding principle"
       ) {
         inSection = true;
       }
@@ -147,7 +156,7 @@ function parsePrincipleVerdict(content: string): PrincipleResult {
       return { verdict: "pass", source: "step2" };
     }
     // Body has ### subheadings or bullet items → Fail
-    if (/^###\s/.test(body) || /^\s*-\s/.test(body)) {
+    if (/^###\s/m.test(body) || /^\s*-\s/m.test(body)) {
       return { verdict: "fail", source: "step2" };
     }
     // Body exists but doesn't match Pass/Fail patterns — fall through to step 3
@@ -157,19 +166,24 @@ function parsePrincipleVerdict(content: string): PrincipleResult {
   // so callers can diagnose why parsing failed.
   // Use single-quoted YAML scalar with '' to escape any internal single quotes,
   // ensuring the emitted YAML value is always parseable.
+  // P-33: strip absolute .ideate/ paths from the snippet before emitting —
+  // the snippet is diagnostic text visible to callers and must not leak
+  // filesystem paths from the server environment.
   const rawSnippet = (
     content.length > SNIPPET_MAX_CHARS
       ? content.slice(0, SNIPPET_MAX_CHARS) + "..."
       : content
-  ).replace(/\n/g, ' ').replace(/\s+/g, ' ').trim();
+  ).replace(/\/[\w/.-]*\.ideate\//g, '<ideate-dir>/')
+   .replace(/\n/g, ' ').replace(/\s+/g, ' ').trim();
   const patternsTriedDesc =
     "**Principle Adherence Verdict**: Pass|Fail, " +
     "**Principle Adherence Verdict:** Pass|Fail, " +
     "Principle Adherence Verdict: Pass|Fail, " +
+    "**Principle Adherence Verdict: Pass|Fail** (all-bold), " +
     "**Principle Violation Verdict**: Pass|Fail, " +
     "**Principle Violation Verdict:** Pass|Fail, " +
     "Principle Violation Verdict: Pass|Fail, " +
-    "## Principle Adherence|Violation|Guiding Principle section body heuristic";
+    "## Principle Adherence|Violation|Guiding Principle (exact heading) section body heuristic";
   const warningText =
     `unexpected format; patterns tried: ${patternsTriedDesc}; ` +
     `content snippet: ${rawSnippet}`;

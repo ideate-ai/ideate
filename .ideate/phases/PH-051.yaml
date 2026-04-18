@@ -1,0 +1,21 @@
+id: PH-051
+type: phase
+name: Convergence-detection cleanup
+description: "Fix remaining reliability gaps in autopilot convergence detection: Q-164 (MCP getConvergenceData serves stale finding counts that disagree with direct DB reads) and Q-160 findings-table branch (legacy findings rows in a reused cycle slot inflate condition_a)."
+phase_type: implementation
+project: PR-001
+status: active
+started_date: 2026-04-17
+work_items:
+  - WI-885
+  - WI-886
+  - WI-887
+success_criteria:
+  - ideate_get_convergence_status output agrees with a direct sqlite3 query against the same index.db file for every cycle and every finding state, within a single server session
+  - Autopilot never needs to manually override convergence due to tool-vs-DB disagreement
+  - Q-160 resolved (both cycle_summary_content via WI-824 and findings table via WI-885)
+  - Q-164 resolved with a documented root cause and regression test that reproduces the PH-050 cycle 2 scenario
+  - All existing tests pass; new regression tests added for both scenarios
+cycle_modified: 27
+content_hash: b6efebaf7952eeb23366658b299d0a6e6b7ce199d9b92197ca1a0ec19da4b1ac
+token_count: 261

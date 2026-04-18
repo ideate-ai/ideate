@@ -10,8 +10,10 @@
 
 import * as fs from "fs";
 import * as path from "path";
+import { parse as parseYaml } from "yaml";
 import type Database from "better-sqlite3";
 import type { DrizzleDb } from "../../db-helpers.js";
+import { log } from "../../logger.js";
 
 import { and, asc, eq, gte, lte } from "drizzle-orm";
 import * as dbSchema from "../../db.js";
@@ -922,19 +924,63 @@ export class LocalReaderAdapter {
     findings_by_severity: Record<string, number>;
     cycle_summary_content: string | null;
   }> {
-    // Get per-severity finding counts for this cycle.
-    // Include only findings where addressed_by IS NULL (unresolved) — findings
-    // with addressed_by set have been declared resolved and should not block convergence.
-    // (WI-860: fix convergence false-negative from legacy resolved findings)
-    const severityRows = this.db
+    // Q-164 defensive fix (WI-887): instead of counting via SQL GROUP BY, fetch
+    // per-finding rows so we can verify each one against YAML ground truth.
+    // SQLite's addressed_by column can be stale when:
+    //   (A) a finding is written twice (first without addressed_by, then with it)
+    //       and convergence is checked between the two writes, OR
+    //   (B) the file-watcher re-index has not yet propagated a YAML change to
+    //       the extension table.
+    // For each row the SQL considers unresolved (addressed_by IS NULL), we read
+    // the YAML file and verify.  If YAML has addressed_by populated, we skip
+    // the finding (treat it as resolved) and warn about the stale SQLite row.
+    // If the YAML file cannot be read or parsed, we fall back to the SQLite value
+    // (count the finding as open) and warn — convergence must remain callable.
+    const candidateRows = this.db
       .prepare(
-        `SELECT severity, COUNT(*) as count FROM findings WHERE cycle = ? AND addressed_by IS NULL GROUP BY severity`
+        `SELECT f.id, f.severity, n.file_path
+         FROM findings f
+         JOIN nodes n ON f.id = n.id
+         WHERE f.cycle = ? AND f.addressed_by IS NULL`
       )
-      .all(cycle) as Array<{ severity: string; count: number }>;
+      .all(cycle) as Array<{ id: string; severity: string; file_path: string }>;
 
     const findings_by_severity: Record<string, number> = {};
-    for (const row of severityRows) {
-      findings_by_severity[row.severity] = row.count;
+
+    for (const row of candidateRows) {
+      // Verify against YAML ground truth
+      let countAsOpen = true;
+
+      try {
+        const yamlContent = fs.readFileSync(row.file_path, "utf8");
+        const parsed = parseYaml(yamlContent) as Record<string, unknown> | null;
+        if (parsed && typeof parsed === "object") {
+          const addressedBy = parsed["addressed_by"];
+          if (addressedBy !== null && addressedBy !== undefined && addressedBy !== "") {
+            // YAML says resolved but SQLite still has addressed_by = NULL — stale DB row.
+            log.warn(
+              "q164",
+              `Stale SQLite row detected: finding ${row.id} has addressed_by='${String(addressedBy)}' ` +
+                `in YAML but addressed_by IS NULL in SQLite findings table. ` +
+                `Treating as resolved. Run a full re-index to close this staleness window.`
+            );
+            countAsOpen = false;
+          }
+        }
+      } catch (readErr) {
+        // YAML read/parse failure: fall back to SQLite value (count as open)
+        const errMsg = readErr instanceof Error ? readErr.message : String(readErr);
+        log.warn(
+          "q164",
+          `Could not read/parse YAML for finding ${row.id} at '${row.file_path}': ` +
+            `${errMsg}. Falling back to SQLite value (counting as open).`
+        );
+        countAsOpen = true;
+      }
+
+      if (countAsOpen) {
+        findings_by_severity[row.severity] = (findings_by_severity[row.severity] ?? 0) + 1;
+      }
     }
 
     // Retrieve cycle_summary content

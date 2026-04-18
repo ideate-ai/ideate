@@ -846,6 +846,7 @@ describe("handleGetConvergenceStatus", () => {
 
     expect(result).toContain("converged: false");
     expect(result).toContain("principle_verdict: unknown");
+    expect(result).toContain("principle_verdict_source: step3");
     expect(result).toContain("condition_b: false");
   });
 
@@ -878,6 +879,7 @@ describe("handleGetConvergenceStatus", () => {
     expect(result).toContain("converged: true");
     expect(result).toContain("condition_b: true");
     expect(result).toContain("principle_verdict: pass");
+    expect(result).toContain("principle_verdict_source: step1");
   });
 
   it("file_path fallback: finds cycle_summary when document_artifacts row exists but da.cycle is null (canonical filename)", async () => {
@@ -903,6 +905,7 @@ describe("handleGetConvergenceStatus", () => {
     expect(result).toContain("converged: true");
     expect(result).toContain("condition_b: true");
     expect(result).toContain("principle_verdict: pass");
+    expect(result).toContain("principle_verdict_source: step1");
   });
 
   it("write→convergence roundtrip: handleWriteArtifact then handleGetConvergenceStatus returns converged:true", async () => {
@@ -927,6 +930,7 @@ describe("handleGetConvergenceStatus", () => {
     expect(result).toContain("condition_a: true");
     expect(result).toContain("condition_b: true");
     expect(result).toContain("principle_verdict: pass");
+    expect(result).toContain("principle_verdict_source: step1");
   });
 
   it("parsePrincipleVerdict: returns pass when da_content is JSON.stringify({content: '**Principle Violation Verdict**: Pass'})", async () => {
@@ -946,6 +950,7 @@ describe("handleGetConvergenceStatus", () => {
     // No findings for cycle 9 → condition_a: true
     const result = await handleGetConvergenceStatus(ctx, { cycle_number: 9 });
     expect(result).toContain("principle_verdict: pass");
+    expect(result).toContain("principle_verdict_source: step1");
     expect(result).toContain("condition_b: true");
     expect(result).toContain("converged: true");
   });
@@ -979,6 +984,7 @@ describe("handleGetConvergenceStatus", () => {
     const result = await handleGetConvergenceStatus(ctx, { cycle_number: 200 });
     expect(result).toContain("condition_b: true");
     expect(result).toContain("principle_verdict: pass");
+    expect(result).toContain("principle_verdict_source: step1");
     expect(result).toContain("converged: true");
   });
 
@@ -1013,6 +1019,7 @@ describe("handleGetConvergenceStatus", () => {
     const result = await handleGetConvergenceStatus(ctx, { cycle_number: 201 });
     expect(result).toContain("condition_b: true");
     expect(result).toContain("principle_verdict: pass");
+    expect(result).toContain("principle_verdict_source: step1");
     expect(result).toContain("converged: true");
   });
 
@@ -1137,6 +1144,7 @@ describe("handleGetConvergenceStatus", () => {
     const result = await handleGetConvergenceStatus(ctx, { cycle_number: 204 });
     expect(result).toContain("condition_b: true");
     expect(result).toContain("principle_verdict: pass");
+    expect(result).toContain("principle_verdict_source: step1");
     expect(result).toContain("converged: true");
   });
 
@@ -1172,6 +1180,7 @@ describe("handleGetConvergenceStatus", () => {
     const result = await handleGetConvergenceStatus(ctx, { cycle_number: 205 });
     expect(result).toContain("condition_b: false");
     expect(result).toContain("principle_verdict: fail");
+    expect(result).toContain("principle_verdict_source: step1");
     expect(result).toContain("converged: false");
   });
 
@@ -1185,6 +1194,7 @@ describe("handleGetConvergenceStatus", () => {
     const result = await handleGetConvergenceStatus(ctx, { cycle_number: 998 });
 
     expect(result).toContain("principle_verdict: unknown");
+    expect(result).toContain("principle_verdict_source: step3");
     expect(result).toContain("condition_b: false");
     expect(result).toContain("converged: false");
     // Warning must include directory path
@@ -1212,6 +1222,7 @@ describe("handleGetConvergenceStatus", () => {
     const result = await handleGetConvergenceStatus(ctx, { cycle_number: 300 });
 
     expect(result).toContain("principle_verdict: unknown");
+    expect(result).toContain("principle_verdict_source: step3");
     expect(result).toContain("condition_b: false");
     // Warning must include a snippet of the actual content
     const warningLine = result.split("\n").find((l) => l.startsWith("principle_verdict_warning:"));
@@ -1235,6 +1246,7 @@ describe("handleGetConvergenceStatus", () => {
 
     const result = await handleGetConvergenceStatus(ctx, { cycle_number: 301 });
     expect(result).toContain("principle_verdict: pass");
+    expect(result).toContain("principle_verdict_source: step1");
     expect(result).toContain("condition_b: true");
   });
 
@@ -1251,6 +1263,7 @@ describe("handleGetConvergenceStatus", () => {
 
     const result = await handleGetConvergenceStatus(ctx, { cycle_number: 302 });
     expect(result).toContain("principle_verdict: pass");
+    expect(result).toContain("principle_verdict_source: step1");
     expect(result).toContain("condition_b: true");
   });
 
@@ -1267,6 +1280,7 @@ describe("handleGetConvergenceStatus", () => {
 
     const result = await handleGetConvergenceStatus(ctx, { cycle_number: 303 });
     expect(result).toContain("principle_verdict: pass");
+    expect(result).toContain("principle_verdict_source: step1");
     expect(result).toContain("condition_b: true");
   });
 
@@ -1283,6 +1297,7 @@ describe("handleGetConvergenceStatus", () => {
 
     const result = await handleGetConvergenceStatus(ctx, { cycle_number: 304 });
     expect(result).toContain("principle_verdict: fail");
+    expect(result).toContain("principle_verdict_source: step1");
     expect(result).toContain("condition_b: false");
   });
 
@@ -1299,6 +1314,7 @@ describe("handleGetConvergenceStatus", () => {
 
     const result = await handleGetConvergenceStatus(ctx, { cycle_number: 305 });
     expect(result).toContain("principle_verdict: pass");
+    expect(result).toContain("principle_verdict_source: step1");
     expect(result).toContain("condition_b: true");
   });
 
@@ -1315,6 +1331,7 @@ describe("handleGetConvergenceStatus", () => {
 
     const result = await handleGetConvergenceStatus(ctx, { cycle_number: 306 });
     expect(result).toContain("principle_verdict: unknown");
+    expect(result).toContain("principle_verdict_source: step3");
     expect(result).toContain("condition_b: false");
     // Should include a content snippet in the warning
     const warningLine = result.split("\n").find((l) => l.startsWith("principle_verdict_warning:"));
@@ -1336,6 +1353,7 @@ describe("handleGetConvergenceStatus", () => {
 
     const result = await handleGetConvergenceStatus(ctx, { cycle_number: 307 });
     expect(result).toContain("principle_verdict: unknown");
+    expect(result).toContain("principle_verdict_source: step3");
     const warningLine = result.split("\n").find((l) => l.startsWith("principle_verdict_warning:"));
     expect(warningLine).toBeDefined();
     expect(warningLine).toContain("unexpected format");
@@ -1356,6 +1374,7 @@ describe("handleGetConvergenceStatus", () => {
 
     const result = await handleGetConvergenceStatus(ctx, { cycle_number: 310 });
     expect(result).toContain("principle_verdict: unknown");
+    expect(result).toContain("principle_verdict_source: step3");
     expect(result).toContain("condition_b: false");
   });
 
@@ -1371,6 +1390,7 @@ describe("handleGetConvergenceStatus", () => {
 
     const result = await handleGetConvergenceStatus(ctx, { cycle_number: 311 });
     expect(result).toContain("principle_verdict: unknown");
+    expect(result).toContain("principle_verdict_source: step3");
     expect(result).toContain("condition_b: false");
   });
 
@@ -1386,6 +1406,7 @@ describe("handleGetConvergenceStatus", () => {
 
     const result = await handleGetConvergenceStatus(ctx, { cycle_number: 312 });
     expect(result).toContain("principle_verdict: pass");
+    expect(result).toContain("principle_verdict_source: step1");
     expect(result).toContain("condition_b: true");
   });
 
@@ -1426,6 +1447,7 @@ describe("handleGetConvergenceStatus", () => {
 
     const result = await handleGetConvergenceStatus(ctx, { cycle_number: 314 });
     expect(result).toContain("principle_verdict: unknown");
+    expect(result).toContain("principle_verdict_source: step3");
     expect(result).toContain("condition_b: false");
   });
 
@@ -1447,6 +1469,7 @@ describe("handleGetConvergenceStatus", () => {
 
     const result = await handleGetConvergenceStatus(ctx, { cycle_number: 315 });
     expect(result).toContain("principle_verdict: unknown");
+    expect(result).toContain("principle_verdict_source: step3");
 
     // The full result should be parseable as YAML
     const parsed = yaml.parse(result) as Record<string, unknown>;
@@ -1488,6 +1511,7 @@ describe("handleGetConvergenceStatus", () => {
     // Cycle 997 has no data — triggers missing-summary code path
     const result = await handleGetConvergenceStatus(ctx, { cycle_number: 997 });
     expect(result).toContain("principle_verdict: unknown");
+    expect(result).toContain("principle_verdict_source: step3");
     expect(result).not.toMatch(PATH_LEAK_RE);
     // Should not contain any absolute path (starts with /)
     const warningLine = result.split("\n").find((l) => l.startsWith("principle_verdict_warning:"));
@@ -1534,6 +1558,7 @@ describe("handleGetConvergenceStatus", () => {
 
     const result = await handleGetConvergenceStatus(ctx, { cycle_number: 998 });
     expect(result).toContain("principle_verdict: pass");
+    expect(result).toContain("principle_verdict_source: step1");
     expect(result).toContain("condition_b: true");
   });
 
@@ -1553,6 +1578,216 @@ describe("handleGetConvergenceStatus", () => {
     const result = await handleGetConvergenceStatus(ctx, { cycle_number: 999 });
     expect(result).toContain("principle_verdict: fail");
     expect(result).toContain("principle_verdict_source: step2");
+  });
+
+  // ---------------------------------------------------------------------------
+  // WI-881: Fail-side pattern 2 and 3 coverage + all-bold pattern coverage
+  // Addresses cycle 28 findings S2 (Fail-side pattern gap) and closes WI-880 deferred S1
+  // ---------------------------------------------------------------------------
+
+  it("WI-881 S2: parsePrincipleVerdict pattern 2 Fail — **Principle Adherence Verdict:** Fail (colon inside bold)", async () => {
+    // Pattern 2 (STEP1_FAIL_RES index 1): colon inside bold closing tag
+    // Regex: /\*\*Principle\s+(?:Adherence|Violation)\s+Verdict:\*\*\s*Fail\b/i
+    const cycleDir = path.join(artifactDir, "cycles", "320");
+    fs.mkdirSync(cycleDir, { recursive: true });
+    const filePath = path.join(cycleDir, "spec-adherence.yaml");
+    fs.writeFileSync(filePath, "id: spec-adherence-320\ntype: cycle_summary\ncycle: 320\n", "utf8");
+    insertNode("spec-adherence-320", "cycle_summary", { file_path: filePath, cycle_created: 320 });
+    db.prepare(
+      `INSERT OR REPLACE INTO document_artifacts (id, cycle, content) VALUES (?, ?, ?)`
+    ).run("spec-adherence-320", 320, "**Principle Adherence Verdict:** Fail\n\nViolation found.");
+
+    const result = await handleGetConvergenceStatus(ctx, { cycle_number: 320 });
+    expect(result).toContain("principle_verdict: fail");
+    expect(result).toContain("principle_verdict_source: step1");
+    expect(result).toContain("condition_b: false");
+  });
+
+  it("WI-881 S2: parsePrincipleVerdict pattern 3 Fail — Principle Adherence Verdict: Fail (no bold)", async () => {
+    // Pattern 3 (STEP1_FAIL_RES index 2): no bold markers at all
+    // Regex: /(?<!\*)Principle\s+(?:Adherence|Violation)\s+Verdict:\s*Fail\b(?!\*)/i
+    const cycleDir = path.join(artifactDir, "cycles", "321");
+    fs.mkdirSync(cycleDir, { recursive: true });
+    const filePath = path.join(cycleDir, "spec-adherence.yaml");
+    fs.writeFileSync(filePath, "id: spec-adherence-321\ntype: cycle_summary\ncycle: 321\n", "utf8");
+    insertNode("spec-adherence-321", "cycle_summary", { file_path: filePath, cycle_created: 321 });
+    db.prepare(
+      `INSERT OR REPLACE INTO document_artifacts (id, cycle, content) VALUES (?, ?, ?)`
+    ).run("spec-adherence-321", 321, "Principle Adherence Verdict: Fail\n\nViolation found.");
+
+    const result = await handleGetConvergenceStatus(ctx, { cycle_number: 321 });
+    expect(result).toContain("principle_verdict: fail");
+    expect(result).toContain("principle_verdict_source: step1");
+    expect(result).toContain("condition_b: false");
+  });
+
+  it("WI-881 WI-880 all-bold Pass: **Principle Adherence Verdict: Pass** (verdict keyword inside bold)", async () => {
+    // All-bold pattern (STEP1_PASS_RES index 3, added in WI-880):
+    // Regex: /\*\*Principle\s+(?:Adherence|Violation)\s+Verdict:\s*Pass\b\*\*/i
+    // Matches cycle 003 shape where label + colon + verdict are all inside one bold span.
+    const cycleDir = path.join(artifactDir, "cycles", "322");
+    fs.mkdirSync(cycleDir, { recursive: true });
+    const filePath = path.join(cycleDir, "spec-adherence.yaml");
+    fs.writeFileSync(filePath, "id: spec-adherence-322\ntype: cycle_summary\ncycle: 322\n", "utf8");
+    insertNode("spec-adherence-322", "cycle_summary", { file_path: filePath, cycle_created: 322 });
+    db.prepare(
+      `INSERT OR REPLACE INTO document_artifacts (id, cycle, content) VALUES (?, ?, ?)`
+    ).run("spec-adherence-322", 322, "**Principle Adherence Verdict: Pass**\n\nGP-14 upheld.");
+
+    const result = await handleGetConvergenceStatus(ctx, { cycle_number: 322 });
+    expect(result).toContain("principle_verdict: pass");
+    expect(result).toContain("principle_verdict_source: step1");
+    expect(result).toContain("condition_b: true");
+  });
+
+  it("WI-881 WI-880 all-bold Fail: **Principle Adherence Verdict: Fail** (verdict keyword inside bold)", async () => {
+    // All-bold pattern (STEP1_FAIL_RES index 3, added in WI-880):
+    // Regex: /\*\*Principle\s+(?:Adherence|Violation)\s+Verdict:\s*Fail\b\*\*/i
+    const cycleDir = path.join(artifactDir, "cycles", "323");
+    fs.mkdirSync(cycleDir, { recursive: true });
+    const filePath = path.join(cycleDir, "spec-adherence.yaml");
+    fs.writeFileSync(filePath, "id: spec-adherence-323\ntype: cycle_summary\ncycle: 323\n", "utf8");
+    insertNode("spec-adherence-323", "cycle_summary", { file_path: filePath, cycle_created: 323 });
+    db.prepare(
+      `INSERT OR REPLACE INTO document_artifacts (id, cycle, content) VALUES (?, ?, ?)`
+    ).run("spec-adherence-323", 323, "**Principle Adherence Verdict: Fail**\n\nGP-14 violated.");
+
+    const result = await handleGetConvergenceStatus(ctx, { cycle_number: 323 });
+    expect(result).toContain("principle_verdict: fail");
+    expect(result).toContain("principle_verdict_source: step1");
+    expect(result).toContain("condition_b: false");
+  });
+
+  // WI-883 S1 multiline regression test a: ### subheading on later line triggers step2 fail
+  it("WI-883 S1a: ## Principle Adherence body with prose on line 1 and '### P-14 violated' on later line → fail (step2)", async () => {
+    // Reproducer for the /m flag bug: body starts with a prose sentence, then a ### heading
+    // on a subsequent line. Without /m, ^###\s would not match because ^ only anchors to
+    // string start, not line start. With /m added, ^ matches any line start.
+    const cycleDir = path.join(artifactDir, "cycles", "330");
+    fs.mkdirSync(cycleDir, { recursive: true });
+    const filePath = path.join(cycleDir, "spec-adherence.yaml");
+    fs.writeFileSync(filePath, "id: spec-adherence-330\ntype: cycle_summary\ncycle: 330\n", "utf8");
+    insertNode("spec-adherence-330", "cycle_summary", { file_path: filePath, cycle_created: 330 });
+    // Prose on line 1 of section body, ### subheading on line 3 — requires /m to detect
+    const content =
+      "## Principle Adherence\n\n" +
+      "The following principles were evaluated during this review.\n\n" +
+      "### P-14 violated\n\n" +
+      "Executor bypassed MCP write path.\n";
+    db.prepare(
+      `INSERT OR REPLACE INTO document_artifacts (id, cycle, content) VALUES (?, ?, ?)`
+    ).run("spec-adherence-330", 330, content);
+
+    const result = await handleGetConvergenceStatus(ctx, { cycle_number: 330 });
+    expect(result).toContain("principle_verdict: fail");
+    expect(result).toContain("principle_verdict_source: step2");
+    expect(result).toContain("condition_b: false");
+  });
+
+  // WI-883 S1 multiline regression test b: bullet on later line triggers step2 fail
+  it("WI-883 S1b: ## Principle Adherence body with prose on line 1 and '- Item A' on later line → fail (step2)", async () => {
+    // Reproducer for the /m flag bug: body starts with a prose sentence, then a bullet
+    // on a subsequent line. Without /m, ^\s*-\s would not match because ^ only anchors
+    // to string start. With /m added, ^ matches any line start.
+    const cycleDir = path.join(artifactDir, "cycles", "331");
+    fs.mkdirSync(cycleDir, { recursive: true });
+    const filePath = path.join(cycleDir, "spec-adherence.yaml");
+    fs.writeFileSync(filePath, "id: spec-adherence-331\ntype: cycle_summary\ncycle: 331\n", "utf8");
+    insertNode("spec-adherence-331", "cycle_summary", { file_path: filePath, cycle_created: 331 });
+    // Prose on line 1 of section body, bullet item on line 3 — requires /m to detect
+    const content =
+      "## Principle Adherence\n\n" +
+      "The following violations were identified:\n\n" +
+      "- Item A: executor wrote files directly without MCP.\n";
+    db.prepare(
+      `INSERT OR REPLACE INTO document_artifacts (id, cycle, content) VALUES (?, ?, ?)`
+    ).run("spec-adherence-331", 331, content);
+
+    const result = await handleGetConvergenceStatus(ctx, { cycle_number: 331 });
+    expect(result).toContain("principle_verdict: fail");
+    expect(result).toContain("principle_verdict_source: step2");
+    expect(result).toContain("condition_b: false");
+  });
+
+  // WI-883 S5 Violation all-bold Pass test — mirrors Adherence all-bold test at cycle 322
+  it("WI-883 S5 all-bold Pass: **Principle Violation Verdict: Pass** → verdict: pass (step1)", async () => {
+    // All-bold pattern: /\*\*Principle\s+(?:Adherence|Violation)\s+Verdict:\s*Pass\b\*\*/i
+    // Tests the Violation variant of the all-bold pass pattern (Adherence covered by cycle 322).
+    const cycleDir = path.join(artifactDir, "cycles", "332");
+    fs.mkdirSync(cycleDir, { recursive: true });
+    const filePath = path.join(cycleDir, "spec-adherence.yaml");
+    fs.writeFileSync(filePath, "id: spec-adherence-332\ntype: cycle_summary\ncycle: 332\n", "utf8");
+    insertNode("spec-adherence-332", "cycle_summary", { file_path: filePath, cycle_created: 332 });
+    db.prepare(
+      `INSERT OR REPLACE INTO document_artifacts (id, cycle, content) VALUES (?, ?, ?)`
+    ).run("spec-adherence-332", 332, "**Principle Violation Verdict: Pass**\n\nGP-14 upheld.");
+
+    const result = await handleGetConvergenceStatus(ctx, { cycle_number: 332 });
+    expect(result).toContain("principle_verdict: pass");
+    expect(result).toContain("principle_verdict_source: step1");
+    expect(result).toContain("condition_b: true");
+  });
+
+  // WI-883 S5 Violation all-bold Fail test — mirrors Adherence all-bold test at cycle 323
+  it("WI-883 S5 all-bold Fail: **Principle Violation Verdict: Fail** → verdict: fail (step1)", async () => {
+    // All-bold pattern: /\*\*Principle\s+(?:Adherence|Violation)\s+Verdict:\s*Fail\b\*\*/i
+    // Tests the Violation variant of the all-bold fail pattern (Adherence covered by cycle 323).
+    const cycleDir = path.join(artifactDir, "cycles", "333");
+    fs.mkdirSync(cycleDir, { recursive: true });
+    const filePath = path.join(cycleDir, "spec-adherence.yaml");
+    fs.writeFileSync(filePath, "id: spec-adherence-333\ntype: cycle_summary\ncycle: 333\n", "utf8");
+    insertNode("spec-adherence-333", "cycle_summary", { file_path: filePath, cycle_created: 333 });
+    db.prepare(
+      `INSERT OR REPLACE INTO document_artifacts (id, cycle, content) VALUES (?, ?, ?)`
+    ).run("spec-adherence-333", 333, "**Principle Violation Verdict: Fail**\n\nGP-14 violated.");
+
+    const result = await handleGetConvergenceStatus(ctx, { cycle_number: 333 });
+    expect(result).toContain("principle_verdict: fail");
+    expect(result).toContain("principle_verdict_source: step1");
+    expect(result).toContain("condition_b: false");
+  });
+
+  it("WI-881 EC5: P-33 realistic fixture via handleWriteArtifact write path — warning must not leak absolute paths", async () => {
+    // Criterion 4: seed content through the real write path (handleWriteArtifact with
+    // type: cycle_summary) so content flows through actual file I/O, not a hand-assembled
+    // synthetic string. The content includes a file path reference (realistic spec-adherence
+    // content that references source files) to test that any absolute path in the warning
+    // window is sanitized. After writing, handleGetConvergenceStatus is called on cycle 324.
+    // Addresses cycle 28 finding EC5 (P-33 snippet test used synthetic content).
+    const PATH_LEAK_RE = /\/[\w/.-]*\.ideate\//;
+    // Content that mimics a real spec-adherence artifact: has an absolute source file path
+    // in the body (so PATH_LEAK_RE fires on the raw content) but does NOT have a recognized
+    // verdict tag — exercises the step-3 warning path and verifies snippet sanitization.
+    const realisticContent =
+      "## Summary\n\nSpec adherence review for cycle 324.\n\n" +
+      "## Principle Adherence\n\n" +
+      "Reviewed mcp/artifact-server/src/tools/analysis.ts and /workspace/.ideate/cycles/028/spec-adherence.yaml.\n" +
+      "No structured verdict tag present — manual review required.\n";
+    // Meta-assertion: the raw content MUST match PATH_LEAK_RE to prove the regex would fire
+    // if an absolute path leaked through. If this fails the fixture is broken (not the code).
+    expect(realisticContent).toMatch(PATH_LEAK_RE);
+    await handleWriteArtifact(ctx, {
+      type: "cycle_summary",
+      id: "spec-adherence",
+      cycle: 324,
+      content: {
+        title: "Spec adherence — cycle 324 P-33 realistic fixture",
+        content: realisticContent,
+      },
+    });
+
+    const result = await handleGetConvergenceStatus(ctx, { cycle_number: 324 });
+    // No absolute .ideate/ path may appear in the response (P-33)
+    expect(result).not.toMatch(PATH_LEAK_RE);
+    // Warning line specifically must also be clean
+    const warningLine = result.split("\n").find((l) => l.startsWith("principle_verdict_warning:"));
+    if (warningLine !== undefined) {
+      expect(warningLine).not.toMatch(PATH_LEAK_RE);
+    }
+    // P-91: assert the parser provenance field is present so regressions in
+    // which step matched are caught. This fixture intentionally lacks a
+    // recognized verdict tag, so parsing must fall through to step3 (warning).
+    expect(result).toContain("principle_verdict_source: step3");
   });
 });
 
@@ -4065,6 +4300,7 @@ describe("write-to-convergence roundtrip", () => {
 
     expect(result).toContain("condition_b: true");
     expect(result).toContain("principle_verdict: pass");
+    expect(result).toContain("principle_verdict_source: step1");
     expect(result).toContain("condition_a: true");
     expect(result).toContain("converged: true");
   });
@@ -4088,6 +4324,7 @@ describe("write-to-convergence roundtrip", () => {
 
     expect(result).toContain("condition_b: false");
     expect(result).toContain("principle_verdict: fail");
+    expect(result).toContain("principle_verdict_source: step1");
     expect(result).toContain("condition_a: true");
     expect(result).toContain("converged: false");
   });
@@ -4111,6 +4348,7 @@ describe("write-to-convergence roundtrip", () => {
 
     expect(result).toContain("condition_b: true");
     expect(result).toContain("principle_verdict: pass");
+    expect(result).toContain("principle_verdict_source: step1");
   });
 });
 

@@ -152,6 +152,17 @@ Store the parent of `execute.md` as `{phases_dir}`.
 
 Repeat the following until convergence or `max_cycles` is reached.
 
+### Resolve Cycle Number (Q-160 / D-option-c)
+
+Before each cycle begins, resolve `{cycle_number}` so that it never collides with an existing workspace cycle slot. The rule implements Q-160 option (c): autopilot always uses `max(domain.current_cycle, cycles_completed) + 1`.
+
+1. Call `ideate_get_domain_state()` and read `current_cycle` (default 0 if absent).
+2. Call `ideate_manage_autopilot_state({action: "get"})` and read `cycles_completed` (default 0 if absent).
+3. Set `{cycle_number} = max(current_cycle, cycles_completed) + 1`.
+4. If this is not the first iteration of the loop, `{cycle_number}` must be strictly greater than the previous iteration's `{cycle_number}` — if not, increment by 1 until it is.
+
+This prevents the findings-table and convergence-checker from reading legacy artifacts left in reused cycle-directory slots (see domain decision on Q-160).
+
 At the start of each cycle, print:
 ```
 [autopilot] Cycle {cycle_number} — {pending_count} work items pending
@@ -178,13 +189,13 @@ Continue here after all four review artifacts have been written via MCP and the 
 
 ### 6c: Phase Convergence Check
 
-Call `ideate_get_convergence_status({cycle_number})` — parses the spec-adherence review artifact and `{last_cycle_findings}` and returns a convergence status object with `converged: true|false`, `condition_a: true|false` (zero critical/significant findings), and `condition_b: true|false` (principle adherence verdict).
+Call `ideate_get_convergence_status({cycle_number})` — parses the spec-adherence review artifact and `{last_cycle_findings}` and returns a convergence status object with `converged: true|false`, `condition_a: true|false` (zero critical/significant findings), `condition_b: true|false` (principle adherence verdict), `principle_verdict: pass|fail|unknown`, and (when unknown) `principle_verdict_warning`.
 
 If the ideate MCP artifact server is not available, stop and report: "The ideate MCP artifact server is required but not available. Verify .mcp.json configuration."
 
-Use the returned `converged` flag to drive the convergence decision. If `converged` is true, set `{phase_converged}` = true. Proceed to Phase 6c-ii. If `converged` is false, set `{phase_converged}` = false and proceed to Phase 6d.
+Read `{phases_dir}/review.md` "Phase 6c: Convergence Branch (three-way)" section. Follow those instructions to determine `{phase_converged}`. That section handles the three-way branch on `principle_verdict` (pass/fail/unknown) and updates session state. `principle_verdict: unknown` is a parse failure, not a principle violation — it must not be silently folded into the fail path.
 
-Update session state via `ideate_manage_autopilot_state({action: "update", state: {convergence_achieved: {true | false}, last_cycle_findings: {critical: N, significant: N, minor: N}}})`.
+After that section completes: if `{phase_converged}` is true, proceed to Phase 6c-ii. If false, proceed to Phase 6d (or halt if the proxy-human decision was to halt).
 
 ### 6c-ii: Project Progress Assessment (only if phase converged)
 
@@ -309,3 +320,4 @@ Before executing, verify this skill document satisfies the MCP abstraction bound
 - [x] Journal reads use `ideate_artifact_query({type: "journal_entry"})`
 - [x] Quality summary uses structured MCP data, not manual file parsing — satisfied in review.md phase doc
 - [x] Review manifest retrieved via `ideate_artifact_query`, not path-based reads — satisfied in review.md phase doc
+- [x] Phase 6c delegates three-way principle_verdict branch to review.md "Phase 6c: Convergence Branch (three-way)" — unknown routes to Andon, not silently to 6d

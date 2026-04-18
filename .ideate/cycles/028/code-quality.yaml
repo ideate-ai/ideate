@@ -2,67 +2,53 @@ id: code-quality
 type: cycle_summary
 reviewer: code-reviewer
 content: |
-  # Code-Quality Review — Cycle 28 (PH-050 capstone)
-
-  Scope: WI-876, WI-877, WI-878, WI-879. Uncommitted tree. 1503 tests pass.
-
   ## Verdict: Fail
 
-  2 significant findings prevent Pass. Structural implementation is sound, but the step2 heading prefix-match leaves a parser false-negative path open — the same class of defect PH-050 was intended to eliminate.
+  Three of five new tests exercise step1 patterns correctly. One acceptance criterion (P-92 realistic P-33 path-leak test) is not genuinely satisfied, and a pre-existing step2 correctness bug in the multiline flag — brought into scope by the WI-880 JSDoc update — is unaddressed.
 
   ## Critical Findings
   None.
 
   ## Significant Findings
 
-  ### S1: Step2 heading prefix-match triggers on `## Principle Adherence Evidence`
-  - File: src/tools/analysis.ts:116-131
-  - Issue: Step2 uses `heading.startsWith("principle adherence")`. Prefix matches not only `## Principle Adherence` (intended) but also `## Principle Adherence Evidence`, which is a standard section in spec-reviewer.md output. Its body contains bullet lines matching the violation regex (`/^\s*-\s/`), which will return `fail`.
-  - Impact: Document with no violations but no step1-parseable verdict tag, where `Principle Adherence Evidence` precedes `Principle Violations`, yields `principle_verdict: fail`, `converged: false`. Autopilot stalls — same failure mode as 2026-04-14 that PH-050 was meant to fix.
-  - Fix: Exact-match allowed headings (`principle adherence`, `principle violation`, `principle violations`); keep `startsWith` only for `guiding principle`. Add a test where `## Principle Adherence Evidence` with bullet content does not produce `fail` when step1 also fails.
+  ### S1: Step 2 body-pattern regexes missing /m flag
+  - File: mcp/artifact-server/src/tools/analysis.ts:153-157
+  - Issue: /^###\s/ and /^\s*-\s/ applied without /m flag. ^ matches only start of string, not start of each line. When body starts with prose then subheadings/bullets, neither regex matches; parser falls through to step 3 (unknown) instead of fail.
+  - Impact: Autopilot raises Andon instead of routing normally to Phase 6d for any spec-adherence content whose Principle Adherence body starts with a sentence before the bullet list.
+  - Fix: /^###\s/m.test(body) || /^\s*-\s/m.test(body)
 
-  ### S2: Missing test coverage for step1 Fail patterns 2 and 3
-  - File: src/__tests__/tools.test.ts
-  - Issue: Pass-side pattern 2 (`**Label:** Pass`, colon inside bold) and pattern 3 (`Label: Pass`, no bold) are tested at lines 1241, 1257. Fail counterparts have no tests. A regression in STEP1_FAIL_RES[1] or STEP1_FAIL_RES[2] would silently flip `fail` to `unknown`, causing `converged: true` even when the reviewer wrote a clear Fail.
-  - Fix: Mirror the Pass tests with Fail content for patterns 2 and 3 (colon-inside-bold Fail; no-bold Fail). Cover Violation-label Fail variants (patterns 5, 6) likewise.
+  ### S2: P-33 realistic fixture test (WI-881 EC5) vacuously true
+  - File: mcp/artifact-server/src/__tests__/tools.test.ts:1671-1673
+  - Issue: PATH_LEAK_RE = /\/[\w/.-]*\.ideate\//  requires leading /. Fixture uses '.ideate/cycles/028/spec-adherence.yaml' (no leading slash). Regex never matches; assertion always passes regardless of emitted output.
+  - Impact: Regression emitting absolute .ideate/ paths would pass silently. P-92 claim unverified.
+  - Fix: Replace fixture path with '/workspace/.ideate/cycles/028/spec-adherence.yaml' to force a real path-leak regex match.
 
   ## Minor Findings
 
-  ### M1: JSDoc step2 description does not disclose prefix semantics
-  - File: src/tools/analysis.ts:77-79
-  - JSDoc implies exact match; implementation uses `startsWith`. Clarify the doc to prevent future readers from assuming exact-match invariants.
+  ### M1: patternsTriedDesc omits all-bold Violation variant
+  - File: analysis.ts:174-182
+  - Issue: JSDoc enumerates 8 variants with variant 8 being all-bold Violation, but patternsTriedDesc 8th slot uses section-body heuristic. Human diagnosing parse failure won't see Violation all-bold listed.
 
-  ### M2: SNIPPET_MAX_CHARS off-by-one — content of exactly 200 chars omits ellipsis
-  - File: src/tools/analysis.ts:157-163
-  - `length > 200` misses the boundary; use `>=` so truncated content always ends with `...`.
+  ### M2: No test covers all-bold Violation label variant
+  - File: tools.test.ts (gap)
+  - Issue: WI-881 added all-bold Adherence (cycles 322, 323) but not Violation-label form. Regex alternation handles both, but Violation arm untested. Violates spirit of P-91.
 
-  ### M3: restart.sh regex escape set omits ERE metachars `( ) + ? { } |`
-  - File: scripts/restart.sh:45
-  - Current escape set: `. [ \* ^ $`. Paths with parentheses (e.g. `my-project(v2)`) produce unescaped patterns and risk unintended pgrep matches. Expand the escape set; put `]` first in the class.
+  ### M3: review.md Phase 6c Branch A dual routing authority
+  - File: skills/autopilot/phases/review.md:296-299
+  - Issue: Both '{phase_converged} = condition_a' and 'use converged from payload directly' — mathematically equivalent when condition_b true, but dual instruction creates ambiguity.
 
-  ### M4: deployment-notes.md does not state the grace-period duration
-  - File: docs/deployment-notes.md:95
-  - Says "after grace period"; actual is 5 seconds (`GRACE=5`). Document the number.
+  ## Principle Adherence Verdict: Fail
 
-  ### M5: start.sh $DIR interpolation breaks if path contains a double-quote
-  - File: start.sh:22
-  - `node -e "...require('$DIR/...').version"` is a double-quote-nested-in-double-quote embedding. A double-quote in `$DIR` produces invalid JS; PKG_VERSION silently empties; rebuild runs every invocation. Low likelihood, easy fix: use heredoc + env var.
-
-  ## Unmet Acceptance Criteria
-  None strictly. S1 and S2 represent coverage gaps and a behavioral-correctness risk rather than explicit unmet AC.
-
-  ## Requires Human Review
-  - WI-877 manual verification procedure (live MCP host walkthrough).
-  - restart.sh SIGKILL escalation path — never exercised by tests; requires manual test with a non-terminating process.
-
-  ## Tests
-  1503 tests pass (npm test full suite). No regressions.
-content_hash: 38440c4684361975bceb61c3eb0fd698e98ab83ce5ca621b44d42c6b7527a1f0
-token_count: 1155
+  - P-90 (exact heading equality): Holds
+  - P-91 (parser tests assert provenance): Holds for step1 tests; P-33 test asserts step3 source
+  - P-92 (P-33 fixtures realistic): Violated — fixture cannot trigger PATH_LEAK_RE (see S2)
+  - P-93 (JSDoc enumerates variants): Holds
+content_hash: 7568eadc59c20d9ec23fd09b4d06a4169a1c5cbb24bfdc6a23ce282b491aa795
+token_count: 883
 file_path: .ideate/cycles/068/code-quality.yaml
 cycle: 28
 cycle_modified: 27
-verdict: Pass
+verdict: Fail
 scope: WI-873 deltas — getConvergenceData empty-string parity fix + doc/test/fixture syncs
 summary: "All machine-verifiable acceptance criteria satisfied. Line 1357 2-clause filter correct. npm test: 1481 passed, 0 failed, 345 skipped. All 10 finding-closure YAMLs carry correct addressed_by. Three minor issues, non-blocking."
 findings_summary:

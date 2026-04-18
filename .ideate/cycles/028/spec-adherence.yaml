@@ -2,44 +2,47 @@ id: spec-adherence
 type: cycle_summary
 reviewer: spec-reviewer
 content: |
-  # Spec-Adherence Review — Cycle 28 (PH-050 capstone)
+  ## Verdict: Fail
 
-  Scope: WI-876, WI-877, WI-878, WI-879. Uncommitted tree.
-
-  ## Verdict: Pass (2 minor open items)
+  One acceptance criterion unmet; Q-159 not cited inside Phase 6c body section.
 
   ## Critical Findings
   None.
 
   ## Significant Findings
-  None.
+
+  ### S1: WI-881 criterion 5 (all parser tests assert principle_verdict_source) not met
+  - File: mcp/artifact-server/src/__tests__/tools.test.ts (multiple lines)
+  - Issue: principle_verdict_source is emitted unconditionally by production (analysis.ts:259), and new WI-880/881 tests assert it. But many pre-existing parser tests do not assert source — lines 848, 880, 905, 929, 948, 981, 1015, 1139, 1174, 1187, 1214, 1322, 1343, 1363, 1378, 1434, 1455, 1496, 4191, 4214, 4237.
+  - Impact: Test-assertion gap (not production-code gap). Regressions in which step matched may not be caught by these older tests. Criterion explicitly requires 'all parser tests'.
+  - Fix: Sweep existing parser tests, add principle_verdict_source assertion where verdict is asserted.
+
+  ### S2: Q-159 not referenced inside Phase 6c body section
+  - File: skills/autopilot/phases/review.md — Branch C lines 303-331
+  - Issue: Q-159 appears only in the self-check checklist (review.md:420). Task reviewer spec required Q-159 reference inside the unknown-handler body section.
+  - Note: Q-159 itself is status: resolved with WI-882 cited; the acceptance criterion is thus satisfied at the artifact level, but not at the documentation-wording level requested in the cycle's review spec.
+  - Fix: Add inline reference to Q-159 in Branch C preamble.
 
   ## Minor Findings
 
-  ### MI-1: WI-876 criterion 4 — Pattern 5 has no dedicated unit test
-  Pattern 5 (`**Principle Violation Verdict:** Pass`, colon inside bold, Violation label) is enumerated in the JSDoc as an accepted variant but has no dedicated test. Pattern 4 (`**Principle Violation Verdict**: Pass`) and Pattern 6 (`Principle Violation Verdict: Pass`) are covered. The regex for pattern 5 is structurally identical to pattern 2 (same alternation, different label), so behavioral risk is minimal. Criterion text says "unit tests for each accepted variant" — the letter of the criterion is unmet. Low risk; add a one-line fixture in a follow-up.
+  ### M1: WI-880 criterion 1 has no negative test
+  - Criterion: '## Principle Adherence Whatever' must not match
+  - Implementation uses strict equality (analysis.ts:130-135) so is correct
+  - No test exercises the negative case
 
-  ### MI-2: WI-876 criterion 5 — partially ambiguous + not machine-verifiable
-  Criterion references "current workspace cycles 31, 32, 33" which cannot be unit-tested. The WI-879 S1 fixture (cycle 998 seeded to match real-cycle shape) satisfies the intent but not the letter. The criterion itself conflicts with C-07 (machine-verifiable acceptance criteria). Flag for spec hygiene; behavior is correct.
+  ## Principle Adherence Verdict: Pass (with one noted gap)
 
-  ## Architecture Deviations
-
-  ### D1: start.sh placement discrepancy (doc/manifest drift, not code defect)
-  Review manifest annotated the scope as `scripts/start.sh (new)`. Actual file is `/Users/dan/code/ideate/mcp/artifact-server/start.sh` (artifact-server root). WI-877's own scope field lists only `server.ts` and `deployment-notes.md` — `start.sh` is not in WI-877's scope at all. Root placement is consistent with the MCP host entry-point role (referenced in `args` in Claude Desktop config) and the README. Not a code defect; manifest annotation was loose. No action needed.
-
-  ## Principle Adherence
-
-  - GP-2 (Minimal Inference): parsePrincipleVerdict runs a 3-step deterministic chain; all paths produce `source` metadata for auditability.
-  - GP-11 (Honest Tone): Step 3 warning and missing-summary warning enumerate what was tried without softening.
-  - GP-14 (MCP Boundary): handleGetConvergenceStatus emits only relative paths and filenames; `ctx.ideateDir` does not appear in any output path.
-  - GP-16 (Frictionless Install): start.sh auto-installs deps and builds on first run.
-  - P-33 (No absolute paths): covered by explicit tests at tools.test.ts:1506-1516 and :4186-4190 using the regex `/\/[\w/.-]*\.ideate\//`.
-
-  ## Summary
-
-  Combined delta (WI-876 + WI-877 + WI-878 + WI-879) fulfills PH-050 phase intent. Parser resilience: word-boundary guards, section-body heuristic, YAML-valid warning emission, named snippet constant. Deployment hygiene: pgrep escape + SIGKILL escalation in restart.sh, build stamp in server startup, frictionless start.sh, deployment-notes.md rewrite. Two minor open items are low risk. Principle adherence clean.
-content_hash: 3bfa264e891287530255ec6e39af40ea0f3e05bb0ef2e81b21bc2307b4baa100
-token_count: 1068
+  - P-90 (Step 2 exact heading equality): HELD
+  - P-91 (parser tests assert principle_verdict_source): PARTIALLY — emitted unconditionally, new tests assert, but older tests (S1) do not
+  - P-92 (P-33 fixtures realistic): HELD — handleWriteArtifact used
+  - P-93 (JSDoc enumerates 8 variants): HELD
+  - P-33 (no storage details leaked): HELD
+  - GP-2 (minimal inference): HELD — unknown routes to Andon
+  - GP-6 (discrete diagnostic fields): HELD — patterns_tried + content_snippet as discrete lines
+  - GP-11 (honest tone): HELD
+  - GP-14 (MCP abstraction): HELD
+content_hash: 9ca5067481bd93142ad107b784721d61c2ac96098681d1b1207de7d20b13ab3f
+token_count: 922
 file_path: .ideate/cycles/068/spec-adherence.yaml
 cycle: 28
 cycle_modified: 27

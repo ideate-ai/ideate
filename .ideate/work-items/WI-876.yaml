@@ -46,9 +46,9 @@ notes: |-
 
   - WI-874 (closed): legacy-artifact collision — fix option c already shipped, no further action.
   - WI-877: MCP auto-reload on dist rebuild — separate deployment hygiene concern.
-resolution: null
-status: pending
+resolution: Closed 2026-04-16 after cycle 28 capstone review. Code committed in ab0ca7c (parsePrincipleVerdict diagnostic warnings, missing-summary path + patterns_tried list + content snippet, JSDoc). Five significant gaps in the delivered implementation (step 2 prefix-match, all-bold pattern gap, Fail-side test gap, synthetic P-33 fixture, autopilot unknown-handler gap) are addressed by WI-880, WI-881, WI-882 as the next wave within PH-050 — not a reopen of this item.
+status: done
 cycle_created: 34
-cycle_modified: null
-content_hash: 6319de1197ddc4b3766ac045bfeac83472acb06c83666a8019c4eb0742f20e96
-token_count: 873
+cycle_modified: 27
+content_hash: 8d7b3863d34ca339a22944a6ddcc22f0b90f3fa7d743ef434beda8f6fef9da9c
+token_count: 1010

@@ -267,6 +267,85 @@ Significant findings: {N}
 Minor findings: {N}
 ```
 
+### Phase 6c: Convergence Branch (three-way)
+
+This section is invoked by the controller immediately after `ideate_get_convergence_status` returns. It defines the three-way branching on `principle_verdict`. The controller reads this section for Phase 6c; Phase 6c-ii is a separate step that only runs if this section confirms convergence.
+
+**Why three branches, not two**: `principle_verdict: unknown` means the automated parser could not read the spec-adherence output — the review text was present but in an unexpected format. This is a *parse failure*, not a *principle violation*. Treating `unknown` the same as `fail` hides tooling defects as convergence failures and can send autopilot into an infinite refine loop that never resolves the underlying parse issue. The `unknown` case must be surfaced explicitly so the user or proxy-human can diagnose and fix the formatter output.
+
+#### Step 1: Parse the convergence status payload
+
+The payload from `ideate_get_convergence_status` is YAML text. Parse these fields:
+
+- `converged` — boolean
+- `condition_a` — boolean (zero critical/significant findings)
+- `condition_b` — boolean
+- `principle_verdict` — string: `pass`, `fail`, or `unknown`
+- `principle_verdict_warning` — string (present only when `principle_verdict` is `unknown`). Format: `unexpected format; patterns tried: <patterns>; content snippet: <snippet>`.
+
+When `principle_verdict` is `unknown`, also derive these two discrete diagnostic fields from `principle_verdict_warning`:
+
+- `patterns_tried` — the substring between `patterns tried: ` and `; content snippet:` in `principle_verdict_warning`. If the marker is absent, set to the literal string `"(parse failed — warning format unexpected)"`.
+- `content_snippet` — the substring after `content snippet: ` in `principle_verdict_warning` (trailing, no further delimiter). If absent, set to the literal string `"(parse failed — warning format unexpected)"`.
+
+These two fields are surfaced as distinct lines in the Andon event below so that the proxy-human (and any future automated handler) can inspect them without re-parsing the composite warning string.
+
+#### Step 2: Three-way branch on `principle_verdict`
+
+**Branch A — `principle_verdict: pass`**
+
+Set `{phase_converged}` = `condition_a` (i.e., `true` only if there are also zero critical/significant findings). In this branch `converged` from the payload equals `condition_a` — `condition_b` is already `true`, so `converged = condition_a AND condition_b` reduces to `converged = condition_a`. Use `converged` from the payload directly for routing: proceed to Phase 6c-ii if `converged` is true; otherwise proceed to Phase 6d.
+
+**Branch B — `principle_verdict: fail`**
+
+Set `{phase_converged}` = false. Proceed to Phase 6d (refinement). This is the normal non-convergence path: principles are violated and must be addressed.
+
+**Branch C — `principle_verdict: unknown`** (parse failure — NOT a principle violation)
+
+Resolves Q-159 — unknown verdict must be distinguished from fail so the proxy-human can diagnose parser failures separately from principle violations.
+
+Do NOT proceed to Phase 6d. Instead, raise an Andon event carrying the full diagnostic context:
+
+1. Formulate the Andon event description, surfacing `patterns_tried` and `content_snippet` as discrete lines:
+   ```
+   Andon: principle_verdict:unknown — spec-adherence output could not be parsed.
+   Cycle: {cycle_number}
+   principle_verdict_warning: {principle_verdict_warning field from payload}
+   patterns_tried: {patterns_tried field derived in Step 1}
+   content_snippet: {content_snippet field derived in Step 1}
+   condition_a: {condition_a} (zero critical/significant findings: {true|false})
+   Cause: the automated verdict parser did not find a recognizable Pass/Fail signal in
+   the spec-reviewer output. This is a parse failure, not a principle violation.
+   Options:
+     (a) Treat as pass for this cycle — accept the review output as-is and continue
+         (use only if you have manually verified principle adherence).
+     (b) Treat as fail for this cycle — proceed to refinement and add a work item
+         to fix the spec-reviewer output format.
+     (c) Halt autopilot — stop and let the user inspect the spec-adherence artifact
+         directly.
+   ```
+
+2. Route to the proxy-human agent via the Andon cord mechanism defined in `execute.md` ("Andon Cord → Proxy-Human Routing"). Pass the full event description above, including the discrete `patterns_tried` and `content_snippet` fields plus the original `principle_verdict_warning` string for completeness. This implements the resolution of **Q-159** (distinguish `unknown` from `fail`) — `unknown` now has a dedicated branch, surfaced diagnostics, and a human-in-the-loop decision path rather than being silently folded into `fail`.
+
+3. Apply the proxy-human decision:
+   - Decision `(a)` — treat as pass: set `{phase_converged}` = `condition_a`. If `condition_a` is true, proceed to Phase 6c-ii. If false, proceed to Phase 6d.
+   - Decision `(b)` — treat as fail: set `{phase_converged}` = false. Proceed to Phase 6d.
+   - Decision `(c)` or `deferred`: set `{phase_converged}` = false. Halt the loop. Proceed to Phases 7–9 (max cycles path, noting parse-failure halt).
+
+4. Journal the outcome via `ideate_append_journal`:
+   ```markdown
+   ## [autopilot] {date} — Cycle {N} — principle_verdict:unknown Andon
+   principle_verdict_warning: {warning text}
+   proxy-human decision: {(a) | (b) | (c) | deferred}
+   outcome: {treat-as-pass | treat-as-fail | halted}
+   ```
+
+#### Step 3: Update session state
+
+Call `ideate_manage_autopilot_state({action: "update", state: {convergence_achieved: {phase_converged}, last_cycle_findings: {critical: N, significant: N, minor: N}}})`.
+
+---
+
 ### Phase Convergence Check and Project Progress Assessment
 
 This section is invoked by the controller from Phase 6c-ii, after `ideate_get_convergence_status` has confirmed the phase converged. It is NOT run on every cycle — only when the controller invokes it.
@@ -336,3 +415,10 @@ Before returning to the controller, verify:
 - [x] Project progress journal entry written via `ideate_append_journal`, not direct file write
 - [x] All review artifacts written via `ideate_write_artifact`, not direct file writes
 - [x] Domain artifacts written via `ideate_write_artifact` after parsing curator response
+- [x] Phase 6c section defines three-way branch: pass → converge, fail → refine, unknown → Andon
+- [x] unknown branch carries principle_verdict_warning, patterns_tried, and content snippet from payload
+- [x] unknown treated as parse failure (not principle violation) — rationale documented in Phase 6c section
+- [x] pass branch behavior unchanged — cycles with principle_verdict:pass still converge on Condition B
+- [x] Q-159 (distinguish unknown from fail) resolved by the three-way branch; closed via `ideate_write_artifact` with type `question`, status `resolved`
+- [x] patterns_tried and content_snippet extracted from principle_verdict_warning as discrete Andon payload fields (Phase 6c Step 1)
+- [x] Branch A clarifies that `converged` equals `condition_a` when `condition_b` is already true — routing uses `converged` from payload

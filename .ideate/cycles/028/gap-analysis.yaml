@@ -2,73 +2,40 @@ id: gap-analysis
 type: cycle_summary
 reviewer: gap-analyst
 content: |
-  # Gap Analysis — Cycle 28 (PH-050 capstone)
+  ## Verdict: Fail
 
-  Scope: WI-876, WI-877, WI-878, WI-879. 4 significant gaps.
-
-  ## Verdict: Fail (completeness)
-
-  Parser hardening leaves two concrete format gaps and one P-33 coverage gap; autopilot has no handler for unknown-verdict, preserving the original 2026-04-14 failure mode.
+  Two significant gaps: test coverage (legacy all-bold Violation-label variants untested) and domain-knowledge (Q-161 reexamination not triggered after Q-159 resolved).
 
   ## Critical Findings
-  None.
+  None. Core fixes from cycle 28 findings are present: exact-heading equality (WI-880), Fail-side + all-bold tests (WI-881), three-way Phase 6c branch in review.md + SKILL.md (WI-882). Q-159 resolved.
 
   ## Significant Findings
 
-  ### EC1: `## Principle Adherence Evidence` heading triggers false-fail in step 2
-  - File: src/tools/analysis.ts
-  - Step 2 uses `heading.startsWith("principle adherence")`, matching `Principle Adherence Evidence`. The Evidence section body contains bullets (`- GP-14: ...`) that match the violation-detection regex, returning `fail`. Real-world spec-adherence artifacts in cycles 003, 004, 005, 006, 009, 024-026, 029, 030, 062 contain this section.
-  - **Corroborates code-reviewer S1.** High confidence. Reproduces the PH-050 target failure mode.
-  - Fix: exact-match allowed headings; add a fixture where Evidence section with bullets does NOT produce `fail`.
+  ### SIG-1: No test for legacy all-bold Violation-label variants
+  - File: mcp/artifact-server/src/__tests__/tools.test.ts (gap)
+  - Scenario: WI-881 added tests for patterns 4 and 8 using Adherence label. JSDoc (analysis.ts:70-72) documents that pattern 8 all-bold Violation variant is covered by (?:Adherence|Violation) alternation. No test exercises Violation form of either all-bold variant.
+  - Gap: Tests for '**Principle Violation Verdict: Pass**' and '**Principle Violation Verdict: Fail**' (all-bold) absent.
+  - Severity: Significant — alternation makes code correct, but JSDoc makes explicit claim about 8 patterns; unverified claim in parser that caused production incident is unacceptable.
+  - Fix: Two additional test cases paralleling cycle 322/323 tests with Violation label.
 
-  ### EC2: `**Principle Adherence Verdict: Pass**` (all-bold including verdict) not matched by any step 1 pattern
-  - File: src/tools/analysis.ts
-  - Cycle 003 opens with `**Principle Adherence Verdict: Pass**` — the entire label + colon + verdict are inside one bold span. Step 1 covers `**Label**:`, `**Label:**`, and bare `Label:`. The all-bold-including-verdict format is not covered. Step 1 misses → step 2 fires → EC1 produces false fail.
-  - Fix: add `/\*\*Principle\s+(?:Adherence|Violation)\s+Verdict:\s*Pass\b[^*]*\*\*/i` as a fourth pattern; fixture with `**Principle Adherence Verdict: Pass** (commentary)`.
-
-  ### EC5: rawSnippet (step 3 warning) not sanitized for absolute `.ideate/` paths
-  - File: src/tools/analysis.ts, src/__tests__/tools.test.ts
-  - P-33 test at tools.test.ts:4198 uses synthetic content (`"Verdict: unclear — no structured format present"`) with no path references. Real spec-adherence YAML files contain path refs like `mcp/artifact-server/src/tools/analysis.ts` in the first 200 chars. If the content passing step 3 has an absolute `.ideate/` path in the window, it leaks via `principle_verdict_warning`.
-  - Fix: either strip absolute paths from `rawSnippet` during construction, or add a test seeding content with an absolute `.ideate/` path in the first 200 chars and assert the warning is clean.
-
-  ### II1: Autopilot Phase 6c has no handler for `principle_verdict: unknown` / `principle_verdict_warning`
-  - Interface: `ideate_get_convergence_status` → autopilot Phase 6c
-  - `handleGetConvergenceStatus` emits `principle_verdict: unknown` and `principle_verdict_warning` when step 3 fires. The autopilot skill reads only `converged`. A parse failure (diagnostic) is indistinguishable from a real violation — autopilot silently moves to refinement. This is **the residual systemic gap from 2026-04-14**. WI-876 hardened the parser but did not close the loop on what happens when the parser still falls through.
-  - Fix: Phase 6c in autopilot SKILL.md should surface `principle_verdict_warning` as an Andon condition when `converged: false` AND `principle_verdict: unknown`. A parse failure is not a principle violation.
+  ### SIG-2: Q-161 reexamination not triggered after Q-159 resolution
+  - File: .ideate/questions/Q-161.yaml
+  - Scenario: Q-161 reexamination_trigger: 'When Q-159 is answered — same design review scope.' Q-159 resolved by WI-882 (resolved_cycle: 29). Q-161 remains status: open, no update.
+  - Gap: Q-161 has not been reexamined. The WI-876/881 tests now DO assert principle_verdict_source for step1/2/3 — partially answering Q-161's concern about whether principle_verdict_source should be a contract field. Question's artifact record not updated.
+  - Severity: Significant — trigger condition was explicitly documented and is now satisfied.
+  - Fix: Domain curator updates Q-161 in this cycle: note the source field is now tested, document autopilot-consumer sub-question status, resolve or re-defer with updated trigger.
 
   ## Minor Findings
 
-  ### EC3/EC4: `principle_verdict_source` not asserted in any step 1, step 2, or step 3 test
-  - File: src/__tests__/tools.test.ts
-  - Tests check `principle_verdict` only. Source field is informational per WI-876 but its correctness is untested. A refactor could silently swap sources (step1 ↔ step2) and all tests pass.
-  - Fix: add `expect(result).toContain("principle_verdict_source: stepN")` to at least one canonical test per step.
+  ### MIN-1: parsePrincipleVerdict JSDoc doesn't note P-33 risk for content snippet (defer)
+  ### MIN-2: adapter-contract.md doesn't document principle_verdict_warning field (defer)
+  ### MIN-3: WI-877 cycle_created: 34 anomaly — work items completed during this autopilot run but cycle_created metadata inconsistent (defer)
 
-  ### EC6: Document with both Pass and Fail verdict lines — first-match semantics untested
-  - Code is correct (Pass alternation iterates before Fail) but untested. Low risk.
+  ## Principle Adherence Verdict: Fail
 
-  ### EC7: start.sh double-start creates orphan server process
-  - Low likelihood under normal MCP-host-managed use model. Defer to a documentation note in start.sh header.
-
-  ### EC8: restart.sh kills old server before confirming new build
-  - Documented workflow (`npm run build && sh scripts/restart.sh`) enforces order via `&&`. Recommend a doc note stating the assumption.
-
-  ### II2: `principle_verdict_source` not consumed by any downstream agent/skill
-  - Field exists but is invisible. Diagnostic intent unrealized.
-
-  ### MI1: No troubleshooting section for SIGKILL failure / zombie processes
-  - Error message is self-describing for a developer audience. Rare scenario.
-
-  ### MI2: `start.sh` version-only rebuild caveat is buried mid-paragraph
-  - Critical warning should be promoted to a callout in deployment-notes.md.
-
-  ### IR2: `principle_verdict_source` absent from autopilot convergence journal
-  - Defer with II1.
-
-  ## Summary
-
-  Two reviewers cross-corroborated the step 2 `Principle Adherence Evidence` false-match (code-reviewer S1 = gap-analyst EC1). PH-050's parser hardening leaves two concrete format gaps that can reproduce the target failure mode. The most important systemic gap: autopilot still treats `principle_verdict: unknown` identically to `principle_verdict: fail`, preserving the 2026-04-14 behavior despite the parser being more resilient.
-content_hash: 8dfb4a19338dbab3413dcce6f04ba89a9b0179d6cea6a35a99454bd854e03e71
-token_count: 1605
+  WI-880/881/882 each delivered their core stated capability, but WI-881 JSDoc claim of 8 enumerated patterns (including legacy Violation all-bold) is not verified by any test case. WI-882 resolved Q-159 but did not trigger reexamination of Q-161 as that question's own stated trigger required. Principles P-91 and P-93 each have unverified-claim gaps.
+content_hash: 7c829638ac283da8569838893daf0ae7bb3d2581d22ba518b4cc42341aade6fa
+token_count: 999
 file_path: .ideate/cycles/068/gap-analysis.yaml
 cycle: 28
 cycle_modified: 27
