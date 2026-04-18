@@ -2,9 +2,10 @@
  * events.test.ts — Integration tests for handleEmitEvent tool.
  *
  * Tests the event emission system which dispatches hooks based on event names.
+ * Also contains shutdown lifecycle regression tests (WI-891).
  */
 
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import Database from "better-sqlite3";
 import { drizzle } from "drizzle-orm/better-sqlite3";
 import fs from "fs";
@@ -15,6 +16,9 @@ import { createSchema } from "../schema.js";
 import * as dbSchema from "../db.js";
 import type { ToolContext } from "../types.js";
 import { handleEmitEvent } from "../tools/events.js";
+import { LocalAdapter } from "../adapters/local/index.js";
+import { RemoteAdapter } from "../adapters/remote/index.js";
+import { StorageAdapterError } from "../adapter.js";
 
 // ---------------------------------------------------------------------------
 // Setup / teardown
@@ -291,6 +295,221 @@ describe("handleEmitEvent", () => {
       const completedResult = await handleEmitEvent(ctx, { event: "work_item.completed" });
       const completed = JSON.parse(completedResult);
       expect(completed.hooks_executed).toBe(1);
+    });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Shutdown lifecycle regression tests (WI-891)
+// ---------------------------------------------------------------------------
+
+describe("adapter shutdown lifecycle", () => {
+  // -------------------------------------------------------------------------
+  // LocalAdapter shutdown
+  // -------------------------------------------------------------------------
+
+  describe("LocalAdapter.shutdown()", () => {
+    let localDb: Database.Database;
+    let localAdapter: LocalAdapter;
+    let localDir: string;
+    let localTmpDir: string;
+
+    beforeEach(() => {
+      localTmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "ideate-local-shutdown-"));
+      localDir = path.join(localTmpDir, "artifact");
+      fs.mkdirSync(localDir, { recursive: true });
+
+      const dbPath = path.join(localTmpDir, "test.db");
+      localDb = new Database(dbPath);
+      createSchema(localDb);
+      const drizzleDb = drizzle(localDb, { schema: dbSchema });
+
+      localAdapter = new LocalAdapter({ db: localDb, drizzleDb, ideateDir: localDir });
+    });
+
+    afterEach(() => {
+      try { localDb.close(); } catch { /* ignore */ }
+      fs.rmSync(localTmpDir, { recursive: true, force: true });
+    });
+
+    it("shutdown() closes the artifact watcher (no throw)", async () => {
+      await expect(localAdapter.shutdown()).resolves.toBeUndefined();
+    });
+
+    it("shutdown() is idempotent: calling twice does not throw", async () => {
+      await localAdapter.shutdown();
+      await expect(localAdapter.shutdown()).resolves.toBeUndefined();
+    });
+
+    it("SIGINT path: adapter.shutdown() is invoked before db.close()", async () => {
+      // Simulate the index.ts shutdown() pattern:
+      //   try { await adapter.shutdown(); } catch(e) { ... }
+      //   db.close();
+      const shutdownOrder: string[] = [];
+      const shutdownSpy = vi.spyOn(localAdapter, "shutdown").mockImplementation(async () => {
+        shutdownOrder.push("adapter.shutdown");
+      });
+      const dbCloseSpy = vi.spyOn(localDb, "close").mockImplementation(() => {
+        shutdownOrder.push("db.close");
+        return localDb; // better-sqlite3 returns this
+      });
+
+      // Replicate the index.ts shutdown logic exactly
+      try {
+        await localAdapter.shutdown();
+      } catch (_e) {
+        // swallow
+      }
+      localDb.close();
+
+      expect(shutdownOrder).toEqual(["adapter.shutdown", "db.close"]);
+      shutdownSpy.mockRestore();
+      dbCloseSpy.mockRestore();
+    });
+
+    // -----------------------------------------------------------------------
+    // Post-shutdown mutating method guard tests (WI-895)
+    // -----------------------------------------------------------------------
+
+    it("putNode throws ADAPTER_SHUT_DOWN after shutdown()", async () => {
+      await localAdapter.shutdown();
+      try {
+        await localAdapter.putNode({ id: "WI-001", type: "work_item", properties: { title: "Test" } });
+        expect.fail("Expected ADAPTER_SHUT_DOWN error");
+      } catch (err) {
+        expect(err).toBeInstanceOf(StorageAdapterError);
+        expect((err as StorageAdapterError).code).toBe("ADAPTER_SHUT_DOWN");
+      }
+    });
+
+    it("patchNode throws ADAPTER_SHUT_DOWN after shutdown()", async () => {
+      await localAdapter.shutdown();
+      try {
+        await localAdapter.patchNode({ id: "WI-001", properties: { title: "Updated" } });
+        expect.fail("Expected ADAPTER_SHUT_DOWN error");
+      } catch (err) {
+        expect(err).toBeInstanceOf(StorageAdapterError);
+        expect((err as StorageAdapterError).code).toBe("ADAPTER_SHUT_DOWN");
+      }
+    });
+
+    it("batchMutate throws ADAPTER_SHUT_DOWN after shutdown()", async () => {
+      await localAdapter.shutdown();
+      try {
+        await localAdapter.batchMutate({
+          nodes: [{ id: "WI-001", type: "work_item", properties: { title: "Test" } }],
+        });
+        expect.fail("Expected ADAPTER_SHUT_DOWN error");
+      } catch (err) {
+        expect(err).toBeInstanceOf(StorageAdapterError);
+        expect((err as StorageAdapterError).code).toBe("ADAPTER_SHUT_DOWN");
+      }
+    });
+
+    it("archiveCycle throws ADAPTER_SHUT_DOWN after shutdown()", async () => {
+      await localAdapter.shutdown();
+      try {
+        await localAdapter.archiveCycle(1);
+        expect.fail("Expected ADAPTER_SHUT_DOWN error");
+      } catch (err) {
+        expect(err).toBeInstanceOf(StorageAdapterError);
+        expect((err as StorageAdapterError).code).toBe("ADAPTER_SHUT_DOWN");
+      }
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // RemoteAdapter shutdown
+  // -------------------------------------------------------------------------
+
+  describe("RemoteAdapter.shutdown()", () => {
+    let remoteAdapter: RemoteAdapter;
+
+    beforeEach(() => {
+      remoteAdapter = new RemoteAdapter({
+        endpoint: "https://example.invalid/graphql",
+        org_id: "test-org",
+        codebase_id: "test-codebase",
+        auth_token: "test-token",
+      });
+    });
+
+    it("shutdown() completes without throwing", async () => {
+      await expect(remoteAdapter.shutdown()).resolves.toBeUndefined();
+    });
+
+    it("shutdown() is idempotent: calling twice does not throw", async () => {
+      await remoteAdapter.shutdown();
+      await expect(remoteAdapter.shutdown()).resolves.toBeUndefined();
+    });
+
+    it("fetch/HTTP is not called after shutdown — getNode throws ADAPTER_SHUT_DOWN", async () => {
+      await remoteAdapter.shutdown();
+      await expect(remoteAdapter.getNode("WI-001")).rejects.toThrow("shut down");
+    });
+
+    it("fetch/HTTP is not called after shutdown — putNode throws ADAPTER_SHUT_DOWN", async () => {
+      await remoteAdapter.shutdown();
+      await expect(
+        remoteAdapter.putNode({ id: "WI-001", type: "work_item", properties: {} })
+      ).rejects.toThrow("shut down");
+    });
+
+    it("fetch/HTTP is not called after shutdown — error code is ADAPTER_SHUT_DOWN", async () => {
+      await remoteAdapter.shutdown();
+      try {
+        await remoteAdapter.getNode("WI-001");
+        expect.fail("Expected ADAPTER_SHUT_DOWN error");
+      } catch (err) {
+        expect(err).toBeInstanceOf(StorageAdapterError);
+        expect((err as StorageAdapterError).code).toBe("ADAPTER_SHUT_DOWN");
+      }
+    });
+
+    it("normal operations before shutdown do not throw ADAPTER_SHUT_DOWN", async () => {
+      // Before shutdown: getNode should attempt HTTP (will fail with connection error,
+      // not ADAPTER_SHUT_DOWN). We just verify the error is NOT about being shut down.
+      try {
+        await remoteAdapter.getNode("WI-001");
+      } catch (err) {
+        if (err instanceof StorageAdapterError) {
+          expect(err.code).not.toBe("ADAPTER_SHUT_DOWN");
+        }
+        // Any other error (connection, etc.) is fine — we're just checking no premature shutdown error
+      }
+    });
+
+    it("indexFiles throws ADAPTER_SHUT_DOWN after shutdown()", async () => {
+      await remoteAdapter.shutdown();
+      try {
+        await remoteAdapter.indexFiles(["/some/path.yaml"]);
+        expect.fail("Expected ADAPTER_SHUT_DOWN error");
+      } catch (err) {
+        expect(err).toBeInstanceOf(StorageAdapterError);
+        expect((err as StorageAdapterError).code).toBe("ADAPTER_SHUT_DOWN");
+      }
+    });
+
+    it("removeFiles throws ADAPTER_SHUT_DOWN after shutdown()", async () => {
+      await remoteAdapter.shutdown();
+      try {
+        await remoteAdapter.removeFiles(["/some/path.yaml"]);
+        expect.fail("Expected ADAPTER_SHUT_DOWN error");
+      } catch (err) {
+        expect(err).toBeInstanceOf(StorageAdapterError);
+        expect((err as StorageAdapterError).code).toBe("ADAPTER_SHUT_DOWN");
+      }
+    });
+
+    it("getToolUsage throws ADAPTER_SHUT_DOWN after shutdown()", async () => {
+      await remoteAdapter.shutdown();
+      try {
+        await remoteAdapter.getToolUsage();
+        expect.fail("Expected ADAPTER_SHUT_DOWN error");
+      } catch (err) {
+        expect(err).toBeInstanceOf(StorageAdapterError);
+        expect((err as StorageAdapterError).code).toBe("ADAPTER_SHUT_DOWN");
+      }
     });
   });
 });

@@ -73,8 +73,9 @@ import type {
   BatchMutateResult,
   NodeType,
 } from "../../adapter.js";
-import { ValidationError } from "../../adapter.js";
+import { ValidationError, StorageAdapterError } from "../../adapter.js";
 import { CYCLE_SCOPED_TYPES } from "../../validating.js";
+import { log } from "../../logger.js";
 
 // ---------------------------------------------------------------------------
 // Internal helpers
@@ -411,10 +412,28 @@ export class LocalWriterAdapter {
   /** mtime (ms) of domains/index.yaml at last cache fill */
   private _cycleCacheMtime: number = 0;
 
+  /** Set to true after shutdown(); mutating methods check this guard. */
+  protected _isShutDown = false;
+
   constructor(config: LocalWriterConfig) {
     this.db = config.db;
     this.drizzleDb = config.drizzleDb;
     this.ideateDir = config.ideateDir;
+  }
+
+  // -------------------------------------------------------------------------
+  // Shutdown guard helpers
+  // -------------------------------------------------------------------------
+
+  private assertNotShutDown(): void {
+    if (this._isShutDown) {
+      throw new StorageAdapterError("adapter shut down", "ADAPTER_SHUT_DOWN");
+    }
+  }
+
+  /** Called by LocalAdapter.shutdown() to flip the writer's shutdown flag. */
+  _markShutDown(): void {
+    this._isShutDown = true;
   }
 
   // -------------------------------------------------------------------------
@@ -484,6 +503,7 @@ export class LocalWriterAdapter {
   // -------------------------------------------------------------------------
 
   async putNode(input: MutateNodeInput): Promise<MutateNodeResult> {
+    this.assertNotShutDown();
     const { id, type, properties: content, cycle } = input;
 
     // Determine output path
@@ -635,6 +655,7 @@ export class LocalWriterAdapter {
   // -------------------------------------------------------------------------
 
   async patchNode(input: UpdateNodeInput): Promise<UpdateNodeResult> {
+    this.assertNotShutDown();
     const { id, properties } = input;
 
     // Determine file path for work items (only work_item type supports patchNode for now)
@@ -729,46 +750,49 @@ export class LocalWriterAdapter {
     const fkWasOn = this.db.pragma("foreign_keys", { simple: true }) as number;
     if (fkWasOn) this.db.pragma("foreign_keys = OFF");
 
+    // Precompute all values needed for the transaction from the in-memory `merged`
+    // object — no filesystem reads inside the transaction callback.
+    const txType = nodeRow.type;
+    const txHash = contentHash;
+    const txTokenCount = tokens;
+    const txCycleModified = (merged.cycle_modified as number | null) ?? null;
+    const txStatus = (merged.status as string | null) ?? null;
+    const txMerged = merged; // reference to the already-computed object
+
     try {
       const upsertPhase = this.db.transaction(() => {
-        const type = nodeRow.type;
-        const writtenContent = fs.readFileSync(filePath, "utf8");
-        const parsedObj = parseYaml(writtenContent) as Record<string, unknown>;
-        const hash = computeArtifactHash(parsedObj);
-
         const updatedNodeRow: NodeRow = {
           id,
-          type,
+          type: txType,
           cycle_created: nodeRow.cycle_created,
-          cycle_modified: (parsedObj.cycle_modified as number | null) ?? null,
-          content_hash: hash,
-          token_count: tokenCount(writtenContent),
+          cycle_modified: txCycleModified,
+          content_hash: txHash,
+          token_count: txTokenCount,
           file_path: filePath,
-          status: (parsedObj.status as string | null) ?? null,
+          status: txStatus,
         };
 
         upsertNode(this.drizzleDb, updatedNodeRow);
 
         // For work_item type, also upsert extension table and replace edges
-        if (type === "work_item") {
-          // Apply defaults to parsedObj to match server behavior
-          const workItemType = (parsedObj.work_item_type as string | null) ?? "feature";
-          parsedObj.work_item_type = workItemType;
+        if (txType === "work_item") {
+          // Apply defaults to match server behavior
+          const workItemType = (txMerged.work_item_type as string | null) ?? "feature";
 
           const wiRow: WorkItemRow = {
             id,
-            title: (parsedObj.title as string) ?? "",
-            complexity: (parsedObj.complexity as string | null) ?? null,
-            scope: parsedObj.scope ? JSON.stringify(parsedObj.scope) : null,
-            depends: parsedObj.depends ? JSON.stringify(parsedObj.depends) : null,
-            blocks: parsedObj.blocks ? JSON.stringify(parsedObj.blocks) : null,
-            criteria: parsedObj.criteria ? JSON.stringify(parsedObj.criteria) : null,
+            title: (txMerged.title as string) ?? "",
+            complexity: (txMerged.complexity as string | null) ?? null,
+            scope: txMerged.scope ? JSON.stringify(txMerged.scope) : null,
+            depends: txMerged.depends ? JSON.stringify(txMerged.depends) : null,
+            blocks: txMerged.blocks ? JSON.stringify(txMerged.blocks) : null,
+            criteria: txMerged.criteria ? JSON.stringify(txMerged.criteria) : null,
             module: null,
-            domain: (parsedObj.domain as string | null) ?? null,
-            phase: (parsedObj.phase as string | null) ?? null,
-            notes: (parsedObj.notes as string | null) ?? null,
+            domain: (txMerged.domain as string | null) ?? null,
+            phase: (txMerged.phase as string | null) ?? null,
+            notes: (txMerged.notes as string | null) ?? null,
             work_item_type: workItemType,
-            resolution: (parsedObj.resolution as string | null) ?? null,
+            resolution: (txMerged.resolution as string | null) ?? null,
           };
           upsertWorkItem(this.drizzleDb, wiRow);
 
@@ -776,12 +800,12 @@ export class LocalWriterAdapter {
           this.db.prepare(`DELETE FROM edges WHERE source_id = ? AND edge_type IN ('depends_on', 'blocks')`).run(id);
 
           // Insert new depends_on edges
-          for (const dep of (parsedObj.depends as string[] | undefined) || []) {
+          for (const dep of (txMerged.depends as string[] | undefined) || []) {
             this.db.prepare(`INSERT OR IGNORE INTO edges (source_id, target_id, edge_type) VALUES (?, ?, 'depends_on')`).run(id, dep);
           }
 
           // Insert new blocks edges
-          for (const blk of (parsedObj.blocks as string[] | undefined) || []) {
+          for (const blk of (txMerged.blocks as string[] | undefined) || []) {
             this.db.prepare(`INSERT OR IGNORE INTO edges (source_id, target_id, edge_type) VALUES (?, ?, 'blocks')`).run(id, blk);
           }
         }
@@ -816,6 +840,7 @@ export class LocalWriterAdapter {
   // -------------------------------------------------------------------------
 
   async deleteNode(id: string): Promise<DeleteNodeResult> {
+    this.assertNotShutDown();
     const nodeRow = this.db.prepare(
       `SELECT file_path FROM nodes WHERE id = ?`
     ).get(id) as { file_path: string } | undefined;
@@ -884,6 +909,7 @@ export class LocalWriterAdapter {
   // -------------------------------------------------------------------------
 
   async putEdge(edge: Edge): Promise<void> {
+    this.assertNotShutDown();
     try {
       insertEdge(this.drizzleDb, {
         source_id: edge.source_id,
@@ -907,6 +933,7 @@ export class LocalWriterAdapter {
   // -------------------------------------------------------------------------
 
   async removeEdges(source_id: string, edge_types: EdgeType[]): Promise<void> {
+    this.assertNotShutDown();
     if (edge_types.length === 0) return;
     const placeholders = edge_types.map(() => "?").join(", ");
     try {
@@ -927,6 +954,7 @@ export class LocalWriterAdapter {
   // -------------------------------------------------------------------------
 
   async batchMutate(input: BatchMutateInput): Promise<BatchMutateResult> {
+    this.assertNotShutDown();
     const { nodes, edges: extraEdges = [] } = input;
     const results: MutateNodeResult[] = [];
     const errors: Array<{ id: string; error: string }> = [];
@@ -1056,8 +1084,19 @@ export class LocalWriterAdapter {
       };
     }
 
-    // ---------- Phase 1: Write all YAML files ----------
+    // ---------- Phase 1: Write all YAML files and precompute index data ----------
     const writtenFilePaths: string[] = [];
+
+    // Precomputed node row data keyed by resolvedId — populated during YAML writes
+    // so the transaction callback contains only SQL upserts (no filesystem reads).
+    type PrecomputedNodeData = {
+      absoluteFilePath: string;
+      contentHash: string;
+      tokenCountVal: number;
+      cycleForNode: number | null;
+      yamlObj: Record<string, unknown>;
+    };
+    const precomputedData = new Map<string, PrecomputedNodeData>();
 
     for (const node of resolvedNodes) {
       const id = node.resolvedId;
@@ -1083,6 +1122,19 @@ export class LocalWriterAdapter {
         const tokens = tokenCount(yamlForTokens);
         yamlObj.content_hash = contentHash;
         yamlObj.token_count = tokens;
+
+        const cycleForNode = CYCLE_SCOPED_TYPES.has(type as NodeType) && cycle !== undefined
+          ? cycle
+          : (properties.cycle_created as number | null) ?? null;
+
+        // Store precomputed data before writing to disk
+        precomputedData.set(id, {
+          absoluteFilePath,
+          contentHash,
+          tokenCountVal: tokens,
+          cycleForNode,
+          yamlObj,
+        });
 
         const finalYaml = stringifyYaml(yamlObj, { lineWidth: 0 });
         fs.writeFileSync(absoluteFilePath, finalYaml, "utf8");
@@ -1112,6 +1164,8 @@ export class LocalWriterAdapter {
     }
 
     // ---------- Phase 2: SQLite upserts in a single exclusive transaction ----------
+    // All hash/token_count values were precomputed from the in-memory yamlObj above.
+    // The transaction callback performs only SQL upserts — no filesystem reads.
     const fkWasOn = this.db.pragma("foreign_keys", { simple: true }) as number;
     if (fkWasOn) this.db.pragma("foreign_keys = OFF");
 
@@ -1121,30 +1175,21 @@ export class LocalWriterAdapter {
           const id = node.resolvedId;
           const type = node.type;
           const properties = node.properties;
-          const cycle = node.cycle;
-
-          const absoluteFilePath = resolveArtifactPath(this.ideateDir, type, id, cycle);
-          const writtenContent = fs.readFileSync(absoluteFilePath, "utf8");
-          const parsedWritten = parseYaml(writtenContent) as Record<string, unknown>;
-          const contentHash = computeArtifactHash(parsedWritten);
-
-          const cycleForNode = CYCLE_SCOPED_TYPES.has(type as NodeType) && cycle !== undefined
-            ? cycle
-            : (properties.cycle_created as number | null) ?? null;
+          const precomp = precomputedData.get(id)!;
 
           const nodeRow: NodeRow = {
             id,
             type,
-            cycle_created: cycleForNode,
+            cycle_created: precomp.cycleForNode,
             cycle_modified: null,
-            content_hash: contentHash,
-            token_count: tokenCount(writtenContent),
-            file_path: absoluteFilePath,
+            content_hash: precomp.contentHash,
+            token_count: precomp.tokenCountVal,
+            file_path: precomp.absoluteFilePath,
             status: (properties.status as string | null) ?? null,
           };
 
           upsertNode(this.drizzleDb, nodeRow);
-          upsertExtensionTableRow(this.drizzleDb, type, id, properties, cycleForNode);
+          upsertExtensionTableRow(this.drizzleDb, type, id, properties, precomp.cycleForNode);
         }
 
         // Insert extra edges
@@ -1194,7 +1239,6 @@ export class LocalWriterAdapter {
 
   async archiveCycleLocal(cycle: number): Promise<string> {
     const cycleStr = String(cycle).padStart(3, "0");
-    const findingsDir = path.join(this.ideateDir, "cycles", cycleStr, "findings");
     const cycleDir = path.join(this.ideateDir, "archive", "cycles", cycleStr);
     const cycleWorkItemsDir = path.join(cycleDir, "work-items");
     const cycleIncrementalDir = path.join(cycleDir, "incremental");
@@ -1308,22 +1352,18 @@ export class LocalWriterAdapter {
       return `Error during cycle archival verification — no originals deleted:\n${verifyErrors.join("\n")}`;
     }
 
-    // Phase 3: Atomic commit — delete originals and update SQLite index in transaction.
-    // If anything fails, clean up copied archive files to leave system consistent.
+    // Phase 3: Atomic commit — update SQLite index in transaction (no fs I/O inside).
+    // fs.unlinkSync calls happen AFTER the transaction commits to avoid a situation
+    // where the transaction rolls back but filesystem deletes are already committed.
+    // If the transaction throws, the rollback handler cleans up archive copies and no
+    // originals are deleted. If post-commit unlinks fail, the error is logged and
+    // surfaced to the caller — the archive copies remain valid.
     const deleteStmt = this.db.prepare(`DELETE FROM nodes WHERE file_path = ?`);
     const updatePathStmt = this.db.prepare(`UPDATE nodes SET file_path = ? WHERE file_path = ?`);
 
     try {
       this.db.transaction(() => {
-        // Delete original incremental files
-        for (const srcPath of incrementalFiles) {
-          fs.unlinkSync(srcPath);
-        }
-        // Delete original work item files
-        for (const { src: srcPath } of workItemFiles) {
-          if (fs.existsSync(srcPath)) fs.unlinkSync(srcPath);
-        }
-        // Update SQLite index to reflect new paths
+        // Update SQLite index to reflect new paths (no filesystem I/O here)
         for (const srcPath of incrementalFiles) {
           deleteStmt.run(srcPath);
         }
@@ -1333,7 +1373,8 @@ export class LocalWriterAdapter {
         }
       }).exclusive();
     } catch (err) {
-      // Rollback: remove copied archive files on transaction failure
+      // Transaction failed — rollback: remove copied archive files.
+      // No originals were deleted (fs.unlinkSync not called inside transaction).
       for (const { dst } of copied) {
         try {
           if (fs.existsSync(dst)) fs.unlinkSync(dst);
@@ -1343,6 +1384,35 @@ export class LocalWriterAdapter {
       }
       const message = err instanceof Error ? err.message : String(err);
       return `Error during cycle archival — transaction rolled back: ${message}`;
+    }
+
+    // Phase 4: Delete originals post-commit. Transaction has already succeeded;
+    // the index now points to archive copies. Any unlink failure is non-fatal
+    // (archive copy is still valid) but must be logged and surfaced to caller.
+    const unlinkErrors: string[] = [];
+    for (const srcPath of incrementalFiles) {
+      try {
+        fs.unlinkSync(srcPath);
+      } catch (err) {
+        const code = (err as NodeJS.ErrnoException).code ?? "ERR_UNKNOWN";
+        const msg = `Failed to delete original after commit: ${path.basename(srcPath)} (${code})`;
+        log.error("archiveCycleLocal", msg);
+        unlinkErrors.push(msg);
+      }
+    }
+    for (const { src: srcPath } of workItemFiles) {
+      try {
+        if (fs.existsSync(srcPath)) fs.unlinkSync(srcPath);
+      } catch (err) {
+        const code = (err as NodeJS.ErrnoException).code ?? "ERR_UNKNOWN";
+        const msg = `Failed to delete original after commit: ${path.basename(srcPath)} (${code})`;
+        log.error("archiveCycleLocal", msg);
+        unlinkErrors.push(msg);
+      }
+    }
+
+    if (unlinkErrors.length > 0) {
+      return `Cycle ${cycle} archived (SQLite committed) but ${unlinkErrors.length} original(s) could not be deleted:\n${unlinkErrors.join("\n")}`;
     }
 
     const workItemCount = workItemFiles.length;
@@ -1358,6 +1428,7 @@ export class LocalWriterAdapter {
   // -------------------------------------------------------------------------
 
   async archiveCycle(cycle: number): Promise<string> {
+    this.assertNotShutDown();
     return this.archiveCycleLocal(cycle);
   }
 
@@ -1373,6 +1444,7 @@ export class LocalWriterAdapter {
     body: string;
     cycle: number;
   }): Promise<string> {
+    this.assertNotShutDown();
     return this.putNodeForJournal({
       skill: args.skill,
       date: args.date,

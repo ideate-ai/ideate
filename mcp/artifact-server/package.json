@@ -10,7 +10,7 @@
     "start": "node dist/index.js",
     "dev": "node --loader ts-node/esm src/index.ts",
     "pretest": "node scripts/pretest.js",
-    "test": "vitest run",
+    "test": "tsc --noEmit && vitest run",
     "build:migration": "tsc ../../scripts/migrate-to-v3.ts --target ES2022 --module NodeNext --moduleResolution NodeNext --esModuleInterop --skipLibCheck --outDir ../../scripts --declaration false",
     "prebuild:migration": "node -e \"['../../scripts/migrate-to-v3.d.ts','../../scripts/migrate-to-v3.d.ts.map','../../scripts/migrate-to-v3.js.map'].forEach(f=>{try{require('fs').rmSync(f)}catch(e){}})\"",
     "test:coverage": "vitest run --coverage",

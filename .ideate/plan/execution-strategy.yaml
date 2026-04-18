@@ -24,8 +24,8 @@ agent_configuration:
   code_reviewer_model: sonnet
   spec_reviewer_model: sonnet
   gap_analyst_model: sonnet
-content_hash: 4759742f29d2ce0b71f5405270e5dd727ee74a3ec830b993d9a09b1d682f7151
-token_count: 1314
+content_hash: f2c6b7fe0408a010e99c51c31967671f639c131b0c5d0a9f68543214c8af2f1e
+token_count: 1244
 cycle: 27
 parallelism: 1
 worktree: true
@@ -53,42 +53,46 @@ agent_config:
   gap-analyst: sonnet
   domain-curator: opus
 notes: Six WIs total. Group 1 contains five WIs that touch disjoint file scopes (per the per-WI scope declarations) and can run in parallel under worktree isolation, capped at max_parallelism=3 (so one sub-batch). Group 2 holds WI-799 alone because it modifies the same file as WI-798 (mcp/artifact-server/src/context/ppr.ts) and the depends edge enforces sequencing. Capstone review at end of cycle as usual. P-85 (documentation surface enumeration) applies to all WIs — workers must scan for affected docs before declaring complete.
-content: |-
-  # Execution Strategy — PH-051
+content: |
+  # Execution Strategy — PH-053 Integrity
 
   ## Mode
 
-  Sequential. The 3 work items have a strict chain: WI-886 (diagnosis) → WI-887 (fix) → WI-885 (findings-table hardening, sequenced after WI-887 to avoid reader.ts file-scope collision).
+  Batched parallel. All four work items have non-overlapping file scopes and no inter-dependencies, so they can run concurrently.
 
   ## Parallelism
 
-  Not applicable — sequential mode. Max parallelism: 1.
-
-  ## Worktrees
-
-  Disabled. Single-agent sequential execution; worktree overhead is unjustified for 3 items.
+  - Max concurrent workers: 4
+  - Worktree isolation: not required (no shared file scope)
 
   ## Review cadence
 
-  Incremental review after each work item. Capstone review at end of cycle. Autopilot-driven loop is appropriate: the scope is well-bounded and the convergence signal will exercise itself (WI-887's fix is what makes the autopilot loop itself reliable, so regression tests are the primary evidence, not autopilot output).
+  - Incremental review per work item (standard ideate:code-reviewer on completion)
+  - Capstone review at phase end (code-reviewer + spec-reviewer + gap-analyst in parallel)
 
-  ## Ordering
+  ## Work item groups
 
-  1. **WI-886** — spike; produces a diagnosis research artifact. Gate on this before writing any code.
-  2. **WI-887** — bug fix based on WI-886; includes the Q-164 regression test and integration test.
-  3. **WI-885** — extends Q-160 hardening to findings table; adds cycle-slot-collision regression test.
+  ### Group 1: Critical integrity fixes (parallel)
+  - WI-890 — fs.unlinkSync out of SQLite transaction
+  - WI-891 — adapter.shutdown() on SIGINT/SIGTERM
+  - WI-892 — migration stubs for 5→6 and 6→7
+  - WI-893 — CONTAINMENT_EDGE_TYPES consolidation
 
   ## Dependency graph
 
-  ```
-  WI-886 ──► WI-887 ──► WI-885
-  ```
+  No dependencies between items. Parallel-safe.
 
   ## Agent configuration
 
-  - Worker: standard ideate:worker (sonnet)
-  - Reviewers: code-reviewer, spec-reviewer, gap-analyst (sonnet)
-  - Spike worker (WI-886) may escalate to opus if better-sqlite3 internals need careful reasoning about WAL/checkpoint/snapshot semantics
+  - Worker model: sonnet (default)
+  - Reviewer model: sonnet (default)
+  - Standard agent budgets per config.json
+
+  ## Convergence target
+
+  - Condition A: zero Critical/Significant findings in capstone
+  - Condition B: Principle Adherence Verdict: Pass
+  - Full vitest suite green
 phase: PH-046
 agent_model: sonnet
 worktree_config:

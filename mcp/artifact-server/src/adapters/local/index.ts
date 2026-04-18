@@ -26,6 +26,7 @@ import { ValidationError } from "../../adapter.js";
 import { LocalWriterAdapter, type LocalWriterConfig } from "./writer.js";
 import { LocalReaderAdapter } from "./reader.js";
 import { LocalContextAdapter } from "./context.js";
+import { artifactWatcher } from "../../watcher.js";
 
 // ---------------------------------------------------------------------------
 // LocalAdapter — full StorageAdapter implementation for local .ideate/ storage
@@ -51,7 +52,14 @@ export class LocalAdapter extends LocalWriterAdapter implements StorageAdapter {
   }
 
   async shutdown(): Promise<void> {
-    // Best-effort shutdown: no pending writes to flush in synchronous SQLite.
+    // Idempotent: calling shutdown() twice must not throw.
+    if (this._isShutDown) return;
+    this._isShutDown = true;
+    // Stop the artifact watcher — prevents lingering file-watch handles.
+    // index.ts owns state.db and closes it separately; we do NOT close it here.
+    artifactWatcher.close();
+    // Flip the writer's shutdown guard so mutating methods throw ADAPTER_SHUT_DOWN.
+    this._markShutDown();
   }
 
   // -------------------------------------------------------------------------

@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import fs from "fs";
 import os from "os";
 import path from "path";
@@ -6,6 +6,7 @@ import Database from "better-sqlite3";
 import { runPendingMigrations, MIGRATIONS } from "../migrations.js";
 import { writeConfig, readRawConfig } from "../config.js";
 import { createSchema } from "../schema.js";
+import { log } from "../logger.js";
 
 let tmpDir: string;
 let ideateDir: string;
@@ -18,6 +19,7 @@ beforeEach(() => {
 
 afterEach(() => {
   fs.rmSync(tmpDir, { recursive: true, force: true });
+  vi.restoreAllMocks();
 });
 
 // ---------------------------------------------------------------------------
@@ -37,20 +39,21 @@ describe("runPendingMigrations", () => {
     expect(config.schema_version).toBe(7);
   });
 
-  it("runs v4→v5 migration when config schema_version is 4", () => {
+  it("runs v4→v7 migration chain when config schema_version is 4 and arrives at target (7)", () => {
     writeConfig(ideateDir, { schema_version: 4 });
     // No index.db — the v4→v5 migration short-circuits when there is no DB,
-    // but runPendingMigrations must still update schema_version to 5.
+    // but runPendingMigrations must still update schema_version through all
+    // pending migrations (v4→v5, v5→v6, v6→v7) to reach the current target.
 
     const result = runPendingMigrations(ideateDir);
 
     expect(result.errors).toHaveLength(0);
     expect(result.migrationsRun).toBeGreaterThanOrEqual(1);
     const config = readRawConfig(ideateDir);
-    expect(config.schema_version).toBe(5);
+    expect(config.schema_version).toBe(7);
   });
 
-  it("updates schema_version to 5 after v4→v5 migration on a DB with schema version 4", () => {
+  it("updates schema_version to 7 after full migration chain on a DB with schema version 4", () => {
     writeConfig(ideateDir, { schema_version: 4 });
 
     // Create a DB without the v5 columns (simulate a v4 database by building
@@ -146,11 +149,12 @@ describe("runPendingMigrations", () => {
     const result = runPendingMigrations(ideateDir);
 
     expect(result.errors).toHaveLength(0);
-    expect(result.migrationsRun).toBe(1);
+    // v4→v5 (real transform) + v5→v6 (no-op stub) + v6→v7 (no-op stub)
+    expect(result.migrationsRun).toBe(3);
     const config = readRawConfig(ideateDir);
-    expect(config.schema_version).toBe(5);
+    expect(config.schema_version).toBe(7);
 
-    // Verify the columns were actually added
+    // Verify the columns were actually added by the v4→v5 migration
     const db2 = new Database(dbPath);
     try {
       const workItemCols = db2.prepare("PRAGMA table_info(work_items)").all() as Array<{ name: string }>;
@@ -211,49 +215,53 @@ describe("runPendingMigrations — error path", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Multi-step chain: v3→v4→v5
+// Multi-step chain: v3→v4→v5→v6→v7
 // ---------------------------------------------------------------------------
 
 describe("runPendingMigrations — multi-step chain", () => {
-  it("applies all intermediate migrations in order when starting at v3", () => {
-    // Start at v3 — both v3→v4 and v4→v5 migrations exist in MIGRATIONS
+  it("applies all migrations in order when starting at v3, arriving at v7", () => {
+    // Start at v3 — all four migrations (v3→v4, v4→v5, v5→v6, v6→v7) should run
     writeConfig(ideateDir, { schema_version: 3 });
 
-    // Track which migrations were called
+    // Track which migrations were called and in what order
     const migrationsCalled: string[] = [];
 
     const v3ToV4 = MIGRATIONS.find((m) => m.fromVersion === 3 && m.toVersion === 4);
     const v4ToV5 = MIGRATIONS.find((m) => m.fromVersion === 4 && m.toVersion === 5);
+    const v5ToV6 = MIGRATIONS.find((m) => m.fromVersion === 5 && m.toVersion === 6);
+    const v6ToV7 = MIGRATIONS.find((m) => m.fromVersion === 6 && m.toVersion === 7);
     expect(v3ToV4).toBeDefined();
     expect(v4ToV5).toBeDefined();
+    expect(v5ToV6).toBeDefined();
+    expect(v6ToV7).toBeDefined();
 
     const originalV3ToV4 = v3ToV4!.migrate;
     const originalV4ToV5 = v4ToV5!.migrate;
+    const originalV5ToV6 = v5ToV6!.migrate;
+    const originalV6ToV7 = v6ToV7!.migrate;
 
-    v3ToV4!.migrate = (dir: string) => {
-      migrationsCalled.push("v3→v4");
-      originalV3ToV4(dir);
-    };
-    v4ToV5!.migrate = (dir: string) => {
-      migrationsCalled.push("v4→v5");
-      originalV4ToV5(dir);
-    };
+    v3ToV4!.migrate = (dir: string) => { migrationsCalled.push("v3→v4"); originalV3ToV4(dir); };
+    v4ToV5!.migrate = (dir: string) => { migrationsCalled.push("v4→v5"); originalV4ToV5(dir); };
+    v5ToV6!.migrate = (dir: string) => { migrationsCalled.push("v5→v6"); originalV5ToV6(dir); };
+    v6ToV7!.migrate = (dir: string) => { migrationsCalled.push("v6→v7"); originalV6ToV7(dir); };
 
     try {
       const result = runPendingMigrations(ideateDir);
 
       expect(result.errors).toHaveLength(0);
-      expect(result.migrationsRun).toBe(2);
+      expect(result.migrationsRun).toBe(4);
 
-      // Both steps ran in order
-      expect(migrationsCalled).toEqual(["v3→v4", "v4→v5"]);
+      // All steps ran in order
+      expect(migrationsCalled).toEqual(["v3→v4", "v4→v5", "v5→v6", "v6→v7"]);
 
-      // Final schema_version is 5 — the v5→v6 bump has no migration entry, and the silent-bump path only fires when migrationsRun===0, so a v3-origin workspace stops at 5 on this startup.
+      // Final schema_version is 7
       const config = readRawConfig(ideateDir);
-      expect(config.schema_version).toBe(5);
+      expect(config.schema_version).toBe(7);
     } finally {
       v3ToV4!.migrate = originalV3ToV4;
       v4ToV5!.migrate = originalV4ToV5;
+      v5ToV6!.migrate = originalV5ToV6;
+      v6ToV7!.migrate = originalV6ToV7;
     }
   });
 });
@@ -299,14 +307,119 @@ describe("runPendingMigrations — already at target version", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Known untested path: no-registry-entry silent bump (tracked as WI-758)
-// When CONFIG_SCHEMA_VERSION is bumped without a corresponding MIGRATIONS entry,
-// runPendingMigrations reaches the branch at migrations.ts:~170 which increments
-// schema_version silently without running a migration function.
-// Testing this path requires overriding CONFIG_SCHEMA_VERSION — an ESM module-level
-// constant that vi.spyOn cannot intercept (D-195). Deferred: no test infrastructure
-// for ESM module-level constant override exists in this project yet.
+// v5→v6 and v6→v7 stubs: loaded from v5, both run, arrive at v7
 // ---------------------------------------------------------------------------
+
+describe("runPendingMigrations — v5→v6 and v6→v7 no-op stubs", () => {
+  it("starting at v5 runs both stubs exactly once and arrives at v7", () => {
+    writeConfig(ideateDir, { schema_version: 5 });
+
+    const v5ToV6 = MIGRATIONS.find((m) => m.fromVersion === 5 && m.toVersion === 6);
+    const v6ToV7 = MIGRATIONS.find((m) => m.fromVersion === 6 && m.toVersion === 7);
+    expect(v5ToV6).toBeDefined();
+    expect(v6ToV7).toBeDefined();
+
+    let v5ToV6CallCount = 0;
+    let v6ToV7CallCount = 0;
+
+    const originalV5ToV6 = v5ToV6!.migrate;
+    const originalV6ToV7 = v6ToV7!.migrate;
+
+    v5ToV6!.migrate = (dir: string) => { v5ToV6CallCount++; originalV5ToV6(dir); };
+    v6ToV7!.migrate = (dir: string) => { v6ToV7CallCount++; originalV6ToV7(dir); };
+
+    try {
+      const result = runPendingMigrations(ideateDir);
+
+      expect(result.errors).toHaveLength(0);
+      expect(result.migrationsRun).toBe(2);
+
+      // Each stub invoked exactly once
+      expect(v5ToV6CallCount).toBe(1);
+      expect(v6ToV7CallCount).toBe(1);
+
+      // Arrived at v7
+      const config = readRawConfig(ideateDir);
+      expect(config.schema_version).toBe(7);
+    } finally {
+      v5ToV6!.migrate = originalV5ToV6;
+      v6ToV7!.migrate = originalV6ToV7;
+    }
+  });
+
+  it("starting at v7 invokes neither v5→v6 nor v6→v7 stub (idempotent + forward-only)", () => {
+    writeConfig(ideateDir, { schema_version: 7 });
+
+    const v5ToV6 = MIGRATIONS.find((m) => m.fromVersion === 5 && m.toVersion === 6);
+    const v6ToV7 = MIGRATIONS.find((m) => m.fromVersion === 6 && m.toVersion === 7);
+    expect(v5ToV6).toBeDefined();
+    expect(v6ToV7).toBeDefined();
+
+    let v5ToV6CallCount = 0;
+    let v6ToV7CallCount = 0;
+
+    const originalV5ToV6 = v5ToV6!.migrate;
+    const originalV6ToV7 = v6ToV7!.migrate;
+
+    v5ToV6!.migrate = (dir: string) => { v5ToV6CallCount++; originalV5ToV6(dir); };
+    v6ToV7!.migrate = (dir: string) => { v6ToV7CallCount++; originalV6ToV7(dir); };
+
+    try {
+      const result = runPendingMigrations(ideateDir);
+
+      expect(result.errors).toHaveLength(0);
+      expect(result.migrationsRun).toBe(0);
+
+      // Neither stub was invoked
+      expect(v5ToV6CallCount).toBe(0);
+      expect(v6ToV7CallCount).toBe(0);
+
+      const config = readRawConfig(ideateDir);
+      expect(config.schema_version).toBe(7);
+    } finally {
+      v5ToV6!.migrate = originalV5ToV6;
+      v6ToV7!.migrate = originalV6ToV7;
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Fallback warn path: log.warn fires when out-of-registry version is encountered
+//
+// Simulate by temporarily removing all migrations from the MIGRATIONS array
+// while pointing at a schema_version below the target. This exercises the
+// fallback branch at migrations.ts (migrationsRun===0, no errors, version behind).
+// ---------------------------------------------------------------------------
+
+describe("runPendingMigrations — fallback warn path", () => {
+  it("emits log.warn when no registry entries cover the version gap", () => {
+    // Use a version that is below target but has no registry entry after we
+    // splice out all MIGRATIONS temporarily
+    writeConfig(ideateDir, { schema_version: 5 });
+
+    const warnSpy = vi.spyOn(log, "warn").mockImplementation(() => {});
+
+    // Temporarily drain the registry so no entries match
+    const saved = MIGRATIONS.splice(0, MIGRATIONS.length);
+
+    try {
+      const result = runPendingMigrations(ideateDir);
+
+      // Fallback fired: schema stamped to target without transforms
+      expect(result.migrationsRun).toBe(0);
+      expect(result.errors).toHaveLength(0);
+      const config = readRawConfig(ideateDir);
+      expect(config.schema_version).toBe(7);
+
+      // log.warn was called at least once with the migrations prefix
+      const warnCalls = warnSpy.mock.calls;
+      expect(warnCalls.some((args) => args[0] === "migrations")).toBe(true);
+    } finally {
+      // Restore the registry
+      MIGRATIONS.splice(0, 0, ...saved);
+    }
+  });
+});
 
 // ---------------------------------------------------------------------------
 // v4→v5 migration idempotency
@@ -327,5 +440,27 @@ describe("v4→v5 migration idempotency", () => {
 
     // Running the migration again must not throw
     expect(() => v4ToV5!.migrate(ideateDir)).not.toThrow();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// v5→v6 and v6→v7 stub idempotency
+// ---------------------------------------------------------------------------
+
+describe("v5→v6 and v6→v7 stub idempotency", () => {
+  it("v5→v6 migrate() does not throw when called multiple times", () => {
+    const v5ToV6 = MIGRATIONS.find((m) => m.fromVersion === 5 && m.toVersion === 6);
+    expect(v5ToV6).toBeDefined();
+    // Should be callable any number of times without error
+    expect(() => v5ToV6!.migrate(ideateDir)).not.toThrow();
+    expect(() => v5ToV6!.migrate(ideateDir)).not.toThrow();
+  });
+
+  it("v6→v7 migrate() does not throw when called multiple times", () => {
+    const v6ToV7 = MIGRATIONS.find((m) => m.fromVersion === 6 && m.toVersion === 7);
+    expect(v6ToV7).toBeDefined();
+    // Should be callable any number of times without error
+    expect(() => v6ToV7!.migrate(ideateDir)).not.toThrow();
+    expect(() => v6ToV7!.migrate(ideateDir)).not.toThrow();
   });
 });

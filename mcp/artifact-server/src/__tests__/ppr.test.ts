@@ -17,7 +17,7 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import Database from "better-sqlite3";
 import { drizzle } from "drizzle-orm/better-sqlite3";
-import { createSchema } from "../schema.js";
+import { createSchema, CONTAINMENT_EDGE_TYPES } from "../schema.js";
 import * as dbSchema from "../db.js";
 import { computePPR, PPROptions } from "../ppr.js";
 import { ValidationError } from "../adapter.js";
@@ -1661,6 +1661,104 @@ describe("computePPR — parameter validation", () => {
     const results = computePPR(drizzleDb, ["SEED"], { maxNodes: -1 });
     expect(results.length).toBe(1);
     expect(results[0].nodeId).toBe("SEED");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Test: CONTAINMENT_EDGE_TYPES exclusion — semantic equivalence regression
+// ---------------------------------------------------------------------------
+//
+// Prior to WI-893, ppr.ts had an inline Set of 6 phantom edge types that do
+// not appear in EDGE_TYPES (owns_codebase, owns_project, etc.).  The fix
+// replaces those phantom types with the canonical CONTAINMENT_EDGE_TYPES from
+// schema.ts. These tests assert that:
+//  1. Containment edges (belongs_to_*) are NOT traversed by PPR.
+//  2. Non-containment edges (depends_on, relates_to, etc.) ARE traversed.
+//  3. A node reachable only via a containment edge does NOT get score from PPR.
+
+describe("computePPR — CONTAINMENT_EDGE_TYPES exclusion (WI-893 regression)", () => {
+  it("edges with containment types are excluded from PPR traversal", () => {
+    // SEED → CHILD via belongs_to_phase (containment)
+    // SEED → PEER via depends_on (semantic)
+    // Expected: PEER appears in PPR results with score; CHILD should NOT
+    // receive score propagated through the containment edge.
+    insertNode("SEED");
+    insertNode("CHILD");
+    insertNode("PEER");
+
+    // Insert a containment edge and a semantic edge from SEED
+    db.prepare(`INSERT OR REPLACE INTO edges (source_id, target_id, edge_type) VALUES (?, ?, ?)`).run("SEED", "CHILD", "belongs_to_phase");
+    db.prepare(`INSERT OR REPLACE INTO edges (source_id, target_id, edge_type) VALUES (?, ?, ?)`).run("SEED", "PEER", "depends_on");
+
+    const drizzleDb = drizzle(db, { schema: dbSchema });
+    const results = computePPR(drizzleDb, ["SEED"]);
+
+    const peerResult = results.find((r) => r.nodeId === "PEER");
+    const childResult = results.find((r) => r.nodeId === "CHILD");
+
+    // PEER is reachable via a semantic edge — it should appear with a score
+    expect(peerResult).toBeDefined();
+    expect(peerResult!.score).toBeGreaterThan(0);
+
+    // CHILD is reachable only via a containment edge — PPR must not propagate
+    // score through containment edges. CHILD may appear (it is in the node set)
+    // but its score must be strictly lower than PEER's semantically-linked score.
+    if (childResult) {
+      expect(childResult.score).toBeLessThan(peerResult!.score);
+    }
+  });
+
+  it("all CONTAINMENT_EDGE_TYPES members are excluded from PPR propagation", () => {
+    // For each containment edge type, verify that a node reachable only through
+    // that edge type receives no propagated score from the seed.
+    insertNode("SEED");
+    insertNode("SEMANTIC_PEER");
+    db.prepare(`INSERT OR REPLACE INTO edges (source_id, target_id, edge_type) VALUES (?, ?, ?)`).run("SEED", "SEMANTIC_PEER", "depends_on");
+
+    // Add one isolated node per containment type, reachable only via that type
+    const containmentTypes = Array.from(CONTAINMENT_EDGE_TYPES);
+    for (const ct of containmentTypes) {
+      const nodeId = `CONTAINED_${ct}`;
+      insertNode(nodeId);
+      db.prepare(`INSERT OR REPLACE INTO edges (source_id, target_id, edge_type) VALUES (?, ?, ?)`).run("SEED", nodeId, ct);
+    }
+
+    const drizzleDb = drizzle(db, { schema: dbSchema });
+    const results = computePPR(drizzleDb, ["SEED"]);
+
+    const peerScore = results.find((r) => r.nodeId === "SEMANTIC_PEER")!.score;
+    expect(peerScore).toBeGreaterThan(0);
+
+    for (const ct of containmentTypes) {
+      const nodeId = `CONTAINED_${ct}`;
+      const ctResult = results.find((r) => r.nodeId === nodeId);
+      // A containment-only child must not outscore a semantic peer
+      if (ctResult) {
+        expect(ctResult.score).toBeLessThan(peerScore);
+      }
+    }
+  });
+
+  it("non-containment edges (depends_on, governed_by, relates_to) ARE traversed", () => {
+    // Verify that registered non-containment edge types propagate score normally.
+    insertNode("SEED");
+    insertNode("DEP_TARGET");
+    insertNode("GOV_TARGET");
+
+    db.prepare(`INSERT OR REPLACE INTO edges (source_id, target_id, edge_type) VALUES (?, ?, ?)`).run("SEED", "DEP_TARGET", "depends_on");
+    db.prepare(`INSERT OR REPLACE INTO edges (source_id, target_id, edge_type) VALUES (?, ?, ?)`).run("SEED", "GOV_TARGET", "governed_by");
+
+    const drizzleDb = drizzle(db, { schema: dbSchema });
+    const results = computePPR(drizzleDb, ["SEED"]);
+
+    // Both non-containment targets should appear with positive scores
+    const depResult = results.find((r) => r.nodeId === "DEP_TARGET");
+    const govResult = results.find((r) => r.nodeId === "GOV_TARGET");
+
+    expect(depResult).toBeDefined();
+    expect(depResult!.score).toBeGreaterThan(0);
+    expect(govResult).toBeDefined();
+    expect(govResult!.score).toBeGreaterThan(0);
   });
 });
 

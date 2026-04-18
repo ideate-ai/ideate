@@ -5,16 +5,16 @@ intent: "Close the 4 Critical and 17 Significant findings from the 2026-04-17 fu
 appetite: 8
 status: active
 started_date: 2026-04-17
-current_phase_id: PH-053
+current_phase_id: PH-054
 horizon:
-  current: PH-053
+  current: PH-054
   next:
-    - PH-054
     - PH-055
   later:
     - PH-056
     - PH-057
-  completed: []
+  completed:
+    - PH-053
 success_criteria:
   - All 4 Critical findings from the 2026-04-17 full-audit summary are closed with regression tests
   - All 17 Significant findings are either closed or explicitly deferred with a domain decision recording the rationale
@@ -23,5 +23,5 @@ success_criteria:
   - Migration history is complete (no silent version bumps); schema.ts CONTAINMENT_EDGE_TYPES references only registered edge types
   - Full vitest suite green; no regressions introduced by hardening
 cycle_modified: 27
-content_hash: d5390fc524580e078c28cef57778a4a39c86b569871ad8cff1464350b68075a4
-token_count: 329
+content_hash: 4c9211816456793206dd940c49f906151aa9edc48a8059f9e21f18c43e66f05c
+token_count: 352

@@ -19,6 +19,8 @@ import { BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
 import type * as dbSchema from "./db.js";
 import { edges } from "./db.js";
 import { ValidationError } from "./adapter.js";
+import type { EdgeType } from "./adapter.js";
+import { CONTAINMENT_EDGE_TYPES } from "./schema.js";
 
 // ---------------------------------------------------------------------------
 // Public interfaces
@@ -64,12 +66,6 @@ const DEFAULT_EDGE_TYPE_WEIGHTS: Record<string, number> = {
   references: 0.4,
   blocks: 0.3,
 };
-
-/** Containment edge types excluded from PPR traversal. */
-const CONTAINMENT_EDGE_TYPES = new Set([
-  "owns_codebase", "owns_project", "has_phase", "has_work_item",
-  "owns_knowledge", "references_codebase",
-]);
 
 // ---------------------------------------------------------------------------
 // computePPR
@@ -175,7 +171,7 @@ export function computePPR(
 
   for (const e of allEdges) {
     // Skip containment edges (organizational hierarchy)
-    if (CONTAINMENT_EDGE_TYPES.has(e.edge_type)) continue;
+    if (CONTAINMENT_EDGE_TYPES.has(e.edge_type as EdgeType)) continue;
 
     // Look up weight directly — e.edge_type is lower_snake_case per schema.ts
     const w = edgeTypeWeights[e.edge_type] ?? 1.0;

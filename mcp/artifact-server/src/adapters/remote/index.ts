@@ -374,6 +374,7 @@ export class RemoteAdapter implements StorageAdapter {
   private endpoint: string;
   private codebaseId: string;
   private currentCycle: number | null = null;
+  private _isShutDown = false;
 
   constructor(config: NonNullable<AdapterConfig["remote"]>) {
     const headers: Record<string, string> = {};
@@ -454,6 +455,7 @@ export class RemoteAdapter implements StorageAdapter {
   // -------------------------------------------------------------------------
 
   async initialize(): Promise<void> {
+    this.assertNotShutDown();
     // Validate connection by issuing a lightweight query
     try {
       await this.client.query<{ nextId: string }>(
@@ -477,7 +479,24 @@ export class RemoteAdapter implements StorageAdapter {
   }
 
   async shutdown(): Promise<void> {
-    // No persistent connection to close with fetch-based client
+    // Idempotent: calling shutdown() twice must not throw.
+    if (this._isShutDown) return;
+    this._isShutDown = true;
+    // The fetch-based client holds no persistent HTTP agent or sockets.
+    // Setting _isShutDown blocks all new fetch calls issued after shutdown.
+  }
+
+  /**
+   * Guard: throw if the adapter has been shut down.
+   * Called at the top of every method that issues an HTTP request.
+   */
+  private assertNotShutDown(): void {
+    if (this._isShutDown) {
+      throw new StorageAdapterError(
+        "RemoteAdapter has been shut down; no further requests are allowed",
+        "ADAPTER_SHUT_DOWN"
+      );
+    }
   }
 
   // -------------------------------------------------------------------------
@@ -485,6 +504,7 @@ export class RemoteAdapter implements StorageAdapter {
   // -------------------------------------------------------------------------
 
   async getNode(id: string): Promise<Node | null> {
+    this.assertNotShutDown();
     const data = await this.client.query<{
       artifact: GqlArtifactNode | null;
     }>(
@@ -508,6 +528,7 @@ export class RemoteAdapter implements StorageAdapter {
   }
 
   async getNodes(ids: string[]): Promise<Map<string, Node>> {
+    this.assertNotShutDown();
     if (ids.length === 0) return new Map();
 
     const data = await this.client.query<{
@@ -535,6 +556,7 @@ export class RemoteAdapter implements StorageAdapter {
   }
 
   async readNodeContent(id: string): Promise<string> {
+    this.assertNotShutDown();
     const data = await this.client.query<{
       artifact: { content: string | null } | null;
     }>(
@@ -550,6 +572,7 @@ export class RemoteAdapter implements StorageAdapter {
   }
 
   async putNode(input: MutateNodeInput): Promise<MutateNodeResult> {
+    this.assertNotShutDown();
     let data: { putNode: { id: string; status: string } };
     try {
       // Fetch current cycle and include cycle_modified in properties (matches LocalAdapter behavior)
@@ -596,6 +619,7 @@ export class RemoteAdapter implements StorageAdapter {
   }
 
   async patchNode(input: UpdateNodeInput): Promise<UpdateNodeResult> {
+    this.assertNotShutDown();
     let data: { patchNode: { id: string; status: string } };
     try {
       // Fetch current cycle and include cycle_modified in properties (matches LocalAdapter behavior)
@@ -639,6 +663,7 @@ export class RemoteAdapter implements StorageAdapter {
   }
 
   async deleteNode(id: string): Promise<DeleteNodeResult> {
+    this.assertNotShutDown();
     let data: { deleteNode: { id: string; status: string } };
     try {
       data = await this.client.mutate<{
@@ -675,6 +700,7 @@ export class RemoteAdapter implements StorageAdapter {
   // -------------------------------------------------------------------------
 
   async putEdge(edge: Edge): Promise<void> {
+    this.assertNotShutDown();
     try {
       await this.client.mutate<{ putEdge: boolean }>(
         `mutation PutEdge($input: EdgeInput!) {
@@ -706,6 +732,7 @@ export class RemoteAdapter implements StorageAdapter {
     source_id: string,
     edge_types: EdgeType[]
   ): Promise<void> {
+    this.assertNotShutDown();
     if (edge_types.length === 0) return;
     try {
       await this.client.mutate<{ removeEdges: boolean }>(
@@ -734,6 +761,7 @@ export class RemoteAdapter implements StorageAdapter {
     id: string,
     direction: "outgoing" | "incoming" | "both"
   ): Promise<Edge[]> {
+    this.assertNotShutDown();
     const data = await this.client.query<{
       artifact: {
         edges: Array<{
@@ -771,6 +799,7 @@ export class RemoteAdapter implements StorageAdapter {
 
   // AC-6: traverse mapped to assembleContext query with PPR delegation to server
   async traverse(options: TraversalOptions): Promise<TraversalResult> {
+    this.assertNotShutDown();
     const input: Record<string, unknown> = {
       seedIds: options.seed_ids,
     };
@@ -898,6 +927,7 @@ export class RemoteAdapter implements StorageAdapter {
     limit: number,
     offset: number
   ): Promise<QueryResult> {
+    this.assertNotShutDown();
     const gqlQuery: Record<string, unknown> = {
       originId: query.origin_id,
     };
@@ -973,6 +1003,7 @@ export class RemoteAdapter implements StorageAdapter {
     limit: number,
     offset: number
   ): Promise<QueryResult> {
+    this.assertNotShutDown();
     const data = await this.client.query<{
       artifactQuery: {
         edges: Array<{
@@ -1012,6 +1043,7 @@ export class RemoteAdapter implements StorageAdapter {
   }
 
   async nextId(type: NodeType, cycle?: number): Promise<string> {
+    this.assertNotShutDown();
     const data = await this.client.query<{ nextId: string }>(
       `query NextId($type: NodeType!, $cycle: Int) {
         nextId(type: $type, cycle: $cycle)
@@ -1030,6 +1062,7 @@ export class RemoteAdapter implements StorageAdapter {
   // -------------------------------------------------------------------------
 
   async batchMutate(input: BatchMutateInput): Promise<BatchMutateResult> {
+    this.assertNotShutDown();
     const gqlInput: Record<string, unknown> = {
       nodes: input.nodes.map((n) => ({
         id: n.id,
@@ -1091,6 +1124,7 @@ export class RemoteAdapter implements StorageAdapter {
     filter: NodeFilter,
     group_by: "status" | "type" | "domain" | "severity"
   ): Promise<Array<{ key: string; count: number }>> {
+    this.assertNotShutDown();
     // WI-871: When grouping by severity for findings, the server-side nodeCounts
     // does not exclude resolved findings (addressed_by IS NOT NULL). Apply a
     // client-side post-filter matching LocalAdapter's SQL: WHERE addressed_by IS NULL.
@@ -1263,6 +1297,7 @@ export class RemoteAdapter implements StorageAdapter {
       }
     >
   > {
+    this.assertNotShutDown();
     const data = await this.client.query<{
       domainState: Array<{
         domain: string;
@@ -1306,6 +1341,7 @@ export class RemoteAdapter implements StorageAdapter {
     findings_by_severity: Record<string, number>;
     cycle_summary_content: string | null;
   }> {
+    this.assertNotShutDown();
     // WI-860: The server-side convergenceStatus query counts all findings for
     // a cycle without filtering out resolved ones (addressed_by IS NOT NULL).
     // To match LocalAdapter behavior (which now excludes resolved findings),
@@ -1390,6 +1426,7 @@ export class RemoteAdapter implements StorageAdapter {
 
   // AC-5: archiveCycle mapped to archiveCycle mutation returning string
   async archiveCycle(cycle: number): Promise<string> {
+    this.assertNotShutDown();
     const data = await this.client.mutate<{
       archiveCycle: string;
     }>(
@@ -1410,6 +1447,7 @@ export class RemoteAdapter implements StorageAdapter {
     body: string;
     cycle: number;
   }): Promise<string> {
+    this.assertNotShutDown();
     let data: { appendJournal: { id: string; status: string } };
     try {
       data = await this.client.mutate<{
@@ -1453,14 +1491,17 @@ export class RemoteAdapter implements StorageAdapter {
   // -------------------------------------------------------------------------
 
   async indexFiles(_paths: string[]): Promise<void> {
+    this.assertNotShutDown();
     // no-op: remote index is maintained server-side
   }
 
   async removeFiles(_paths: string[]): Promise<void> {
+    this.assertNotShutDown();
     // no-op: remote index is maintained server-side
   }
 
   async getToolUsage(_filter?: ToolUsageFilter): Promise<ToolUsageRow[]> {
+    this.assertNotShutDown();
     // Stub: the remote GraphQL backend does not yet expose a tool_usage endpoint.
     // Return an empty array so callers that tolerate missing telemetry don't fail;
     // the log.warn records that the stub path was taken for observability.

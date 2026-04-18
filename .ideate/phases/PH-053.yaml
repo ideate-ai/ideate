@@ -2,17 +2,24 @@ id: PH-053
 type: phase
 phase_type: implementation
 project: PR-004
-status: active
+status: complete
 started_date: 2026-04-17
 name: "Integrity: Critical fixes"
-description: "Close the 4 Critical findings from the 2026-04-17 full-audit. Highest-risk work first: data-loss bug, adapter shutdown, migration gaps, ontology phantom types."
-work_items: []
+description: Close the 4 Critical findings from the 2026-04-17 full-audit, plus the 5 Significant follow-ups surfaced in cycle 77 capstone (anti-pattern recurrence in patchNode/batchMutate, LocalWriterAdapter shutdown guard gap, TS type error, assertNotShutDown coverage completeness).
+work_items:
+  - WI-890
+  - WI-891
+  - WI-892
+  - WI-893
+  - WI-894
+  - WI-895
 success_criteria:
-  - fs.unlinkSync moved out of SQLite transaction callback in archiveCycleLocal; rollback path restores files
-  - adapter.shutdown() called on SIGINT/SIGTERM before state.db.close(); regression test covers both LocalAdapter and RemoteAdapter
-  - migrations.ts has explicit entries (or explicit no-op stubs with rationale) for versions 5→6 and 6→7; silent-bump fallback is only reached for truly-additive bumps
-  - CONTAINMENT_EDGE_TYPES is single-sourced (in schema.ts) and references only edge types registered in EDGE_TYPES; ppr.ts and reader.ts import from the canonical source
-  - Full vitest suite passes
+  - fs.unlinkSync / fs.readFileSync / other fs I/O is OUTSIDE SQLite transaction callbacks in all LocalWriterAdapter methods (archiveCycleLocal, patchNode, batchMutate)
+  - adapter.shutdown() called on SIGINT/SIGTERM before state.db.close(); BOTH LocalAdapter (via writer cascade) and RemoteAdapter throw ADAPTER_SHUT_DOWN on every public mutating method post-shutdown
+  - migrations.ts has explicit entries for 5 to 6 and 6 to 7; silent-bump fallback is only reached for truly-additive bumps
+  - CONTAINMENT_EDGE_TYPES is single-sourced in schema.ts and references only registered edge types; ppr.ts compiles cleanly under tsc --noEmit
+  - Full vitest suite green AND tsc --noEmit green
 cycle_modified: 27
-content_hash: ad88fc1a5d5ce337248fab89f0a92bfe082db0999eb3b3cf6548bebe484bb5e6
-token_count: 244
+content_hash: f7f0d0cfcd63b51dc7d2568322cb2e9473ef7d3ea34010d6e04966a32049a6e5
+token_count: 338
+completed_date: 2026-04-17

@@ -2,7 +2,7 @@ id: PH-054
 type: phase
 phase_type: implementation
 project: PR-004
-status: pending
+status: active
 name: Ontology consolidation
 description: Collapse duplicated constants and asymmetric interfaces into single sources. Reduce the cost of adding a new node type from 5-7 touch points to 1.
 work_items: []
@@ -14,5 +14,6 @@ success_criteria:
   - "autopilot_state ontology asymmetry resolved: either registered in TYPE_TO_EXTENSION_TABLE or explicitly documented as excluded"
   - relates_to derivation is fully driven by EDGE_TYPE_REGISTRY (no off-registry regex mining) or the mining path is documented in the registry
 cycle_modified: 27
-content_hash: ced226c4f0a628dbf0fab6cd10d060148256006e772c4c5edbe03e986ce5e373
-token_count: 274
+content_hash: 7c50b4f9ada2f7ff58fda605487a320d76655f0fff30fc18e8091d5519a6a5b4
+token_count: 304
+started_date: 2026-04-17

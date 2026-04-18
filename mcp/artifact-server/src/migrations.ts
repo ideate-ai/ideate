@@ -92,6 +92,30 @@ export const MIGRATIONS: Migration[] = [
       }
     },
   },
+  {
+    fromVersion: 5,
+    toVersion: 6,
+    description:
+      "No data transform required. The metrics-refactor commit (5a21db2) bumped CURRENT_SCHEMA_VERSION from 5 to 7 " +
+      "in a single step, so version 6 was never an independent production state. The schema changes " +
+      "(adding tool_usage table, removing metrics_events from DDL) are all additive: createSchema uses " +
+      "CREATE TABLE IF NOT EXISTS, so existing DBs are unaffected and new DBs pick up the new tables " +
+      "on first open. No data transform is needed.",
+    migrate: (_ideateDir: string) => {
+      // No-op — additive DDL change, no data transforms needed.
+    },
+  },
+  {
+    fromVersion: 6,
+    toVersion: 7,
+    description:
+      "No data transform required. Version 6 was never an independent production state (see v5→v6 entry). " +
+      "The consolidation of the metrics refactor into a single version bump from 5 to 7 means no " +
+      "intermediate data exists at v6. No data transform is needed.",
+    migrate: (_ideateDir: string) => {
+      // No-op — additive DDL change, no data transforms needed.
+    },
+  },
 ];
 
 // ---------------------------------------------------------------------------
@@ -163,10 +187,17 @@ export function runPendingMigrations(ideateDir: string): MigrationResult {
     }
   }
 
-  // If no migrations were in the registry but version is behind, just update the version
-  // This handles the case where CONFIG_SCHEMA_VERSION was bumped without a migration
-  // (e.g., the version bump is purely additive and backward-compatible)
+  // If no migrations were in the registry but version is behind, just update the version.
+  // This handles the case where CONFIG_SCHEMA_VERSION was bumped without a corresponding
+  // MIGRATIONS entry. Operators should investigate — every version bump must have a
+  // registry entry (even a no-op stub) so the migration chain is fully documented.
   if (result.migrationsRun === 0 && result.errors.length === 0 && version < targetVersion) {
+    log.warn(
+      "migrations",
+      `No registry entries found for schema_version ${version} → ${targetVersion}. ` +
+      `Stamping workspace to v${targetVersion} without running transforms. ` +
+      `Add MIGRATIONS entries for every version bump (no-op stubs are fine) to eliminate this warning.`
+    );
     const updatedConfig = readRawConfig(ideateDir);
     updatedConfig.schema_version = targetVersion;
     writeConfig(ideateDir, updatedConfig);

@@ -4,7 +4,7 @@ import { drizzle } from "drizzle-orm/better-sqlite3";
 import { writeFileSync, mkdirSync, mkdtempSync, rmSync, existsSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
-import { createSchema, checkSchemaVersion, CURRENT_SCHEMA_VERSION, EDGE_TYPES, EDGE_TYPE_REGISTRY } from "../schema.js";
+import { createSchema, checkSchemaVersion, CURRENT_SCHEMA_VERSION, EDGE_TYPES, EDGE_TYPE_REGISTRY, CONTAINMENT_EDGE_TYPES } from "../schema.js";
 import { indexFiles } from "../indexer.js";
 import * as dbSchema from "../db.js";
 
@@ -1276,6 +1276,76 @@ describe("EDGE_TYPE_REGISTRY — belongs_to_cycle entry", () => {
 
   it("belongs_to_cycle has yaml_field null", () => {
     expect(EDGE_TYPE_REGISTRY.belongs_to_cycle.yaml_field).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// CONTAINMENT_EDGE_TYPES — all members must be registered in EDGE_TYPES
+// ---------------------------------------------------------------------------
+
+describe("CONTAINMENT_EDGE_TYPES — registry membership", () => {
+  it("every member of CONTAINMENT_EDGE_TYPES is present in EDGE_TYPES", () => {
+    for (const t of Array.from(CONTAINMENT_EDGE_TYPES)) {
+      expect(
+        (EDGE_TYPES as readonly string[]).includes(t),
+        `CONTAINMENT_EDGE_TYPES member '${t}' is not in EDGE_TYPES`
+      ).toBe(true);
+    }
+  });
+
+  it("CONTAINMENT_EDGE_TYPES is non-empty", () => {
+    expect(CONTAINMENT_EDGE_TYPES.size).toBeGreaterThan(0);
+  });
+
+  it("CONTAINMENT_EDGE_TYPES contains belongs_to_module", () => {
+    expect(CONTAINMENT_EDGE_TYPES.has("belongs_to_module")).toBe(true);
+  });
+
+  it("CONTAINMENT_EDGE_TYPES does NOT contain belongs_to_domain (domain edges flow through getEdges)", () => {
+    // belongs_to_domain is excluded from the containment set because domain edges
+    // are used by getEdges() for cross-type domain relationship queries and must
+    // not be filtered out during traversal.
+    expect(CONTAINMENT_EDGE_TYPES.has("belongs_to_domain")).toBe(false);
+  });
+
+  it("CONTAINMENT_EDGE_TYPES contains belongs_to_project", () => {
+    expect(CONTAINMENT_EDGE_TYPES.has("belongs_to_project")).toBe(true);
+  });
+
+  it("CONTAINMENT_EDGE_TYPES contains belongs_to_phase", () => {
+    expect(CONTAINMENT_EDGE_TYPES.has("belongs_to_phase")).toBe(true);
+  });
+
+  it("CONTAINMENT_EDGE_TYPES contains belongs_to_cycle", () => {
+    expect(CONTAINMENT_EDGE_TYPES.has("belongs_to_cycle")).toBe(true);
+  });
+
+  it("CONTAINMENT_EDGE_TYPES does not contain phantom types from the old inline sets", () => {
+    const phantomTypes = [
+      "owns_codebase",
+      "owns_project",
+      "has_phase",
+      "has_work_item",
+      "owns_knowledge",
+      "references_codebase",
+    ];
+    for (const phantom of phantomTypes) {
+      expect(
+        CONTAINMENT_EDGE_TYPES.has(phantom as never),
+        `phantom type '${phantom}' should NOT be in CONTAINMENT_EDGE_TYPES`
+      ).toBe(false);
+    }
+  });
+
+  it("semantic/derivation edge types are NOT in CONTAINMENT_EDGE_TYPES", () => {
+    // Includes belongs_to_domain because domain edges are used for getEdges() queries
+    const semanticTypes = ["derived_from", "relates_to", "addressed_by", "references", "depends_on", "blocks", "belongs_to_domain"];
+    for (const t of semanticTypes) {
+      expect(
+        CONTAINMENT_EDGE_TYPES.has(t as never),
+        `semantic type '${t}' should NOT be in CONTAINMENT_EDGE_TYPES`
+      ).toBe(false);
+    }
   });
 });
 

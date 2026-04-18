@@ -5,13 +5,15 @@ project: PR-004
 status: pending
 name: Scale + observability
 description: Address scalability ceilings and add operational tools missing at current scale.
-work_items: []
+work_items:
+  - WI-896
 success_criteria:
   - PPR no longer loads the full edges table per traverse(); seed-reachable BFS pre-filter OR documented edge-count threshold + warn path
   - "Token counting is unified: one tokenizer, one estimator, or documented bounds for when the approximation is authoritative"
   - Scale limits section added to architecture doc (PPR O(E), SQLite WAL single-writer, token approximation, 200-row page cap)
   - ideate_check_workspace MCP tool performs integrity checks (orphan nodes, unindexed YAML, dangling edges, stale addressed_by references) and returns a structured report
   - "Migration rollback path exists: pre-migration snapshot of index.db + any YAML targeted by the migration"
+  - indexer.ts indexFiles + rebuildIndex apply the fs-out-of-transaction pattern (WI-896 carry-forward from PH-053)
 cycle_modified: 27
-content_hash: 8ed049d5d61de7dd9d33c8f9a33e629f76d38612c147dce030ba3a17fd7a8e39
-token_count: 232
+content_hash: 0684dffa7bf21e2ed6b18c414b39941d014cfacabdb8df5e1f41b949536fb1c9
+token_count: 287

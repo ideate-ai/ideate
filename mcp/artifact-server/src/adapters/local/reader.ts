@@ -17,6 +17,7 @@ import { log } from "../../logger.js";
 
 import { and, asc, eq, gte, lte } from "drizzle-orm";
 import * as dbSchema from "../../db.js";
+import { CONTAINMENT_EDGE_TYPES } from "../../schema.js";
 
 import type {
   Node,
@@ -378,13 +379,8 @@ export class LocalReaderAdapter {
     }
 
     // Filter out containment edges (organizational hierarchy) - matches server-side behavior
-    const CONTAINMENT_EDGE_TYPES = new Set([
-      "owns_codebase", "owns_project", "has_phase", "has_work_item",
-      "owns_knowledge", "references_codebase",
-    ]);
-
     return rows
-      .filter((r) => !CONTAINMENT_EDGE_TYPES.has(r.edge_type))
+      .filter((r) => !CONTAINMENT_EDGE_TYPES.has(r.edge_type as EdgeType))
       .map((r) => ({
         source_id: r.source_id,
         target_id: r.target_id,
@@ -569,8 +565,7 @@ export class LocalReaderAdapter {
     const edgeTypeParams = edge_types ?? [];
 
     // Containment edge types to exclude (matches server-side behavior)
-    const CONTAINMENT_EDGE_TYPES = ["owns_codebase", "owns_project", "has_phase", "has_work_item", "owns_knowledge", "references_codebase"];
-    const containmentEdgeParams = [...CONTAINMENT_EDGE_TYPES];
+    const containmentEdgeParams = Array.from(CONTAINMENT_EDGE_TYPES);
 
     function buildEdgeFilter(alias: string): string {
       const filters: string[] = [];
@@ -579,7 +574,7 @@ export class LocalReaderAdapter {
         filters.push(`AND ${alias}.edge_type IN (${placeholders})`);
       }
       // Always exclude containment edges
-      const containmentPlaceholders = CONTAINMENT_EDGE_TYPES.map(() => "?").join(", ");
+      const containmentPlaceholders = containmentEdgeParams.map(() => "?").join(", ");
       filters.push(`AND ${alias}.edge_type NOT IN (${containmentPlaceholders})`);
       return filters.join(" ");
     }

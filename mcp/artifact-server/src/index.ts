@@ -6,7 +6,6 @@ import {
 } from "@modelcontextprotocol/sdk/types.js";
 import { createRequire } from "module";
 import { TOOLS, handleTool } from "./tools/index.js";
-import { artifactWatcher } from "./watcher.js";
 import { resolveArtifactDir } from "./config.js";
 import { createDormantState, initServer, routeToolCall, ServerState } from "./server.js";
 import { log } from "./logger.js";
@@ -67,14 +66,18 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 });
 
 // Graceful shutdown
-function shutdown() {
-  artifactWatcher.close();
+async function shutdown() {
+  try {
+    await state.ctx?.adapter?.shutdown();
+  } catch (e) {
+    log.error("shutdown", "adapter shutdown failed", e);
+  }
   state.db?.close();
   process.exit(0);
 }
 
-process.on("SIGINT", shutdown);
-process.on("SIGTERM", shutdown);
+process.on("SIGINT", () => { void shutdown(); });
+process.on("SIGTERM", () => { void shutdown(); });
 
 // Prevent unhandled errors from crashing the MCP server
 process.on("unhandledRejection", (reason) => {

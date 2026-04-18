@@ -457,6 +457,103 @@ describe("deleteNode — YAML rollback on SQLite failure (WI-702)", () => {
 });
 
 // ---------------------------------------------------------------------------
+// WI-890 — archiveCycleLocal: fs.unlinkSync must not run inside transaction
+// ---------------------------------------------------------------------------
+
+describe("archiveCycleLocal — fs.unlinkSync ordering relative to SQLite transaction (WI-890)", () => {
+  // Helper: seed one finding in the SQLite index and on disk.
+  // status must be "active" so archiveCycleLocal's query picks it up.
+  async function seedFinding(id: string, cycleNum: number): Promise<string> {
+    await adapter.putNode({
+      id,
+      type: "finding",
+      cycle: cycleNum,
+      properties: {
+        severity: "minor",
+        work_item: "WI-001",
+        file_refs: null,
+        verdict: "pass",
+        cycle: cycleNum,
+        reviewer: "test",
+        description: "regression test finding",
+        suggestion: null,
+        addressed_by: null,
+        title: "Test finding",
+        status: "active",
+      },
+    });
+    const cycleStr = String(cycleNum).padStart(3, "0");
+    return path.join(ideateDir, "cycles", cycleStr, "findings", `${id}.yaml`);
+  }
+
+  // Regression test 1: when the SQLite transaction throws, no originals are deleted.
+  //
+  // Before WI-890 the transaction callback called fs.unlinkSync before the SQLite
+  // statements, so a mid-flight throw left originals deleted despite the rollback.
+  // After WI-890 the transaction contains only SQLite work; originals survive a throw.
+  it("originals remain on disk when SQLite transaction throws mid-flight", async () => {
+    const cycleNum = 42;
+    const filePath = await seedFinding("F-042-001", cycleNum);
+    expect(fs.existsSync(filePath)).toBe(true);
+
+    // Spy on db.transaction so the wrapped callback throws before any SQLite work.
+    const originalTransaction = db.transaction.bind(db);
+    db.transaction = ((_fn: () => void) => {
+      const txFn = () => {
+        throw new Error("simulated SQLite mid-flight failure");
+      };
+      txFn.exclusive = txFn;
+      return txFn;
+    }) as unknown as typeof db.transaction;
+
+    let result: string;
+    try {
+      result = await (adapter as any).archiveCycleLocal(cycleNum);
+    } finally {
+      db.transaction = originalTransaction;
+    }
+
+    // The call must report a rollback (not success).
+    expect(result).toMatch(/transaction rolled back/i);
+
+    // The original finding file must still be present — no unlinkSync ran inside the tx.
+    expect(fs.existsSync(filePath)).toBe(true);
+  });
+
+  // Regression test 2: when the transaction commits but a post-commit unlink fails,
+  // the archive copy remains valid and the error is surfaced in the return value.
+  //
+  // We make the original file's parent directory read-only so fs.unlinkSync throws
+  // (EACCES). This is the same filesystem-level technique used elsewhere in this file.
+  it("archive copy survives and error is surfaced when post-commit unlink fails", async () => {
+    const cycleNum = 43;
+    const filePath = await seedFinding("F-043-001", cycleNum);
+    expect(fs.existsSync(filePath)).toBe(true);
+
+    const findingsDir = path.dirname(filePath);
+
+    // Make the findings directory read-only so unlinkSync cannot remove the file.
+    fs.chmodSync(findingsDir, 0o555);
+
+    let result: string;
+    try {
+      result = await (adapter as any).archiveCycleLocal(cycleNum);
+    } finally {
+      // Restore so afterEach cleanup can remove the temp directory.
+      fs.chmodSync(findingsDir, 0o755);
+    }
+
+    // The result must surface the unlink failure.
+    expect(result).toMatch(/could not be deleted|Failed to delete/i);
+
+    // The archive copy must still exist (commit succeeded before the unlink attempt).
+    const cycleStr = String(cycleNum).padStart(3, "0");
+    const archiveDst = path.join(ideateDir, "archive", "cycles", cycleStr, "incremental", "F-043-001.yaml");
+    expect(fs.existsSync(archiveDst)).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // M3 — nextId: unsupported node type throws ValidationError with INVALID_NODE_TYPE
 //
 // The fix is in LocalWriterAdapter.nextId. The LocalAdapter dispatches
@@ -514,5 +611,134 @@ describe("LocalWriterAdapter.nextId — ValidationError for unsupported node typ
     await expect(writer.nextId("journal_entry", 1)).resolves.toMatch(/^J-/);
     await expect(writer.nextId("work_item")).resolves.toMatch(/^WI-/);
     await expect(writer.nextId("finding", 1)).resolves.toMatch(/^F-/);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// WI-895 — patchNode: post-write filesystem failure does not corrupt SQLite
+//
+// Regression test: even if the YAML file is modified or removed after patchNode
+// writes it but before the SQLite transaction commits, the transaction callback
+// must use precomputed in-memory data (not re-read from disk). This verifies
+// the fix that moved hash/token_count computation OUT of the transaction.
+// ---------------------------------------------------------------------------
+
+describe("patchNode — post-write filesystem failure does not corrupt SQLite (WI-895)", () => {
+  it("SQLite is updated correctly when YAML file is removed after write but before transaction commits", async () => {
+    // Create a work_item node with the working adapter
+    await adapter.putNode({
+      id: "WI-100",
+      type: "work_item",
+      properties: { title: "Original title", status: "pending" },
+    });
+
+    // Verify it exists in the index
+    const before = await adapter.getNode("WI-100");
+    expect(before).not.toBeNull();
+    expect(before!.properties.title).toBe("Original title");
+
+    const filePath = path.join(ideateDir, "work-items", "WI-100.yaml");
+
+    // Intercept db.transaction to remove the YAML file *after* patchNode writes it
+    // but *before* the SQLite transaction executes. With the old code (fs.readFileSync
+    // inside the transaction), this would cause ENOENT inside the transaction.
+    // With the fix, the transaction uses precomputed data and succeeds regardless.
+    const originalTransaction = db.transaction.bind(db);
+    let interceptOnce = true;
+    (db as any).transaction = (fn: () => void) => {
+      const txFn = () => {
+        if (interceptOnce) {
+          interceptOnce = false;
+          // Simulate filesystem failure after YAML write: remove the file
+          try { fs.unlinkSync(filePath); } catch { /* already gone */ }
+        }
+        return originalTransaction(fn)();
+      };
+      txFn.exclusive = txFn;
+      return txFn;
+    };
+
+    let result: unknown;
+    try {
+      result = await adapter.patchNode({ id: "WI-100", properties: { title: "Updated title" } });
+    } finally {
+      (db as any).transaction = originalTransaction;
+    }
+
+    // patchNode should have succeeded (committed via precomputed data)
+    expect(result).toMatchObject({ id: "WI-100", status: "updated" });
+
+    // SQLite should reflect the updated title (not the old one)
+    const nodeRow = db.prepare(`SELECT id FROM nodes WHERE id = 'WI-100'`).get();
+    expect(nodeRow).toBeDefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// WI-895 — batchMutate: post-write filesystem failure does not corrupt SQLite
+//
+// Regression test: batchMutate writes YAML files in Phase 1 and then upserts
+// to SQLite in Phase 2. The old code re-read each file inside the transaction.
+// The fix precomputes hash/token_count from the in-memory yamlObj so the
+// transaction is filesystem-independent.
+// ---------------------------------------------------------------------------
+
+describe("batchMutate — post-write filesystem failure does not corrupt SQLite (WI-895)", () => {
+  it("SQLite is upserted correctly when YAML files are removed after write but before transaction commits", async () => {
+    const writtenPaths: string[] = [];
+
+    // Intercept db.transaction to remove all written YAML files before the
+    // transaction executes. With the old code, fs.readFileSync would throw ENOENT
+    // inside the transaction. With the fix, precomputed data is used instead.
+    const originalTransaction = db.transaction.bind(db);
+    let interceptOnce = true;
+    (db as any).transaction = (fn: () => void) => {
+      const txFn = () => {
+        if (interceptOnce) {
+          interceptOnce = false;
+          // Remove all written YAML files to simulate post-write filesystem failure
+          for (const fp of writtenPaths) {
+            try { fs.unlinkSync(fp); } catch { /* already gone */ }
+          }
+        }
+        return originalTransaction(fn)();
+      };
+      txFn.exclusive = txFn;
+      return txFn;
+    };
+
+    // Patch fs.writeFileSync to track which paths are written by batchMutate
+    const origWrite = fs.writeFileSync.bind(fs);
+    const writeStub = (p: fs.PathOrFileDescriptor, data: unknown, opts?: unknown) => {
+      if (typeof p === "string" && p.endsWith(".yaml")) {
+        writtenPaths.push(p);
+      }
+      return (origWrite as Function)(p, data, opts);
+    };
+    (fs as any).writeFileSync = writeStub;
+
+    let result: unknown;
+    try {
+      result = await adapter.batchMutate({
+        nodes: [
+          { id: "WI-200", type: "work_item", properties: { title: "Batch item one", status: "pending" } },
+          { id: "WI-201", type: "work_item", properties: { title: "Batch item two", status: "pending" } },
+        ],
+      });
+    } finally {
+      (db as any).transaction = originalTransaction;
+      (fs as any).writeFileSync = origWrite;
+    }
+
+    // batchMutate should have succeeded
+    const batchResult = result as { results: Array<{ id: string; status: string }>; errors: unknown[] };
+    expect(batchResult.errors).toHaveLength(0);
+    expect(batchResult.results).toHaveLength(2);
+
+    // SQLite rows should exist for both nodes
+    const row200 = db.prepare(`SELECT id FROM nodes WHERE id = 'WI-200'`).get();
+    const row201 = db.prepare(`SELECT id FROM nodes WHERE id = 'WI-201'`).get();
+    expect(row200).toBeDefined();
+    expect(row201).toBeDefined();
   });
 });

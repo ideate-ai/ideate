@@ -144,6 +144,22 @@ export const EDGE_TYPE_REGISTRY: Record<EdgeType, EdgeTypeSpec> = {
 };
 
 // ---------------------------------------------------------------------------
+// CONTAINMENT_EDGE_TYPES — structural parent-child containment edge types
+//
+// Edge types representing structural containment — used by PPR and traversal
+// to exclude containment edges from general semantic traversal. Only edge
+// types that are genuinely registered in EDGE_TYPES may appear here; the
+// regression test in schema.test.ts enforces this at runtime.
+// ---------------------------------------------------------------------------
+
+export const CONTAINMENT_EDGE_TYPES: ReadonlySet<EdgeType> = new Set<EdgeType>([
+  "belongs_to_module",
+  "belongs_to_project",
+  "belongs_to_phase",
+  "belongs_to_cycle",
+]);
+
+// ---------------------------------------------------------------------------
 // Common fields shared by all artifact types
 // ---------------------------------------------------------------------------
 
