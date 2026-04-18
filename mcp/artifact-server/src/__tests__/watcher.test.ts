@@ -22,12 +22,12 @@ beforeEach(() => {
 });
 
 afterEach(async () => {
-  watcher.close();
+  await watcher.close();
   fs.rmSync(tmpDir, { recursive: true, force: true });
 });
 
-afterAll(() => {
-  watcher.close();
+afterAll(async () => {
+  await watcher.close();
 });
 
 /**
@@ -151,7 +151,7 @@ describe("ArtifactWatcher — debounce coalescing", () => {
       // All 5 rapid events should have coalesced into exactly 1 callback invocation
       expect(callCount).toBe(1);
     } finally {
-      debounceWatcher.close();
+      await debounceWatcher.close();
       fs.rmSync(coalesceDir, { recursive: true, force: true });
     }
   }, 10000);
@@ -187,7 +187,7 @@ describe("ArtifactWatcher — debounce coalescing", () => {
       expect(event.changed.length).toBe(3);
       expect(event.deleted).toEqual([]);
     } finally {
-      debounceWatcher.close();
+      await debounceWatcher.close();
       fs.rmSync(batchDir, { recursive: true, force: true });
     }
   }, 10000);
@@ -288,7 +288,7 @@ describe("ArtifactWatcher integration — event triggers incremental indexing", 
       expect(row).toBeDefined();
       expect(row!.id).toBe("WI-INTEG-001");
     } finally {
-      integrationWatcher.close();
+      await integrationWatcher.close();
       fs.rmSync(integrationTmpDir, { recursive: true, force: true });
     }
   }, 8000);

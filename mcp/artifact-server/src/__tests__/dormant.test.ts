@@ -36,8 +36,8 @@ beforeEach(() => {
   tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "ideate-dormant-test-"));
 });
 
-afterEach(() => {
-  artifactWatcher.close();
+afterEach(async () => {
+  await artifactWatcher.close();
   fs.rmSync(tmpDir, { recursive: true, force: true });
 });
 

@@ -107,7 +107,7 @@ export class ArtifactWatcher extends EventEmitter {
     this.watchers.set(artifactDir, watcher);
   }
 
-  unwatch(artifactDir: string): void {
+  async unwatch(artifactDir: string): Promise<void> {
     const timer = this.debounceTimers.get(artifactDir);
     if (timer) {
       clearTimeout(timer);
@@ -123,15 +123,18 @@ export class ArtifactWatcher extends EventEmitter {
     this.pendingDeleted.delete(artifactDir);
     const watcher = this.watchers.get(artifactDir);
     if (watcher) {
-      watcher.close();
       this.watchers.delete(artifactDir);
+      // Await chokidar's async close so all internal timers and fs handles are
+      // released before the caller proceeds. Without this await, the chokidar
+      // FSWatcher's internal polling timers may fire after the test has
+      // completed, producing spurious warnings and keeping the process alive.
+      await watcher.close();
     }
   }
 
-  close(): void {
-    for (const [dir] of this.watchers) {
-      this.unwatch(dir);
-    }
+  async close(): Promise<void> {
+    const dirs = [...this.watchers.keys()];
+    await Promise.all(dirs.map((dir) => this.unwatch(dir)));
   }
 }
 

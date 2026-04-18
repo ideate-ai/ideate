@@ -58,7 +58,7 @@ export class LocalAdapter extends LocalWriterAdapter implements StorageAdapter {
     this._isShutDown = true;
     // Stop the artifact watcher — prevents lingering file-watch handles.
     // index.ts owns state.db and closes it separately; we do NOT close it here.
-    artifactWatcher.close();
+    await artifactWatcher.close();
     // Flip the writer's shutdown guard so mutating methods throw ADAPTER_SHUT_DOWN.
     this._markShutDown();
   }

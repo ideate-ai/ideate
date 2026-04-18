@@ -40,8 +40,8 @@ beforeEach(() => {
   tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "ideate-telemetry-wiring-test-"));
 });
 
-afterEach(() => {
-  artifactWatcher.close();
+afterEach(async () => {
+  await artifactWatcher.close();
   fs.rmSync(tmpDir, { recursive: true, force: true });
 });
 
