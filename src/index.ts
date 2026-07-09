@@ -63,3 +63,11 @@ export type { AppendErrorCode, AppendResult, ReadOptions, RecordInput } from "./
 // call lazy-inits config + record dir).
 export { RECORD_TOOL_NAMES, createRecordToolsRegistrar } from "./record/tools.js";
 export type { RecordToolsOptions } from "./record/tools.js";
+
+// WI-274: the `ideate-record` CLI — the second transport over the same gated
+// record core (v3-composable-surface.md §1.1: one implementation, two
+// transports; §2.1 Tier B: hook-written records pass the same secret gate).
+// Direct paths (append/read) exit 1 on failure; hook paths (session-end/
+// prime) always exit 0 — see the exit-code split note in cli/ideate-record.ts.
+export { DEFAULT_PRIME_BUDGET, main as ideateRecordCliMain } from "./cli/ideate-record.js";
+export type { CliIo as IdeateRecordCliIo } from "./cli/ideate-record.js";

@@ -1,0 +1,26 @@
+#!/usr/bin/env node
+// plugin/bin/ideate-record — executable edge for the v3 process-record CLI
+// (WI-274; docs/design/v3-composable-surface.md §1.1: one implementation,
+// two transports — hooks invoke this via ${CLAUDE_PLUGIN_ROOT}/bin/ideate-record).
+//
+// Thin loader only: all logic lives in src/cli/ideate-record.ts (compiled to
+// dist/cli/ideate-record.js). Dynamic import keeps this wrapper working
+// whether Node loads this extensionless file as CommonJS or as an ES module.
+//
+// Load-failure exit codes mirror the CLI's documented split: hook-invoked
+// subcommands (session-end, prime) exit 0 even when the compiled CLI is
+// missing — a broken install must never look like a hook failure to the
+// host — while direct-use subcommands exit 1 so scripts see the error.
+const HOOK_SUBCOMMANDS = new Set(['session-end', 'prime']);
+import('../dist/cli/ideate-record.js')
+  .then((mod) => mod.main(process.argv.slice(2)))
+  .then((code) => {
+    process.exitCode = code;
+  })
+  .catch((err) => {
+    console.error(
+      'ideate-record: failed to run the compiled CLI (dist/cli/ideate-record.js). Run `pnpm build` first.',
+    );
+    console.error(err instanceof Error ? err.message : String(err));
+    process.exitCode = HOOK_SUBCOMMANDS.has(process.argv[2]) ? 0 : 1;
+  });
