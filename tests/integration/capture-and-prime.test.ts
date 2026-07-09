@@ -21,6 +21,12 @@
 //      capture_write_failed.
 //   5. Registration purity at the integration level: constructing the MCP
 //      server + registrar writes NOTHING until the first tool call.
+//   6. Redaction observability (WI-281, closes cycle-7 S1): a planted secret
+//      pushed through a hook script is masked on disk, increments the
+//      dedicated `redactions` telemetry counter (read via reportFromDir),
+//      AND its warning text reaches the hook's own stderr — on a SUCCESSFUL
+//      append, because the hook transport forwards child stderr
+//      unconditionally.
 //
 // The real `.ideate/` is never touched; everything runs in mkdtemp roots.
 
@@ -322,5 +328,56 @@ describe('5. constructing server + registrar writes NOTHING until first call (§
     });
     expect(existsSync(join(pureRoot, CONFIG_FILENAME))).toBe(true); // .ideate.json onboarded
     expect(existsSync(join(pureRoot, DEFAULT_RECORD_PATH))).toBe(true); // record dir created
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 6. Redaction observability end to end (WI-281, closes cycle-7 S1)
+// ---------------------------------------------------------------------------
+
+describe('6. planted secret through a hook: counted on the dashboard AND visible on hook stderr', () => {
+  it('the redactions counter increments and the warning text reaches the hook stderr, exit 0', () => {
+    const before = reportFromDir(telemetryDir).report.redactions;
+    const ghToken = `ghp_${'Z9y8X7w6'.repeat(5)}`; // ghp_ + 40 alnum chars
+
+    const payload = {
+      session_id: SESSION_ID,
+      task_id: 'T-81',
+      task_title: 'Rotate the leaked staging token',
+      task_description: `The old token ${ghToken} was found in a shell history file and must be revoked immediately.`,
+      cwd: projectRoot,
+    };
+    const result = spawnSync(process.execPath, [TASK_COMPLETED_HOOK], {
+      cwd: projectRoot,
+      encoding: 'utf8',
+      input: JSON.stringify(payload),
+    });
+
+    // Exit-0 hook policy preserved; stdout stays silent.
+    expect(result.status).toBe(0);
+    expect(result.stdout).toBe('');
+
+    // Signal 1 — the dashboard: the SIXTH counter observably incremented,
+    // read via the same report API the ideate-telemetry CLI folds with.
+    const after = reportFromDir(telemetryDir).report.redactions;
+    expect(after.total).toBe(before.total + 1);
+    expect(after.events).toBe(before.events + 1);
+    expect(after.byPattern['github-token']).toBe((before.byPattern['github-token'] ?? 0) + 1);
+    // The CLI append transport mints its own `cli-<ulid>` session id, so the
+    // per-session breakdown is keyed under that (not the hook payload's id).
+    expect(Object.keys(after.bySession).some((s) => s.startsWith('cli-'))).toBe(true);
+
+    // Signal 2 — the transport: the store's warning survived the hook hop
+    // (child stderr forwarded unconditionally, even though the append
+    // SUCCEEDED). It names the pattern, never the content.
+    expect(result.stderr).toContain('IDEATE_RECORD_REDACTION');
+    expect(result.stderr).toContain('github-token');
+    expect(result.stderr).not.toContain(ghToken);
+
+    // And the persisted record itself is masked.
+    const planted = storedRecords().filter((r) => r.record.source.task_id === 'T-81');
+    expect(planted).toHaveLength(1);
+    expect((planted[0] as StoredRecord).raw).not.toContain(ghToken);
+    expect((planted[0] as StoredRecord).raw).toContain('[REDACTED:github-token]');
   });
 });

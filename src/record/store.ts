@@ -27,17 +27,19 @@
 // There is no code path that persists ungated content — the masked record is
 // the only thing ever serialized.
 //
-// Redaction telemetry routing (WI-271 design note): scan.ts's `onRedaction`
-// is specced to feed capture telemetry, but TelemetryCounters is a CLOSED
-// five-counter set ("There is no sixth" — telemetry/counters.ts) with no
-// redaction counter, and this work item may not modify telemetry's files.
-// Misrouting redactions through `capture_fired` (a pseudo capture point) or
-// `capture_write_failed` (a redaction is a SUCCESSFUL gate action, not a
-// failure) would pollute both dashboards. The honest wiring chosen here:
-// each redaction emits a process warning (code IDEATE_RECORD_REDACTION,
-// naming the pattern and count — NEVER the content) and the per-pattern
-// tally is returned on the append result, so callers/tests observe it. The
-// dedicated counter lands when the telemetry counter set grows one.
+// Redaction telemetry routing (WI-271 design note, resolved by WI-281 on
+// 2026-07-09): the telemetry counter set grew its dedicated sixth counter
+// (`redactions` — cycle-9 amendment, closes cycle-7 S1/Q-44), so scan.ts's
+// `onRedaction` now routes PRIMARILY to telemetry.redactionApplied (per
+// pattern, per session) — the dashboard read. The process warning (code
+// IDEATE_RECORD_REDACTION, naming the pattern and count — NEVER the
+// content) is KEPT as a secondary, human-visible signal: it is what the
+// hook transport forwards to the host's stderr, so a redaction is visible
+// at the moment it happens, not only on the next dashboard read. The
+// per-pattern tally also stays on the append result for callers/tests.
+// (Misrouting through `capture_fired` or `capture_write_failed` remains
+// forbidden: a redaction is a SUCCESSFUL gate action, not a capture event
+// or a failure.)
 
 import { mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -185,8 +187,11 @@ export class RecordStore {
       const result = scanAndMask(text, {
         onRedaction: (pattern, count) => {
           redactions.push({ pattern, count });
-          // See the redaction-telemetry routing note in the file header:
-          // logged, tallied on the result — no counter exists yet to fire.
+          // Primary signal: the dedicated sixth counter (see the
+          // redaction-telemetry routing note in the file header).
+          this.#telemetry.redactionApplied(pattern, count, sessionId);
+          // Secondary signal: a process warning, kept so the hook transport
+          // can surface the redaction on the host's stderr in the moment.
           process.emitWarning(
             `ideate record: secret gate masked ${String(count)} match(es) of ${pattern} before persisting record ${id}`,
             { code: 'IDEATE_RECORD_REDACTION' },

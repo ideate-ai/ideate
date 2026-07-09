@@ -1,6 +1,7 @@
 // plugin/src/telemetry/counters.test.ts — WI-262 acceptance tests.
 //
-// Asserts the §3.5 contract: exactly five counters; on by default (no opt-in
+// Asserts the §3.5 contract: exactly six counters (sixth — redactions —
+// added 2026-07-09, WI-281, cycle-9 amendment); on by default (no opt-in
 // flag anywhere); append-only NDJSON persistence that survives process
 // restarts and interleaved concurrent writers; the folded report shape; and
 // a CLI smoke test via child_process against a temp state dir.
@@ -39,15 +40,16 @@ afterEach(() => {
 });
 
 describe('closed counter set', () => {
-  it('exposes exactly the five named counters of §3.5', () => {
+  it('exposes exactly the six named counters of §3.5', () => {
     expect([...COUNTER_NAMES]).toEqual([
       'capture_fired',
       'priming',
       'kg_unreachable',
       'frontier_size',
       'capture_write_failed',
+      'redactions',
     ]);
-    expect(COUNTER_NAMES).toHaveLength(5);
+    expect(COUNTER_NAMES).toHaveLength(6);
   });
 
   it('the report has exactly one top-level key per counter', () => {
@@ -58,6 +60,7 @@ describe('closed counter set', () => {
       'frontierSize',
       'kgUnreachable',
       'priming',
+      'redactions',
     ]);
   });
 });
@@ -109,6 +112,24 @@ describe('persistence across process restarts', () => {
     expect(report.captureWriteFailed.total).toBe(1);
     expect(report.captureWriteFailed.byReason).toEqual({ EACCES: 1 });
   });
+
+  it('redaction events persist across restarts and fold across both lifetimes', () => {
+    const dir = makeStateDir();
+
+    const first = createTelemetry(dir, fixedClock);
+    first.redactionApplied('aws-access-key-id', 2, 'sess-1');
+
+    // Simulated restart: a brand-new instance, same directory.
+    const second = createTelemetry(dir, fixedClock);
+    second.redactionApplied('github-token', 1, 'sess-2');
+    second.redactionApplied('aws-access-key-id', 1, 'sess-2');
+
+    const { report } = reportFromDir(dir);
+    expect(report.redactions.total).toBe(4); // sums the per-event match counts
+    expect(report.redactions.events).toBe(3);
+    expect(report.redactions.byPattern).toEqual({ 'aws-access-key-id': 3, 'github-token': 1 });
+    expect(report.redactions.bySession).toEqual({ 'sess-1': 2, 'sess-2': 2 });
+  });
 });
 
 describe('append-only concurrent safety', () => {
@@ -150,7 +171,7 @@ describe('append-only concurrent safety', () => {
 });
 
 describe('report shape', () => {
-  it('folds totals plus per-point/per-session/per-source breakdowns for all five', () => {
+  it('folds totals plus per-point/per-session/per-source breakdowns for all six', () => {
     const dir = makeStateDir();
     const t = createTelemetry(dir, fixedClock);
 
@@ -166,6 +187,8 @@ describe('report shape', () => {
     t.frontierSize(6, 'sess-2');
     t.captureWriteFailed('session_end', 'sess-2', 'disk full');
     t.captureWriteFailed('decision', 'sess-2');
+    t.redactionApplied('aws-access-key-id', 2, 'sess-1');
+    t.redactionApplied('github-token', 1, 'sess-2');
 
     const { report } = reportFromDir(dir);
 
@@ -216,6 +239,13 @@ describe('report shape', () => {
       bySession: { 'sess-2': 2 },
       byReason: { 'disk full': 1, '(unspecified)': 1 },
     });
+
+    expect(report.redactions).toEqual({
+      total: 3,
+      events: 2,
+      byPattern: { 'aws-access-key-id': 2, 'github-token': 1 },
+      bySession: { 'sess-1': 2, 'sess-2': 1 },
+    });
   });
 
   it('an empty state dir folds to a valid all-zero report', () => {
@@ -227,6 +257,8 @@ describe('report shape', () => {
     expect(report.kgUnreachable.total).toBe(0);
     expect(report.frontierSize.overall.samples).toBe(0);
     expect(report.captureWriteFailed.total).toBe(0);
+    expect(report.redactions.total).toBe(0);
+    expect(report.redactions.events).toBe(0);
   });
 
   it('frontierSize is a size-sample recorder and rejects invalid sizes loudly', () => {
@@ -234,6 +266,25 @@ describe('report shape', () => {
     expect(() => t.frontierSize(-1, 'sess-1')).toThrow(RangeError);
     expect(() => t.frontierSize(2.5, 'sess-1')).toThrow(RangeError);
     expect(() => t.frontierSize(Number.NaN, 'sess-1')).toThrow(RangeError);
+  });
+
+  it('redactionApplied persists the gate callback shape verbatim and rejects invalid counts', () => {
+    const dir = makeStateDir();
+    const t = createTelemetry(dir, fixedClock);
+    t.redactionApplied('github-token', 2, 'sess-1');
+    const line = readFileSync(join(dir, TELEMETRY_FILE), 'utf8').trim();
+    expect(JSON.parse(line)).toEqual({
+      counter: 'redactions',
+      pattern: 'github-token',
+      count: 2,
+      sessionId: 'sess-1',
+      at: FIXED_ISO,
+    });
+    // The gate only ever fires onRedaction with count >= 1 (scan.ts); the
+    // counter holds that line loudly rather than recording nonsense.
+    expect(() => t.redactionApplied('github-token', 0, 'sess-1')).toThrow(RangeError);
+    expect(() => t.redactionApplied('github-token', -1, 'sess-1')).toThrow(RangeError);
+    expect(() => t.redactionApplied('github-token', 1.5, 'sess-1')).toThrow(RangeError);
   });
 });
 
@@ -250,7 +301,7 @@ describe('CLI smoke (bin/ideate-telemetry)', () => {
     }
   }, 120_000);
 
-  it('prints all five counters as a table and exits 0', () => {
+  it('prints the counter table and exits 0', () => {
     const dir = makeStateDir();
     const t = createTelemetry(dir, fixedClock);
     t.captureFired('session_end', 'sess-1');

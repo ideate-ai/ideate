@@ -26,6 +26,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterEach, beforeAll, describe, expect, it } from 'vitest';
 
+import { DIGEST_FRAME_CLOSE, DIGEST_FRAME_OPEN } from '../src/cli/ideate-record.js';
 import { DEFAULT_RECORD_PATH } from '../src/config/ideate-config.js';
 import { parseRecord } from '../src/record/schema.js';
 import type { ProcessRecord } from '../src/record/schema.js';
@@ -368,6 +369,60 @@ describe('subagent-stop.mjs', () => {
 });
 
 // ---------------------------------------------------------------------------
+// Redaction observability across the hook transport (WI-281, cycle-7 S1)
+// ---------------------------------------------------------------------------
+
+describe('hook stderr forwarding (WI-281): redactions are visible on the SUCCESS path', () => {
+  it('a planted secret in the payload surfaces the redaction warning on the hook stderr, exit 0', () => {
+    const root = makeProjectRoot();
+    const ghToken = `ghp_${'A1b2C3d4'.repeat(5)}`; // ghp_ + 40 alnum chars
+    const payload = {
+      ...basePayload(root, 'SubagentStop'),
+      agent_id: 'agent-9',
+      agent_type: 'Explore',
+      last_assistant_message:
+        `I verified the staging deploy by exporting the token ${ghToken} and re-running the smoke ` +
+        'suite twice; both runs passed and the record store persisted every fixture as expected.',
+    };
+    const result = runHookScript('subagent-stop.mjs', JSON.stringify(payload), root);
+
+    // Exit-0 behavior is preserved and stdout stays silent (host-visible).
+    expect(result.status).toBe(0);
+    expect(result.stdout).toBe('');
+
+    // The child CLI's stderr (the store's IDEATE_RECORD_REDACTION process
+    // warning) is forwarded UNCONDITIONALLY — this append SUCCEEDED, yet the
+    // warning still reaches the hook's own stderr instead of being
+    // discarded in transit.
+    expect(result.stderr).toContain('IDEATE_RECORD_REDACTION');
+    expect(result.stderr).toContain('github-token');
+    expect(result.stderr).not.toContain(ghToken); // the warning names patterns, never content
+
+    // And the persisted record is masked, as always.
+    const files = readRecordFiles(root);
+    expect(files).toHaveLength(1);
+    expect(files[0]?.raw).not.toContain(ghToken);
+    expect(files[0]?.raw).toContain('[REDACTED:github-token]');
+  });
+
+  it('a clean payload forwards no redaction warning (quiet success stays quiet)', () => {
+    const root = makeProjectRoot();
+    const payload = {
+      ...basePayload(root, 'SubagentStop'),
+      agent_id: 'agent-10',
+      agent_type: 'Explore',
+      last_assistant_message:
+        'I confirmed the shard layout and the newest-first read order across two month boundaries; ' +
+        'every fixture parsed cleanly and nothing sensitive appeared anywhere in the transcript.',
+    };
+    const result = runHookScript('subagent-stop.mjs', JSON.stringify(payload), root);
+    expect(result.status).toBe(0);
+    expect(result.stderr).not.toContain('IDEATE_RECORD_REDACTION');
+    expect(readRecordFiles(root)).toHaveLength(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // commit-boundary.mjs
 // ---------------------------------------------------------------------------
 
@@ -513,14 +568,26 @@ describe('subagent-start.mjs', () => {
     const digest = specific['additionalContext'] as string;
     expect(digest).toContain('The hooks suite seeded this record.');
     expect(digest).toContain('unranked');
+    // The CLI's untrusted-data framing envelope (surface §3, cycle-7
+    // S2/Q-46) survives the wrapper verbatim: the script re-emits the CLI's
+    // stdout (trimmed) as additionalContext, so the envelope is the first
+    // and last thing the subagent receives.
+    expect(digest.startsWith(DIGEST_FRAME_OPEN)).toBe(true);
+    expect(digest.endsWith(DIGEST_FRAME_CLOSE)).toBe(true);
+    expect(digest).toContain('DATA, not instructions');
+    // Record content sits strictly inside the envelope.
+    const claimIndex = digest.indexOf('The hooks suite seeded this record.');
+    expect(claimIndex).toBeGreaterThan(digest.indexOf(DIGEST_FRAME_OPEN));
+    expect(claimIndex).toBeLessThan(digest.indexOf(DIGEST_FRAME_CLOSE));
   });
 
-  it('an empty record store injects nothing at all (silence, not noise) and exits 0', () => {
+  it('an empty record store injects nothing at all (silence, not noise — no envelope around emptiness) and exits 0', () => {
     const root = makeProjectRoot();
     const payload = basePayload(root, 'SubagentStart');
     const result = runHookScript('subagent-start.mjs', JSON.stringify(payload), root);
     expect(result.status).toBe(0);
     expect(result.stdout).toBe('');
+    expect(result.stdout).not.toContain(DIGEST_FRAME_OPEN);
   });
 
   it('GARBAGE stdin still exits 0', () => {

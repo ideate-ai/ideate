@@ -29,6 +29,36 @@ const V9_FIXTURE = {
   vague_rule_thresholds: { min_specificity: 0.6, max_hedge_terms: 2 },
 } as const;
 
+/** This repo's REAL root .ideate.json shape after the dogfood record-path
+ *  override (v3-architecture §5 dogfood-transition note; cycle-7 S4/Q-45,
+ *  Dan's ratified decision): the live v2 schema_version-9 fields verbatim —
+ *  including v2's own top-level `backend` — plus the v3 `record` key with the
+ *  path overridden to a directory disjoint from the v2 artifact directory.
+ *  Key order mirrors the real file. */
+const DOGFOOD_REPO_FIXTURE = {
+  schema_version: 9,
+  artifact_directory: ".ideate",
+  backend: "local",
+  record: { path: ".ideate-record/" },
+  settings: {
+    importance_weights: {
+      surprise: 0.25,
+      delta_h: 0.35,
+      specificity: 0.2,
+      conflict_index: 0.2,
+    },
+    decay_lambda: 0.05,
+    reinforcement_deltas: { cited: 0.1, applied_without_conflict: 0.2 },
+    vague_rule_thresholds: {
+      narrowing_ratio_min: 0.15,
+      min_samples: 5,
+      lambda_multiplier_when_vague: 2.0,
+    },
+    multi_reviewer_corroboration_n: 2,
+    circuit_breaker_threshold: 5,
+  },
+} as const;
+
 const V2_KNOWLEDGE_STORE_FIELDS = [
   "importance_weights",
   "decay_lambda",
@@ -188,6 +218,45 @@ describe("existing v3 config", () => {
     const raw = JSON.stringify({ schema_version: 10, record: {}, backend: "local" });
     fs.writeFileSync(configFile(), raw, "utf8");
     expect(() => loadConfig(root)).toThrowError(IdeateConfigError);
+    expect(readConfigFileRaw()).toBe(raw);
+  });
+});
+
+describe("dogfood repo shape (v9 fields + v3 record-path override)", () => {
+  it("resolves .ideate-record/ and passes through as already-v3 — no rewrite", () => {
+    const raw = `${JSON.stringify(DOGFOOD_REPO_FIXTURE, null, 2)}\n`;
+    fs.writeFileSync(configFile(), raw, "utf8");
+    const before = fs.statSync(configFile());
+
+    const config = loadConfig(root);
+
+    // The v3 view: the override wins, and the in-memory view reports the v3
+    // schema major even though the file's schema_version stays 9 (coexistence).
+    expect(config).toEqual({
+      schema_version: 10,
+      record: { path: ".ideate-record/" },
+      backend: "local",
+    });
+    expect(recordPath(config, root)).toBe(path.resolve(root, ".ideate-record"));
+
+    // Disjoint territories (cycle-7 S4/Q-45): the record directory is created
+    // beside — never inside — the v2 artifact directory, which stays untouched.
+    expect(fs.statSync(path.join(root, ".ideate-record")).isDirectory()).toBe(true);
+    expect(fs.existsSync(path.join(root, ".ideate"))).toBe(false);
+
+    // Already-v3: the file is not rewritten on load — content equality.
+    expect(readConfigFileRaw()).toBe(raw);
+    expect(fs.statSync(configFile()).mtimeMs).toBe(before.mtimeMs);
+  });
+
+  it("is idempotent across repeated loads — content equality holds every time", () => {
+    const raw = `${JSON.stringify(DOGFOOD_REPO_FIXTURE, null, 2)}\n`;
+    fs.writeFileSync(configFile(), raw, "utf8");
+
+    loadConfig(root);
+    const config = loadConfig(root);
+
+    expect(config.record.path).toBe(".ideate-record/");
     expect(readConfigFileRaw()).toBe(raw);
   });
 });

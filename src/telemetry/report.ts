@@ -1,5 +1,6 @@
-// plugin/src/telemetry/report.ts — fold-on-read for the five native
-// telemetry counters (WI-262; docs/design/v3-architecture.md §3.5).
+// plugin/src/telemetry/report.ts — fold-on-read for the six native
+// telemetry counters (WI-262; sixth counter WI-281, cycle-9 amendment;
+// docs/design/v3-architecture.md §3.5).
 //
 // The state is an append-only NDJSON event stream (counters.ts). This module
 // reads it and folds it into totals plus per-point / per-session / per-source
@@ -28,7 +29,7 @@ export interface FrontierStats {
   last: number | null;
 }
 
-/** The folded report: exactly the five counters of §3.5, one key each. */
+/** The folded report: exactly the six counters of §3.5, one key each. */
 export interface TelemetryReport {
   captureFired: {
     total: number;
@@ -61,6 +62,14 @@ export interface TelemetryReport {
     bySession: Record<string, number>;
     byReason: Record<string, number>;
   };
+  redactions: {
+    /** Total masked matches (the SUM of per-event counts, not event count). */
+    total: number;
+    /** Number of redaction events (one per pattern per gated scan). */
+    events: number;
+    byPattern: Record<string, number>;
+    bySession: Record<string, number>;
+  };
 }
 
 const EMPTY_FRONTIER: FrontierStats = { samples: 0, min: null, max: null, mean: null, last: null };
@@ -76,6 +85,7 @@ export function emptyReport(): TelemetryReport {
     kgUnreachable: { total: 0, bySession: {} },
     frontierSize: { overall: { ...EMPTY_FRONTIER }, bySession: {} },
     captureWriteFailed: { total: 0, byPoint: {}, bySession: {}, byReason: {} },
+    redactions: { total: 0, events: 0, byPattern: {}, bySession: {} },
   };
 }
 
@@ -118,6 +128,10 @@ export function parseEventLine(line: string): TelemetryEvent | null {
     case 'frontier_size':
       if (typeof e.size !== 'number' || !Number.isInteger(e.size) || e.size < 0) return null;
       return { counter: 'frontier_size', size: e.size, sessionId, at };
+    case 'redactions':
+      if (typeof e.pattern !== 'string') return null;
+      if (typeof e.count !== 'number' || !Number.isInteger(e.count) || e.count < 1) return null;
+      return { counter: 'redactions', pattern: e.pattern, count: e.count, sessionId, at };
     default:
       return null;
   }
@@ -191,7 +205,7 @@ function frontierStats(acc: FrontierAcc | undefined): FrontierStats {
   };
 }
 
-/** Fold an event stream into the five-counter report. */
+/** Fold an event stream into the six-counter report. */
 export function foldReport(events: readonly TelemetryEvent[]): TelemetryReport {
   const report = emptyReport();
   let frontierAll: FrontierAcc | undefined;
@@ -240,6 +254,15 @@ export function foldReport(events: readonly TelemetryEvent[]): TelemetryReport {
         bump(f.byPoint, event.point);
         bump(f.bySession, event.sessionId);
         bump(f.byReason, event.reason ?? '(unspecified)');
+        break;
+      }
+      case 'redactions': {
+        const r = report.redactions;
+        // Totals SUM the per-event match counts; `events` counts the events.
+        r.total += event.count;
+        r.events += 1;
+        r.byPattern[event.pattern] = (r.byPattern[event.pattern] ?? 0) + event.count;
+        r.bySession[event.sessionId] = (r.bySession[event.sessionId] ?? 0) + event.count;
         break;
       }
     }

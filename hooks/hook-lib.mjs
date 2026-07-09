@@ -79,10 +79,16 @@ export function excerptOf(text, maxLength = 160) {
 /**
  * Append one record through the CLI (the gated core's second transport).
  * The child's stdout (the new record id) is CAPTURED, never inherited:
- * this process's stdout is host-visible hook output and stays silent. A
- * failed append is diagnosed on stderr only — the store has already
- * counted it (capture_write_failed); it must never look like a hook
- * failure to the host (log + count, never block).
+ * this process's stdout is host-visible hook output and stays silent. The
+ * child's STDERR, by contrast, is forwarded to this hook's own stderr
+ * UNCONDITIONALLY — on success AND on failure (WI-281, closes cycle-7 S1:
+ * reading it only on nonzero exit discarded the secret-gate redaction
+ * warnings in transit, because a redaction is a successful append). Stderr
+ * is diagnostic-only to the host, so forwarding never blocks anything and
+ * exit-0 behavior is unchanged. A failed append is likewise diagnosed on
+ * stderr only — the store has already counted it (capture_write_failed);
+ * it must never look like a hook failure to the host (log + count, never
+ * block).
  */
 export function appendRecord(hookName, { projectRoot, kind, claim, anchor = '', scope = '', content, taskId }) {
   const args = [RECORD_BIN, 'append', '--kind', kind, '--claim', claim, '--anchor', anchor, '--scope', scope, '--content', '-'];
@@ -93,12 +99,18 @@ export function appendRecord(hookName, { projectRoot, kind, claim, anchor = '', 
     encoding: 'utf8',
     stdio: ['pipe', 'pipe', 'pipe'],
   });
+  // Forward the child's stderr verbatim, success or failure — redaction
+  // warnings and other diagnostics must survive the hook transport.
+  const childStderr = typeof result.stderr === 'string' ? result.stderr : '';
+  if (childStderr.length > 0) {
+    process.stderr.write(childStderr.endsWith('\n') ? childStderr : `${childStderr}\n`);
+  }
   if (result.error !== undefined) {
     process.stderr.write(`ideate ${hookName} hook: could not run ideate-record (${errorMessage(result.error)})\n`);
     return false;
   }
   if (result.status !== 0) {
-    process.stderr.write(`ideate ${hookName} hook: append exited ${String(result.status)}: ${(result.stderr ?? '').trim()}\n`);
+    process.stderr.write(`ideate ${hookName} hook: append exited ${String(result.status)}\n`);
     return false;
   }
   return true;

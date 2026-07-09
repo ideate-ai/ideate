@@ -1,6 +1,6 @@
 // plugin/src/telemetry/cli.ts — the `ideate-telemetry` CLI edge (WI-262).
 //
-// Prints the folded five-counter report as a readable table and exits 0.
+// Prints the folded six-counter report as a readable table and exits 0.
 // This is the outermost edge, so wall-clock defaults live here and nowhere
 // deeper (repo convention) — though the report path is read-only and needs
 // no clock at all.
@@ -17,7 +17,7 @@ import type { FrontierStats, TelemetryReport } from './report.js';
 
 const USAGE = `Usage: ideate-telemetry [--dir <state-dir>]
 
-Prints the ideate native telemetry report (the five counters of
+Prints the ideate native telemetry report (the six counters of
 docs/design/v3-architecture.md §3.5) folded from the append-only NDJSON
 state under <state-dir>.
 
@@ -62,6 +62,7 @@ export function renderReport(report: TelemetryReport, stateDir: string): string 
     ['kg_unreachable', num(report.kgUnreachable.total)],
     ['frontier_size (samples)', num(report.frontierSize.overall.samples)],
     ['capture_write_failed', num(report.captureWriteFailed.total)],
+    ['redactions', num(report.redactions.total)],
   ];
   const width = Math.max(...rows.map(([label]) => label.length)) + 2;
   lines.push(`  ${pad('counter', width)}total`);
@@ -88,6 +89,9 @@ export function renderReport(report: TelemetryReport, stateDir: string): string 
   breakdown(lines, 'capture_write_failed by point', report.captureWriteFailed.byPoint);
   breakdown(lines, 'capture_write_failed by reason', report.captureWriteFailed.byReason);
   breakdown(lines, 'capture_write_failed by session', report.captureWriteFailed.bySession);
+
+  breakdown(lines, 'redactions by pattern', report.redactions.byPattern);
+  breakdown(lines, 'redactions by session', report.redactions.bySession);
 
   lines.push('');
   return lines.join('\n');

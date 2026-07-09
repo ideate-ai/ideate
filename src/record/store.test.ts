@@ -4,8 +4,9 @@
 // Pins: round-trip serialization; four-contract-fields-always-present
 // enforcement (boundary contract §6.2); date-sharded config-resolved paths
 // with ULID filename stems (architecture §2.1); gate-before-persist with a
-// PLANTED SECRET asserted masked in the raw on-disk bytes; both telemetry
-// counters (capture_fired / capture_write_failed); typed no-throw failure on
+// PLANTED SECRET asserted masked in the raw on-disk bytes; the telemetry
+// wiring (capture_fired / capture_write_failed, and — WI-281 — every
+// redaction routed to the dedicated sixth counter); typed no-throw failure on
 // an unwritable directory; newest-first scope-filtered limited reads with no
 // index; and the append-only API surface (no update/delete/rank anywhere).
 //
@@ -248,6 +249,38 @@ describe('gate before persist (secret gate wired ahead of any write)', () => {
         { pattern: 'github-token', count: 1 },
       ]),
     );
+  });
+
+  it('routes every redaction to the sixth telemetry counter (per pattern, per session)', () => {
+    const { store, telemetryDir } = makeFixture();
+    const awsKey = 'AKIAIOSFODNN7EXAMPLE';
+    const ghToken = `ghp_${'A1b2C3d4'.repeat(5)}`;
+    const result = store.append(
+      input({
+        claim: `Deploy fails unless ${awsKey} is set in the env.`,
+        content: `Reproduced with token ${ghToken} against the staging API.`,
+      }),
+    );
+    expect(result.ok).toBe(true);
+
+    // The dashboard read observes the redactions — cycle-7 S1 closed.
+    const { report } = reportFromDir(telemetryDir);
+    expect(report.redactions.total).toBe(2);
+    expect(report.redactions.events).toBe(2);
+    expect(report.redactions.byPattern).toEqual({ 'aws-access-key-id': 1, 'github-token': 1 });
+    expect(report.redactions.bySession).toEqual({ 'sess-1': 2 });
+    // A redaction is a successful gate action — it never pollutes the
+    // capture counters.
+    expect(report.captureFired.total).toBe(1);
+    expect(report.captureWriteFailed.total).toBe(0);
+  });
+
+  it('a clean append (no secrets) fires no redaction telemetry', () => {
+    const { store, telemetryDir } = makeFixture();
+    expect(store.append(input()).ok).toBe(true);
+    const { report } = reportFromDir(telemetryDir);
+    expect(report.redactions.total).toBe(0);
+    expect(report.redactions.events).toBe(0);
   });
 });
 

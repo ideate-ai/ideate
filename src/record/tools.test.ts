@@ -23,6 +23,7 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
+import { CursorSchema, ProgressSchema } from '@modelcontextprotocol/sdk/types.js';
 
 import { CONFIG_FILENAME } from '../config/ideate-config.js';
 import type { Clock } from './id.js';
@@ -101,6 +102,40 @@ const minimalAppend = {
   claim: 'The fork pool cap is load-bearing.',
   content: 'Raising maxForks above 4 crashed a 32GB box during v2.',
 };
+
+describe('SDK zod primitive shape-pin: the zString/zNumber derivation base', () => {
+  // tools.ts derives its parameter schemas from the SDK's own exported zod
+  // instances (zString = CursorSchema, zNumber = ProgressSchema.shape.progress)
+  // rather than adding a zod dependency. These behavioral pins make a future
+  // SDK bump that changes those primitives' shapes fail loudly here, instead
+  // of silently changing every record verb's argument validation.
+  const zString = CursorSchema; // the exact expression tools.ts binds
+  const zNumber = ProgressSchema.shape.progress; // ditto
+
+  it('zString (CursorSchema) accepts a string and rejects a number', () => {
+    expect(zString.safeParse('a discovery-candidate claim').success).toBe(true);
+    expect(zString.safeParse(42).success).toBe(false);
+  });
+
+  it('zNumber (ProgressSchema.shape.progress) accepts a number and rejects a string', () => {
+    expect(zNumber.safeParse(7).success).toBe(true);
+    expect(zNumber.safeParse('7').success).toBe(false);
+  });
+
+  it('the derived chains tools.ts mints keep their validation semantics', () => {
+    // record_read's limit: zNumber.int().min(0).optional()
+    const limit = zNumber.int().min(0).describe('limit').optional();
+    expect(limit.safeParse(3).success).toBe(true);
+    expect(limit.safeParse(undefined).success).toBe(true); // optional
+    expect(limit.safeParse(2.5).success).toBe(false); // .int()
+    expect(limit.safeParse(-1).success).toBe(false); // .min(0)
+    // Every optional string arg: zString.describe(...).optional()
+    const optionalText = zString.describe('scope').optional();
+    expect(optionalText.safeParse('auth flow').success).toBe(true);
+    expect(optionalText.safeParse(undefined).success).toBe(true);
+    expect(optionalText.safeParse(42).success).toBe(false);
+  });
+});
 
 describe('the tool surface: exactly three verbs, no update/delete (§1.1, §4.2)', () => {
   it('registers exactly record_append, record_read, record_decision — nothing else', async () => {

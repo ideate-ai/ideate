@@ -12,6 +12,14 @@
 // captures the digest, and re-emits it in that JSON shape. The digest is
 // the ONLY thing emitted — no other field of any kind — and an empty store
 // emits nothing at all (silence, not noise). Exit 0 unconditionally.
+//
+// Untrusted-data framing (surface §3; cycle-7 finding S2 / Q-46): the CLI
+// wraps every non-empty digest in an explicit envelope marking the entries
+// as quoted historical DATA, not instructions. This script re-emits the
+// CLI's stdout VERBATIM (whitespace-trimmed only, which cannot touch the
+// envelope's first/last lines), so the framed text — envelope included — is
+// exactly what lands in additionalContext. Do not compose additional prose
+// around the digest here; the envelope is the CLI's job, stated once.
 
 import { spawnSync } from 'node:child_process';
 

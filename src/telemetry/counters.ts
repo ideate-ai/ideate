@@ -5,7 +5,7 @@
 // the counters in from the start, ON BY DEFAULT (no opt-in flag exists in
 // this API), so the same facts are a dashboard read, not an investigation.
 //
-// Exactly five counters — a closed set (COUNTER_NAMES):
+// Exactly six counters — a closed set (COUNTER_NAMES):
 //   1. capture_fired        — capture-point firing counts (per point, per session)
 //   2. priming              — priming requests and their usefulness signals
 //   3. kg_unreachable       — KG unreachability rate (fail-open degradation, measured)
@@ -13,6 +13,10 @@
 //                             decides whether reserved `rank` ever gets built)
 //   5. capture_write_failed — capture-write failure rate (a nonzero rate is an
 //                             ideate bug surfaced on the dashboard)
+//   6. redactions           — secret-gate masking events (per pattern, per
+//                             session; added 2026-07-09, cycle-9 amendment,
+//                             closes cycle-7 S1/Q-44 per Dan's ratified
+//                             decision — see §3.5)
 //
 // `kg_unreachable` and `frontier_size` have no live firing site in this phase
 // — deliberate; their call sites arrive with Layer-1/KG integration.
@@ -36,13 +40,24 @@ import { join } from 'node:path';
 /** Injected clock. The composition root (CLI edge) passes `() => new Date()`. */
 export type Clock = () => Date;
 
-/** The five counters — a closed set. There is no sixth. */
+/**
+ * The six counters — a closed set. The set grew from five to six on
+ * 2026-07-09 (cycle-9 amendment; architecture §3.5): cycle-7 finding S1/Q-44
+ * corroborated that secret-gate redactions were UNOBSERVABLE — a successful
+ * gate action that never appeared on the telemetry dashboard and whose only
+ * signals (a process warning + the AppendResult tally) were discarded in
+ * transit on the hook transport. Dan ratified a dedicated sixth counter as
+ * the fix. A redaction is a successful gate action, NOT a capture failure,
+ * so it gets its own counter rather than polluting `capture_fired` or
+ * `capture_write_failed`.
+ */
 export const COUNTER_NAMES = [
   'capture_fired',
   'priming',
   'kg_unreachable',
   'frontier_size',
   'capture_write_failed',
+  'redactions',
 ] as const;
 
 export type CounterName = (typeof COUNTER_NAMES)[number];
@@ -69,7 +84,8 @@ export type TelemetryEvent =
   | { counter: 'priming'; kind: 'requested'; source: string; sessionId: string; at: string }
   | { counter: 'priming'; kind: 'usefulness'; signal: unknown; sessionId: string; at: string }
   | { counter: 'kg_unreachable'; sessionId: string; at: string }
-  | { counter: 'frontier_size'; size: number; sessionId: string; at: string };
+  | { counter: 'frontier_size'; size: number; sessionId: string; at: string }
+  | { counter: 'redactions'; pattern: string; count: number; sessionId: string; at: string };
 
 /**
  * The counter library. Constructing it is enabling it: the state directory is
@@ -148,6 +164,23 @@ export class TelemetryCounters {
       );
     }
     this.#append({ counter: 'frontier_size', size, sessionId, at: this.#now() });
+  }
+
+  /**
+   * Counter 6 — the secret gate masked `count` match(es) of `patternName`
+   * before a persist (per pattern, per session). A redaction is a SUCCESSFUL
+   * gate action; a nonzero rate here means the gate is earning its keep, not
+   * that anything failed. (Added 2026-07-09, cycle-9 amendment, closes
+   * cycle-7 S1/Q-44.) The signature mirrors the gate's `onRedaction`
+   * callback (secret-gate/scan.ts), which only ever fires with count ≥ 1.
+   */
+  redactionApplied(patternName: string, count: number, sessionId: string): void {
+    if (!Number.isInteger(count) || count < 1) {
+      throw new RangeError(
+        `redactionApplied: count must be a positive integer, got ${String(count)}`,
+      );
+    }
+    this.#append({ counter: 'redactions', pattern: patternName, count, sessionId, at: this.#now() });
   }
 
   #now(): string {
