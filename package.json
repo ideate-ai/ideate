@@ -6,11 +6,20 @@
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
+  "bin": {
+    "ideate-telemetry": "bin/ideate-telemetry"
+  },
   "engines": {
     "node": ">=22.0.0"
   },
   "scripts": {
     "build": "tsc -b",
     "test": "vitest run --root .. plugin"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "1.29.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22"
   }
 }

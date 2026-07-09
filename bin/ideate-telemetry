@@ -1,0 +1,18 @@
+#!/usr/bin/env node
+// plugin/bin/ideate-telemetry — executable edge for the native telemetry
+// counters (WI-262; docs/design/v3-architecture.md §3.5).
+//
+// Thin loader only: all logic lives in src/telemetry/cli.ts (compiled to
+// dist/telemetry/cli.js). Dynamic import keeps this wrapper working whether
+// Node loads this extensionless file as CommonJS or as an ES module.
+import('../dist/telemetry/cli.js')
+  .then((mod) => {
+    process.exitCode = mod.main(process.argv.slice(2));
+  })
+  .catch((err) => {
+    console.error(
+      'ideate-telemetry: failed to load the compiled CLI (dist/telemetry/cli.js). Run `pnpm build` first.',
+    );
+    console.error(err instanceof Error ? err.message : String(err));
+    process.exitCode = 1;
+  });
