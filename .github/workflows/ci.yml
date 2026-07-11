@@ -1,13 +1,17 @@
-# @ideate/plugin CI — WI-287.
+# @ideate/plugin CI — WI-287, updated WI-293.
 #
-# INERT TODAY: GitHub Actions only reads workflows from a repository's ROOT
-# .github/ directory. This file lives at plugin/.github/workflows/ci.yml,
-# and plugin/ is currently a subdirectory of the private ideate monorepo,
-# not a repo root — so GitHub never sees or runs this workflow as things
-# stand. It is checked in here deliberately: the day plugin/ is split out
-# into its own repo (ideate-ai/ideate, public), this file lands at that
-# repo's root .github/workflows/ci.yml unchanged and CI is live immediately,
-# with no extra setup step.
+# LIVE: since the PH-043 split, this file IS the root
+# .github/workflows/ci.yml of github.com/ideate-ai/ideate (public) and runs
+# on every push and pull request there — GitHub Actions only reads
+# workflows from a repository's ROOT .github/ directory, and plugin/ is now
+# that root.
+#
+# Historical note (accurate as of authoring, no longer current): this file
+# was originally checked in while plugin/ was still a subdirectory of the
+# private ideate monorepo, before it had a root of its own — written
+# deliberately ahead of the split so that the day plugin/ became its own
+# repo, this file would already be sitting at that repo's root
+# .github/workflows/ci.yml, unchanged, with no extra setup step needed.
 #
 # Modeled on the monorepo root's /Users/dan/code/ideate/.github/workflows/ci.yml
 # (WI-280 / PR-005 / PH-042), adapted to a standalone single-package repo:

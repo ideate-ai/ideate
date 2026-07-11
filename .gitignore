@@ -1,0 +1,12 @@
+# @ideate/plugin .gitignore (WI-293, P-39 per-repo .gitignore).
+#
+# This repo (ideate-ai/ideate) keeps its own .gitignore rather than relying
+# on a monorepo root's — the day it splits into its own history, nothing
+# outside plugin/ is reachable to inherit ignore rules from.
+
+# Build outputs
+dist/
+*.tsbuildinfo
+
+# Dependencies
+node_modules/
