@@ -61,12 +61,13 @@ plugin-marketplace manifest listing this plugin (`name: ideate`, `source:
 ```
 
 This is the manifest-driven path — Claude Code resolves the plugin and
-wires `.mcp.json` / `hooks/hooks.json` for you. **Verifiable-live status:**
-the repo has been public with live CI since the PH-043 split; this flow
-becomes live-verifiable once `.claude-plugin/marketplace.json` lands on
-`main`. Until a fresh `/plugin install` has actually been run against the
-published repo, treat this section as the documented contract, not a
-tested claim.
+wires `.mcp.json` / `hooks/hooks.json` for you. **Known limitation (honest
+status):** this repo deliberately does not commit built output (`dist/` is
+git-ignored), and a plugin install performs no build step — so the MCP
+server and CLIs are NOT functional straight from a marketplace install
+today. Until a distribution mechanism for built output exists (tracked as
+an open question in the project record), use the manual path below, which
+is the tested, supported route.
 
 ### (b) Manual wiring
 
