@@ -25,7 +25,6 @@ import { TELEMETRY_FILE } from './counters.js';
 import { reportFromDir } from './report.js';
 
 const PLUGIN_DIR = fileURLToPath(new URL('../..', import.meta.url));
-const REPO_ROOT = join(PLUGIN_DIR, '..');
 const DIST_COUNTERS = join(PLUGIN_DIR, 'dist', 'telemetry', 'counters.js');
 
 const EVENTS_PER_WRITER = 500;
@@ -51,7 +50,7 @@ beforeAll(() => {
   // in counters.test.ts — documented order is `pnpm build` then `pnpm test`,
   // this only keeps the test self-sufficient when run in isolation.
   if (!existsSync(DIST_COUNTERS)) {
-    execFileSync(join(REPO_ROOT, 'node_modules', '.bin', 'tsc'), ['-b'], {
+    execFileSync(join(PLUGIN_DIR, 'node_modules', '.bin', 'tsc'), ['-b'], {
       cwd: PLUGIN_DIR,
       stdio: 'pipe',
     });

@@ -31,12 +31,22 @@
 // Excludes from the copy: node_modules, dist, and any .tsbuildinfo files —
 // none of those may leak stale monorepo-built state into the fresh install.
 //
+// P-40(a) — proofs must exercise at least one no-build path: after the
+// install -> build -> test cycle above passes (phase 1, the "built" proof),
+// this script deletes dist/ and any *.tsbuildinfo files from the fresh copy
+// and re-runs the composition boot test file alone (phase 2, the "no-build"
+// proof). That test's own beforeAll lazily rebuilds dist/ by invoking the
+// package-local tsc directly (see tests/composition/server-boot.test.ts) —
+// phase 2 is what proves that lazy rebuild finds its tsc from a truly clean
+// state, with no parent repository to fall back on. PASS requires both
+// phases to be green; either failing fails the whole script.
+//
 // On failure the temp copy is LEFT IN PLACE for debugging (its path is
 // printed) instead of being cleaned up; on success it is removed unless
 // KEEP_FRESH_COPY=1 is set in the environment.
 
 import { spawnSync } from 'node:child_process';
-import { cpSync, mkdtempSync, mkdirSync, rmSync } from 'node:fs';
+import { cpSync, mkdtempSync, mkdirSync, readdirSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, basename } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -45,14 +55,51 @@ const scriptDir = dirname(fileURLToPath(import.meta.url));
 /** The directory to prove stands alone — one level up from this script. */
 const pluginDir = join(scriptDir, '..');
 
-/** Never copy these, wherever they occur in the tree. */
-const EXCLUDED_NAMES = new Set(['node_modules', 'dist']);
+/**
+ * Never copy these, wherever they occur in the tree. '.git' matters in a
+ * submodule checkout, where it is a gitlink FILE pointing at a parent
+ * repo's modules dir — exactly the kind of enclosing-layout reference the
+ * fresh copy must not carry (P-36/P-40(c)).
+ */
+const EXCLUDED_NAMES = new Set(['node_modules', 'dist', '.git']);
+// Note: today the only *.tsbuildinfo lives at dist/.tsbuildinfo (single
+// composite project), so the recursive sweep below is future-proofing for
+// a project-references split, not a guard against a present multi-file
+// case.
 
 function shouldExclude(path) {
   const name = basename(path);
   if (EXCLUDED_NAMES.has(name)) return true;
   if (name.endsWith('.tsbuildinfo')) return true;
   return false;
+}
+
+/**
+ * Recursively delete every `dist` directory and every `*.tsbuildinfo` file
+ * found under `root`, wherever they occur — the no-build phase must start
+ * from a state with zero built/incremental-build artifacts, not just the
+ * top-level dist/.
+ */
+function removeBuildArtifacts(root) {
+  let entries;
+  try {
+    entries = readdirSync(root, { withFileTypes: true });
+  } catch {
+    return;
+  }
+  for (const entry of entries) {
+    if (entry.name === 'node_modules') continue; // never descend into deps
+    const full = join(root, entry.name);
+    if (entry.isDirectory()) {
+      if (entry.name === 'dist') {
+        rmSync(full, { recursive: true, force: true });
+        continue;
+      }
+      removeBuildArtifacts(full);
+    } else if (entry.isFile() && entry.name.endsWith('.tsbuildinfo')) {
+      rmSync(full, { force: true });
+    }
+  }
 }
 
 function run(label, command, args, cwd) {
@@ -95,12 +142,34 @@ function main() {
   }
 
   if (!ok) {
-    console.error(`\nfresh-copy-check: FAILED. Fresh copy left in place for debugging: ${copyDir}`);
+    console.error(`\nfresh-copy-check: FAILED (phase 1: install/build/test). Fresh copy left in place for debugging: ${copyDir}`);
     process.exitCode = 1;
     return;
   }
 
-  console.log('\nfresh-copy-check: PASSED — install, build, and test all green with no monorepo context.');
+  console.log('\nfresh-copy-check: phase 1 (install, build, test) PASSED with no monorepo context.');
+
+  // Phase 2 (P-40(a) no-build proof): strip every dist/ and *.tsbuildinfo
+  // from the fresh copy, then re-run the composition boot test alone. Its
+  // own beforeAll lazily rebuilds dist/ via the package-local tsc — this is
+  // the truly-clean-state exercise of that path.
+  console.log('\nfresh-copy-check: phase 2 — deleting dist/ and *.tsbuildinfo, then re-running the boot test with NO prior build');
+  removeBuildArtifacts(copyDir);
+
+  const noBuildOk = run(
+    'no-build boot test',
+    'pnpm',
+    ['exec', 'vitest', 'run', 'tests/composition/server-boot.test.ts'],
+    copyDir,
+  );
+
+  if (!noBuildOk) {
+    console.error(`\nfresh-copy-check: FAILED (phase 2: no-build boot test). Fresh copy left in place for debugging: ${copyDir}`);
+    process.exitCode = 1;
+    return;
+  }
+
+  console.log('\nfresh-copy-check: PASSED — phase 1 (install, build, test) and phase 2 (no-build lazy-rebuild boot test) both green with no monorepo context.');
   if (process.env['KEEP_FRESH_COPY'] === '1') {
     console.log(`fresh-copy-check: KEEP_FRESH_COPY=1 set; leaving fresh copy at ${copyDir}`);
   } else {

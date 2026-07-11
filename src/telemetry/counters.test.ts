@@ -18,7 +18,6 @@ import type { Clock } from './counters.js';
 import { reportFromDir } from './report.js';
 
 const PLUGIN_DIR = fileURLToPath(new URL('../..', import.meta.url));
-const REPO_ROOT = join(PLUGIN_DIR, '..');
 const BIN_PATH = join(PLUGIN_DIR, 'bin', 'ideate-telemetry');
 const DIST_CLI = join(PLUGIN_DIR, 'dist', 'telemetry', 'cli.js');
 
@@ -294,7 +293,7 @@ describe('CLI smoke (bin/ideate-telemetry)', () => {
     // (documented order is `pnpm build` then `pnpm test`; this keeps the
     // smoke test self-sufficient when run in isolation).
     if (!existsSync(DIST_CLI)) {
-      execFileSync(join(REPO_ROOT, 'node_modules', '.bin', 'tsc'), ['-b'], {
+      execFileSync(join(PLUGIN_DIR, 'node_modules', '.bin', 'tsc'), ['-b'], {
         cwd: PLUGIN_DIR,
         stdio: 'pipe',
       });

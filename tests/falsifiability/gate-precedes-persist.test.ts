@@ -36,7 +36,6 @@ import { DEFAULT_RECORD_PATH } from '../../src/config/ideate-config.js';
 import { createRecordToolsRegistrar } from '../../src/record/tools.js';
 
 const PLUGIN_DIR = fileURLToPath(new URL('../..', import.meta.url));
-const REPO_ROOT = join(PLUGIN_DIR, '..');
 const HOOKS_DIR = join(PLUGIN_DIR, 'hooks');
 const STORE_TS = join(PLUGIN_DIR, 'src', 'record', 'store.ts');
 const BIN_PATH = join(PLUGIN_DIR, 'bin', 'ideate-record');
@@ -52,7 +51,7 @@ beforeAll(() => {
   // needed (documented order is `pnpm build` then `pnpm test`; this keeps
   // the suite self-sufficient when run in isolation).
   if (!existsSync(DIST_CLI)) {
-    execFileSync(join(REPO_ROOT, 'node_modules', '.bin', 'tsc'), ['-b'], { cwd: PLUGIN_DIR, stdio: 'pipe' });
+    execFileSync(join(PLUGIN_DIR, 'node_modules', '.bin', 'tsc'), ['-b'], { cwd: PLUGIN_DIR, stdio: 'pipe' });
   }
 }, 120_000);
 

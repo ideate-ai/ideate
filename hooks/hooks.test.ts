@@ -33,7 +33,6 @@ import type { ProcessRecord } from '../src/record/schema.js';
 
 const HOOKS_DIR = fileURLToPath(new URL('.', import.meta.url));
 const PLUGIN_DIR = join(HOOKS_DIR, '..');
-const REPO_ROOT = join(PLUGIN_DIR, '..');
 const HOOKS_JSON_PATH = join(HOOKS_DIR, 'hooks.json');
 const BIN_PATH = join(PLUGIN_DIR, 'bin', 'ideate-record');
 const DIST_CLI = join(PLUGIN_DIR, 'dist', 'cli', 'ideate-record.js');
@@ -175,7 +174,7 @@ beforeAll(() => {
   // (documented order is `pnpm build` then `pnpm test`; this keeps the suite
   // self-sufficient when run in isolation).
   if (!existsSync(DIST_CLI)) {
-    execFileSync(join(REPO_ROOT, 'node_modules', '.bin', 'tsc'), ['-b'], {
+    execFileSync(join(PLUGIN_DIR, 'node_modules', '.bin', 'tsc'), ['-b'], {
       cwd: PLUGIN_DIR,
       stdio: 'pipe',
     });

@@ -30,7 +30,6 @@ import { RECORD_TOOL_NAMES } from '../../src/record/tools.js';
 import { SERVER_NAME, SERVER_VERSION } from '../../src/server.js';
 
 const PLUGIN_DIR = fileURLToPath(new URL('../..', import.meta.url));
-const REPO_ROOT = join(PLUGIN_DIR, '..');
 const SRC_DIR = join(PLUGIN_DIR, 'src');
 const DIST_SERVER = join(PLUGIN_DIR, 'dist', 'server.js');
 
@@ -48,9 +47,10 @@ function newestSourceMtime(): number {
 /** The shipped artifact must be current: build once if missing or stale. */
 function ensureDistCurrent(): void {
   if (!existsSync(DIST_SERVER) || statSync(DIST_SERVER).mtimeMs < newestSourceMtime()) {
-    // `pnpm --filter @ideate/plugin build` ≡ `tsc -b` in plugin/; invoke the
-    // workspace tsc directly so the test needs nothing beyond node_modules.
-    execFileSync(join(REPO_ROOT, 'node_modules', '.bin', 'tsc'), ['-b'], { cwd: PLUGIN_DIR, stdio: 'pipe' });
+    // `pnpm run build` ≡ `tsc -b` in plugin/; invoke the package-local tsc
+    // directly (P-36: never assume an enclosing repository layout) so the
+    // test needs nothing beyond this package's own node_modules.
+    execFileSync(join(PLUGIN_DIR, 'node_modules', '.bin', 'tsc'), ['-b'], { cwd: PLUGIN_DIR, stdio: 'pipe' });
   }
 }
 

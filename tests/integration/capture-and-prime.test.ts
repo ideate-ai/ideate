@@ -48,7 +48,6 @@ import { createRecordToolsRegistrar } from '../../src/record/tools.js';
 import { reportFromDir } from '../../src/telemetry/report.js';
 
 const PLUGIN_DIR = fileURLToPath(new URL('../..', import.meta.url));
-const REPO_ROOT = join(PLUGIN_DIR, '..');
 const BIN_PATH = join(PLUGIN_DIR, 'bin', 'ideate-record');
 const DIST_CLI = join(PLUGIN_DIR, 'dist', 'cli', 'ideate-record.js');
 const TASK_COMPLETED_HOOK = join(PLUGIN_DIR, 'hooks', 'task-completed.mjs');
@@ -68,7 +67,7 @@ beforeAll(() => {
   // The chain runs the real bin against compiled output. Build incrementally
   // if needed (documented order is `pnpm build` then `pnpm test`).
   if (!existsSync(DIST_CLI)) {
-    execFileSync(join(REPO_ROOT, 'node_modules', '.bin', 'tsc'), ['-b'], { cwd: PLUGIN_DIR, stdio: 'pipe' });
+    execFileSync(join(PLUGIN_DIR, 'node_modules', '.bin', 'tsc'), ['-b'], { cwd: PLUGIN_DIR, stdio: 'pipe' });
   }
 
   projectRoot = mkdtempSync(join(tmpdir(), 'ideate-e2e-'));
