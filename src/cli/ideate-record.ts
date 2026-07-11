@@ -613,11 +613,12 @@ export async function main(argv: string[] = process.argv.slice(2), io: CliIo = {
   const stderr = io.stderr ?? process.stderr;
 
   const subcommand = argv[0];
+  // --help/-h/no-args are all "show usage" requests, not errors: this is the
+  // general-help edge, distinct from the hook-path exit-0 split below (which
+  // governs session-end/prime specifically) — it always prints USAGE to
+  // stdout and exits 0, so `ideate-record` with nothing else is a safe,
+  // informative no-op rather than a failure.
   if (subcommand === undefined || subcommand === '--help' || subcommand === '-h') {
-    if (subcommand === undefined) {
-      stderr.write(USAGE);
-      return 1;
-    }
     stdout.write(USAGE);
     return 0;
   }

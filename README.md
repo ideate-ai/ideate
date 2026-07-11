@@ -1,5 +1,7 @@
 # @ideate/plugin
 
+[![CI](https://github.com/ideate-ai/ideate/actions/workflows/ci.yml/badge.svg)](https://github.com/ideate-ai/ideate/actions/workflows/ci.yml)
+
 The public, composable surface of **ideate** — a Claude Code plugin for
 AI-augmented software delivery.
 
@@ -39,7 +41,69 @@ call it.
 - **Telemetry.** Native counters for capture, priming, and failure events,
   inspectable with the `ideate-telemetry` CLI.
 
-## Install / build
+## Install
+
+There are two ways to wire this plugin into a Claude Code project. Both land
+on the same `dist/server.js` MCP server and `hooks/hooks.json` — the
+manifests below are just two different ways of pointing Claude Code at them.
+This section documents the contracts (what each mechanism provides); it does
+not prescribe which one to use or what workflow to run once installed.
+
+### (a) Marketplace install
+
+This repo ships `.claude-plugin/marketplace.json`, a Claude Code
+plugin-marketplace manifest listing this plugin (`name: ideate`, `source:
+"./"` — the repo root). From within Claude Code:
+
+```
+/plugin marketplace add ideate-ai/ideate
+/plugin install ideate
+```
+
+This is the manifest-driven path — Claude Code resolves the plugin and
+wires `.mcp.json` / `hooks/hooks.json` for you. **Verifiable-live status:**
+the repo has been public with live CI since the PH-043 split; this flow
+becomes live-verifiable once `.claude-plugin/marketplace.json` lands on
+`main`. Until a fresh `/plugin install` has actually been run against the
+published repo, treat this section as the documented contract, not a
+tested claim.
+
+### (b) Manual wiring
+
+For a project that wants to point at this plugin directly rather than
+through the marketplace resolver:
+
+1. Build the package: `pnpm install && pnpm run build` (compiles `src/` to
+   `dist/`; required before the MCP server or CLIs will run — `dist/` is not
+   checked in).
+2. Add an MCP server entry to the consuming project's `.mcp.json` pointing
+   at the built server, e.g.:
+
+   ```json
+   {
+     "mcpServers": {
+       "ideate": {
+         "command": "node",
+         "args": ["<path-to-this-plugin>/dist/server.js"]
+       }
+     }
+   }
+   ```
+
+   This registers the three MCP verbs (`record_append`, `record_read`,
+   `record_decision`) described below.
+3. Wire the mechanical capture hooks by pointing the consuming project's
+   host at this plugin's `hooks/hooks.json`. That file declares the actual
+   hook shape this plugin provides — `SessionStart` (priming via
+   `bin/ideate-record prime`), `SubagentStart`/`SubagentStop`, `SessionEnd`
+   (`bin/ideate-record session-end`), `PreCompact`, and `PostToolUse` on
+   `git commit` — each entry a `command` hook invoking either
+   `${CLAUDE_PLUGIN_ROOT}/bin/ideate-record` or one of the `hooks/*.mjs`
+   scripts. How a consuming project performs that wiring (copying the file,
+   referencing it, or another host-specific mechanism) is outside this
+   plugin's contract — only the shape of `hooks/hooks.json` itself is.
+
+### Build / test (contributor path)
 
 Prerequisites: Node >= 22 and a pnpm-compatible install.
 

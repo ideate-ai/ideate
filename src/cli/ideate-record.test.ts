@@ -117,6 +117,37 @@ describe('bin wiring', () => {
   });
 });
 
+describe('--help / -h / no-args (general usage edge)', () => {
+  it('prints usage covering all four subcommands and exits 0 for --help', () => {
+    const root = makeProjectRoot();
+    const result = runCliRaw(['--help'], { cwd: root });
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain('Usage: ideate-record');
+    expect(result.stdout).toContain('append');
+    expect(result.stdout).toContain('read');
+    expect(result.stdout).toContain('session-end');
+    expect(result.stdout).toContain('prime');
+  });
+
+  it('prints usage and exits 0 for -h', () => {
+    const root = makeProjectRoot();
+    const result = runCliRaw(['-h'], { cwd: root });
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain('Usage: ideate-record');
+  });
+
+  it('prints usage and exits 0 with no arguments at all', () => {
+    const root = makeProjectRoot();
+    const result = runCliRaw([], { cwd: root });
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain('Usage: ideate-record');
+    expect(result.stdout).toContain('append');
+    expect(result.stdout).toContain('read');
+    expect(result.stdout).toContain('session-end');
+    expect(result.stdout).toContain('prime');
+  });
+});
+
 describe('append (direct-use path)', () => {
   it('writes a gated record file: the planted secret is masked in the raw on-disk bytes', () => {
     const root = makeProjectRoot();
