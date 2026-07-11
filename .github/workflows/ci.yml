@@ -1,0 +1,72 @@
+# @ideate/plugin CI — WI-287.
+#
+# INERT TODAY: GitHub Actions only reads workflows from a repository's ROOT
+# .github/ directory. This file lives at plugin/.github/workflows/ci.yml,
+# and plugin/ is currently a subdirectory of the private ideate monorepo,
+# not a repo root — so GitHub never sees or runs this workflow as things
+# stand. It is checked in here deliberately: the day plugin/ is split out
+# into its own repo (ideate-ai/ideate, public), this file lands at that
+# repo's root .github/workflows/ci.yml unchanged and CI is live immediately,
+# with no extra setup step.
+#
+# Modeled on the monorepo root's /Users/dan/code/ideate/.github/workflows/ci.yml
+# (WI-280 / PR-005 / PH-042), adapted to a standalone single-package repo:
+# no `-r` recursion, install/build/test run directly against this package.
+#
+# Two verification layers beyond build+test:
+#   - The P-34 boot test (tests/composition/server-boot.test.ts) runs inside
+#     `pnpm run test` — it launches dist/server.js over stdio exactly as a
+#     consumer's .mcp.json does.
+#   - The fresh-copy check re-proves standalone coherence on every push: it
+#     copies the package to a temp dir with no repo context and runs
+#     install/build/test there from scratch.
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+# Least-privilege token: this lands in a PUBLIC repo at split time; CI only
+# reads the checkout, so grant nothing else.
+permissions:
+  contents: read
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Version pinned explicitly (this package's own repo carries no
+      # packageManager field until npm publishing is ever ratified) — keep
+      # in lockstep with the version used locally.
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9.15.0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build
+        run: pnpm run build
+
+      # Fork-capped (maxForks: 4, vitest.config.ts); includes the server
+      # boot test — same OOM-avoidance discipline as the monorepo root.
+      - name: Test
+        run: pnpm run test
+
+      # P-34 standalone proof: fresh copy, no repo context, full
+      # install/build/test cycle from scratch (scripts/fresh-copy-check.mjs).
+      - name: Fresh-copy check
+        run: pnpm run test:fresh-copy

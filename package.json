@@ -2,7 +2,8 @@
   "name": "@ideate/plugin",
   "version": "3.0.0-dev.0",
   "private": true,
-  "description": "ideate v3 public composable surface.",
+  "license": "AGPL-3.0-only",
+  "description": "ideate v3 public composable surface. Stays \"private\": true until npm publishing is ratified — see README.md status section.",
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -15,12 +16,15 @@
   },
   "scripts": {
     "build": "tsc -b",
-    "test": "vitest run --root .. plugin"
+    "test": "vitest run",
+    "test:fresh-copy": "node scripts/fresh-copy-check.mjs"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "1.29.0"
   },
   "devDependencies": {
-    "@types/node": "^22"
+    "@types/node": "^22",
+    "typescript": "^5.6.0",
+    "vitest": "^2.0.0"
   }
 }
