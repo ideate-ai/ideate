@@ -33,7 +33,7 @@
 //
 // Events table discipline: this file contains NO `UPDATE events` and NO
 // `DELETE FROM events` statement — the only SQL touching `events` is the
-// single INSERT in `#insertEventRow` and the single SELECT in `events()`.
+// single INSERT in `insertEventRow` and the single SELECT in `events()`.
 // That absence is what makes the events table append-only BY CONSTRUCTION,
 // mechanically grep-falsifiable.
 
@@ -273,6 +273,51 @@ function getItemRow(db: DatabaseSync, id: string): ItemRow | undefined {
   return db.prepare('SELECT * FROM items WHERE id = ?').get(id) as ItemRow | undefined;
 }
 
+/** The single INSERT this module ever issues against `events`. A standalone
+ *  function (not a class method) — it touches no store instance state — so
+ *  both the class's own `appendEvent` and the internal-but-exported
+ *  `appendEventRowOn` (F-301-001 S3, below) share the exact one statement. */
+function insertEventRow(db: DatabaseSync, event: ValidatedAppendEventInput): void {
+  db.prepare(
+    `INSERT INTO events (item_id, actor_human, actor_agent, transition, claim_token, note, at) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+  ).run(
+    event.item_id,
+    event.actor.human,
+    event.actor.agent ?? null,
+    event.transition,
+    event.claim_token ?? null,
+    event.note ?? null,
+    event.at,
+  );
+}
+
+/**
+ * Append one immutable transition event on an ALREADY-OPEN connection, for a
+ * caller that is running its own `BEGIN IMMEDIATE ... COMMIT` unit and needs
+ * the event insert to commit atomically with the state transition it records
+ * (F-301-001 S3: "every transition appends an immutable event" — a crash
+ * between a transition's own commit and a separately-connected event insert
+ * would otherwise leave the transition unaudited). Internal-but-exported:
+ * not part of `WorkStateStore`'s public surface (siblings import it
+ * directly), but validation — including the secret gate on `note` — is
+ * IDENTICAL to `appendEvent`'s; this is not a relaxed or partial path.
+ * Callers own `db`'s lifecycle (open/transaction/close) entirely; this
+ * function neither opens nor closes it, and neither begins nor commits/rolls
+ * back the transaction.
+ */
+export function appendEventRowOn(db: DatabaseSync, input: unknown, defaultAt: () => string): WorkStateEvent {
+  const validated = validateAppendEventInput(input, defaultAt);
+  insertEventRow(db, validated);
+  return {
+    item_id: validated.item_id,
+    actor: validated.actor,
+    transition: validated.transition,
+    ...(validated.claim_token === undefined ? {} : { claim_token: validated.claim_token }),
+    ...(validated.note === undefined ? {} : { note: validated.note }),
+    at: validated.at,
+  };
+}
+
 /**
  * The v3 work-state store. One instance per (session, database file); its
  * ULID generator carries the per-session entropy convention shared with the
@@ -313,31 +358,43 @@ export class WorkStateStore {
       const id = this.#nextId();
       const now = this.#clock().toISOString();
       const title = gate(validated.title);
-      db.prepare(
-        `INSERT INTO items (
-          id, tenant_id, title, spec, spec_format, status, depends_on,
-          created_by_human, created_by_agent, created_at, updated_at, version,
-          claim_token_counter, claim_holder_human, claim_holder_agent,
-          claim_token, claim_acquired_at, claim_lease_expires
-        ) VALUES (?, ?, ?, ?, ?, 'open', ?, ?, ?, ?, ?, 1, 0, NULL, NULL, NULL, NULL, NULL)`,
-      ).run(
-        id,
-        validated.tenant_id,
-        title,
-        validated.spec,
-        validated.spec_format,
-        JSON.stringify(validated.depends_on),
-        validated.created_by.human,
-        validated.created_by.agent ?? null,
-        now,
-        now,
-      );
-      this.#insertEventRow(db, {
-        item_id: id,
-        actor: validated.created_by,
-        transition: 'create',
-        at: now,
-      });
+      // F-301-001 S3: the item insert and its `create` event commit as ONE
+      // atomic unit — previously these were two separate auto-committing
+      // statements on the same connection, so a crash between them could
+      // leave an item with no `create` event, violating §3.3's "every
+      // transition appends an immutable event".
+      db.exec('BEGIN IMMEDIATE');
+      try {
+        db.prepare(
+          `INSERT INTO items (
+            id, tenant_id, title, spec, spec_format, status, depends_on,
+            created_by_human, created_by_agent, created_at, updated_at, version,
+            claim_token_counter, claim_holder_human, claim_holder_agent,
+            claim_token, claim_acquired_at, claim_lease_expires
+          ) VALUES (?, ?, ?, ?, ?, 'open', ?, ?, ?, ?, ?, 1, 0, NULL, NULL, NULL, NULL, NULL)`,
+        ).run(
+          id,
+          validated.tenant_id,
+          title,
+          validated.spec,
+          validated.spec_format,
+          JSON.stringify(validated.depends_on),
+          validated.created_by.human,
+          validated.created_by.agent ?? null,
+          now,
+          now,
+        );
+        insertEventRow(db, {
+          item_id: id,
+          actor: validated.created_by,
+          transition: 'create',
+          at: now,
+        });
+        db.exec('COMMIT');
+      } catch (err) {
+        db.exec('ROLLBACK');
+        throw err;
+      }
       const row = getItemRow(db, id);
       if (row === undefined) throw new WorkStateError('SCHEMA', 'work-state store: insert did not persist the row');
       return rowToWorkItem(row);
@@ -411,9 +468,22 @@ export class WorkStateStore {
       const nextSpec = validated.spec === undefined ? current.spec : validated.spec;
       const nextSpecFormat = validated.spec_format === undefined ? current.spec_format : validated.spec_format;
       const nextDependsOn = validated.depends_on === undefined ? current.depends_on : JSON.stringify(validated.depends_on);
-      db.prepare(
-        `UPDATE items SET title = ?, spec = ?, spec_format = ?, depends_on = ?, updated_at = ?, version = version + 1 WHERE id = ?`,
-      ).run(nextTitle, nextSpec, nextSpecFormat, nextDependsOn, now, id);
+      // The version predicate lives in the UPDATE itself (F-302-001's
+      // systemic note: the check above alone is a TOCTOU window — a
+      // concurrent update_meta between the SELECT and this write would be
+      // silently overwritten). The pre-check stays for the precise typed
+      // error; this WHERE clause is the actual guarantee.
+      const result = db
+        .prepare(
+          `UPDATE items SET title = ?, spec = ?, spec_format = ?, depends_on = ?, updated_at = ?, version = version + 1 WHERE id = ? AND version = ?`,
+        )
+        .run(nextTitle, nextSpec, nextSpecFormat, nextDependsOn, now, id, expectedVersion);
+      if (result.changes !== 1) {
+        throw new WorkStateError(
+          'VERSION_CONFLICT',
+          `work-state store: update_meta lost a concurrent race on item ${id} (expected version ${String(expectedVersion)})`,
+        );
+      }
       const row = getItemRow(db, id);
       if (row === undefined) throw new WorkStateError('SCHEMA', 'work-state store: update_meta did not persist the row');
       return rowToWorkItem(row);
@@ -423,16 +493,20 @@ export class WorkStateStore {
   }
 
   /**
-   * Append one immutable transition event. `note`, when present, is gated
-   * through the secret scanner before persist. This is the ONLY write path
-   * to the `events` table besides `insertItem`'s own `create` event — there
-   * is no update or delete counterpart anywhere in this module.
+   * Append one immutable transition event, opening (and committing) its OWN
+   * connection. `note`, when present, is gated through the secret scanner
+   * before persist. This is the standalone entry point for a caller that has
+   * no already-open transaction of its own to fold the event into; a caller
+   * that DOES (claims.ts, expiry.ts, verbs.ts's `transitionStatus` —
+   * F-301-001 S3) uses {@link appendEventRowOn} instead, so the event commits
+   * atomically with the transition it records rather than on a second,
+   * separate connection.
    */
   appendEvent(input: unknown): WorkStateEvent {
     const validated = validateAppendEventInput(input, () => this.#clock().toISOString());
     const db = openForWrite(this.#dbPath);
     try {
-      this.#insertEventRow(db, validated);
+      insertEventRow(db, validated);
       return {
         item_id: validated.item_id,
         actor: validated.actor,
@@ -444,21 +518,6 @@ export class WorkStateStore {
     } finally {
       db.close();
     }
-  }
-
-  /** The single INSERT this module ever issues against `events`. */
-  #insertEventRow(db: DatabaseSync, event: ValidatedAppendEventInput): void {
-    db.prepare(
-      `INSERT INTO events (item_id, actor_human, actor_agent, transition, claim_token, note, at) VALUES (?, ?, ?, ?, ?, ?, ?)`,
-    ).run(
-      event.item_id,
-      event.actor.human,
-      event.actor.agent ?? null,
-      event.transition,
-      event.claim_token ?? null,
-      event.note ?? null,
-      event.at,
-    );
   }
 
   /** All events for one item, oldest first — the full immutable audit trail.

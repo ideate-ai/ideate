@@ -134,6 +134,25 @@ export interface AppendEventInput {
   at?: string;
 }
 
+/**
+ * Common base for every typed, loud failure raised anywhere under
+ * work-state/ (F-301-001 S1). Before this fix, `WorkStateError` (this file),
+ * `ClaimEngineError` (claims.ts), `VerbError` (verbs.ts), and `DagError`
+ * (dag.ts) were four structurally-identical classes — same `name`/`code`/
+ * `message` shape, no shared ancestor — so a caller wanting to catch "any
+ * work-state failure" in one `instanceof` check had no type to catch. Each
+ * subclass keeps its own `name`, its own narrow `code` union, and its own
+ * file; this base adds nothing but the shared shape and the catchable type.
+ */
+export class WorkStateModuleError extends Error {
+  constructor(
+    readonly code: string,
+    message: string,
+  ) {
+    super(message);
+  }
+}
+
 /** Typed work-state failure classes. */
 export type WorkStateErrorCode =
   /** A required field was absent, malformed, or of the wrong shape. */
@@ -146,12 +165,12 @@ export type WorkStateErrorCode =
   | 'VERSION_CONFLICT';
 
 /** Typed, loud work-state failure — thrown, never silently swallowed. */
-export class WorkStateError extends Error {
+export class WorkStateError extends WorkStateModuleError {
   override readonly name = 'WorkStateError';
-  readonly code: WorkStateErrorCode;
+  override readonly code: WorkStateErrorCode;
 
   constructor(code: WorkStateErrorCode, message: string) {
-    super(message);
+    super(code, message);
     this.code = code;
   }
 }
