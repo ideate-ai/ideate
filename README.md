@@ -202,6 +202,48 @@ promises about migration timelines. Older, pre-versioning boards are
 handled with a one-time grace (stamped on their next write) rather than
 rejected outright.
 
+**One item's lifecycle — a real trace.** The transcript below is from an
+actual work item run end-to-end through this repo's own board (this
+project dogfoods its board; outputs trimmed for width). It illustrates
+the shape of the lifecycle — it does not prescribe a workflow, and every
+verb is equally available over MCP:
+
+```sh
+$ ideate-work create \
+    --title "WI-311: Replace NUL bytes in CREATE_CYCLE_SENTINEL" \
+    --spec "<the work-item body — opaque to the board>" \
+    --spec-format "ideate/wi-v1" --human dan
+{"id":"01KXBQDD7P…","status":"open","version":1,…}
+
+$ ideate-work claim --id 01KXBQDD7P… --human dan --agent claude-coordinator
+{"status":"in_progress","claim":{"holder":{"human":"dan","agent":"claude-coordinator"},
+ "claim_token":1,"lease_expires":"2026-07-12T21:53:58.767Z"},…}
+
+# …the actual work happens here…
+
+$ ideate-work complete --id 01KXBQDD7P… --token 1 \
+    --note "NUL delimiters replaced with '#' (outside the Crockford-base32
+            ULID alphabet); full suite 450/450. Plugin commit 646d54b."
+{"status":"done","claim":null,…}
+
+$ ideate-work events --id 01KXBQDD7P…
+2026-07-12T17:53:45.206Z create   actor=dan
+2026-07-12T17:53:58.767Z claim    actor=dan token=1
+2026-07-12T17:55:58.126Z complete actor=dan token=1 note="NUL delimiters…"
+```
+
+Completing with a note is also a capture point: the note becomes an
+append-only process record (kind `work-completion`, verification anchor
+`board:<item>#complete@<time>`), retrievable through the record surface
+like any other record:
+
+```sh
+$ ideate-record read --scope <item-id> --json
+[{"kind":"work-completion",
+  "verification_anchor":"board:01KXBQDD7P…#complete@2026-07-12T17:55:58.126Z",
+  "claim":"WI-311: Replace NUL bytes… — NUL delimiters replaced…",…}]
+```
+
 ## Honest status
 
 - **Available now:** the append-only process record, the five mechanical
