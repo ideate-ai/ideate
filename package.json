@@ -12,7 +12,7 @@
     "ideate-telemetry": "bin/ideate-telemetry"
   },
   "engines": {
-    "node": ">=22.0.0"
+    "node": ">=22.5.0"
   },
   "scripts": {
     "build": "tsc -b",

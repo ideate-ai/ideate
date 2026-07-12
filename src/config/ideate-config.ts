@@ -19,6 +19,16 @@
 // (`record`, `backend`), and the in-memory v3 view always reports the v3
 // schema version. A freshly lazy-initialized file (no v2 shape present)
 // carries `schema_version: 10` directly.
+//
+// `work_state` (WI-300, work-state core): an OPTIONAL block, `{ "path": ... }`,
+// giving the work-state (delegation board) SQLite store a configurable
+// location, mirroring `record.path`. Unlike `record`, this key is NEVER
+// written by `loadConfig` — it stays entirely absent from the file unless a
+// user configures it by hand, so its introduction is byte-preserving by
+// construction (no existing config, v9 or v3, gains a new key it didn't
+// already have). `workStatePath()` applies `DEFAULT_WORK_STATE_PATH` whenever
+// the block is absent, the same coexistence discipline the v9→v3 merge used
+// for `record`/`backend`.
 
 import * as fs from "node:fs";
 import * as path from "node:path";
@@ -28,6 +38,10 @@ export const V3_SCHEMA_VERSION = 10;
 
 /** Default record directory, relative to the project root (§2.1). */
 export const DEFAULT_RECORD_PATH = ".ideate/record/";
+
+/** Default work-state (delegation board) store directory, relative to the
+ *  project root (WI-300). */
+export const DEFAULT_WORK_STATE_PATH = ".ideate-work/";
 
 /** The config file's name at the project root. */
 export const CONFIG_FILENAME = ".ideate.json";
@@ -41,6 +55,13 @@ export interface IdeateConfigV3 {
   };
   /** Board backend selection: local SQLite now, hosted later. */
   backend: "local";
+  /** Optional work-state (delegation board) store location (WI-300). Absent
+   *  by default — see the file header note above; consumers resolve the
+   *  effective path via `workStatePath()`, never this field directly. */
+  work_state?: {
+    /** Work-state directory, relative to the project root (absolute also honored). */
+    path: string;
+  };
 }
 
 export type IdeateConfigErrorCode =
@@ -73,6 +94,19 @@ export class IdeateConfigError extends Error {
  */
 export function recordPath(config: IdeateConfigV3, projectRoot: string): string {
   return path.resolve(projectRoot, config.record.path);
+}
+
+/**
+ * Resolve the work-state (delegation board) directory for a project.
+ *
+ * THE single source of truth for the resolved work-state path, mirroring
+ * `recordPath`'s role for records. Falls back to
+ * {@link DEFAULT_WORK_STATE_PATH} when the config carries no `work_state`
+ * block — the common case, since `loadConfig` never writes this key on its
+ * own (see the file header note).
+ */
+export function workStatePath(config: IdeateConfigV3, projectRoot: string): string {
+  return path.resolve(projectRoot, config.work_state?.path ?? DEFAULT_WORK_STATE_PATH);
 }
 
 /**
@@ -192,10 +226,35 @@ function readV3View(file: Record<string, unknown>, configPath: string): IdeateCo
     );
   }
 
+  // `work_state` is OPTIONAL: absent is the common, unremarkable case (the
+  // resolver falls back to DEFAULT_WORK_STATE_PATH). When present, it must
+  // be well-formed — malformed shapes are rejected loudly, file untouched.
+  const workStateRaw = file["work_state"];
+  let workState: { path: string } | undefined;
+  if (workStateRaw !== undefined) {
+    if (workStateRaw === null || typeof workStateRaw !== "object" || Array.isArray(workStateRaw)) {
+      throw new IdeateConfigError(
+        "INVALID",
+        configPath,
+        ".ideate.json carries a work_state key but it is not an object; the file has been left untouched",
+      );
+    }
+    const workStatePathValue = (workStateRaw as Record<string, unknown>)["path"];
+    if (typeof workStatePathValue !== "string" || workStatePathValue.length === 0) {
+      throw new IdeateConfigError(
+        "INVALID",
+        configPath,
+        ".ideate.json carries a work_state key but work_state.path is missing or not a non-empty string; the file has been left untouched",
+      );
+    }
+    workState = { path: workStatePathValue };
+  }
+
   return {
     schema_version: V3_SCHEMA_VERSION,
     record: { path: recordPathValue },
     backend: "local",
+    ...(workState === undefined ? {} : { work_state: workState }),
   };
 }
 
