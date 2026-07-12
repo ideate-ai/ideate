@@ -33,7 +33,7 @@ import type { Clock } from '../record/id.js';
 import { WorkStateStore } from './store.js';
 import type { ActorRef } from './types.js';
 import { checkExpiry } from './expiry.js';
-import { ClaimEngineError, DEFAULT_LEASE_MS, claim, complete, release, renew } from './claims.js';
+import { ClaimEngineError, DEFAULT_LEASE_MS, MAX_LEASE_MS, claim, complete, release, renew } from './claims.js';
 
 const FIXED_ISO = '2026-07-11T12:00:00.000Z';
 
@@ -613,3 +613,54 @@ describe('lazy expiry check fires from every claim-engine entry point (§3.2 rul
     expect(result.formerHolder).toEqual(actor('a'));
   });
 });
+
+describe('lease_ms validation (capstone-10 S1/S2)', () => {
+  it('oversized lease_ms is rejected typed — never an untyped RangeError', () => {
+    const { store, clock } = makeFixture();
+    const itemId = store.insertItem({ title: 'x', spec: 's', spec_format: 'f', created_by: actor() }).id;
+    for (const bad of [1e20, Number.MAX_SAFE_INTEGER, MAX_LEASE_MS + 1]) {
+      try {
+        claim(store, clock, itemId, { human: 'dan' }, { leaseMs: bad });
+        expect.unreachable('claim must reject an oversized lease');
+      } catch (err) {
+        expect(err).toBeInstanceOf(ClaimEngineError);
+        expect((err as ClaimEngineError).code).toBe('INVALID_LEASE');
+      }
+    }
+  });
+
+  it('zero and negative lease_ms are rejected typed — a claim can never be born expired', () => {
+    const { store, clock } = makeFixture();
+    const itemId = store.insertItem({ title: 'x', spec: 's', spec_format: 'f', created_by: actor() }).id;
+    for (const bad of [0, -1, -5000, 1.5]) {
+      try {
+        claim(store, clock, itemId, { human: 'dan' }, { leaseMs: bad });
+        expect.unreachable('claim must reject a non-positive/non-integer lease');
+      } catch (err) {
+        expect(err).toBeInstanceOf(ClaimEngineError);
+        expect((err as ClaimEngineError).code).toBe('INVALID_LEASE');
+      }
+    }
+    // The item is untouched — still claimable with a sane lease.
+    const item = claim(store, clock, itemId, { human: 'dan' }, { leaseMs: 60_000 });
+    expect(item.status).toBe('in_progress');
+  });
+
+  it('renew validates lease_ms identically', () => {
+    const { store, clock } = makeFixture();
+    const itemId = store.insertItem({ title: 'x', spec: 's', spec_format: 'f', created_by: actor() }).id;
+    const item = claim(store, clock, itemId, { human: 'dan' }, { leaseMs: 60_000 });
+    const token = item.claim?.claim_token;
+    expect(token).toBeTypeOf('number');
+    try {
+      renew(store, clock, itemId, token as number, { leaseMs: -1 });
+      expect.unreachable('renew must reject a non-positive lease');
+    } catch (err) {
+      expect((err as ClaimEngineError).code).toBe('INVALID_LEASE');
+    }
+    // Renew with a valid lease still works — the failed attempt changed nothing.
+    const renewed = renew(store, clock, itemId, token as number, { leaseMs: 120_000 });
+    expect(renewed.claim?.claim_token).toBe(token);
+  });
+});
+

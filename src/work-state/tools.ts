@@ -342,7 +342,7 @@ export function createWorkStateToolsRegistrar(options: WorkStateToolsOptions = {
           id: zString.describe('The work item id.'),
           actor_human: zString.describe('The claiming actor — a human principal.'),
           actor_agent: zString.describe('The named agent acting on the human principal\'s behalf, if any.').optional(),
-          lease_ms: zNumber.int().describe('Lease length override, in milliseconds. Default: 4 hours.').optional(),
+          lease_ms: zNumber.int().positive().describe('Lease length override, in milliseconds (positive, max 30 days). Default: 4 hours.').optional(),
         },
       },
       async (args): Promise<CallToolResult> => {
@@ -374,7 +374,7 @@ export function createWorkStateToolsRegistrar(options: WorkStateToolsOptions = {
         inputSchema: {
           id: zString.describe('The work item id.'),
           claim_token: zNumber.int().describe('The fencing token returned by claim.'),
-          lease_ms: zNumber.int().describe('Lease length override, in milliseconds. Default: 4 hours.').optional(),
+          lease_ms: zNumber.int().positive().describe('Lease length override, in milliseconds (positive, max 30 days). Default: 4 hours.').optional(),
         },
       },
       async (args): Promise<CallToolResult> => {

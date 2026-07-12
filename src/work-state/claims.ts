@@ -78,6 +78,9 @@ import type { ActorRef, WorkItem } from './types.js';
 export type ClaimEngineErrorCode =
   /** No item exists with the given id. */
   | 'NOT_FOUND'
+  /** `claim`/`renew`: the lease_ms override is not a positive integer within
+   *  the 30-day ceiling (F-CAPSTONE-10 S1/S2). */
+  | 'INVALID_LEASE'
   /** `claim`: the item is not `open`, or not every `depends_on` item is
    *  `done` (§3.2 rule 1). */
   | 'NOT_CLAIMABLE'
@@ -122,6 +125,25 @@ function toNumber(value: number | bigint): number {
   return typeof value === 'bigint' ? Number(value) : value;
 }
 
+/** Upper bound for a lease override: 30 days. Anything longer is a caller
+ *  bug (the contract's posture is 'hours, not seconds' — §3.2 rule 2 — and a
+ *  month-long lease defeats orphan recovery entirely). F-CAPSTONE-10 S1/S2:
+ *  an UNvalidated leaseMs crashed claim/renew with an untyped RangeError
+ *  when oversized, and a non-positive value produced a claim born already
+ *  expired whose own holder was then rejected with a misleading
+ *  'reclaimed by another actor' diagnostic. */
+export const MAX_LEASE_MS = 30 * 24 * 60 * 60 * 1000;
+
+function validateLeaseMs(leaseMs: number): number {
+  if (!Number.isInteger(leaseMs) || leaseMs <= 0 || leaseMs > MAX_LEASE_MS) {
+    throw new ClaimEngineError(
+      'INVALID_LEASE',
+      `lease_ms must be a positive integer of milliseconds no greater than ${String(MAX_LEASE_MS)} (30 days); got ${String(leaseMs)}`,
+    );
+  }
+  return leaseMs;
+}
+
 /**
  * `claim(id, actor)` — §3.2 rule 1. Server-side compare-and-set: succeeds
  * iff `status == 'open'` AND every `depends_on` item is `done`. At most one
@@ -145,7 +167,7 @@ export function claim(
   checkExpiry(store, clock, itemId); // lazy check, evaluated FIRST — rule 2
   requireItem(store, itemId, 'claim'); // NOT_FOUND before attempting the CAS
 
-  const leaseMs = opts?.leaseMs ?? DEFAULT_LEASE_MS;
+  const leaseMs = opts?.leaseMs === undefined ? DEFAULT_LEASE_MS : validateLeaseMs(opts.leaseMs);
   const now = clock(); // single sample — acquired_at and lease_expires derive from the SAME instant
   const nowIso = now.toISOString();
   const leaseExpiresIso = new Date(now.getTime() + leaseMs).toISOString();
@@ -240,7 +262,7 @@ export function renew(
   checkExpiry(store, clock, itemId); // lazy check, evaluated FIRST — rule 2
   requireItem(store, itemId, 'renew');
 
-  const leaseMs = opts?.leaseMs ?? DEFAULT_LEASE_MS;
+  const leaseMs = opts?.leaseMs === undefined ? DEFAULT_LEASE_MS : validateLeaseMs(opts.leaseMs);
   const now = clock(); // single sample — the renewal's timestamp and its new lease_expires derive from the SAME instant
   const nowIso = now.toISOString();
   const leaseExpiresIso = new Date(now.getTime() + leaseMs).toISOString();
