@@ -1,6 +1,6 @@
-// plugin/src/telemetry/report.ts — fold-on-read for the six native
-// telemetry counters (WI-262; sixth counter WI-281, cycle-9 amendment;
-// docs/design/v3-architecture.md §3.5).
+// plugin/src/telemetry/report.ts — fold-on-read for the native telemetry
+// counters (WI-262; sixth counter WI-281, cycle-9 amendment; seventh counter
+// (work_claims) WI-303; docs/design/v3-architecture.md §3.5).
 //
 // The state is an append-only NDJSON event stream (counters.ts). This module
 // reads it and folds it into totals plus per-point / per-session / per-source
@@ -29,7 +29,7 @@ export interface FrontierStats {
   last: number | null;
 }
 
-/** The folded report: exactly the six counters of §3.5, one key each. */
+/** The folded report: one key per closed-set counter (§3.5 + WI-303's work_claims). */
 export interface TelemetryReport {
   captureFired: {
     total: number;
@@ -70,6 +70,13 @@ export interface TelemetryReport {
     byPattern: Record<string, number>;
     bySession: Record<string, number>;
   };
+  /** Counter 7 (WI-303) — work-state claim-lifecycle events, the future
+   *  claim-time priming eval's denominator (see work-state/priming-hook.ts). */
+  workClaims: {
+    total: number;
+    byItem: Record<string, number>;
+    bySession: Record<string, number>;
+  };
 }
 
 const EMPTY_FRONTIER: FrontierStats = { samples: 0, min: null, max: null, mean: null, last: null };
@@ -86,6 +93,7 @@ export function emptyReport(): TelemetryReport {
     frontierSize: { overall: { ...EMPTY_FRONTIER }, bySession: {} },
     captureWriteFailed: { total: 0, byPoint: {}, bySession: {}, byReason: {} },
     redactions: { total: 0, events: 0, byPattern: {}, bySession: {} },
+    workClaims: { total: 0, byItem: {}, bySession: {} },
   };
 }
 
@@ -132,6 +140,9 @@ export function parseEventLine(line: string): TelemetryEvent | null {
       if (typeof e.pattern !== 'string') return null;
       if (typeof e.count !== 'number' || !Number.isInteger(e.count) || e.count < 1) return null;
       return { counter: 'redactions', pattern: e.pattern, count: e.count, sessionId, at };
+    case 'work_claims':
+      if (typeof e.itemId !== 'string') return null;
+      return { counter: 'work_claims', itemId: e.itemId, sessionId, at };
     default:
       return null;
   }
@@ -205,7 +216,7 @@ function frontierStats(acc: FrontierAcc | undefined): FrontierStats {
   };
 }
 
-/** Fold an event stream into the six-counter report. */
+/** Fold an event stream into the closed-set counter report. */
 export function foldReport(events: readonly TelemetryEvent[]): TelemetryReport {
   const report = emptyReport();
   let frontierAll: FrontierAcc | undefined;
@@ -263,6 +274,13 @@ export function foldReport(events: readonly TelemetryEvent[]): TelemetryReport {
         r.events += 1;
         r.byPattern[event.pattern] = (r.byPattern[event.pattern] ?? 0) + event.count;
         r.bySession[event.sessionId] = (r.bySession[event.sessionId] ?? 0) + event.count;
+        break;
+      }
+      case 'work_claims': {
+        const w = report.workClaims;
+        w.total += 1;
+        bump(w.byItem, event.itemId);
+        bump(w.bySession, event.sessionId);
         break;
       }
     }

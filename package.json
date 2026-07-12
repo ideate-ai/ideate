@@ -9,7 +9,8 @@
   "types": "dist/index.d.ts",
   "bin": {
     "ideate-record": "bin/ideate-record",
-    "ideate-telemetry": "bin/ideate-telemetry"
+    "ideate-telemetry": "bin/ideate-telemetry",
+    "ideate-work": "bin/ideate-work"
   },
   "engines": {
     "node": ">=22.5.0"

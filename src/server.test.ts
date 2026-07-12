@@ -9,6 +9,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 
 import { RECORD_TOOL_NAMES } from './record/tools.js';
 import { createServer, registerTools, toolRegistrars, SERVER_NAME, SERVER_VERSION } from './server.js';
+import { WORK_STATE_TOOL_NAMES } from './work-state/tools.js';
 
 /** The composed production root, captured at import so tests can restore it. */
 const composedRegistrars = [...toolRegistrars];
@@ -26,11 +27,11 @@ afterEach(() => {
 });
 
 describe('ideate MCP server boot', () => {
-  it('the composed default serves exactly the three record tools (WI-277 composition root)', () => {
-    expect(toolRegistrars).toHaveLength(1);
+  it('the composed default serves the record tools plus the work-state tools (WI-277/WI-303 composition root)', () => {
+    expect(toolRegistrars).toHaveLength(2);
     const server = createServer();
     expect(server).toBeInstanceOf(McpServer);
-    expect(registeredToolNames(server).sort()).toEqual([...RECORD_TOOL_NAMES].sort());
+    expect(registeredToolNames(server).sort()).toEqual([...RECORD_TOOL_NAMES, ...WORK_STATE_TOOL_NAMES].sort());
   });
 
   it('a bare server (explicit empty registrars) still boots clean with zero tools', () => {
@@ -58,7 +59,7 @@ describe('ideate MCP server boot', () => {
 
     expect(registrar).toHaveBeenCalledTimes(1);
     expect(registrar).toHaveBeenCalledWith(server);
-    expect(registeredToolNames(server)).toEqual([...RECORD_TOOL_NAMES, 'mock_tool']);
+    expect(registeredToolNames(server)).toEqual([...RECORD_TOOL_NAMES, ...WORK_STATE_TOOL_NAMES, 'mock_tool']);
   });
 
   it('registerTools applies an explicit registrar list in order to an existing server', () => {
@@ -72,7 +73,7 @@ describe('ideate MCP server boot', () => {
   it('registerTools defaults to the composed root registrars', () => {
     const server = new McpServer({ name: SERVER_NAME, version: SERVER_VERSION });
     registerTools(server);
-    expect(registeredToolNames(server).sort()).toEqual([...RECORD_TOOL_NAMES].sort());
+    expect(registeredToolNames(server).sort()).toEqual([...RECORD_TOOL_NAMES, ...WORK_STATE_TOOL_NAMES].sort());
   });
 
   it('writes nothing to stdout on boot (stdio protocol purity), even fully composed', () => {

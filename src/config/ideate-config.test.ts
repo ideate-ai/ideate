@@ -10,10 +10,12 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   CONFIG_FILENAME,
   DEFAULT_RECORD_PATH,
+  DEFAULT_WORK_STATE_PATH,
   IdeateConfigError,
   V3_SCHEMA_VERSION,
   loadConfig,
   recordPath,
+  workStatePath,
   type IdeateConfigV3,
 } from "./ideate-config.js";
 
@@ -258,6 +260,69 @@ describe("dogfood repo shape (v9 fields + v3 record-path override)", () => {
 
     expect(config.record.path).toBe(".ideate-record/");
     expect(readConfigFileRaw()).toBe(raw);
+  });
+});
+
+describe("work_state.claim_priming (WI-303 rework, F-303-001 S2)", () => {
+  it("a block carrying ONLY claim_priming is valid; workStatePath falls back to the default", () => {
+    const raw = `${JSON.stringify(
+      {
+        schema_version: 10,
+        record: { path: ".ideate/record/" },
+        backend: "local",
+        work_state: { claim_priming: true },
+      },
+      null,
+      2,
+    )}\n`;
+    fs.writeFileSync(configFile(), raw, "utf8");
+
+    const config = loadConfig(root);
+
+    expect(config.work_state).toEqual({ claim_priming: true });
+    expect(workStatePath(config, root)).toBe(path.resolve(root, DEFAULT_WORK_STATE_PATH));
+    // Byte-preservation: loadConfig never rewrites a valid v3 file.
+    expect(readConfigFileRaw()).toBe(raw);
+  });
+
+  it("non-boolean claim_priming is rejected loudly and the file is left byte-for-byte untouched", () => {
+    const raw = `${JSON.stringify(
+      {
+        schema_version: 10,
+        record: { path: ".ideate/record/" },
+        backend: "local",
+        work_state: { claim_priming: "yes" },
+      },
+      null,
+      2,
+    )}\n`;
+    fs.writeFileSync(configFile(), raw, "utf8");
+
+    expect(() => loadConfig(root)).toThrowError(IdeateConfigError);
+    expect(() => loadConfig(root)).toThrowError(/claim_priming but it is not a boolean/);
+    expect(readConfigFileRaw()).toBe(raw);
+  });
+
+  it("path and claim_priming together both survive the typed view", () => {
+    fs.writeFileSync(
+      configFile(),
+      `${JSON.stringify(
+        {
+          schema_version: 10,
+          record: { path: ".ideate/record/" },
+          backend: "local",
+          work_state: { path: "boards/main/", claim_priming: false },
+        },
+        null,
+        2,
+      )}\n`,
+      "utf8",
+    );
+
+    const config = loadConfig(root);
+
+    expect(config.work_state).toEqual({ path: "boards/main/", claim_priming: false });
+    expect(workStatePath(config, root)).toBe(path.resolve(root, "boards/main/"));
   });
 });
 

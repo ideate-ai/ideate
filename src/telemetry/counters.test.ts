@@ -39,7 +39,7 @@ afterEach(() => {
 });
 
 describe('closed counter set', () => {
-  it('exposes exactly the six named counters of §3.5', () => {
+  it('exposes exactly the seven named counters of §3.5 + WI-303', () => {
     expect([...COUNTER_NAMES]).toEqual([
       'capture_fired',
       'priming',
@@ -47,8 +47,9 @@ describe('closed counter set', () => {
       'frontier_size',
       'capture_write_failed',
       'redactions',
+      'work_claims',
     ]);
-    expect(COUNTER_NAMES).toHaveLength(6);
+    expect(COUNTER_NAMES).toHaveLength(7);
   });
 
   it('the report has exactly one top-level key per counter', () => {
@@ -60,6 +61,7 @@ describe('closed counter set', () => {
       'kgUnreachable',
       'priming',
       'redactions',
+      'workClaims',
     ]);
   });
 });
@@ -170,7 +172,7 @@ describe('append-only concurrent safety', () => {
 });
 
 describe('report shape', () => {
-  it('folds totals plus per-point/per-session/per-source breakdowns for all six', () => {
+  it('folds totals plus per-point/per-session/per-source breakdowns for all seven', () => {
     const dir = makeStateDir();
     const t = createTelemetry(dir, fixedClock);
 
@@ -188,6 +190,9 @@ describe('report shape', () => {
     t.captureWriteFailed('decision', 'sess-2');
     t.redactionApplied('aws-access-key-id', 2, 'sess-1');
     t.redactionApplied('github-token', 1, 'sess-2');
+    t.workClaimed('item-1', 'sess-1');
+    t.workClaimed('item-1', 'sess-2');
+    t.workClaimed('item-2', 'sess-1');
 
     const { report } = reportFromDir(dir);
 
@@ -245,6 +250,12 @@ describe('report shape', () => {
       byPattern: { 'aws-access-key-id': 2, 'github-token': 1 },
       bySession: { 'sess-1': 2, 'sess-2': 1 },
     });
+
+    expect(report.workClaims).toEqual({
+      total: 3,
+      byItem: { 'item-1': 2, 'item-2': 1 },
+      bySession: { 'sess-1': 2, 'sess-2': 1 },
+    });
   });
 
   it('an empty state dir folds to a valid all-zero report', () => {
@@ -258,6 +269,7 @@ describe('report shape', () => {
     expect(report.captureWriteFailed.total).toBe(0);
     expect(report.redactions.total).toBe(0);
     expect(report.redactions.events).toBe(0);
+    expect(report.workClaims.total).toBe(0);
   });
 
   it('frontierSize is a size-sample recorder and rejects invalid sizes loudly', () => {

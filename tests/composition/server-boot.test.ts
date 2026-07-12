@@ -9,10 +9,14 @@
 // MCP client:
 //   1. initialize  → serverInfo.name is `ideate` AND the tools capability is
 //      advertised (a zero-tool boot would omit it),
-//   2. tools/list  → exactly record_append, record_read, record_decision,
+//   2. tools/list  → exactly the three record verbs PLUS the eleven
+//      work-state verbs (WI-303), fourteen total,
 //   3. one record_append round trip whose record file lands on disk under the
 //      child's cwd (a temp project root — lazy-init onboarding writes go
-//      there, never to the repo's real .ideate/).
+//      there, never to the repo's real .ideate/),
+//   4. one work_create round trip whose work-state SQLite store lands on
+//      disk under the same temp project root — the P-34/C1 lesson applied
+//      to the work-state surface too: wired, not just built.
 // The child is killed cleanly via the client/transport close.
 
 import { execFileSync } from 'node:child_process';
@@ -25,9 +29,10 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 
-import { CONFIG_FILENAME, DEFAULT_RECORD_PATH } from '../../src/config/ideate-config.js';
+import { CONFIG_FILENAME, DEFAULT_RECORD_PATH, DEFAULT_WORK_STATE_PATH } from '../../src/config/ideate-config.js';
 import { RECORD_TOOL_NAMES } from '../../src/record/tools.js';
 import { SERVER_NAME, SERVER_VERSION } from '../../src/server.js';
+import { WORK_STATE_TOOL_NAMES } from '../../src/work-state/tools.js';
 
 const PLUGIN_DIR = fileURLToPath(new URL('../..', import.meta.url));
 const SRC_DIR = join(PLUGIN_DIR, 'src');
@@ -93,9 +98,10 @@ describe('boot the shipped artifact (node dist/server.js, real stdio)', () => {
     expect(client.getServerCapabilities()?.tools).toBeDefined();
   });
 
-  it('tools/list: exactly the three record verbs, nothing else', async () => {
+  it('tools/list: the three record verbs plus the eleven work-state verbs, fourteen total', async () => {
     const { tools } = await client.listTools();
-    expect(tools.map((t) => t.name).sort()).toEqual([...RECORD_TOOL_NAMES].sort());
+    expect(tools.map((t) => t.name).sort()).toEqual([...RECORD_TOOL_NAMES, ...WORK_STATE_TOOL_NAMES].sort());
+    expect(tools).toHaveLength(14);
   });
 
   it('record_append round trip: the call succeeds and the record lands on disk in the temp root', async () => {
@@ -131,5 +137,30 @@ describe('boot the shipped artifact (node dist/server.js, real stdio)', () => {
       .find((path) => path.endsWith(`${body.id}.md`));
     expect(recordFile, `record ${body.id}.md not found under ${recordDir}`).toBeDefined();
     expect(readFileSync(recordFile as string, 'utf8')).toContain(claim);
+  });
+
+  it('work_create round trip: the call succeeds and the work-state SQLite store lands on disk in the temp root', async () => {
+    const result = await client.callTool({
+      name: 'work_create',
+      arguments: {
+        title: 'Boot the shipped server and create a work item end to end.',
+        spec: 'plain prompt',
+        spec_format: 'text/plain',
+        actor_human: 'server-boot-test',
+      },
+    });
+
+    expect(result.isError).not.toBe(true);
+    const body = JSON.parse(
+      ((result.content as Array<{ type: string; text: string }>)[0] as { text: string }).text,
+    ) as { ok: boolean; item: { id: string; status: string } };
+    expect(body.ok).toBe(true);
+    expect(body.item.status).toBe('open');
+    expect(body.item.id).toMatch(/^[0-9A-HJKMNP-TV-Z]{26}$/); // ULID
+
+    // The work-state store lands under the temp project root, same lazy-init
+    // discipline as the record store — never the repo's real .ideate-work/.
+    const dbPath = join(projectRoot, DEFAULT_WORK_STATE_PATH, 'board.db');
+    expect(existsSync(dbPath)).toBe(true);
   });
 });

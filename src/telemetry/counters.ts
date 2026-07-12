@@ -5,7 +5,7 @@
 // the counters in from the start, ON BY DEFAULT (no opt-in flag exists in
 // this API), so the same facts are a dashboard read, not an investigation.
 //
-// Exactly six counters — a closed set (COUNTER_NAMES):
+// Exactly seven counters — a closed set (COUNTER_NAMES):
 //   1. capture_fired        — capture-point firing counts (per point, per session)
 //   2. priming              — priming requests and their usefulness signals
 //   3. kg_unreachable       — KG unreachability rate (fail-open degradation, measured)
@@ -17,6 +17,12 @@
 //                             session; added 2026-07-09, cycle-9 amendment,
 //                             closes cycle-7 S1/Q-44 per Dan's ratified
 //                             decision — see §3.5)
+//   7. work_claims          — work-state claim-lifecycle events (added
+//                             2026-07-11, WI-303: the future claim-time
+//                             priming eval's denominator — every
+//                             `work_claim` fires this, whether or not
+//                             claim-time priming is enabled; see
+//                             work-state/priming-hook.ts)
 //
 // `kg_unreachable` and `frontier_size` have no live firing site in this phase
 // — deliberate; their call sites arrive with Layer-1/KG integration.
@@ -41,7 +47,7 @@ import { join } from 'node:path';
 export type Clock = () => Date;
 
 /**
- * The six counters — a closed set. The set grew from five to six on
+ * The seven counters — a closed set. The set grew from five to six on
  * 2026-07-09 (cycle-9 amendment; architecture §3.5): cycle-7 finding S1/Q-44
  * corroborated that secret-gate redactions were UNOBSERVABLE — a successful
  * gate action that never appeared on the telemetry dashboard and whose only
@@ -50,6 +56,13 @@ export type Clock = () => Date;
  * the fix. A redaction is a successful gate action, NOT a capture failure,
  * so it gets its own counter rather than polluting `capture_fired` or
  * `capture_write_failed`.
+ *
+ * Grew from six to seven on 2026-07-11 (WI-303): the work-state board's
+ * claim-lifecycle needs its own denominator for the future claim-time
+ * priming eval (GP-23 — priming behavior itself stays mechanically gated
+ * off until that eval exists; see work-state/priming-hook.ts). `work_claims`
+ * fires on every successful `work_claim`, independent of whether priming is
+ * enabled.
  */
 export const COUNTER_NAMES = [
   'capture_fired',
@@ -58,6 +71,7 @@ export const COUNTER_NAMES = [
   'frontier_size',
   'capture_write_failed',
   'redactions',
+  'work_claims',
 ] as const;
 
 export type CounterName = (typeof COUNTER_NAMES)[number];
@@ -85,7 +99,8 @@ export type TelemetryEvent =
   | { counter: 'priming'; kind: 'usefulness'; signal: unknown; sessionId: string; at: string }
   | { counter: 'kg_unreachable'; sessionId: string; at: string }
   | { counter: 'frontier_size'; size: number; sessionId: string; at: string }
-  | { counter: 'redactions'; pattern: string; count: number; sessionId: string; at: string };
+  | { counter: 'redactions'; pattern: string; count: number; sessionId: string; at: string }
+  | { counter: 'work_claims'; itemId: string; sessionId: string; at: string };
 
 /**
  * The counter library. Constructing it is enabling it: the state directory is
@@ -181,6 +196,16 @@ export class TelemetryCounters {
       );
     }
     this.#append({ counter: 'redactions', pattern: patternName, count, sessionId, at: this.#now() });
+  }
+
+  /**
+   * Counter 7 — a work-state claim-lifecycle event fired (WI-303). Recorded
+   * on every successful `work_claim`, regardless of whether claim-time
+   * priming is enabled (work-state/priming-hook.ts) — this is the future
+   * eval's denominator, so it must count every claim, not a filtered subset.
+   */
+  workClaimed(itemId: string, sessionId: string): void {
+    this.#append({ counter: 'work_claims', itemId, sessionId, at: this.#now() });
   }
 
   #now(): string {

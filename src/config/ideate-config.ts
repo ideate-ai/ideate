@@ -59,8 +59,18 @@ export interface IdeateConfigV3 {
    *  by default — see the file header note above; consumers resolve the
    *  effective path via `workStatePath()`, never this field directly. */
   work_state?: {
-    /** Work-state directory, relative to the project root (absolute also honored). */
-    path: string;
+    /** Work-state directory, relative to the project root (absolute also
+     *  honored). Optional within the block — absent falls back to
+     *  {@link DEFAULT_WORK_STATE_PATH}, so a block carrying only
+     *  `claim_priming` is valid. */
+    path?: string;
+    /** Claim-time priming gate (WI-303, GP-23): absent/false = the hook
+     *  point stays mechanically disabled. No env-var override exists.
+     *  NOTE: priming-hook.ts reads this field via its own side-effect-free
+     *  raw read (a hook path must never trigger config lazy-init writes);
+     *  this schema declaration is the single typed definition both agree
+     *  on. */
+    claim_priming?: boolean;
   };
 }
 
@@ -230,7 +240,7 @@ function readV3View(file: Record<string, unknown>, configPath: string): IdeateCo
   // resolver falls back to DEFAULT_WORK_STATE_PATH). When present, it must
   // be well-formed — malformed shapes are rejected loudly, file untouched.
   const workStateRaw = file["work_state"];
-  let workState: { path: string } | undefined;
+  let workState: { path?: string; claim_priming?: boolean } | undefined;
   if (workStateRaw !== undefined) {
     if (workStateRaw === null || typeof workStateRaw !== "object" || Array.isArray(workStateRaw)) {
       throw new IdeateConfigError(
@@ -239,15 +249,27 @@ function readV3View(file: Record<string, unknown>, configPath: string): IdeateCo
         ".ideate.json carries a work_state key but it is not an object; the file has been left untouched",
       );
     }
-    const workStatePathValue = (workStateRaw as Record<string, unknown>)["path"];
-    if (typeof workStatePathValue !== "string" || workStatePathValue.length === 0) {
+    const workStateRecord = workStateRaw as Record<string, unknown>;
+    const workStatePathValue = workStateRecord["path"];
+    if (workStatePathValue !== undefined && (typeof workStatePathValue !== "string" || workStatePathValue.length === 0)) {
       throw new IdeateConfigError(
         "INVALID",
         configPath,
-        ".ideate.json carries a work_state key but work_state.path is missing or not a non-empty string; the file has been left untouched",
+        ".ideate.json carries work_state.path but it is not a non-empty string; the file has been left untouched",
       );
     }
-    workState = { path: workStatePathValue };
+    const claimPrimingValue = workStateRecord["claim_priming"];
+    if (claimPrimingValue !== undefined && typeof claimPrimingValue !== "boolean") {
+      throw new IdeateConfigError(
+        "INVALID",
+        configPath,
+        ".ideate.json carries work_state.claim_priming but it is not a boolean; the file has been left untouched",
+      );
+    }
+    workState = {
+      ...(workStatePathValue === undefined ? {} : { path: workStatePathValue }),
+      ...(claimPrimingValue === undefined ? {} : { claim_priming: claimPrimingValue }),
+    };
   }
 
   return {

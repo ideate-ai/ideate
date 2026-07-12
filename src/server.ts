@@ -6,13 +6,15 @@
 // stdout — stderr only. See docs/design/v3-composable-surface.md §5 (Layer 0).
 //
 // Tool surface: this module is the COMPOSITION ROOT (WI-277). The record
-// verbs (record_append, record_read, record_decision — spec §1.1) are wired
-// into `toolRegistrars` at module scope below, so the shipped artifact —
+// verbs (record_append, record_read, record_decision — spec §1.1) and, as of
+// WI-303, the eleven work-state verbs (work_create, work_get, work_list,
+// work_update_meta, work_claim, work_renew, work_release, work_complete,
+// work_cancel, work_reopen, work_events — spec §3.5) are wired into
+// `toolRegistrars` at module scope below, so the shipped artifact —
 // `node dist/server.js`, exactly as .mcp.json launches it — serves them.
-// Registrar construction is side-effect free (record/tools.ts: the store is
-// composed lazily inside the first tool CALL), so composing here keeps boot
-// pure: no filesystem writes, nothing on stdout. Future surfaces (work-state
-// verbs, …) push additional registrars onto the same extension point.
+// Registrar construction is side-effect free (record/tools.ts, work-state/
+// tools.ts: each store is composed lazily inside the first tool CALL), so
+// composing here keeps boot pure: no filesystem writes, nothing on stdout.
 
 import { pathToFileURL } from 'node:url';
 
@@ -20,6 +22,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 
 import { createRecordToolsRegistrar } from './record/tools.js';
+import { createWorkStateToolsRegistrar } from './work-state/tools.js';
 
 /** Server identity, mirrored from .claude-plugin/plugin.json. */
 export const SERVER_NAME = 'ideate';
@@ -38,13 +41,13 @@ export type ToolRegistrar = (server: McpServer) => void;
  * Extension point: the ordered list of tool registrars applied at boot.
  *
  * COMPOSITION ROOT — populated here, in production code, so the
- * .mcp.json-launched artifact serves the full default tool surface. The
- * record registrar takes no options: every default (projectRoot =
- * process.cwd(), telemetry dir, session id, wall clock) resolves lazily at
- * the first tool call, which is what makes module-scope composition safe —
- * nothing is read or written until a tool actually runs.
+ * .mcp.json-launched artifact serves the full default tool surface. Both
+ * registrars take no options: every default (projectRoot = process.cwd(),
+ * telemetry dir, session id, wall clock) resolves lazily at the first tool
+ * call, which is what makes module-scope composition safe — nothing is read
+ * or written until a tool actually runs.
  */
-export const toolRegistrars: ToolRegistrar[] = [createRecordToolsRegistrar()];
+export const toolRegistrars: ToolRegistrar[] = [createRecordToolsRegistrar(), createWorkStateToolsRegistrar()];
 
 /** Apply each registrar in `registrars` (default: the composed root) to `server`, in order. */
 export function registerTools(server: McpServer, registrars: readonly ToolRegistrar[] = toolRegistrars): void {

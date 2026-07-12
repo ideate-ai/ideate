@@ -29,6 +29,8 @@ import { afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { DIGEST_FRAME_CLOSE, DIGEST_FRAME_OPEN } from '../src/cli/ideate-record.js';
 import { DEFAULT_RECORD_PATH } from '../src/config/ideate-config.js';
 import { parseRecord } from '../src/record/schema.js';
+import { WorkStateStore } from '../src/work-state/store.js';
+import { claim } from '../src/work-state/claims.js';
 import type { ProcessRecord } from '../src/record/schema.js';
 
 const HOOKS_DIR = fileURLToPath(new URL('.', import.meta.url));
@@ -223,12 +225,12 @@ describe('hooks.json registration', () => {
     }
   });
 
-  it('SessionStart primes on startup|resume|clear via the CLI prime subcommand (plain stdout IS the digest)', () => {
+  it('SessionStart primes on startup|resume|clear via the wrapper script (priming verbatim + board sweep, WI-303)', () => {
     const config = loadHooksConfig();
     const entries = config.hooks['SessionStart'];
     expect(entries).toHaveLength(1);
     expect(entries?.[0]?.matcher).toBe('startup|resume|clear');
-    expect(entries?.[0]?.hooks[0]?.command).toBe('"${CLAUDE_PLUGIN_ROOT}/bin/ideate-record" prime --budget 10');
+    expect(entries?.[0]?.hooks[0]?.command).toBe('"${CLAUDE_PLUGIN_ROOT}/hooks/session-start.mjs"');
   });
 
   it('SubagentStart delivers the same digest through the additionalContext wrapper script', () => {
@@ -237,10 +239,10 @@ describe('hooks.json registration', () => {
     expect(command).toBe('"${CLAUDE_PLUGIN_ROOT}/hooks/subagent-start.mjs"');
   });
 
-  it('SessionEnd routes straight to the CLI session-end subcommand', () => {
+  it('SessionEnd routes through the wrapper script (capture verbatim + board sweep, WI-303)', () => {
     const config = loadHooksConfig();
     const command = config.hooks['SessionEnd']?.[0]?.hooks[0]?.command;
-    expect(command).toBe('"${CLAUDE_PLUGIN_ROOT}/bin/ideate-record" session-end');
+    expect(command).toBe('"${CLAUDE_PLUGIN_ROOT}/hooks/session-end.mjs"');
   });
 
   it('PostToolUse is narrowed to git commits: matcher Bash + if "Bash(git commit*)"', () => {
@@ -593,5 +595,82 @@ describe('subagent-start.mjs', () => {
     const root = makeProjectRoot();
     const result = runHookScript('subagent-start.mjs', GARBAGE_STDIN, root);
     expect(result.status).toBe(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// session-start.mjs / session-end.mjs — the WI-303 wrapper scripts
+// (F-303-001 S1: these two were live-wired into hooks.json without the
+// per-script behavioral coverage every other hook has).
+// ---------------------------------------------------------------------------
+
+/** Seed a work-state board in `root` with one item whose claim is ALREADY
+ *  expired (past-clock injection at setup time; the spawned hook's sweep
+ *  runs with the real clock and must recover it). Returns the item id. */
+function seedExpiredClaim(root: string): string {
+  const past = () => new Date(Date.now() - 60 * 60 * 1000); // one hour ago
+  const store = new WorkStateStore(join(root, '.ideate-work', 'board.db'), past);
+  const item = store.insertItem({
+    title: 'sweep me',
+    spec: 'x',
+    spec_format: 'text/plain',
+    created_by: { human: 'dan' },
+  });
+  claim(store, past, item.id, { human: 'dan', agent: 'w1' }, { leaseMs: 1 });
+  return item.id;
+}
+
+function boardStatus(root: string, id: string): string {
+  const store = new WorkStateStore(join(root, '.ideate-work', 'board.db'), () => new Date());
+  const item = store.getItem(id);
+  if (item === undefined) throw new Error('seeded item vanished');
+  return item.status;
+}
+
+describe('session-start.mjs', () => {
+  it('exits 0, forwards priming stdout only, and sweeps an expired claim back to open', () => {
+    const root = makeProjectRoot();
+    const id = seedExpiredClaim(root);
+    const payload = { ...basePayload(root, 'SessionStart'), source: 'startup' };
+    const result = runHookScript('session-start.mjs', JSON.stringify(payload), root);
+    expect(result.status).toBe(0);
+    // Fresh record store: the priming digest is empty, and the sweep's own
+    // stdout is discarded — nothing may leak into additionalContext.
+    expect(result.stdout).toBe('');
+    expect(boardStatus(root, id)).toBe('open');
+  });
+
+  it('GARBAGE stdin still exits 0', () => {
+    const root = makeProjectRoot();
+    const result = runHookScript('session-start.mjs', GARBAGE_STDIN, root);
+    expect(result.status).toBe(0);
+  });
+});
+
+describe('session-end.mjs', () => {
+  it('exits 0, still writes the session-outcome record, and sweeps an expired claim back to open', () => {
+    const root = makeProjectRoot();
+    const id = seedExpiredClaim(root);
+    const payload = { ...basePayload(root, 'SessionEnd'), reason: 'exit' };
+    const result = runHookScript('session-end.mjs', JSON.stringify(payload), root);
+    expect(result.status).toBe(0);
+    expect(result.stdout).toBe('');
+    const files = readRecordFiles(root);
+    expect(files).toHaveLength(1);
+    expect(files[0]?.record.kind).toBe('session-outcome');
+    expect(boardStatus(root, id)).toBe('open');
+  });
+
+  it('GARBAGE stdin still exits 0 and sweeps against its own cwd only', () => {
+    const root = makeProjectRoot();
+    const id = seedExpiredClaim(root);
+    const result = runHookScript('session-end.mjs', GARBAGE_STDIN, root);
+    expect(result.status).toBe(0);
+    expect(result.stdout).toBe('');
+    // cwd IS the temp root here, so the fallback sweep still recovers it —
+    // and, critically, nothing outside the temp root is ever touched (the
+    // review mishap that motivated this test created stray .ideate* debris
+    // in the package root via exactly this fallback path).
+    expect(boardStatus(root, id)).toBe('open');
   });
 });
