@@ -10,7 +10,8 @@ auditable trail of what was decided and done — append-only, project-local,
 never curated or ranked by ideate itself), a **knowledge graph** (memory and
 retrieval over that trail — developed as a separate project, not part of this
 plugin), and a **delegation board** (how work is handed to and coordinated
-across agents — a future sibling capability, not part of this plugin today).
+across agents — this plugin ships its LOCAL backend; the hosted, multi-person
+board is a future sibling service behind the same contract).
 ideate is deliberately non-prescriptive about workflow: it supplies primitives
 that fire mechanically, not a process you are told to follow, and it never
 blocks, redirects, or opines on what you do.
@@ -157,24 +158,55 @@ standalone executable — this is what the capture hooks invoke):
   compact, unranked digest of the most recent records for hook
   `additionalContext`. Hook path: always exits 0.
 
+## The work-state board (local backend)
+
+The delegation board's LOCAL backend — the ratified work-state contract
+(`docs/spikes/v3-work-delegation.md` in the project monorepo) implemented
+over SQLite in WAL mode. One sentence of model: work items carry an opaque
+`spec` payload the board never parses (bring any methodology — a
+superpowers plan, a Spec Kit URI, a plain prompt); **claims are
+server-authoritative leases with fencing tokens** — `claim` is an atomic
+compare-and-set that succeeds only on an open item whose dependencies are
+all done, leases expire (default hours-scale) so crashed workers can never
+orphan work forever, and a stale token is rejected on
+`renew`/`complete`/`release` after a reclaim. Every transition appends an
+immutable audit event in the same transaction. For a solo user the
+coordination features are *degenerate* (contention never occurs), never
+absent — the same code paths a future hosted team would exercise, proven
+by a contention suite that races real OS processes.
+
+**Eleven MCP verbs** (same server, `dist/server.js`): `work_create`,
+`work_get`, `work_list`, `work_update_meta`, `work_claim`, `work_renew`,
+`work_release`, `work_complete`, `work_cancel`, `work_reopen`,
+`work_events`. `renew`/`complete`/`release` take no actor — the token
+proves identity, and the audit event carries the claim's actual holder.
+
+**`ideate-work` CLI** (`bin/ideate-work`): the same eleven verbs as
+subcommands plus a CLI-only `sweep` (the session-boundary expiry pass the
+`SessionStart`/`SessionEnd` hooks trigger opportunistically). `--json` on
+the read verbs. Board location: `work_state.path` in `.ideate.json`
+(default `.ideate-work/`).
+
 ## Honest status
 
 - **Available now:** the append-only process record, the five mechanical
   capture points (`SessionEnd`, `PreCompact`, `SubagentStop`,
   `TaskCompleted`, `PostToolUse` on `git commit`), session/subagent priming,
-  the capture-time secret-scanning gate, and native telemetry counters.
-- **Not yet built:** the delegation board (work-state coordination across
-  agents). This is a future sibling capability; nothing in this plugin
-  depends on it.
-- **Eval-gated, not yet built:** any feature whose value is an
-  intelligence-adjacent claim is withheld until the evaluation harness
-  (`@ideate/harness`, private, not part of this package) demonstrates it,
-  per gates G1–G7 of the project's eval design. This includes: planning-time
-  gap identification (`/ideate:gap-check` and its advisory hook — designed,
-  not built, gated on G4), and per-prompt priming (technically wireable, but
-  deferred — its token-cost tradeoff is exactly the kind of default the
-  harness must license first, gated on G1/G2). None of this plugin's shipped
-  behavior depends on either.
+  the capture-time secret-scanning gate, native telemetry counters, and the
+  work-state board's **local** backend (the eleven verbs above, with a
+  contention suite racing real OS processes as its correctness evidence).
+- **Not yet built:** the *hosted* delegation board (cross-machine,
+  multi-person coordination). Its ratified trigger is a concrete second
+  contributor; the local board implements the identical contract, so that
+  move is configuration, not a rewrite.
+- **Eval-gated, present but off:** claim-time priming — the hook point
+  exists in the claim path and a `work_claims` telemetry counter records
+  the denominator, but priming itself is mechanically disabled
+  (`work_state.claim_priming` config flag, default off, no environment
+  override) until the evaluation harness licenses it. Same discipline as
+  the rest of the gated set: planning-time gap identification (designed,
+  not built, gated on G4) and per-prompt priming (deferred, gated on
+  G1/G2). None of this plugin's shipped behavior depends on any of these.
 - This package is `"private": true` in `package.json` and stays that way
   until publishing this plugin to npm is separately ratified.
 
