@@ -51,6 +51,7 @@ import { openForWrite } from './schema.js';
 import type { Clock } from '../record/id.js';
 import { appendEventRowOn } from './store.js';
 import type { WorkStateStore } from './store.js';
+import { withWriteTransaction } from './tx.js';
 import type { ActorRef } from './types.js';
 
 /** Default lease length: 4 hours — "hours, not seconds" (§3.2). Config-
@@ -97,29 +98,32 @@ function toNumber(value: number | bigint): number {
 export function checkExpiry(store: WorkStateStore, clock: Clock, itemId: string): ExpiryCheckResult {
   const nowIso = clock().toISOString(); // single sample for this whole call — the guard and the logged event agree on "now"
   const db = openForWrite(store.dbPath);
+  let result: ExpiryCheckResult = { expired: false };
   try {
     // F-301-001 S3: the reclaim (UPDATE) and its orphan-recovery event now
     // commit as ONE atomic unit — previously the event was appended via
     // `store.appendEvent` on a SEPARATE connection after this one had
     // already committed and closed, so a crash in that window could leave a
     // reclaimed item with no orphan-recovery event, violating §3.3's "every
-    // transition appends an immutable event". BEGIN IMMEDIATE also closes the
+    // transition appends an immutable event". The write lock also closes the
     // same read-then-write race the file header already documents for the
-    // SELECT/UPDATE pair.
-    db.exec('BEGIN IMMEDIATE');
-    try {
+    // SELECT/UPDATE pair. WI-307: the BEGIN IMMEDIATE/COMMIT/ROLLBACK
+    // boilerplate now lives in tx.ts's `withWriteTransaction`, which also
+    // re-types an exhausted busy_timeout as `WorkStateError('BUSY', ...)`
+    // instead of letting a raw node:sqlite lock error escape — this call is
+    // the FIRST thing every claims.ts entry point runs, so it is the most
+    // common place that failure would otherwise have surfaced unwrapped.
+    withWriteTransaction(db, (db) => {
       const pre = db
         .prepare(
           'SELECT status, claim_token, claim_holder_human, claim_holder_agent, claim_lease_expires FROM items WHERE id = ?',
         )
         .get(itemId) as PreReadRow | undefined;
       if (pre === undefined || pre.status !== 'in_progress' || pre.claim_lease_expires === null) {
-        db.exec('ROLLBACK');
-        return { expired: false };
+        return;
       }
       if (!(pre.claim_lease_expires <= nowIso)) {
-        db.exec('ROLLBACK'); // ISO-8601 timestamps compare lexicographically
-        return { expired: false };
+        return; // ISO-8601 timestamps compare lexicographically
       }
       const changed = db
         .prepare(
@@ -140,8 +144,7 @@ export function checkExpiry(store: WorkStateStore, clock: Clock, itemId: string)
         // Lost the race to a concurrent recovery/renewal between the SELECT
         // and this UPDATE (§4 local-concurrency amendment) — not our event to
         // log; whoever won already handled (or extended) this claim.
-        db.exec('ROLLBACK');
-        return { expired: false };
+        return;
       }
 
       const voidedToken = pre.claim_token === null ? undefined : toNumber(pre.claim_token);
@@ -167,17 +170,13 @@ export function checkExpiry(store: WorkStateStore, clock: Clock, itemId: string)
         );
       }
 
-      db.exec('COMMIT');
-
-      return {
+      result = {
         expired: true,
         ...(voidedToken === undefined ? {} : { voidedToken }),
         ...(formerHolder === undefined ? {} : { formerHolder }),
       };
-    } catch (err) {
-      db.exec('ROLLBACK');
-      throw err;
-    }
+    });
+    return result;
   } finally {
     db.close();
   }

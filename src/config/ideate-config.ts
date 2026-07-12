@@ -141,8 +141,28 @@ export function loadConfig(projectRoot: string): IdeateConfigV3 {
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code === "ENOENT") {
       // Lazy init: first call creates the config and the record directory.
+      //
+      // WI-307 (ENOENT lazy-init race): two concurrent sessions can both
+      // observe ENOENT here (WI-302's own concurrent-boards posture — "two
+      // simultaneous sessions on one machine... is ordinary, not
+      // exceptional" applies just as much to config lazy-init as it does to
+      // board.db). The write below uses the `wx` flag (exclusive create,
+      // fails loudly with `EEXIST` rather than silently overwriting) so a
+      // losing writer can never clobber whatever the winner already wrote.
+      // The EEXIST branch below is deliberately non-fatal: BOTH writers
+      // reach this exact branch with IDENTICAL, deterministically-derived
+      // content — `defaultConfig()` takes no input from the existing file
+      // (there IS no existing file; that is what "ENOENT" means), so
+      // whichever process's write actually landed on disk contains the
+      // exact same bytes this process would have written. There is nothing
+      // to reconcile: the loser simply proceeds with the in-memory `config`
+      // it already built, which is byte-for-byte what's now on disk.
       const config = defaultConfig();
-      writeConfigFile(configPath, config);
+      try {
+        writeConfigFile(configPath, config, "wx");
+      } catch (writeErr) {
+        if ((writeErr as NodeJS.ErrnoException).code !== "EEXIST") throw writeErr;
+      }
       ensureRecordDir(config, projectRoot);
       return config;
     }
@@ -280,8 +300,12 @@ function readV3View(file: Record<string, unknown>, configPath: string): IdeateCo
   };
 }
 
-function writeConfigFile(configPath: string, value: Record<string, unknown> | IdeateConfigV3): void {
-  fs.writeFileSync(configPath, `${JSON.stringify(value, null, 2)}\n`, "utf8");
+function writeConfigFile(
+  configPath: string,
+  value: Record<string, unknown> | IdeateConfigV3,
+  flag: "w" | "wx" = "w",
+): void {
+  fs.writeFileSync(configPath, `${JSON.stringify(value, null, 2)}\n`, { encoding: "utf8", flag });
 }
 
 function ensureRecordDir(config: IdeateConfigV3, projectRoot: string): void {

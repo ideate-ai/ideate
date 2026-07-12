@@ -52,7 +52,24 @@ function requireSqliteModule(): typeof import('node:sqlite') {
   return mod;
 }
 
-/** Busy-timeout applied to every write connection (milliseconds). */
+/**
+ * Busy-timeout applied to every write connection (milliseconds).
+ *
+ * Compounded worst-case wait (WI-307): every id-scoped claim verb
+ * (claim/renew/complete/release, claims.ts) runs `checkExpiry` (expiry.ts)
+ * FIRST, as its own separate `BEGIN IMMEDIATE ... COMMIT` unit
+ * (tx.ts's `withWriteTransaction`), and then the verb's own CAS as a SECOND,
+ * separate transaction on a fresh connection. Each of those two
+ * transactions independently retries for up to `BUSY_TIMEOUT_MS` before
+ * giving up — so a single logical call into one of those verbs can, in the
+ * genuinely worst case (contention present for BOTH steps), take up to
+ * ~2 × `BUSY_TIMEOUT_MS` (≈10s at the current 5000ms setting) before either
+ * succeeding or surfacing the typed `WorkStateError('BUSY', ...)` (tx.ts).
+ * This is a LATENCY note, not a correctness one: each half is independently
+ * atomic and safe to retry-from-scratch (tx.ts's file header), so the
+ * compounding only affects how long a caller might wait, never what ends up
+ * persisted.
+ */
 export const BUSY_TIMEOUT_MS = 5000;
 
 /**

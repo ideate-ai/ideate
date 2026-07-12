@@ -43,6 +43,7 @@ import { scanAndMask } from '../secret-gate/scan.js';
 import type { Clock, UlidGenerator } from '../record/id.js';
 import { createUlidGenerator } from '../record/id.js';
 import { openForRead, openForWrite } from './schema.js';
+import { withBusyWrap, withWriteTransaction } from './tx.js';
 import {
   DEFAULT_TENANT_ID,
   WorkStateError,
@@ -362,9 +363,12 @@ export class WorkStateStore {
       // atomic unit — previously these were two separate auto-committing
       // statements on the same connection, so a crash between them could
       // leave an item with no `create` event, violating §3.3's "every
-      // transition appends an immutable event".
-      db.exec('BEGIN IMMEDIATE');
-      try {
+      // transition appends an immutable event". WI-307: the BEGIN
+      // IMMEDIATE/COMMIT/ROLLBACK boilerplate now lives in tx.ts's
+      // `withWriteTransaction`, which also re-types an exhausted
+      // busy_timeout as `WorkStateError('BUSY', ...)` instead of letting a
+      // raw node:sqlite lock error escape.
+      withWriteTransaction(db, (db) => {
         db.prepare(
           `INSERT INTO items (
             id, tenant_id, title, spec, spec_format, status, depends_on,
@@ -390,11 +394,7 @@ export class WorkStateStore {
           transition: 'create',
           at: now,
         });
-        db.exec('COMMIT');
-      } catch (err) {
-        db.exec('ROLLBACK');
-        throw err;
-      }
+      });
       const row = getItemRow(db, id);
       if (row === undefined) throw new WorkStateError('SCHEMA', 'work-state store: insert did not persist the row');
       return rowToWorkItem(row);
@@ -472,12 +472,17 @@ export class WorkStateStore {
       // systemic note: the check above alone is a TOCTOU window — a
       // concurrent update_meta between the SELECT and this write would be
       // silently overwritten). The pre-check stays for the precise typed
-      // error; this WHERE clause is the actual guarantee.
-      const result = db
-        .prepare(
-          `UPDATE items SET title = ?, spec = ?, spec_format = ?, depends_on = ?, updated_at = ?, version = version + 1 WHERE id = ? AND version = ?`,
-        )
-        .run(nextTitle, nextSpec, nextSpecFormat, nextDependsOn, now, id, expectedVersion);
+      // error; this WHERE clause is the actual guarantee. WI-307: this bare
+      // autocommit statement is wrapped in `withBusyWrap` (tx.ts) so an
+      // exhausted busy_timeout surfaces as a typed `WorkStateError('BUSY',
+      // ...)` rather than a raw node:sqlite lock error.
+      const result = withBusyWrap(() =>
+        db
+          .prepare(
+            `UPDATE items SET title = ?, spec = ?, spec_format = ?, depends_on = ?, updated_at = ?, version = version + 1 WHERE id = ? AND version = ?`,
+          )
+          .run(nextTitle, nextSpec, nextSpecFormat, nextDependsOn, now, id, expectedVersion),
+      );
       if (result.changes !== 1) {
         throw new WorkStateError(
           'VERSION_CONFLICT',
@@ -506,7 +511,9 @@ export class WorkStateStore {
     const validated = validateAppendEventInput(input, () => this.#clock().toISOString());
     const db = openForWrite(this.#dbPath);
     try {
-      insertEventRow(db, validated);
+      // WI-307: bare autocommit INSERT, wrapped so an exhausted busy_timeout
+      // surfaces as a typed `WorkStateError('BUSY', ...)`.
+      withBusyWrap(() => insertEventRow(db, validated));
       return {
         item_id: validated.item_id,
         actor: validated.actor,
@@ -544,9 +551,13 @@ export class WorkStateStore {
   nextClaimToken(id: string): number {
     const db = openForWrite(this.#dbPath);
     try {
-      const row = db
-        .prepare('UPDATE items SET claim_token_counter = claim_token_counter + 1 WHERE id = ? RETURNING claim_token_counter')
-        .get(id) as { claim_token_counter: number | bigint } | undefined;
+      // WI-307: bare autocommit UPDATE...RETURNING, wrapped so an exhausted
+      // busy_timeout surfaces as a typed `WorkStateError('BUSY', ...)`.
+      const row = withBusyWrap(() =>
+        db
+          .prepare('UPDATE items SET claim_token_counter = claim_token_counter + 1 WHERE id = ? RETURNING claim_token_counter')
+          .get(id) as { claim_token_counter: number | bigint } | undefined,
+      );
       if (row === undefined) {
         throw new WorkStateError('NOT_FOUND', `work-state store: no item with id ${JSON.stringify(id)}`);
       }

@@ -167,7 +167,16 @@ export type WorkStateErrorCode =
   /** No item exists with the given id. */
   | 'NOT_FOUND'
   /** `update_meta`'s expected version did not match the item's current version. */
-  | 'VERSION_CONFLICT';
+  | 'VERSION_CONFLICT'
+  /** A write was blocked by another connection past the configured
+   *  `busy_timeout` (schema.ts's `BUSY_TIMEOUT_MS`) — SQLite's own
+   *  SQLITE_BUSY/SQLITE_LOCKED, or a message matching /locked|busy/i,
+   *  surfaced from tx.ts's shared transaction helper (WI-307, closing
+   *  capstone S3 / F-304-001 S1). Wrap-only: this package never retries on
+   *  top of the engine's own busy_timeout retry — see tx.ts's file header
+   *  for why a retry-on-top is deliberately a caller's decision, not this
+   *  layer's. */
+  | 'BUSY';
 
 /** Typed, loud work-state failure — thrown, never silently swallowed. */
 export class WorkStateError extends WorkStateModuleError {

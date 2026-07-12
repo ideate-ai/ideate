@@ -69,6 +69,7 @@ import { runCompletionRecordHook } from './completion-record.js';
 import type { CompletionRecordConfig } from './completion-record.js';
 import { appendEventRowOn } from './store.js';
 import type { WorkStateStore } from './store.js';
+import { withWriteTransaction } from './tx.js';
 import { WorkStateModuleError } from './types.js';
 import type { ActorRef, WorkItem } from './types.js';
 
@@ -178,20 +179,23 @@ export function claim(
   let claimedToken: number | undefined;
   try {
     // F-301-001 S3: the CAS and its `claim` audit event now commit as ONE
-    // atomic unit (BEGIN IMMEDIATE ... COMMIT) on this ONE connection — a
-    // crash between "claim acquired" and "event appended" can no longer
-    // leave a transition without its event (§3.3). This adds a lock-scope
-    // wrapper around the exact same single UPDATE statement rule 1 requires
-    // — the CAS's own SQL text (and its byte-for-byte structural test,
-    // claims.test.ts) is UNCHANGED.
-    db.exec('BEGIN IMMEDIATE');
-    try {
-    // The single atomic CAS (rule 1): status='open' AND the depends_on
-    // frontier check are BOTH conditions of the same WHERE clause; the
-    // counter increment and the status transition are the same statement.
-    const row = db
-      .prepare(
-        `UPDATE items
+    // atomic unit — a crash between "claim acquired" and "event appended"
+    // can no longer leave a transition without its event (§3.3). WI-307:
+    // the BEGIN IMMEDIATE/COMMIT/ROLLBACK boilerplate now lives in tx.ts's
+    // `withWriteTransaction`, which also re-types an exhausted busy_timeout
+    // as `WorkStateError('BUSY', ...)` — the CAS's own SQL text (and its
+    // byte-for-byte structural test, claims.test.ts) is UNCHANGED.
+    withWriteTransaction(db, (db) => {
+      // The single atomic CAS (rule 1): status='open' AND the depends_on
+      // frontier check are BOTH conditions of the same WHERE clause; the
+      // counter increment and the status transition are the same statement.
+      const row = db
+        .prepare(
+          // NOTE: this SQL literal's own internal indentation is preserved
+          // BYTE-FOR-BYTE from before WI-307's refactor (not re-flowed to
+          // the closure's new JS nesting depth) — claims.test.ts's own
+          // structural test asserts on this exact text, clause by clause.
+          `UPDATE items
          SET status = 'in_progress',
              claim_token_counter = claim_token_counter + 1,
              claim_token = claim_token_counter + 1,
@@ -207,21 +211,15 @@ export function claim(
              WHERE dep.status != 'done'
            )
          RETURNING claim_token`,
-      )
-      .get(actor.human, actor.agent ?? null, nowIso, leaseExpiresIso, itemId) as
-      | { claim_token: number | bigint }
-      | undefined;
-      if (row === undefined) {
-        db.exec('ROLLBACK');
-      } else {
+        )
+        .get(actor.human, actor.agent ?? null, nowIso, leaseExpiresIso, itemId) as
+        | { claim_token: number | bigint }
+        | undefined;
+      if (row !== undefined) {
         claimedToken = toNumber(row.claim_token);
         appendEventRowOn(db, { item_id: itemId, actor, transition: 'claim', claim_token: claimedToken, at: nowIso }, () => nowIso);
-        db.exec('COMMIT');
       }
-    } catch (err) {
-      db.exec('ROLLBACK');
-      throw err;
-    }
+    });
   } finally {
     db.close();
   }
@@ -280,9 +278,9 @@ export function renew(
     // `RETURNING` value is exactly the current holder, read within this same
     // locked transaction. `renew(id, claim_token)` carries no actor
     // parameter in the contract's own signature (§3.5) — the token already
-    // proves the caller is the current holder.
-    db.exec('BEGIN IMMEDIATE');
-    try {
+    // proves the caller is the current holder. WI-307: the transaction
+    // boilerplate now lives in tx.ts's `withWriteTransaction`.
+    withWriteTransaction(db, (db) => {
       const row = db
         .prepare(
           `UPDATE items
@@ -296,9 +294,7 @@ export function renew(
         .get(leaseExpiresIso, itemId, claimToken, nowIso) as
         | { claim_token: number | bigint; claim_holder_human: string; claim_holder_agent: string | null }
         | undefined;
-      if (row === undefined) {
-        db.exec('ROLLBACK');
-      } else {
+      if (row !== undefined) {
         renewedHolder =
           row.claim_holder_agent === null
             ? { human: row.claim_holder_human }
@@ -308,12 +304,8 @@ export function renew(
           { item_id: itemId, actor: renewedHolder, transition: 'renew', claim_token: claimToken, at: nowIso },
           () => nowIso,
         );
-        db.exec('COMMIT');
       }
-    } catch (err) {
-      db.exec('ROLLBACK');
-      throw err;
-    }
+    });
   } finally {
     db.close();
   }
@@ -378,9 +370,11 @@ export function complete(
   let completedBy: ActorRef | undefined;
   try {
     // F-301-001 S3: the CAS and its `complete` audit event commit as ONE
-    // atomic unit.
-    db.exec('BEGIN IMMEDIATE');
-    try {
+    // atomic unit. WI-307: the transaction boilerplate now lives in tx.ts's
+    // `withWriteTransaction` — see this function's own doc comment for why
+    // the WI-306 completion-record hook below still fires strictly AFTER
+    // this call returns (i.e. after commit), unchanged.
+    withWriteTransaction(db, (db) => {
       const pre = db
         .prepare(
           `SELECT claim_holder_human, claim_holder_agent FROM items
@@ -388,51 +382,45 @@ export function complete(
         )
         .get(itemId, claimToken) as { claim_holder_human: string; claim_holder_agent: string | null } | undefined;
       if (pre === undefined) {
-        db.exec('ROLLBACK');
-      } else {
-        const holder: ActorRef =
-          pre.claim_holder_agent === null ? { human: pre.claim_holder_human } : { human: pre.claim_holder_human, agent: pre.claim_holder_agent };
-        const row = db
-          .prepare(
-            `UPDATE items
-             SET status = 'done',
-                 claim_holder_human = NULL,
-                 claim_holder_agent = NULL,
-                 claim_token = NULL,
-                 claim_acquired_at = NULL,
-                 claim_lease_expires = NULL
-             WHERE id = ?
-               AND status = 'in_progress'
-               AND claim_token = ?
-             RETURNING id`,
-          )
-          .get(itemId, claimToken) as { id: string } | undefined;
-        if (row === undefined) {
-          // Unreachable while the write lock held by this same transaction
-          // covers both the pre-read and this UPDATE — kept as a loud guard,
-          // not assumed.
-          db.exec('ROLLBACK');
-        } else {
-          completedBy = holder;
-          appendEventRowOn(
-            db,
-            {
-              item_id: itemId,
-              actor: holder,
-              transition: 'complete',
-              claim_token: claimToken,
-              ...(note === undefined ? {} : { note }),
-              at: nowIso,
-            },
-            () => nowIso,
-          );
-          db.exec('COMMIT');
-        }
+        return;
       }
-    } catch (err) {
-      db.exec('ROLLBACK');
-      throw err;
-    }
+      const holder: ActorRef =
+        pre.claim_holder_agent === null ? { human: pre.claim_holder_human } : { human: pre.claim_holder_human, agent: pre.claim_holder_agent };
+      const row = db
+        .prepare(
+          `UPDATE items
+           SET status = 'done',
+               claim_holder_human = NULL,
+               claim_holder_agent = NULL,
+               claim_token = NULL,
+               claim_acquired_at = NULL,
+               claim_lease_expires = NULL
+           WHERE id = ?
+             AND status = 'in_progress'
+             AND claim_token = ?
+           RETURNING id`,
+        )
+        .get(itemId, claimToken) as { id: string } | undefined;
+      if (row === undefined) {
+        // Unreachable while the write lock held by this same transaction
+        // covers both the pre-read and this UPDATE — kept as a loud guard,
+        // not assumed.
+        return;
+      }
+      completedBy = holder;
+      appendEventRowOn(
+        db,
+        {
+          item_id: itemId,
+          actor: holder,
+          transition: 'complete',
+          claim_token: claimToken,
+          ...(note === undefined ? {} : { note }),
+          at: nowIso,
+        },
+        () => nowIso,
+      );
+    });
   } finally {
     db.close();
   }
@@ -491,9 +479,9 @@ export function release(store: WorkStateStore, clock: Clock, itemId: string, cla
   let releasedBy: ActorRef | undefined;
   try {
     // F-301-001 S3: the CAS and its `release` audit event commit as ONE
-    // atomic unit.
-    db.exec('BEGIN IMMEDIATE');
-    try {
+    // atomic unit. WI-307: the transaction boilerplate now lives in tx.ts's
+    // `withWriteTransaction`.
+    withWriteTransaction(db, (db) => {
       const pre = db
         .prepare(
           `SELECT claim_holder_human, claim_holder_agent FROM items
@@ -501,51 +489,45 @@ export function release(store: WorkStateStore, clock: Clock, itemId: string, cla
         )
         .get(itemId, claimToken) as { claim_holder_human: string; claim_holder_agent: string | null } | undefined;
       if (pre === undefined) {
-        db.exec('ROLLBACK');
-      } else {
-        const holder: ActorRef =
-          pre.claim_holder_agent === null ? { human: pre.claim_holder_human } : { human: pre.claim_holder_human, agent: pre.claim_holder_agent };
-        const row = db
-          .prepare(
-            `UPDATE items
-             SET status = 'open',
-                 claim_holder_human = NULL,
-                 claim_holder_agent = NULL,
-                 claim_token = NULL,
-                 claim_acquired_at = NULL,
-                 claim_lease_expires = NULL
-             WHERE id = ?
-               AND status = 'in_progress'
-               AND claim_token = ?
-             RETURNING id`,
-          )
-          .get(itemId, claimToken) as { id: string } | undefined;
-        if (row === undefined) {
-          // Unreachable while the write lock held by this same transaction
-          // covers both the pre-read and this UPDATE — kept as a loud guard,
-          // not assumed.
-          db.exec('ROLLBACK');
-        } else {
-          releasedBy = holder;
-          appendEventRowOn(
-            db,
-            {
-              item_id: itemId,
-              actor: holder,
-              transition: 'release',
-              claim_token: claimToken,
-              ...(note === undefined ? {} : { note }),
-              at: nowIso,
-            },
-            () => nowIso,
-          );
-          db.exec('COMMIT');
-        }
+        return;
       }
-    } catch (err) {
-      db.exec('ROLLBACK');
-      throw err;
-    }
+      const holder: ActorRef =
+        pre.claim_holder_agent === null ? { human: pre.claim_holder_human } : { human: pre.claim_holder_human, agent: pre.claim_holder_agent };
+      const row = db
+        .prepare(
+          `UPDATE items
+           SET status = 'open',
+               claim_holder_human = NULL,
+               claim_holder_agent = NULL,
+               claim_token = NULL,
+               claim_acquired_at = NULL,
+               claim_lease_expires = NULL
+           WHERE id = ?
+             AND status = 'in_progress'
+             AND claim_token = ?
+           RETURNING id`,
+        )
+        .get(itemId, claimToken) as { id: string } | undefined;
+      if (row === undefined) {
+        // Unreachable while the write lock held by this same transaction
+        // covers both the pre-read and this UPDATE — kept as a loud guard,
+        // not assumed.
+        return;
+      }
+      releasedBy = holder;
+      appendEventRowOn(
+        db,
+        {
+          item_id: itemId,
+          actor: holder,
+          transition: 'release',
+          claim_token: claimToken,
+          ...(note === undefined ? {} : { note }),
+          at: nowIso,
+        },
+        () => nowIso,
+      );
+    });
   } finally {
     db.close();
   }
