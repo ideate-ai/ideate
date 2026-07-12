@@ -67,7 +67,10 @@ git-ignored), and a plugin install performs no build step — so the MCP
 server and CLIs are NOT functional straight from a marketplace install
 today. Until a distribution mechanism for built output exists (tracked as
 an open question in the project record), use the manual path below, which
-is the tested, supported route.
+is the tested, supported route. The observable symptom is Claude Code
+reporting that the ideate MCP server failed to start, or that it
+disconnected, immediately after a marketplace install — that is the
+expected result of the missing built output, not a separate bug.
 
 ### (b) Manual wiring
 
