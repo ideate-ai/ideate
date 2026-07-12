@@ -157,6 +157,11 @@ export class WorkStateModuleError extends Error {
 export type WorkStateErrorCode =
   /** A required field was absent, malformed, or of the wrong shape. */
   | 'SCHEMA'
+  /** The board.db FILE's stamped schema version is incompatible with this
+   *  plugin (newer, or older-with-no-migration-ladder) — a file-level
+   *  failure independent of any request payload, distinct from 'SCHEMA'
+   *  (F-308-001 M1: the two classes need to be branchable). */
+  | 'SCHEMA_VERSION'
   /** A reserved top-level field (`rank`) was supplied on a payload. */
   | 'RESERVED_FIELD'
   /** No item exists with the given id. */

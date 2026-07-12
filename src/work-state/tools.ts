@@ -86,6 +86,8 @@ import { createUlidGenerator } from '../record/id.js';
 import { TelemetryCounters } from '../telemetry/counters.js';
 import type { ToolRegistrar } from '../server.js';
 import { claim, complete, release, renew } from './claims.js';
+import { createRealCompletionRecordWriter } from './completion-record.js';
+import type { CompletionRecordWriter } from './completion-record.js';
 import { checkExpiry } from './expiry.js';
 import { primeOnClaim } from './priming-hook.js';
 import { WorkStateStore } from './store.js';
@@ -159,6 +161,9 @@ interface ToolContext {
   telemetry: TelemetryCounters;
   sessionId: string;
   projectRoot: string;
+  /** WI-306: built once per context (not per completion) — see this
+   *  factory's own composition edge below. */
+  completionRecordWriter: CompletionRecordWriter;
 }
 
 /** Build the real `ExpiryCheck` (criterion 2) for one context — the lazy
@@ -216,7 +221,11 @@ export function createWorkStateToolsRegistrar(options: WorkStateToolsOptions = {
       const verbs = new WorkStateVerbs(store, clock);
       const telemetry = new TelemetryCounters(options.telemetryDir ?? join(projectRoot, '.ideate-telemetry'), clock);
       const sessionId = options.sessionId ?? `mcp-${createUlidGenerator(clock)()}`;
-      context = { store, verbs, clock, telemetry, sessionId, projectRoot };
+      // WI-306: the completion-record writer, built ONCE from the same
+      // project root/telemetry/clock this context already resolved, so
+      // `.ideate.json` is not re-read on every `work_complete` call.
+      const completionRecordWriter = createRealCompletionRecordWriter(projectRoot, telemetry, clock);
+      context = { store, verbs, clock, telemetry, sessionId, projectRoot, completionRecordWriter };
     }
     return context;
   };
@@ -426,7 +435,15 @@ export function createWorkStateToolsRegistrar(options: WorkStateToolsOptions = {
       async (args): Promise<CallToolResult> => {
         const ctx = getContext();
         try {
-          const item = complete(ctx.store, ctx.clock, args.id, args.claim_token, args.note);
+          // WI-306: completion-record post-commit hook — same call site as
+          // every other verb's dependencies, reusing this context's own
+          // project root/telemetry/session id/writer.
+          const item = complete(ctx.store, ctx.clock, args.id, args.claim_token, args.note, {
+            projectRoot: ctx.projectRoot,
+            telemetry: ctx.telemetry,
+            sessionId: ctx.sessionId,
+            recordWriter: ctx.completionRecordWriter,
+          });
           return ok({ item });
         } catch (err) {
           return toolError(err);

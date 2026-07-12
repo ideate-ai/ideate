@@ -187,6 +187,21 @@ subcommands plus a CLI-only `sweep` (the session-boundary expiry pass the
 the read verbs. Board location: `work_state.path` in `.ideate.json`
 (default `.ideate-work/`).
 
+**Board operations.** The board is one SQLite file, `board.db`, under
+`work_state.path` (`workStatePath()`, default `.ideate-work/`) — nothing
+else lives there. Deleting that directory resets the board: every claim and
+event is gone, and item state re-derives from nothing (there is no
+recovery). This is safe to do on purpose because it is a DIFFERENT store
+from the append-only process record (`record.path`, default
+`.ideate/record/`) — deleting the board never touches the record, and vice
+versa. `board.db` also carries a schema version (`PRAGMA user_version`, checked on every
+open); if a build ever reports a version-mismatch error, that is
+deliberate, not a bug — it means the file was written by a different
+plugin version than the one reading it, and per P-35 this project makes no
+promises about migration timelines. Older, pre-versioning boards are
+handled with a one-time grace (stamped on their next write) rather than
+rejected outright.
+
 ## Honest status
 
 - **Available now:** the append-only process record, the five mechanical

@@ -12,7 +12,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 
-import { openForRead, openForWrite } from './schema.js';
+import { BOARD_SCHEMA_VERSION, openForRead, openForWrite } from './schema.js';
+import { WorkStateError } from './types.js';
 
 const tempDirs: string[] = [];
 
@@ -28,6 +29,31 @@ afterEach(() => {
     if (dir !== undefined) rmSync(dir, { recursive: true, force: true });
   }
 });
+
+/**
+ * Force `PRAGMA user_version` to an arbitrary value OUTSIDE of
+ * `openForWrite`/`openForRead` — used to fabricate fixtures this module's
+ * own functions would never produce on their own (a hand-bumped "from the
+ * future" version, or a rewound-to-0 stand-in for a PH-044-era unstamped
+ * board). Uses the same `process.getBuiltinModule('node:sqlite')` lookup as
+ * schema.ts itself (see that module's header comment for why: a static
+ * `node:sqlite` import specifier gets mis-resolved by this repo's pinned
+ * Vite/vitest toolchain).
+ */
+function forceUserVersion(dbPath: string, version: number): void {
+  const sqliteModule = process.getBuiltinModule('node:sqlite') as typeof import('node:sqlite');
+  const db = new sqliteModule.DatabaseSync(dbPath);
+  db.exec(`PRAGMA user_version = ${String(version)}`);
+  db.close();
+}
+
+function readUserVersionRaw(dbPath: string): number {
+  const sqliteModule = process.getBuiltinModule('node:sqlite') as typeof import('node:sqlite');
+  const db = new sqliteModule.DatabaseSync(dbPath, { readOnly: true });
+  const row = db.prepare('PRAGMA user_version').get() as { user_version: number };
+  db.close();
+  return row.user_version;
+}
 
 describe('lazy init', () => {
   it('openForRead returns null without creating the directory or the file', () => {
@@ -183,5 +209,88 @@ describe('schema idempotence', () => {
     const rows = db2.prepare('SELECT id FROM items').all() as { id: string }[];
     expect(rows).toEqual([{ id: 'a' }]);
     db2.close();
+  });
+});
+
+// WI-308 (P-41 fixture tests): board.db schema versioning. Closes capstone
+// GAP-2 / gap 3 — `ensureSchema`'s CREATE TABLE IF NOT EXISTS silently
+// no-ops on a mismatched board file in either direction; these fixtures
+// hand-fabricate both directions and assert the typed, loud failure (or,
+// for the grace case, the one-time stamp) instead.
+describe('board schema versioning (WI-308)', () => {
+  it('a fresh create stamps PRAGMA user_version to BOARD_SCHEMA_VERSION', () => {
+    const root = makeTempDir();
+    const dbPath = join(root, 'board.db');
+
+    const db = openForWrite(dbPath);
+    const version = db.prepare('PRAGMA user_version').get() as { user_version: number };
+    expect(version.user_version).toBe(BOARD_SCHEMA_VERSION);
+    db.close();
+  });
+
+  it('a hand-bumped user_version=99 (newer than understood) throws a typed WorkStateError naming both versions, on both open paths', () => {
+    const root = makeTempDir();
+    const dbPath = join(root, 'board.db');
+    openForWrite(dbPath).close();
+    forceUserVersion(dbPath, 99);
+
+    let writeErr: unknown;
+    try {
+      openForWrite(dbPath);
+    } catch (err) {
+      writeErr = err;
+    }
+    expect(writeErr).toBeInstanceOf(WorkStateError);
+    expect((writeErr as WorkStateError).code).toBe('SCHEMA_VERSION');
+    expect((writeErr as WorkStateError).message).toContain('99');
+    expect((writeErr as WorkStateError).message).toContain(String(BOARD_SCHEMA_VERSION));
+
+    let readErr: unknown;
+    try {
+      openForRead(dbPath);
+    } catch (err) {
+      readErr = err;
+    }
+    expect(readErr).toBeInstanceOf(WorkStateError);
+    expect((readErr as WorkStateError).code).toBe('SCHEMA_VERSION');
+    expect((readErr as WorkStateError).message).toContain('99');
+    expect((readErr as WorkStateError).message).toContain(String(BOARD_SCHEMA_VERSION));
+  });
+
+  it('a PH-044-era unstamped, non-empty board (user_version=0) is stamped to 1 on first write and reads fine afterward', () => {
+    const root = makeTempDir();
+    const dbPath = join(root, 'board.db');
+
+    // Build a real, non-empty board the normal way, then rewind its
+    // user_version to 0 to stand in for a pre-versioning (PH-044-era) file
+    // that predates this check entirely.
+    const seed = openForWrite(dbPath);
+    seed
+      .prepare(
+        `INSERT INTO items (id, tenant_id, title, spec, spec_format, status, depends_on, created_by_human, created_by_agent, created_at, updated_at, version) VALUES ('a', 't', 'A', 's', 'f', 'open', '[]', 'dan', NULL, 'now', 'now', 1)`,
+      )
+      .run();
+    seed.close();
+    forceUserVersion(dbPath, 0);
+    expect(readUserVersionRaw(dbPath)).toBe(0);
+
+    // A read against the unstamped board must not error — the grace applies
+    // until the next write, not the next read.
+    const preWriteRead = openForRead(dbPath);
+    expect(preWriteRead).not.toBeNull();
+    preWriteRead?.close();
+
+    // The next openForWrite is the "first write" that stamps it.
+    const db = openForWrite(dbPath);
+    const version = db.prepare('PRAGMA user_version').get() as { user_version: number };
+    expect(version.user_version).toBe(BOARD_SCHEMA_VERSION);
+    const rows = db.prepare('SELECT id FROM items').all() as { id: string }[];
+    expect(rows).toEqual([{ id: 'a' }]);
+    db.close();
+
+    // And it reads fine afterward too.
+    const postWriteRead = openForRead(dbPath);
+    expect(postWriteRead).not.toBeNull();
+    postWriteRead?.close();
   });
 });

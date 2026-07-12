@@ -27,13 +27,16 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Worker } from 'node:worker_threads';
 import { fileURLToPath } from 'node:url';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import type { Clock } from '../record/id.js';
+import { TelemetryCounters } from '../telemetry/counters.js';
+import { reportFromDir } from '../telemetry/report.js';
 import { WorkStateStore } from './store.js';
 import type { ActorRef } from './types.js';
 import { checkExpiry } from './expiry.js';
 import { ClaimEngineError, DEFAULT_LEASE_MS, MAX_LEASE_MS, claim, complete, release, renew } from './claims.js';
+import type { CompletionRecordConfig, CompletionRecordFacts } from './completion-record.js';
 
 const FIXED_ISO = '2026-07-11T12:00:00.000Z';
 
@@ -46,6 +49,7 @@ function makeTempDir(): string {
 }
 
 afterEach(() => {
+  vi.restoreAllMocks();
   while (tempDirs.length > 0) {
     const dir = tempDirs.pop();
     if (dir !== undefined) rmSync(dir, { recursive: true, force: true });
@@ -467,6 +471,166 @@ describe('complete() — §3.2 rule 3 amended: fencing + optional note', () => {
     // And worker-b's own (current-token) renew succeeds.
     const renewed = renew(store, clock, item.id, reclaimed.claim!.claim_token);
     expect(renewed.claim?.holder).toEqual(actor('worker-b'));
+  });
+});
+
+describe('completion-record post-commit hook (WI-306) — closes boundary contract §2 row 1', () => {
+  /** A minimal, type-correct successful AppendResult stub — the injected
+   *  writer never goes through the real RecordStore, so this just needs to
+   *  satisfy the return type, not real gate/serialize behavior (that is
+   *  completion-record.test.ts's job, against the real store). */
+  function stubOkResult(facts: CompletionRecordFacts, claim: string, verificationAnchor: string, scope: string, content: string) {
+    return {
+      ok: true as const,
+      record: {
+        id: '01JZM8Z0000000000000000AA',
+        kind: 'work-completion',
+        claim,
+        verification_anchor: verificationAnchor,
+        scope,
+        source: { capture_point: 'work-completion', session_id: facts.sessionId, task_id: facts.item.id, timestamp: facts.completedAt },
+        content,
+      },
+      path: '/dev/null/stub-not-a-real-path.md',
+      redactions: [],
+    };
+  }
+
+  function makeCompletionConfig(store: WorkStateStore): { config: CompletionRecordConfig; telemetryDir: string; calls: CompletionRecordFacts[] } {
+    const telemetryDir = makeTempDir();
+    const telemetry = new TelemetryCounters(telemetryDir, () => new Date(FIXED_ISO));
+    const calls: CompletionRecordFacts[] = [];
+    const config: CompletionRecordConfig = {
+      projectRoot: makeTempDir(),
+      telemetry,
+      sessionId: 'sess-claims-test',
+      recordWriter: (facts) => {
+        calls.push(facts);
+        // Read-back proof of strict post-commit ordering: at the moment the
+        // writer fires, the board's OWN state must already show the item
+        // done and the claim cleared — never fired before or racing the CAS.
+        const boardState = store.getItem(facts.item.id);
+        expect(boardState?.status).toBe('done');
+        expect(boardState?.claim).toBeNull();
+        return stubOkResult(
+          facts,
+          `${facts.item.title} — ${facts.note ?? '(fallback)'}`,
+          `board:${facts.item.id}#complete@${facts.completedAt}`,
+          `${facts.item.tenant_id}/${facts.item.id}`,
+          facts.note ?? '(fallback)',
+        );
+      },
+    };
+    return { config, telemetryDir, calls };
+  }
+
+  it('note present: the writer fires exactly once, post-commit, with claim/anchor/scope composed from title+note/item-id+event/tenant-item', () => {
+    const { store, clock } = makeFixture();
+    const item = store.insertItem({ title: 'ship the thing', spec: 's', spec_format: 'f', created_by: actor() });
+    const claimed = claim(store, clock, item.id, actor('dan'));
+    const { config, calls } = makeCompletionConfig(store);
+
+    const done = complete(store, clock, item.id, claimed.claim!.claim_token, 'shipped and verified', config);
+    expect(done.status).toBe('done');
+
+    expect(calls).toHaveLength(1);
+    const facts = calls[0];
+    expect(facts?.item.id).toBe(item.id);
+    expect(facts?.item.title).toBe('ship the thing');
+    expect(facts?.note).toBe('shipped and verified');
+    expect(facts?.completedBy).toEqual(actor('dan'));
+    expect(facts?.claimToken).toBe(claimed.claim!.claim_token);
+    expect(facts?.completedAt).toBe(FIXED_ISO);
+    expect(facts?.sessionId).toBe('sess-claims-test');
+  });
+
+  it('note absent: the structural fallback still fires the writer, carrying title + transition metadata (no note text)', () => {
+    const { store, clock } = makeFixture();
+    const item = store.insertItem({ title: 'ship the thing', spec: 's', spec_format: 'f', created_by: actor() });
+    const claimed = claim(store, clock, item.id, actor('dan'));
+    const { config, calls } = makeCompletionConfig(store);
+
+    complete(store, clock, item.id, claimed.claim!.claim_token, undefined, config);
+
+    expect(calls).toHaveLength(1);
+    expect(calls[0]?.note).toBeUndefined();
+    expect(calls[0]?.item.title).toBe('ship the thing');
+    expect(calls[0]?.completedBy).toEqual(actor('dan'));
+  });
+
+  it('absent completionRecord config: complete() behaves exactly as before — no writer to invoke, no crash', () => {
+    const { store, clock } = makeFixture();
+    const item = store.insertItem({ title: 'x', spec: 's', spec_format: 'f', created_by: actor() });
+    const claimed = claim(store, clock, item.id, actor());
+    expect(() => complete(store, clock, item.id, claimed.claim!.claim_token, 'note, no config')).not.toThrow();
+  });
+
+  it('a typed AppendResult failure (e.g. unwritable record dir) leaves the claim completed, logs one loud stderr line, and never throws through complete()\'s caller', () => {
+    const { store, clock } = makeFixture();
+    const item = store.insertItem({ title: 'x', spec: 's', spec_format: 'f', created_by: actor() });
+    const claimed = claim(store, clock, item.id, actor());
+    const telemetryDir = makeTempDir();
+    const telemetry = new TelemetryCounters(telemetryDir, () => new Date(FIXED_ISO));
+    const stderrSpy = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+
+    const config: CompletionRecordConfig = {
+      projectRoot: makeTempDir(),
+      telemetry,
+      sessionId: 'sess-fail-test',
+      recordWriter: () => ({ ok: false, code: 'WRITE', reason: 'simulated unwritable record directory' }),
+    };
+
+    let done: ReturnType<typeof complete> | undefined;
+    expect(() => {
+      done = complete(store, clock, item.id, claimed.claim!.claim_token, 'note', config);
+    }).not.toThrow();
+
+    // The claim itself is unaffected by the record-write failure.
+    expect(done?.status).toBe('done');
+    const boardState = store.getItem(item.id);
+    expect(boardState?.status).toBe('done');
+
+    // Loud: exactly one stderr line naming the item and the failure.
+    expect(stderrSpy).toHaveBeenCalledTimes(1);
+    const written = String(stderrSpy.mock.calls[0]?.[0]);
+    expect(written).toContain(item.id);
+    expect(written).toContain('WRITE');
+    expect(written).toContain('completion');
+  });
+
+  it('an injected writer that THROWS outright still leaves the claim completed, logs a loud stderr line, never throws through complete(), and increments capture_write_failed for point "work-completion"', () => {
+    const { store, clock } = makeFixture();
+    const item = store.insertItem({ title: 'x', spec: 's', spec_format: 'f', created_by: actor() });
+    const claimed = claim(store, clock, item.id, actor());
+    const telemetryDir = makeTempDir();
+    const telemetry = new TelemetryCounters(telemetryDir, () => new Date(FIXED_ISO));
+    const stderrSpy = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+
+    const config: CompletionRecordConfig = {
+      projectRoot: makeTempDir(),
+      telemetry,
+      sessionId: 'sess-throw-test',
+      recordWriter: () => {
+        throw new Error('injected writer failure — simulates a broken override');
+      },
+    };
+
+    let done: ReturnType<typeof complete> | undefined;
+    expect(() => {
+      done = complete(store, clock, item.id, claimed.claim!.claim_token, 'note', config);
+    }).not.toThrow();
+
+    expect(done?.status).toBe('done');
+    expect(store.getItem(item.id)?.status).toBe('done');
+
+    expect(stderrSpy).toHaveBeenCalledTimes(1);
+    const written = String(stderrSpy.mock.calls[0]?.[0]);
+    expect(written).toContain(item.id);
+    expect(written).toContain('injected writer failure');
+
+    const { report } = reportFromDir(telemetryDir);
+    expect(report.captureWriteFailed.total).toBe(1);
+    expect(report.captureWriteFailed.byPoint['work-completion']).toBe(1);
   });
 });
 

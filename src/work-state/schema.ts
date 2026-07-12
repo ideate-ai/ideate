@@ -30,6 +30,8 @@ import type { DatabaseSync } from 'node:sqlite';
 import { existsSync, mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
 
+import { WorkStateError } from './types.js';
+
 // `DatabaseSync` is resolved via `process.getBuiltinModule` rather than a
 // static `import ... from 'node:sqlite'`. This is a deliberate workaround,
 // not a style choice: this repo's pinned Vite/vitest toolchain (5.4.x)
@@ -52,6 +54,20 @@ function requireSqliteModule(): typeof import('node:sqlite') {
 
 /** Busy-timeout applied to every write connection (milliseconds). */
 export const BUSY_TIMEOUT_MS = 5000;
+
+/**
+ * The board.db schema version, stamped into SQLite's own `PRAGMA
+ * user_version` (an integer the engine persists in the file header for
+ * free — no extra table, no extra row to keep in sync). Mirrors
+ * `V3_SCHEMA_VERSION` in `config/ideate-config.ts` in spirit: a single
+ * source-of-truth integer this module checks on every open, and a wording
+ * style ("newer than this ideate understands") copied from that module's
+ * `IdeateConfigError` message so the two honest-failure surfaces read the
+ * same way to a human. Bump this when `ITEMS_TABLE_DDL` / `EVENTS_TABLE_DDL`
+ * change in a way old code cannot read; see {@link checkSchemaVersion} for
+ * what happens on a mismatch.
+ */
+export const BOARD_SCHEMA_VERSION = 1;
 
 /**
  * `items`: one row per work item. `depends_on` is stored as a JSON array of
@@ -124,6 +140,51 @@ function ensureSchema(db: DatabaseSync): void {
   db.exec(EVENTS_INDEX_DDL);
 }
 
+/** Read the file's current `PRAGMA user_version` (0 on a brand-new file). */
+function readUserVersion(db: DatabaseSync): number {
+  const row = db.prepare('PRAGMA user_version').get() as { user_version: number };
+  return row.user_version;
+}
+
+/**
+ * Enforce the one rule this schema version understands: v1 accepts a file
+ * stamped `user_version` 0 (unversioned — see {@link openForWrite}'s
+ * handling below) or exactly {@link BOARD_SCHEMA_VERSION}. Anything else is
+ * a typed, loud failure — never a silent misread:
+ *
+ * - `user_version` > {@link BOARD_SCHEMA_VERSION}: the file was written by a
+ *   NEWER plugin than this one. Mirrors `ideate-config.ts`'s
+ *   `schema_version` check almost verbatim ("newer than this ideate
+ *   understands") — same honest-failure posture, same wording style.
+ * - `user_version` < {@link BOARD_SCHEMA_VERSION} and non-zero: the file was
+ *   written by an OLDER plugin than this one, on a schema version this
+ *   plugin no longer accepts as-is. There is no migration ladder yet — v1
+ *   is the first stamped version, so this branch cannot fire against a
+ *   real board today, but it is written now (rather than left as a TODO)
+ *   so that the FIRST future version bump gets this check for free. When
+ *   that ladder exists, this is where it will be invoked; until then, the
+ *   error says so plainly rather than guessing at a migration.
+ *
+ * Called on EVERY open (read and write) — this is the "a newer board file
+ * against an older plugin is silently misread" half of the gap this module
+ * closes; {@link openForWrite}'s post-check stamping closes the other half
+ * (an older plugin's un-stamped DDL silently no-op'ing against a future
+ * plugin's expectations).
+ */
+function checkSchemaVersion(userVersion: number): void {
+  if (userVersion > BOARD_SCHEMA_VERSION) {
+    throw new WorkStateError('SCHEMA_VERSION',
+      `board.db has user_version ${String(userVersion)}, newer than this ideate understands (${String(BOARD_SCHEMA_VERSION)})`,
+    );
+  }
+  if (userVersion !== 0 && userVersion < BOARD_SCHEMA_VERSION) {
+    throw new WorkStateError('SCHEMA_VERSION',
+      `board.db has user_version ${String(userVersion)}, older than this ideate understands (${String(BOARD_SCHEMA_VERSION)}); there is no migration ladder yet — that is future work, not a bug, and this file cannot be opened until one exists`,
+    );
+  }
+  // userVersion === 0 (unstamped) or === BOARD_SCHEMA_VERSION: fine.
+}
+
 /**
  * Open a WRITE connection to the work-state database at `dbPath`, creating
  * the parent directory and the database file if this is the first write
@@ -134,13 +195,33 @@ function ensureSchema(db: DatabaseSync): void {
  * Callers are responsible for calling `.close()` when done — this module
  * opens one connection per call rather than holding a pool, matching the
  * SQLite-is-cheap-to-open posture and keeping lazy-init easy to reason about.
+ *
+ * Schema versioning (WI-308, closing GAP-2 / gap 3): the pragmas are applied
+ * FIRST — busy_timeout before anything else, per F-300-001's ordering lesson
+ * (a fresh connection's busy_timeout defaults to 0, so any statement run
+ * before it is set, including reading `user_version`, has no retry budget
+ * under contention) — THEN `user_version` is checked
+ * ({@link checkSchemaVersion}, shared with {@link openForRead}), THEN the DDL
+ * runs. A `user_version` of 0 means one of two things, handled identically:
+ * a genuinely brand-new file (just created above, nothing to preserve), or
+ * a pre-versioning board written by a PH-044-era plugin build that predates
+ * this check (real data, never stamped). Either way this is a one-time
+ * grace: the very next `openForWrite` stamps it to
+ * {@link BOARD_SCHEMA_VERSION} and every subsequent open is checked
+ * normally. There is no separate migration step because v1 IS the
+ * pre-versioning shape — stamping is the whole migration.
  */
 export function openForWrite(dbPath: string): DatabaseSync {
   mkdirSync(dirname(dbPath), { recursive: true });
   const { DatabaseSync } = requireSqliteModule();
   const db = new DatabaseSync(dbPath);
   applyPragmas(db);
+  const userVersion = readUserVersion(db);
+  checkSchemaVersion(userVersion);
   ensureSchema(db);
+  if (userVersion === 0) {
+    db.exec(`PRAGMA user_version = ${String(BOARD_SCHEMA_VERSION)}`);
+  }
   return db;
 }
 
@@ -157,11 +238,19 @@ export function openForWrite(dbPath: string): DatabaseSync {
  * without it, reads under write contention fail with raw "database is
  * locked" errors instead of waiting (F-300-001 C2: reproduced at a
  * 30-50% failure rate with concurrent writers before this line existed).
+ *
+ * Schema versioning (WI-308): busy_timeout is still set FIRST, then
+ * `user_version` is checked ({@link checkSchemaVersion}, shared with
+ * {@link openForWrite}) — same ordering rule, same reason. A `user_version`
+ * of 0 (unstamped) is accepted here too: a read must not fail just because
+ * no write has happened yet to run the one-time stamp described on
+ * {@link openForWrite}.
  */
 export function openForRead(dbPath: string): DatabaseSync | null {
   if (!existsSync(dbPath)) return null;
   const { DatabaseSync } = requireSqliteModule();
   const db = new DatabaseSync(dbPath, { readOnly: true });
   db.exec(`PRAGMA busy_timeout = ${String(BUSY_TIMEOUT_MS)}`);
+  checkSchemaVersion(readUserVersion(db));
   return db;
 }

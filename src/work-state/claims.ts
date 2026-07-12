@@ -65,6 +65,8 @@
 import { openForWrite } from './schema.js';
 import { checkExpiry, DEFAULT_LEASE_MS } from './expiry.js';
 import type { Clock } from '../record/id.js';
+import { runCompletionRecordHook } from './completion-record.js';
+import type { CompletionRecordConfig } from './completion-record.js';
 import { appendEventRowOn } from './store.js';
 import type { WorkStateStore } from './store.js';
 import { WorkStateModuleError } from './types.js';
@@ -348,8 +350,26 @@ export function renew(
  * `note` is an optional free-text completion summary; when absent, the
  * event still records the transition (the structural fallback — extraction
  * from title/metadata is a caller-side concern, not this module's).
+ *
+ * `completionRecord` (WI-306, optional): when a transport supplies it, this
+ * function's own post-commit hook (completion-record.ts's
+ * `runCompletionRecordHook`) fires AFTER the CAS + event above have already
+ * committed — GP-21's ordering requirement (board = state authority, record
+ * = capture). A record-write failure of any kind never un-completes the
+ * claim and never escapes this function: it is loud (stderr) and counted
+ * (`capture_write_failed`, point 'work-completion'), never re-thrown. Absent
+ * `completionRecord` (most of this module's own unit tests, and any other
+ * direct caller with no transport context to inject), no record is
+ * attempted — there is no project root to resolve one from.
  */
-export function complete(store: WorkStateStore, clock: Clock, itemId: string, claimToken: number, note?: string): WorkItem {
+export function complete(
+  store: WorkStateStore,
+  clock: Clock,
+  itemId: string,
+  claimToken: number,
+  note?: string,
+  completionRecord?: CompletionRecordConfig,
+): WorkItem {
   checkExpiry(store, clock, itemId); // lazy check, evaluated FIRST — rule 2
   requireItem(store, itemId, 'complete');
 
@@ -423,7 +443,30 @@ export function complete(store: WorkStateStore, clock: Clock, itemId: string, cl
       `work-state claim engine: complete: item ${JSON.stringify(itemId)} is not held under token ${String(claimToken)} (stale token — reclaimed by another actor, or item not in_progress) (§3.2 rule 3)`,
     );
   }
-  return requireItem(store, itemId, 'complete');
+  const completedItem = requireItem(store, itemId, 'complete');
+
+  // WI-306: the completion-record post-commit hook — strictly AFTER the CAS
+  // + event above have already committed (this line runs after the `db`
+  // opened for this call was closed, and after a fresh, independent read of
+  // the now-`done` item). See this function's own doc comment and
+  // completion-record.ts's file header for the full ordering/failure
+  // contract. Fires only when a transport supplied its dependencies.
+  if (completionRecord !== undefined) {
+    runCompletionRecordHook(
+      {
+        item: completedItem,
+        note,
+        completedBy,
+        claimToken,
+        completedAt: nowIso,
+        sessionId: completionRecord.sessionId,
+      },
+      completionRecord,
+      clock,
+    );
+  }
+
+  return completedItem;
 }
 
 /**
