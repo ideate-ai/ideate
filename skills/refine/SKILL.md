@@ -64,7 +64,10 @@ produced anything load-bearing.
 - Spawn `ideate:architect`: **analyze mode** to surface blast radius (other
   consumers of a changed interface, patterns to follow, implied migrations);
   **design mode** when the idea needs a structural shape before it can be cut
-  into items. Record key design choices with `record_decision`.
+  into items. Record key design choices with `record_decision`; when a choice
+  overturns an earlier decision, pass that decision's record id as `supersedes`
+  so the old decision surfaces the replacement on read instead of misleading a
+  later reader.
 - Spawn `ideate:researcher` for genuine unknowns the idea introduces. Skip if
   there are none.
 

@@ -107,6 +107,7 @@ describe('round-trip serialization', () => {
         task_id: 'WI-271',
         timestamp: FIXED_ISO,
       },
+      references: [],
       content: '\nLeading newline, an embedded fence:\n---\nid: "fake"\n---\nand a trailing newline\n',
     };
     expect(parseRecord(serializeRecord(record))).toEqual(record);
@@ -120,9 +121,43 @@ describe('round-trip serialization', () => {
       verification_anchor: '',
       scope: '',
       source: { capture_point: 'session_end', session_id: 's', timestamp: FIXED_ISO },
+      references: [],
       content: '',
     };
     expect(parseRecord(serializeRecord(record))).toEqual(record);
+  });
+
+  it('round-trips a record carrying supersedes + a general typed edge', () => {
+    const record: ProcessRecord = {
+      id: '01JZM8Z0000000000000000009',
+      kind: 'decision',
+      claim: 'new decision replacing an old one',
+      verification_anchor: '',
+      scope: '',
+      source: { capture_point: 'mcp:record_decision', session_id: 's', timestamp: FIXED_ISO },
+      references: [
+        { rel: 'supersedes', id: '01JZM8Z0000000000000000000' },
+        { rel: 'relates-to', id: '01JZM8Z0000000000000000001' },
+      ],
+      content: '',
+    };
+    expect(parseRecord(serializeRecord(record))).toEqual(record);
+  });
+
+  it('a reference-less record serializes byte-identically to the pre-references format', () => {
+    // No `references:` line is emitted when the edge list is empty, so existing
+    // on-disk records and reference-less writes are unchanged.
+    const record: ProcessRecord = {
+      id: '01JZM8Z0000000000000000002',
+      kind: 'finding',
+      claim: 'c',
+      verification_anchor: '',
+      scope: '',
+      source: { capture_point: 'mcp:record_append', session_id: 's', timestamp: FIXED_ISO },
+      references: [],
+      content: 'body',
+    };
+    expect(serializeRecord(record)).not.toContain('references:');
   });
 
   it('appended records read back identical through the store', () => {
@@ -366,6 +401,50 @@ describe('read: straight off the files, newest first, selection only', () => {
   it('reads an empty or absent record tree as an empty list', () => {
     const { store } = makeFixture();
     expect(store.read()).toEqual([]);
+  });
+});
+
+describe('readViews: derived backlinks, never stored (append-only reverse edges)', () => {
+  it('attaches referenced_by to a superseded record without persisting it', () => {
+    const fx = makeFixture();
+    fx.setNow('2026-05-01T00:00:00.000Z');
+    const a = fx.store.append(input({ kind: 'decision', scope: 'the old choice' }));
+    fx.setNow('2026-06-01T00:00:00.000Z');
+    if (!a.ok) throw new Error('seed a failed');
+    const b = fx.store.append(
+      input({ kind: 'decision', scope: 'the new choice', references: [{ rel: 'supersedes', id: a.record.id }] }),
+    );
+    if (!b.ok) throw new Error('seed b failed');
+
+    const views = fx.store.readViews();
+    const viewA = views.find((v) => v.id === a.record.id);
+    const viewB = views.find((v) => v.id === b.record.id);
+    // A learns it was superseded — the DERIVED reverse edge.
+    expect(viewA?.referenced_by).toEqual([{ rel: 'supersedes', id: b.record.id }]);
+    // B carries the forward edge and has no backlinks of its own.
+    expect(viewB?.references).toEqual([{ rel: 'supersedes', id: a.record.id }]);
+    expect(viewB?.referenced_by).toEqual([]);
+    // Nothing was written back to A — the on-disk record has no reverse edge.
+    expect(fx.store.read().find((r) => r.id === a.record.id)?.references).toEqual([]);
+  });
+
+  it('derives the backlink even when the referring record is excluded by the scope filter', () => {
+    const fx = makeFixture();
+    fx.setNow('2026-05-01T00:00:00.000Z');
+    const a = fx.store.append(input({ kind: 'decision', scope: 'target-scope' }));
+    fx.setNow('2026-06-01T00:00:00.000Z');
+    if (!a.ok) throw new Error('seed a failed');
+    const b = fx.store.append(
+      input({ kind: 'decision', scope: 'other-scope', references: [{ rel: 'supersedes', id: a.record.id }] }),
+    );
+    if (!b.ok) throw new Error('seed b failed');
+
+    // The filter selects only A; B (the newer referrer) is scanned but excluded
+    // from the result — yet A's backlink still resolves, because the referrer
+    // map is built from every scanned record, not just the returned ones.
+    const views = fx.store.readViews({ scope: 'target-scope' });
+    expect(views.map((v) => v.id)).toEqual([a.record.id]);
+    expect(views[0]?.referenced_by).toEqual([{ rel: 'supersedes', id: b.record.id }]);
   });
 });
 

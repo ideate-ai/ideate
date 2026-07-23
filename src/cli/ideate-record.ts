@@ -55,8 +55,9 @@ import { dirname, isAbsolute, join, relative } from 'node:path';
 import { loadConfig } from '../config/ideate-config.js';
 import type { Clock } from '../record/id.js';
 import { createUlidGenerator } from '../record/id.js';
-import type { ProcessRecord } from '../record/schema.js';
+import type { RecordReference } from '../record/schema.js';
 import { RecordStore } from '../record/store.js';
+import type { ProcessRecordView } from '../record/store.js';
 import { TelemetryCounters } from '../telemetry/counters.js';
 
 /**
@@ -85,13 +86,15 @@ const USAGE = `Usage: ideate-record <subcommand> [options]
 
 Subcommands:
   append --kind <k> --claim <c> [--anchor <a>] [--scope <s>]
-         [--content <text> | --content -] [--task <id>]
+         [--content <text> | --content -] [--task <id>] [--supersedes <id>]
       Append one record through the gated core (secret gate runs inside the
       store); prints the new record id. \`--content -\` reads the prose body
-      from stdin.
+      from stdin. \`--supersedes <id>\` records a supersedes edge to the record
+      this one replaces (surfaced as a backlink when the old record is read).
   read [--scope <substring>] [--limit <n>] [--json]
       Print records, newest first. Scope is plain substring SELECTION over
-      scope/kind/source fields — unranked by contract.
+      scope/kind/source fields — unranked by contract. Each record shows its
+      forward edges and its DERIVED backlinks (e.g. superseded-by).
   session-end
       Hook edge (SessionEnd): reads the hook payload JSON from stdin and
       appends a recall-shaped session-outcome record (prose composed from
@@ -206,6 +209,7 @@ async function runAppend(
     '--scope': 'value',
     '--content': 'value',
     '--task': 'value',
+    '--supersedes': 'value',
   });
   if (parsed.errors.length > 0) {
     for (const err of parsed.errors) stderr.write(`ideate-record: append: ${err}\n`);
@@ -225,6 +229,7 @@ async function runAppend(
 
   const ctx = buildContext(process.cwd());
   const taskId = parsed.values.get('--task');
+  const supersedes = parsed.values.get('--supersedes');
   // THE write: through the gated core. No second write path exists here.
   const result = ctx.store.append({
     kind,
@@ -236,6 +241,7 @@ async function runAppend(
       session_id: ctx.sessionId,
       ...(taskId === undefined ? {} : { task_id: taskId }),
     },
+    ...(supersedes === undefined || supersedes === '' ? {} : { references: [{ rel: 'supersedes', id: supersedes }] }),
     content,
   });
   if (!result.ok) {
@@ -250,7 +256,18 @@ async function runAppend(
 // read — direct-use path (exit 1 on failure)
 // ---------------------------------------------------------------------------
 
-function formatRecord(record: ProcessRecord): string {
+/**
+ * The `supersedes` backlinks of a record as a compact ` [⚠ superseded by …]`
+ * marker (empty when the record was not superseded). This is the read-side
+ * payoff of the derived reverse edge: a stale record announces its replacement
+ * instead of being read as current.
+ */
+function supersededMarker(referenced_by: readonly RecordReference[]): string {
+  const by = referenced_by.filter((r) => r.rel === 'supersedes').map((r) => r.id);
+  return by.length === 0 ? '' : ` [⚠ superseded by ${by.join(', ')}]`;
+}
+
+function formatRecord(record: ProcessRecordView): string {
   const task = record.source.task_id === undefined ? '' : ` / ${record.source.task_id}`;
   const lines = [
     `${record.id} [${record.kind}] ${record.source.timestamp}`,
@@ -259,6 +276,11 @@ function formatRecord(record: ProcessRecord): string {
     `  scope:  ${record.scope}`,
     `  source: ${record.source.capture_point} / ${record.source.session_id}${task}`,
   ];
+  // Forward edges this record declares, then the derived reverse edges.
+  for (const ref of record.references) lines.push(`  → ${ref.rel}: ${ref.id}`);
+  for (const back of record.referenced_by) {
+    lines.push(back.rel === 'supersedes' ? `  ⚠ superseded by: ${back.id}` : `  ← ${back.rel} by: ${back.id}`);
+  }
   if (record.content.length > 0) {
     lines.push(...record.content.split('\n').map((line) => `  ${line}`));
   }
@@ -284,7 +306,7 @@ function runRead(argv: readonly string[], stdout: NodeJS.WritableStream, stderr:
 
   const ctx = buildContext(process.cwd());
   const scope = parsed.values.get('--scope');
-  const records = ctx.store.read({
+  const records = ctx.store.readViews({
     ...(scope === undefined ? {} : { scope }),
     ...(limit === undefined ? {} : { limit }),
   });
@@ -543,7 +565,7 @@ export const DIGEST_FRAME_CLOSE = '--- end ideate process record digest ---';
  * injects NOTHING, never an envelope around emptiness (runPrime returns
  * before formatting).
  */
-function formatDigest(records: readonly ProcessRecord[], scope: string | undefined): string {
+function formatDigest(records: readonly ProcessRecordView[], scope: string | undefined): string {
   const scopeNote = scope === undefined ? '' : ` matching scope "${scope}"`;
   const lines = [
     DIGEST_FRAME_OPEN,
@@ -554,7 +576,9 @@ function formatDigest(records: readonly ProcessRecord[], scope: string | undefin
   for (const record of records) {
     const claim = record.claim.trim().length > 0 ? record.claim : '(no claim)';
     const anchor = record.verification_anchor.trim().length > 0 ? ` — verify: ${record.verification_anchor}` : '';
-    lines.push(`- [${record.kind}] ${claim}${anchor}`);
+    // A superseded record flags its replacement inline so priming never
+    // surfaces overturned guidance as if it were current.
+    lines.push(`- [${record.kind}] ${claim}${anchor}${supersededMarker(record.referenced_by)}`);
   }
   lines.push(DIGEST_FRAME_CLOSE);
   return `${lines.join('\n')}\n`;
@@ -593,8 +617,10 @@ function runPrime(argv: readonly string[], stdout: NodeJS.WritableStream, stderr
   ctx.telemetry.primingRequested('cli:prime', ctx.sessionId);
   const scope = parsed.values.get('--scope');
   // SELECTION, not ranking: the store returns newest-first, scope-substring-
-  // filtered, count-capped — no score is computed anywhere on this path.
-  const records = ctx.store.read({ ...(scope === undefined ? {} : { scope }), limit: budget });
+  // filtered, count-capped — no score is computed anywhere on this path. The
+  // view variant additionally derives `superseded_by` so the digest can flag
+  // overturned records (still selection only — a backlink is not a score).
+  const records = ctx.store.readViews({ ...(scope === undefined ? {} : { scope }), limit: budget });
   // An empty store injects nothing — silence, not noise; specifically no
   // framing envelope wrapped around emptiness (cycle-7 S2 convention).
   if (records.length === 0) return 0;

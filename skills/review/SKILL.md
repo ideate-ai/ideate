@@ -57,7 +57,9 @@ Collect all findings; dedupe overlaps; verify each is substantiated (drop
 speculative ones). Then:
 - Record each surviving finding with `record_append(kind="finding")` —
   severity, location, claim, failure scenario. These are what `refine` and
-  `execute` consume.
+  `execute` consume. When a finding re-reports and replaces one from an earlier
+  cycle (same defect, updated understanding), pass the prior finding's id as
+  `supersedes` so the stale one links forward instead of lingering as open.
 - Write a `record_append(kind="cycle-summary")` — the roll-up: what was
   reviewed, finding counts by severity, and the verdict (converged / needs
   refinement / blocked).

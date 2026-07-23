@@ -54,6 +54,7 @@ import type { ToolRegistrar } from '../server.js';
 import { TelemetryCounters } from '../telemetry/counters.js';
 import type { Clock } from './id.js';
 import { createUlidGenerator } from './id.js';
+import type { RecordReference } from './schema.js';
 import { RecordStore } from './store.js';
 import type { AppendResult } from './store.js';
 
@@ -93,7 +94,34 @@ interface WriteParams {
   verification_anchor?: string | undefined;
   scope?: string | undefined;
   task_id?: string | undefined;
+  references?: RecordReference[] | undefined;
   content: string;
+}
+
+/**
+ * Assemble the forward-edge list from the two write-verb arguments: the
+ * ergonomic `supersedes` (a single record id → a `supersedes` edge) and the
+ * general `references` escape hatch (a JSON array of `{rel, id}` for arbitrary
+ * typed edges). Element SHAPE is validated downstream by the store's schema;
+ * here we only parse the JSON envelope and reject a malformed one.
+ */
+function referencesFromArgs(
+  supersedes: string | undefined,
+  referencesJson: string | undefined,
+): { refs: RecordReference[] } | { error: string } {
+  const refs: RecordReference[] = [];
+  if (supersedes !== undefined && supersedes !== '') refs.push({ rel: 'supersedes', id: supersedes });
+  if (referencesJson !== undefined && referencesJson !== '') {
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(referencesJson);
+    } catch {
+      return { error: 'references: not valid JSON (expected an array of {rel, id})' };
+    }
+    if (!Array.isArray(parsed)) return { error: 'references: must be a JSON array of {rel, id}' };
+    for (const item of parsed) refs.push(item as RecordReference);
+  }
+  return { refs };
 }
 
 /**
@@ -124,8 +152,17 @@ function writeRecord(ctx: ToolContext, params: WriteParams): AppendResult {
       session_id: ctx.sessionId,
       ...(params.task_id === undefined ? {} : { task_id: params.task_id }),
     },
+    ...(params.references === undefined ? {} : { references: params.references }),
     content: params.content,
   });
+}
+
+/** A malformed-`references` arg as a typed SCHEMA tool failure (never persists). */
+function referencesErrorResult(reason: string): CallToolResult {
+  return {
+    content: [{ type: 'text', text: JSON.stringify({ ok: false, code: 'SCHEMA', reason }) }],
+    isError: true,
+  };
 }
 
 /** Shape an AppendResult into a CallToolResult: id + redaction summary, or a typed failure. */
@@ -185,7 +222,8 @@ export function createRecordToolsRegistrar(options: RecordToolsOptions = {}): To
       {
         description:
           'Append one process record (a discovery-candidate entry) to the project record. ' +
-          'Append-only: no update or delete verb exists; a correction is a new record referencing the superseded id. ' +
+          'Append-only: no update or delete verb exists; a correction is a new record that SUPERSEDES the ' +
+          'record it replaces — pass its id as `supersedes` so readers of the old record see it was superseded. ' +
           'Every write passes the capture-time secret-scanning gate before persisting.',
         inputSchema: {
           kind: zString.describe(
@@ -196,10 +234,18 @@ export function createRecordToolsRegistrar(options: RecordToolsOptions = {}): To
           scope: zString.describe('What future work the claim is load-bearing for.').optional(),
           content: zString.describe('Recall-shaped prose body: the words a future question might use.'),
           task_id: zString.describe('Task / work-item ID, when one is in scope.').optional(),
+          supersedes: zString
+            .describe('Id of a record this one replaces. Recorded as a `supersedes` edge; the superseded record surfaces it as a backlink on read.')
+            .optional(),
+          references: zString
+            .describe('Advanced: a JSON array of additional typed edges, e.g. [{"rel":"refutes","id":"01..."}]. `rel` is open vocabulary.')
+            .optional(),
         },
       },
       async (args): Promise<CallToolResult> => {
         const ctx = getContext();
+        const refs = referencesFromArgs(args.supersedes, args.references);
+        if ('error' in refs) return referencesErrorResult(refs.error);
         // Tier A capture write — unconditional; no parameter gates it.
         const result = writeRecord(ctx, {
           kind: args.kind,
@@ -207,6 +253,7 @@ export function createRecordToolsRegistrar(options: RecordToolsOptions = {}): To
           verification_anchor: args.verification_anchor,
           scope: args.scope,
           task_id: args.task_id,
+          references: refs.refs,
           content: args.content,
         });
         return appendToolResult(result);
@@ -218,7 +265,9 @@ export function createRecordToolsRegistrar(options: RecordToolsOptions = {}): To
       {
         description:
           'Read process records: newest first, optionally scope-filtered (plain substring selection over ' +
-          'scope/kind/source fields), optionally limited. Unranked by contract — selection only, no scoring.',
+          'scope/kind/source fields), optionally limited. Unranked by contract — selection only, no scoring. ' +
+          'Each record carries its forward `references` and its DERIVED `referenced_by` backlinks, so a superseded ' +
+          'record shows what superseded it.',
         inputSchema: {
           scope: zString
             .describe('Case-insensitive substring filter matched against scope, kind, and source fields.')
@@ -228,7 +277,8 @@ export function createRecordToolsRegistrar(options: RecordToolsOptions = {}): To
       },
       async (args): Promise<CallToolResult> => {
         const ctx = getContext();
-        const records = ctx.store.read({
+        // readViews attaches derived `referenced_by` backlinks (e.g. superseded_by).
+        const records = ctx.store.readViews({
           ...(args.scope === undefined ? {} : { scope: args.scope }),
           ...(args.limit === undefined ? {} : { limit: args.limit }),
         });
@@ -250,10 +300,18 @@ export function createRecordToolsRegistrar(options: RecordToolsOptions = {}): To
           verification_anchor: zString.describe('How the decision can be checked (file, command, test).').optional(),
           scope: zString.describe('What future work the decision is load-bearing for.').optional(),
           task_id: zString.describe('Task / work-item ID, when one is in scope.').optional(),
+          supersedes: zString
+            .describe('Id of a prior decision this one overturns. Recorded as a `supersedes` edge; the old decision surfaces it as a backlink on read.')
+            .optional(),
+          references: zString
+            .describe('Advanced: a JSON array of additional typed edges, e.g. [{"rel":"relates-to","id":"01..."}].')
+            .optional(),
         },
       },
       async (args): Promise<CallToolResult> => {
         const ctx = getContext();
+        const refs = referencesFromArgs(args.supersedes, args.references);
+        if ('error' in refs) return referencesErrorResult(refs.error);
         // Tier A capture write — the SAME code path as record_append
         // (boundary contract §2 row 4: the write is the capture), unconditional.
         const result = writeRecord(ctx, {
@@ -262,6 +320,7 @@ export function createRecordToolsRegistrar(options: RecordToolsOptions = {}): To
           verification_anchor: args.verification_anchor,
           scope: args.scope,
           task_id: args.task_id,
+          references: refs.refs,
           content: composeDecisionContent(args.claim, args.rationale),
         });
         return appendToolResult(result);

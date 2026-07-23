@@ -19,6 +19,20 @@
 // - `parseRecord(serializeRecord(r))` is identity for every valid record;
 //   round-trip safety is pinned by store.test.ts.
 
+/**
+ * A typed edge from this record to another record it references. `rel` is an
+ * OPEN vocabulary — `supersedes` (the primary case: a correction naming the
+ * record it replaces), and freely `refutes` | `answers` | `relates-to` | …
+ * `id` is the ULID of the referenced (always pre-existing, therefore older)
+ * record. Backlinks — the reverse edge, e.g. `superseded_by` — are DERIVED on
+ * read ({@link RecordStore.readViews}), never stored: the record is
+ * append-only, so the referenced record can never be stamped after the fact.
+ */
+export interface RecordReference {
+  rel: string;
+  id: string;
+}
+
 /** Provenance — the fourth contract field (boundary contract §6.2 "Source"). */
 export interface RecordSource {
   /** The originating capture point (boundary contract §2, rows 1–6). */
@@ -49,6 +63,12 @@ export interface ProcessRecord {
   scope: string;
   /** Contract field 4 — provenance. */
   source: RecordSource;
+  /**
+   * Typed forward edges to other records (open `rel` vocabulary, `supersedes`
+   * primary). Empty for the common case; absence on disk parses to `[]`. The
+   * reverse edge is derived on read, never stored (append-only).
+   */
+  references: RecordReference[];
   /** Recall-shaped prose body (boundary contract §6.2). May be empty. */
   content: string;
 }
@@ -77,6 +97,31 @@ function requireString(value: unknown, field: string): string {
     );
   }
   return value;
+}
+
+/**
+ * Normalize the optional `references` edge list. Absent → `[]` (the common
+ * case, and what an older on-disk record without the field parses to). When
+ * present it must be an array of `{rel, id}` objects with NON-EMPTY strings —
+ * unlike the contract fields, an empty `rel` or `id` is a malformed edge, not
+ * a valid empty value.
+ */
+function validateReferences(value: unknown): RecordReference[] {
+  if (value === undefined) return [];
+  if (!Array.isArray(value)) {
+    throw new RecordSchemaError('references', 'record schema: field "references" must be an array of {rel, id} when present');
+  }
+  return value.map((item, i): RecordReference => {
+    if (item === null || typeof item !== 'object' || Array.isArray(item)) {
+      throw new RecordSchemaError(`references[${i}]`, `record schema: references[${i}] must be an object {rel, id}`);
+    }
+    const ref = item as Record<string, unknown>;
+    const rel = requireString(ref['rel'], `references[${i}].rel`);
+    const id = requireString(ref['id'], `references[${i}].id`);
+    if (rel.length === 0) throw new RecordSchemaError(`references[${i}].rel`, 'record schema: references[].rel must be non-empty');
+    if (id.length === 0) throw new RecordSchemaError(`references[${i}].id`, 'record schema: references[].id must be non-empty');
+    return { rel, id };
+  });
 }
 
 /**
@@ -118,6 +163,7 @@ export function validateRecord(input: unknown): ProcessRecord {
     verification_anchor: requireString(raw['verification_anchor'], 'verification_anchor'),
     scope: requireString(raw['scope'], 'scope'),
     source,
+    references: validateReferences(raw['references']),
     content: requireString(raw['content'], 'content'),
   };
 }
@@ -140,10 +186,19 @@ export function serializeRecord(record: ProcessRecord): string {
     scalarLine('claim', validated.claim),
     scalarLine('verification_anchor', validated.verification_anchor),
     scalarLine('scope', validated.scope),
+  ];
+  // `references` is written as a single JSON-encoded scalar line (reusing the
+  // scalar-line machinery — no YAML-list parser needed) and OMITTED when empty,
+  // so a record with no edges serializes byte-identically to before the field
+  // existed. The value is the JSON array text, itself a JSON string scalar.
+  if (validated.references.length > 0) {
+    lines.push(scalarLine('references', JSON.stringify(validated.references)));
+  }
+  lines.push(
     'source:',
     scalarLine('capture_point', validated.source.capture_point, '  '),
     scalarLine('session_id', validated.source.session_id, '  '),
-  ];
+  );
   if (validated.source.task_id !== undefined) {
     lines.push(scalarLine('task_id', validated.source.task_id, '  '));
   }
@@ -204,6 +259,18 @@ export function parseRecord(markdown: string): ProcessRecord {
       throw new RecordSchemaError('(frontmatter)', `record schema: unparseable frontmatter line: ${JSON.stringify(line)}`);
     }
     const key = text.slice(0, sep);
+    // `references` is the one non-scalar top-level field: its scalar value is
+    // the JSON array text (see serializeRecord). Decode it back to the array
+    // so validateRecord sees the same shape the in-memory/tools path produces.
+    if (!indented && key === 'references') {
+      const inner = parseScalarValue(text.slice(sep + 2), 'references');
+      try {
+        top['references'] = JSON.parse(inner) as unknown;
+      } catch {
+        throw new RecordSchemaError('references', 'record schema: field "references" is not a valid JSON array');
+      }
+      continue;
+    }
     const fieldPath = indented && target === source ? `source.${key}` : key;
     target[key] = parseScalarValue(text.slice(sep + 2), fieldPath);
   }
