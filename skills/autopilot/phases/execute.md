@@ -1,0 +1,48 @@
+# autopilot phase — execute
+
+Inline execution logic for the autopilot loop. This mirrors `/ideate:execute`
+but runs **inside** the autopilot context (no skill call) and routes Andon to
+`ideate:proxy-human` instead of the user. Read this at the start of each
+cycle's build phase and run it.
+
+## Preconditions (already held by the controller)
+- `actor_human` resolved; board validated non-empty; steering and intent
+  loaded.
+
+## Loop over the claimable frontier
+Read `work_list`; take its derived `claimable` items. First, sweep for stale
+state: any `in_progress` item from a prior interrupted cycle — check
+`work_events`, and `work_release` it (with a note) if its claim is dead so it
+becomes claimable again.
+
+For each claimable item, apply **board claim discipline**:
+1. `work_claim(id, actor_human, lease_ms)` → `claim_token`. Size `lease_ms` to
+   the item; `work_renew` if a worker runs long. A lapsed lease is reclaimed by
+   the board and a stale-token complete fails `INVALID_CLAIM` — that's the fence.
+2. Assemble context: the item `spec` (authoritative) + applicable steering
+   (`steering_read`) + scoped decisions (`record_read`). Spawn `ideate:worker`
+   with all of it.
+3. Incremental review: spawn `ideate:code-reviewer` (and `ideate:spec-reviewer`
+   for spec-sensitive items) on the change.
+4. Findings by severity:
+   - `minor` → fix inline, note in journal.
+   - `significant` → fix if cheap; else `record_append(kind="finding")` and
+     `work_create` a follow-up.
+   - `critical` (including startup/smoke-test failure and test-infra failure) →
+     **Andon**: `record_append(kind="finding")`, `work_release` the current
+     claim, and spawn `ideate:proxy-human` with the finding + intent. Record its
+     decision (`record_append(kind="andon")`) and act on it — fix as directed,
+     defer (leave open, flag for human), or drop.
+5. Complete or release: verified `complete` with no unresolved critical/
+   significant finding → `work_complete(id, token, note)`. Otherwise
+   `work_release(id, token, note)`. **Never leave an item claimed.**
+6. Re-read `work_list` — completing items unblocks dependents. Continue until
+   the frontier is empty or a proxy-human decision halts the cycle.
+
+## Output of this phase (hold for the controller / cycle record)
+- Items completed this cycle (ids).
+- Findings raised, by severity, and how each was handled.
+- Any proxy-human decisions (with their `human:true` flags).
+- Per-item journal notes → fold into the cycle journal in `reporting.md`.
+
+Then return to the controller, which proceeds to `phases/review.md`.
