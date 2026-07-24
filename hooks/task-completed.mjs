@@ -1,11 +1,11 @@
 #!/usr/bin/env node
-// plugin/hooks/task-completed.mjs — TaskCompleted capture hook (WI-275;
-// surface §2.3). For users of Claude Code's native task list / agent teams,
-// TaskCompleted is a work-item-completion analogue outside ideate's board —
-// this raises capture coverage for exactly the population most likely never
-// to touch ideate's lifecycle. Appends a native-task-completion record
-// through bin/ideate-record (the gated core). Non-blocking by policy
-// (§1.1): exit 0 unconditionally, stdout stays silent.
+// plugin/hooks/task-completed.mjs — TaskCompleted capture hook. For users of
+// Claude Code's native task list / agent teams, TaskCompleted is a
+// work-item-completion analogue outside ideate's board — this raises capture
+// coverage for exactly the population most likely never to touch ideate's
+// lifecycle. Appends a native-task-completion record through bin/ideate-record
+// (the gated core). Non-blocking by policy: exit 0 unconditionally, stdout
+// stays silent.
 
 import {
   appendRecord,

@@ -1,21 +1,18 @@
-// plugin/src/record/store.ts — the single shared write/read core of the v3
-// process record (WI-271).
+// plugin/src/record/store.ts — the single shared write/read core of the
+// process record.
 //
-// Spec: docs/design/v3-architecture.md §2.1 (one Markdown file per record,
-// ULID filename stems, date-sharded `record.path/YYYY/MM/{id}.md`) and §2.2
-// (reads go straight to the sharded files — NO index ships, no cache);
-// docs/spikes/v3-boundary-contract.md §4.2 (the three-property guard) and
-// §6.2 (the four contract fields). Both capture transports — the MCP
-// `record_append` handler and the hook-invoked CLI — write through this one
-// implementation.
+// One Markdown file per record, ULID filename stems, date-sharded
+// `record.path/YYYY/MM/{id}.md`. Reads go straight to the sharded files — NO
+// index ships, no cache. Both capture transports — the MCP `record_append`
+// handler and the hook-invoked CLI — write through this one implementation.
 //
-// The three-property guard (§4.2), enforced here BY API ABSENCE:
+// The three-property guard, enforced here BY API ABSENCE:
 // - Project-local: the store resolves exactly one project's record path (via
 //   config/ideate-config.ts's recordPath — THE single resolver; this module
 //   never computes `<root>/<record.path>` itself).
 // - Append-only: there is NO update, NO delete. Files are opened with `wx`
 //   (exclusive create), so no code path can overwrite an existing record. A
-//   correction is a NEW record referencing the superseded id. The §4.2
+//   correction is a NEW record referencing the superseded id. The
 //   extraordinary-redaction exception is a documented MANUAL procedure —
 //   deliberately, this store exposes no verb for it.
 // - Never curated or ranked: `read` performs SELECTION only (substring
@@ -27,9 +24,8 @@
 // There is no code path that persists ungated content — the masked record is
 // the only thing ever serialized.
 //
-// Redaction telemetry routing (WI-271 design note, resolved by WI-281 on
-// 2026-07-09): the telemetry counter set grew its dedicated sixth counter
-// (`redactions` — cycle-9 amendment, closes cycle-7 S1/Q-44), so scan.ts's
+// Redaction telemetry routing: the telemetry counter set has a dedicated
+// counter (`redactions`), so scan.ts's
 // `onRedaction` now routes PRIMARILY to telemetry.redactionApplied (per
 // pattern, per session) — the dashboard read. The process warning (code
 // IDEATE_RECORD_REDACTION, naming the pattern and count — NEVER the
@@ -51,14 +47,14 @@ import type { Redaction } from '../secret-gate/scan.js';
 import type { TelemetryCounters } from '../telemetry/counters.js';
 import type { Clock, UlidGenerator } from './id.js';
 import { createUlidGenerator, isUlid, parseUlidTimestamp } from './id.js';
-import type { ProcessRecord, RecordSource } from './schema.js';
+import type { ProcessRecord, RecordReference, RecordSource } from './schema.js';
 import { RecordSchemaError, parseRecord, serializeRecord, validateRecord } from './schema.js';
 
 /**
  * Record-ish append input. The store assigns `id` when absent and stamps
  * `source.timestamp` from the injected clock when absent; every other field
  * must be PRESENT (empty string is a valid value — absence is a schema
- * error, per boundary contract §6.2).
+ * error).
  */
 export interface RecordInput {
   /** Optional pre-minted ULID (e.g. from the other capture transport). */
@@ -74,8 +70,18 @@ export interface RecordInput {
     /** Defaults to the store clock's current time (ISO-8601). */
     timestamp?: string;
   };
+  /** Typed forward edges to other records (e.g. `supersedes`). Defaults to `[]`. */
+  references?: RecordReference[];
   content: string;
 }
+
+/**
+ * A record enriched with its DERIVED reverse edges — `referenced_by[i]` means
+ * "record `id` points at this one with `rel`" (so a `supersedes` forward edge
+ * surfaces here as a `supersedes` backlink on the superseded record). Derived
+ * per read by {@link RecordStore.readViews}; never persisted.
+ */
+export type ProcessRecordView = ProcessRecord & { referenced_by: RecordReference[] };
 
 /** Typed append failure classes. */
 export type AppendErrorCode =
@@ -121,8 +127,8 @@ function errorMessage(err: unknown): string {
 }
 
 /**
- * The v3 process-record store. One instance per session/process; its ULID
- * generator carries the per-session entropy of architecture §2.1.
+ * The process-record store. One instance per session/process; its ULID
+ * generator carries the per-session entropy.
  *
  * The exported API is append + read. There is deliberately NO update, NO
  * delete, and NO rank — see the three-property guard note above.
@@ -213,6 +219,10 @@ export class RecordStore {
       verification_anchor: gate(record.verification_anchor),
       scope: gate(record.scope),
       source,
+      // Gate both members of every edge — same gate-before-persist posture as
+      // every other text field; ULIDs and rel tokens never match a secret
+      // pattern, so this is a no-op in practice but keeps the invariant total.
+      references: record.references.map((ref) => ({ rel: gate(ref.rel), id: gate(ref.id) })),
       content: gate(record.content),
     };
 
@@ -240,7 +250,7 @@ export class RecordStore {
 
   /**
    * Read records straight off the sharded files, newest first — no index,
-   * no cache (architecture §2.2). The date sharding plus ULID filename sort
+   * no cache. The date sharding plus ULID filename sort
    * give reverse-chronological order for free: walk year dirs descending,
    * month dirs descending, filenames descending.
    *
@@ -250,38 +260,90 @@ export class RecordStore {
    * poison every read.
    */
   read(options?: ReadOptions): ProcessRecord[] {
-    const scopeFilter = options?.scope?.toLowerCase();
-    const limit = options?.limit ?? Number.POSITIVE_INFINITY;
+    const scopeFilter = this.#scopeFilter(options);
+    const limit = this.#limit(options);
+    const out: ProcessRecord[] = [];
+    if (limit === 0) return out;
+    for (const record of this.#recordsNewestFirst()) {
+      if (scopeFilter !== undefined && !matchesScope(record, scopeFilter)) continue;
+      out.push(record);
+      if (out.length >= limit) return out;
+    }
+    return out;
+  }
+
+  /**
+   * Like {@link read}, but each returned record carries its DERIVED reverse
+   * edges in `referenced_by` — so a caller reading a superseded record sees it
+   * was superseded without having to scan forward itself.
+   *
+   * Cost is a single newest-first walk, no index: a reference target is always
+   * OLDER than its referrer (you can only reference an id that already exists),
+   * so walking newest-first guarantees every referrer of a returned record has
+   * already been seen by the time that record is emitted. The referrer map is
+   * built from EVERY scanned record — including ones the scope filter excludes
+   * from the result — so a backlink is never missed just because the referring
+   * record didn't match the filter. Completeness is therefore bounded only by
+   * `limit`: records past the cap aren't returned, and their referrers (newer)
+   * were already scanned, so no returned record loses a backlink.
+   */
+  readViews(options?: ReadOptions): ProcessRecordView[] {
+    const scopeFilter = this.#scopeFilter(options);
+    const limit = this.#limit(options);
+    const out: ProcessRecordView[] = [];
+    if (limit === 0) return out;
+    const referrers = new Map<string, RecordReference[]>();
+    for (const record of this.#recordsNewestFirst()) {
+      for (const ref of record.references) {
+        const list = referrers.get(ref.id);
+        const back: RecordReference = { rel: ref.rel, id: record.id };
+        if (list === undefined) referrers.set(ref.id, [back]);
+        else list.push(back);
+      }
+      if (scopeFilter !== undefined && !matchesScope(record, scopeFilter)) continue;
+      out.push({ ...record, referenced_by: referrers.get(record.id) ?? [] });
+      if (out.length >= limit) return out;
+    }
+    return out;
+  }
+
+  /** Normalized, validated lower-cased scope filter (undefined = no filter). */
+  #scopeFilter(options?: ReadOptions): string | undefined {
+    return options?.scope?.toLowerCase();
+  }
+
+  /** Normalized, validated limit (Infinity = no limit); throws on a bad value. */
+  #limit(options?: ReadOptions): number {
     if (options?.limit !== undefined && (!Number.isInteger(options.limit) || options.limit < 0)) {
       throw new RangeError(`record store: limit must be a non-negative integer, got ${String(options.limit)}`);
     }
+    return options?.limit ?? Number.POSITIVE_INFINITY;
+  }
 
-    const out: ProcessRecord[] = [];
-    if (limit === 0) return out;
-
+  /**
+   * Walk the sharded record files newest-first, yielding each parsed record —
+   * no index, no cache. Year dirs descending, month dirs
+   * descending, ULID filenames descending give reverse-chronological order for
+   * free. Unparseable files are skipped with a warning so one stray file can't
+   * poison the walk. Shared by {@link read} and {@link readViews}.
+   */
+  *#recordsNewestFirst(): Generator<ProcessRecord> {
     for (const year of this.#listDir(this.recordDir, YEAR_DIR)) {
       for (const month of this.#listDir(join(this.recordDir, year), MONTH_DIR)) {
         const shardDir = join(this.recordDir, year, month);
-        const files = this.#listFiles(shardDir);
-        for (const file of files) {
+        for (const file of this.#listFiles(shardDir)) {
           const filePath = join(shardDir, file);
-          let record: ProcessRecord;
           try {
-            record = parseRecord(readFileSync(filePath, 'utf8'));
+            yield parseRecord(readFileSync(filePath, 'utf8'));
           } catch (err) {
             process.emitWarning(
               `ideate record: skipping unparseable record file ${filePath} (${errorMessage(err)})`,
               { code: 'IDEATE_RECORD_UNPARSEABLE' },
             );
-            continue;
           }
-          if (scopeFilter !== undefined && !matchesScope(record, scopeFilter)) continue;
-          out.push(record);
-          if (out.length >= limit) return out;
         }
       }
     }
-    return out;
   }
 
   /** Descending-sorted subdirectory names matching `pattern`; [] if unreadable. */

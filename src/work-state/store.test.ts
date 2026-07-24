@@ -1,7 +1,7 @@
-// plugin/src/work-state/store.test.ts — WI-300 acceptance tests for the
+// plugin/src/work-state/store.test.ts — acceptance tests for the
 // work-state persistence core.
 //
-// Pins: contract types match §3.1 exactly (forbidden fields absent from the
+// Pins: contract types match the contract exactly (forbidden fields absent from the
 // stored shape; `rank` rejected with a typed error); WAL + busy-timeout at
 // the store level; config-resolved, lazily-initialized storage path;
 // events are append-only (grep-falsifiable — no UPDATE/DELETE against the
@@ -75,11 +75,11 @@ function actor(human = 'dan'): { human: string } {
 }
 
 describe('contract types and forbidden fields', () => {
-  it('a created item carries exactly the §3.1 fields, nothing else', () => {
+  it('a created item carries exactly the fields, nothing else', () => {
     const { store } = makeFixture();
     const item = store.insertItem({
       title: 'Wire the claim compare-and-set',
-      spec: 'plain prompt: build WI-301',
+      spec: 'plain prompt: build T-301',
       spec_format: 'text/markdown',
       created_by: actor(),
     });
@@ -94,12 +94,15 @@ describe('contract types and forbidden fields', () => {
         'status',
         'claim',
         'depends_on',
+        'parent_id',
         'created_by',
         'created_at',
         'updated_at',
         'version',
       ].sort(),
     );
+    // A create with no parent_id lands as a root.
+    expect(item.parent_id).toBeNull();
     // Forbidden fields never appear.
     for (const forbidden of ['priority', 'estimate', 'estimates', 'sprint', 'sprints', 'labels', 'review_state', 'rank']) {
       expect(item).not.toHaveProperty(forbidden);
@@ -430,6 +433,94 @@ describe('depends_on round-trips', () => {
     const item = store.insertItem({ title: 'x', spec: 's', spec_format: 'f', created_by: actor(), depends_on: [] });
     const updated = store.updateMeta(item.id, item.version, { depends_on: ['some-other-id'] });
     expect(updated.depends_on).toEqual(['some-other-id']);
+  });
+});
+
+describe('parent_id containment', () => {
+  it('round-trips a parent_id through insert and read; a missing one is null (root)', () => {
+    const { store } = makeFixture();
+    const parent = store.insertItem({ title: 'parent', spec: 's', spec_format: 'f', created_by: actor() });
+    expect(parent.parent_id).toBeNull();
+
+    const child = store.insertItem({
+      title: 'child',
+      spec: 's',
+      spec_format: 'f',
+      created_by: actor(),
+      parent_id: parent.id,
+    });
+    expect(child.parent_id).toBe(parent.id);
+    expect(store.getItem(child.id)?.parent_id).toBe(parent.id);
+
+    // Explicit null on create is a root, identical to absent.
+    const rootExplicit = store.insertItem({ title: 'r', spec: 's', spec_format: 'f', created_by: actor(), parent_id: null });
+    expect(rootExplicit.parent_id).toBeNull();
+  });
+
+  it('updateMeta is tri-state: absent leaves it unchanged, a string sets it, null clears to root', () => {
+    const { store } = makeFixture();
+    const p1 = store.insertItem({ title: 'p1', spec: 's', spec_format: 'f', created_by: actor() });
+    const p2 = store.insertItem({ title: 'p2', spec: 's', spec_format: 'f', created_by: actor() });
+    const item = store.insertItem({ title: 'x', spec: 's', spec_format: 'f', created_by: actor(), parent_id: p1.id });
+    expect(item.parent_id).toBe(p1.id);
+
+    // Absent parent_id: unchanged (only title moves).
+    const renamed = store.updateMeta(item.id, item.version, { title: 'x2' });
+    expect(renamed.parent_id).toBe(p1.id);
+
+    // String: move the parent.
+    const moved = store.updateMeta(item.id, renamed.version, { parent_id: p2.id });
+    expect(moved.parent_id).toBe(p2.id);
+
+    // Null: clear to root.
+    const cleared = store.updateMeta(item.id, moved.version, { parent_id: null });
+    expect(cleared.parent_id).toBeNull();
+  });
+
+  it('listItems tri-state filter: children-of a parent, and roots-only', () => {
+    const { store } = makeFixture();
+    const parent = store.insertItem({ title: 'parent', spec: 's', spec_format: 'f', created_by: actor() });
+    const childA = store.insertItem({ title: 'a', spec: 's', spec_format: 'f', created_by: actor(), parent_id: parent.id });
+    const childB = store.insertItem({ title: 'b', spec: 's', spec_format: 'f', created_by: actor(), parent_id: parent.id });
+    const otherRoot = store.insertItem({ title: 'other', spec: 's', spec_format: 'f', created_by: actor() });
+
+    // No parent_id key: everything (4 items).
+    expect(store.listItems()).toHaveLength(4);
+
+    // children-of: exactly the two children.
+    const children = store.listItems({ parent_id: parent.id });
+    expect(children.map((i) => i.id).sort()).toEqual([childA.id, childB.id].sort());
+
+    // roots-only (null): the two parentless items.
+    const roots = store.listItems({ parent_id: null });
+    expect(roots.map((i) => i.id).sort()).toEqual([parent.id, otherRoot.id].sort());
+  });
+
+  it('parent_id is independent of depends_on — set one without touching the other', () => {
+    const { store } = makeFixture();
+    const dep = store.insertItem({ title: 'dep', spec: 's', spec_format: 'f', created_by: actor() });
+    const parent = store.insertItem({ title: 'parent', spec: 's', spec_format: 'f', created_by: actor() });
+    const item = store.insertItem({
+      title: 'x',
+      spec: 's',
+      spec_format: 'f',
+      created_by: actor(),
+      depends_on: [dep.id],
+      parent_id: parent.id,
+    });
+    expect(item.depends_on).toEqual([dep.id]);
+    expect(item.parent_id).toBe(parent.id);
+
+    // Clearing the parent leaves depends_on intact.
+    const cleared = store.updateMeta(item.id, item.version, { parent_id: null });
+    expect(cleared.parent_id).toBeNull();
+    expect(cleared.depends_on).toEqual([dep.id]);
+
+    // Replacing depends_on leaves the parent intact.
+    const reparented = store.updateMeta(cleared.id, cleared.version, { parent_id: parent.id });
+    const redep = store.updateMeta(reparented.id, reparented.version, { depends_on: [] });
+    expect(redep.depends_on).toEqual([]);
+    expect(redep.parent_id).toBe(parent.id);
   });
 });
 

@@ -1,8 +1,8 @@
 #!/usr/bin/env node
-// plugin/hooks/subagent-start.mjs — SubagentStart priming hook (WI-275;
-// surface §3). Delivers the same bounded prime digest SessionStart gets to
-// every spawned subagent — mechanically priming other frameworks' workers
-// without their frameworks knowing ideate exists.
+// plugin/hooks/subagent-start.mjs — SubagentStart priming hook. Delivers the
+// same bounded prime digest SessionStart gets to every spawned subagent —
+// mechanically priming other frameworks' workers without their frameworks
+// knowing ideate exists.
 //
 // Why a wrapper instead of calling `ideate-record prime` directly (the way
 // SessionStart does): per the current hooks docs (verified 2026-07-09,
@@ -13,8 +13,8 @@
 // the ONLY thing emitted — no other field of any kind — and an empty store
 // emits nothing at all (silence, not noise). Exit 0 unconditionally.
 //
-// Untrusted-data framing (surface §3; cycle-7 finding S2 / Q-46): the CLI
-// wraps every non-empty digest in an explicit envelope marking the entries
+// Untrusted-data framing: the CLI wraps every non-empty digest in an
+// explicit envelope marking the entries
 // as quoted historical DATA, not instructions. This script re-emits the
 // CLI's stdout VERBATIM (whitespace-trimmed only, which cannot touch the
 // envelope's first/last lines), so the framed text — envelope included — is

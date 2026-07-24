@@ -1,7 +1,7 @@
 #!/usr/bin/env node
-// plugin/bin/ideate-record — executable edge for the v3 process-record CLI
-// (WI-274; docs/design/v3-composable-surface.md §1.1: one implementation,
-// two transports — hooks invoke this via ${CLAUDE_PLUGIN_ROOT}/bin/ideate-record).
+// plugin/bin/ideate-record — executable edge for the process-record CLI
+// (one implementation, two transports — hooks invoke this via
+// ${CLAUDE_PLUGIN_ROOT}/bin/ideate-record).
 //
 // Thin loader only: all logic lives in src/cli/ideate-record.ts (compiled to
 // dist/cli/ideate-record.js). Dynamic import keeps this wrapper working

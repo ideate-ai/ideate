@@ -1,12 +1,11 @@
-// plugin/src/telemetry/cli.ts — the `ideate-telemetry` CLI edge (WI-262).
+// plugin/src/telemetry/cli.ts — the `ideate-telemetry` CLI edge.
 //
-// Prints the folded six-counter report as a readable table and exits 0.
+// Prints the folded counter report as a readable table and exits 0.
 // This is the outermost edge, so wall-clock defaults live here and nowhere
 // deeper (repo convention) — though the report path is read-only and needs
 // no clock at all.
 //
-// State-dir resolution (until the integrator, WI-271, wires the config-owned
-// data dir as the default):
+// State-dir resolution:
 //   1. --dir <path>
 //   2. $IDEATE_TELEMETRY_DIR
 //   3. <cwd>/.ideate-telemetry   (placeholder default; never `.ideate/`)
@@ -17,9 +16,8 @@ import type { FrontierStats, TelemetryReport } from './report.js';
 
 const USAGE = `Usage: ideate-telemetry [--dir <state-dir>]
 
-Prints the ideate native telemetry report (the six counters of
-docs/design/v3-architecture.md §3.5) folded from the append-only NDJSON
-state under <state-dir>.
+Prints the ideate native telemetry report (the six counters)
+folded from the append-only NDJSON state under <state-dir>.
 
 State dir resolution: --dir, then $IDEATE_TELEMETRY_DIR, then
 <cwd>/.ideate-telemetry.

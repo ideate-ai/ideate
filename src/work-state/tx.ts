@@ -1,29 +1,26 @@
 // plugin/src/work-state/tx.ts — the shared write-transaction / busy-wrap
-// helper for the whole work-state module (WI-307, closing capstone S3 /
-// F-304-001 S1).
+// helper for the whole work-state module.
 //
 // Why this file exists: types.ts's file header claims "typed, loud failure
-// raised anywhere under work-state/" (F-301-001 S1) — but before this fix
-// that was FALSE for exactly one failure mode: an exhausted `busy_timeout`
-// (schema.ts's `BUSY_TIMEOUT_MS`). Every mutating call site in store.ts,
-// claims.ts, expiry.ts, and verbs.ts opened its own `BEGIN IMMEDIATE ...
-// COMMIT`/`ROLLBACK` unit by hand, so a genuinely exhausted busy-timeout
-// (all engine-level retry budget spent, the write lock still held by another
-// connection) surfaced as a raw node:sqlite `Error` ("database is locked",
-// `code: 'ERR_SQLITE_ERROR'`, `errcode: 5`) escaping straight past every
-// typed-error contract this package documents. This module is the ONE place
-// that shape is caught and re-thrown as a typed `WorkStateError('BUSY', ...)`
-// — every other call site routes through one of the two helpers below rather
-// than issuing its own `BEGIN IMMEDIATE`.
+// raised anywhere under work-state/" — but that was once FALSE for exactly one
+// failure mode: an exhausted `busy_timeout` (schema.ts's `BUSY_TIMEOUT_MS`).
+// Every mutating call site in store.ts, claims.ts, expiry.ts, and verbs.ts
+// opened its own `BEGIN IMMEDIATE ... COMMIT`/`ROLLBACK` unit by hand, so a
+// genuinely exhausted busy-timeout (all engine-level retry budget spent, the
+// write lock still held by another connection) surfaced as a raw node:sqlite
+// `Error` ("database is locked", `code: 'ERR_SQLITE_ERROR'`, `errcode: 5`)
+// escaping straight past every typed-error contract this package documents.
+// This module is the ONE place that shape is caught and re-thrown as a typed
+// `WorkStateError('BUSY', ...)` — every other call site routes through one of
+// the two helpers below rather than issuing its own `BEGIN IMMEDIATE`.
 //
-// Design (pre-made — see this work item's own brief, not re-litigated here):
-// wrap-only, NO product-side retry loop. `PRAGMA busy_timeout` (schema.ts) IS
-// the retry mechanism — node:sqlite's engine already blocks and retries
-// internally for up to `BUSY_TIMEOUT_MS` before giving up. A retry ON TOP of
-// that exhausted budget is client policy, not this module's job (the
-// capstone review's §4 reading) — see tests/contention/two-session-wal.
-// test.ts's own `withBusyRetry`, which lives at the test-client layer for
-// exactly that reason and is explicitly OUT of this file's scope.
+// Design: wrap-only, NO product-side retry loop. `PRAGMA busy_timeout`
+// (schema.ts) IS the retry mechanism — node:sqlite's engine already blocks and
+// retries internally for up to `BUSY_TIMEOUT_MS` before giving up. A retry ON
+// TOP of that exhausted budget is client policy, not this module's job — see
+// tests/contention/two-session-wal.test.ts's own `withBusyRetry`, which lives
+// at the test-client layer for exactly that reason and is explicitly OUT of
+// this file's scope.
 //
 // Detection: both node:sqlite's own numeric SQLite result codes (`errcode`
 // 5 = SQLITE_BUSY, 6 = SQLITE_LOCKED — the two codes a busy_timeout

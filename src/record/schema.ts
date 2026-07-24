@@ -1,17 +1,16 @@
-// plugin/src/record/schema.ts — the v3 process record shape and its
-// Markdown-with-YAML-frontmatter serialization (WI-271).
+// plugin/src/record/schema.ts — the process record shape and its
+// Markdown-with-YAML-frontmatter serialization.
 //
-// Spec: docs/design/v3-architecture.md §2.1 property 3 ("Markdown body
-// carries the recall-shaped prose; frontmatter carries the structured
-// fields") and docs/spikes/v3-boundary-contract.md §6.2 (the four contract
-// fields — Claim, Verification anchor, Scope/applicability, Source — are
-// ALWAYS PRESENT at the schema level; they may be empty when a capture point
-// produced no qualifying content, but their ABSENCE is a schema error).
+// The Markdown body carries the recall-shaped prose; the frontmatter carries
+// the structured fields. The four contract fields — Claim, Verification
+// anchor, Scope/applicability, Source — are ALWAYS PRESENT at the schema
+// level; they may be empty when a capture point produced no qualifying
+// content, but their ABSENCE is a schema error.
 //
 // Serialization posture:
 // - Frontmatter carries: id, kind, the four contract fields (claim,
 //   verification_anchor, scope, source). The prose body is `content` — the
-//   recall-shaped words a future question might use (§6.2).
+//   recall-shaped words a future question might use.
 // - Every scalar frontmatter value is written as a JSON string, which is a
 //   valid YAML double-quoted scalar. JSON escaping makes the round trip
 //   exact for any content — embedded newlines, quotes, colons, even `---`
@@ -19,9 +18,23 @@
 // - `parseRecord(serializeRecord(r))` is identity for every valid record;
 //   round-trip safety is pinned by store.test.ts.
 
-/** Provenance — the fourth contract field (boundary contract §6.2 "Source"). */
+/**
+ * A typed edge from this record to another record it references. `rel` is an
+ * OPEN vocabulary — `supersedes` (the primary case: a correction naming the
+ * record it replaces), and freely `refutes` | `answers` | `relates-to` | …
+ * `id` is the ULID of the referenced (always pre-existing, therefore older)
+ * record. Backlinks — the reverse edge, e.g. `superseded_by` — are DERIVED on
+ * read ({@link RecordStore.readViews}), never stored: the record is
+ * append-only, so the referenced record can never be stamped after the fact.
+ */
+export interface RecordReference {
+  rel: string;
+  id: string;
+}
+
+/** Provenance — the fourth contract field ("Source"). */
 export interface RecordSource {
-  /** The originating capture point (boundary contract §2, rows 1–6). */
+  /** The originating capture point. */
   capture_point: string;
   /** Session that produced the record. */
   session_id: string;
@@ -38,7 +51,7 @@ export interface RecordSource {
  * a schema change.
  */
 export interface ProcessRecord {
-  /** ULID — filename stem and the KG sourceUri's record ID (§2.1). */
+  /** ULID — filename stem and the KG sourceUri's record ID. */
   id: string;
   kind: string;
   /** Contract field 1 — the candidate discovery statement. May be empty. */
@@ -49,7 +62,13 @@ export interface ProcessRecord {
   scope: string;
   /** Contract field 4 — provenance. */
   source: RecordSource;
-  /** Recall-shaped prose body (boundary contract §6.2). May be empty. */
+  /**
+   * Typed forward edges to other records (open `rel` vocabulary, `supersedes`
+   * primary). Empty for the common case; absence on disk parses to `[]`. The
+   * reverse edge is derived on read, never stored (append-only).
+   */
+  references: RecordReference[];
+  /** Recall-shaped prose body. May be empty. */
   content: string;
 }
 
@@ -80,6 +99,31 @@ function requireString(value: unknown, field: string): string {
 }
 
 /**
+ * Normalize the optional `references` edge list. Absent → `[]` (the common
+ * case, and what an older on-disk record without the field parses to). When
+ * present it must be an array of `{rel, id}` objects with NON-EMPTY strings —
+ * unlike the contract fields, an empty `rel` or `id` is a malformed edge, not
+ * a valid empty value.
+ */
+function validateReferences(value: unknown): RecordReference[] {
+  if (value === undefined) return [];
+  if (!Array.isArray(value)) {
+    throw new RecordSchemaError('references', 'record schema: field "references" must be an array of {rel, id} when present');
+  }
+  return value.map((item, i): RecordReference => {
+    if (item === null || typeof item !== 'object' || Array.isArray(item)) {
+      throw new RecordSchemaError(`references[${i}]`, `record schema: references[${i}] must be an object {rel, id}`);
+    }
+    const ref = item as Record<string, unknown>;
+    const rel = requireString(ref['rel'], `references[${i}].rel`);
+    const id = requireString(ref['id'], `references[${i}].id`);
+    if (rel.length === 0) throw new RecordSchemaError(`references[${i}].rel`, 'record schema: references[].rel must be non-empty');
+    if (id.length === 0) throw new RecordSchemaError(`references[${i}].id`, 'record schema: references[].id must be non-empty');
+    return { rel, id };
+  });
+}
+
+/**
  * Validate a record-shaped object: every contract field present as a string
  * (empty allowed), `source` present with its required members. Returns the
  * normalized record; throws RecordSchemaError on any absence.
@@ -94,7 +138,7 @@ export function validateRecord(input: unknown): ProcessRecord {
   if (sourceRaw === null || typeof sourceRaw !== 'object' || Array.isArray(sourceRaw)) {
     throw new RecordSchemaError(
       'source',
-      'record schema: field "source" must be present as an object (boundary contract §6.2: fields always present)',
+      'record schema: field "source" must be present as an object (fields always present)',
     );
   }
   const src = sourceRaw as Record<string, unknown>;
@@ -118,6 +162,7 @@ export function validateRecord(input: unknown): ProcessRecord {
     verification_anchor: requireString(raw['verification_anchor'], 'verification_anchor'),
     scope: requireString(raw['scope'], 'scope'),
     source,
+    references: validateReferences(raw['references']),
     content: requireString(raw['content'], 'content'),
   };
 }
@@ -140,10 +185,19 @@ export function serializeRecord(record: ProcessRecord): string {
     scalarLine('claim', validated.claim),
     scalarLine('verification_anchor', validated.verification_anchor),
     scalarLine('scope', validated.scope),
+  ];
+  // `references` is written as a single JSON-encoded scalar line (reusing the
+  // scalar-line machinery — no YAML-list parser needed) and OMITTED when empty,
+  // so a record with no edges serializes byte-identically to before the field
+  // existed. The value is the JSON array text, itself a JSON string scalar.
+  if (validated.references.length > 0) {
+    lines.push(scalarLine('references', JSON.stringify(validated.references)));
+  }
+  lines.push(
     'source:',
     scalarLine('capture_point', validated.source.capture_point, '  '),
     scalarLine('session_id', validated.source.session_id, '  '),
-  ];
+  );
   if (validated.source.task_id !== undefined) {
     lines.push(scalarLine('task_id', validated.source.task_id, '  '));
   }
@@ -204,6 +258,18 @@ export function parseRecord(markdown: string): ProcessRecord {
       throw new RecordSchemaError('(frontmatter)', `record schema: unparseable frontmatter line: ${JSON.stringify(line)}`);
     }
     const key = text.slice(0, sep);
+    // `references` is the one non-scalar top-level field: its scalar value is
+    // the JSON array text (see serializeRecord). Decode it back to the array
+    // so validateRecord sees the same shape the in-memory/tools path produces.
+    if (!indented && key === 'references') {
+      const inner = parseScalarValue(text.slice(sep + 2), 'references');
+      try {
+        top['references'] = JSON.parse(inner) as unknown;
+      } catch {
+        throw new RecordSchemaError('references', 'record schema: field "references" is not a valid JSON array');
+      }
+      continue;
+    }
     const fieldPath = indented && target === source ? `source.${key}` : key;
     target[key] = parseScalarValue(text.slice(sep + 2), fieldPath);
   }

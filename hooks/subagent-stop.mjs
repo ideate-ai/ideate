@@ -1,12 +1,11 @@
 #!/usr/bin/env node
-// plugin/hooks/subagent-stop.mjs — SubagentStop capture hook (WI-275;
-// surface §2.3). Captures delegated-work outcomes for ANY framework's
-// subagents — superpowers workers, plain Task-tool agents — with zero
-// cooperation from the framework: the payload's last_assistant_message is
-// the subagent's final report, already prose and already recall-shaped by
-// nature. Appends a subagent-outcome record through bin/ideate-record (the
-// gated core). Non-blocking by policy (§1.1): exit 0 unconditionally,
-// stdout stays silent.
+// plugin/hooks/subagent-stop.mjs — SubagentStop capture hook. Captures
+// delegated-work outcomes for ANY framework's subagents — worker agents,
+// plain Task-tool agents — with zero cooperation from the framework: the
+// payload's last_assistant_message is the subagent's final report, already
+// prose and already recall-shaped by nature. Appends a subagent-outcome record
+// through bin/ideate-record (the gated core). Non-blocking by policy: exit 0
+// unconditionally, stdout stays silent.
 
 import {
   appendRecord,

@@ -1,6 +1,6 @@
-// plugin/src/record/id.test.ts — WI-271 ULID acceptance tests.
+// plugin/src/record/id.test.ts — ULID acceptance tests.
 //
-// Pins architecture §2.1's ID properties: lexicographic sortability by
+// Pins the ID properties: lexicographic sortability by
 // construction (timestamp-prefixed Crockford base32), collision-safety
 // across independently-seeded instances (per-session entropy), and the
 // parse/validate helpers the store's sharding depends on.

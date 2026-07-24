@@ -1,8 +1,7 @@
-// plugin/src/work-state/claims.test.ts — WI-301 acceptance tests for the
+// plugin/src/work-state/claims.test.ts — acceptance tests for the
 // claim engine.
 //
-// Spec: docs/spikes/v3-work-delegation.md §3.2, as amended 2026-07-09
-// (cycle-6 findings C1/Q-34, S3/Q-36). Pins, one per rule:
+// Covers claim semantics. Pins, one per rule:
 // - rule 1: claim() is a compare-and-set (status='open' AND every
 //   depends_on 'done'); at most one active claim ever; claim_token strictly
 //   monotonic per item; the CAS is proven engine-level (not JS-level) with a
@@ -81,7 +80,7 @@ function actor(human = 'dan'): ActorRef {
   return { human };
 }
 
-describe('claim() — §3.2 rule 1: atomic compare-and-set', () => {
+describe('claim() — atomic compare-and-set', () => {
   it('succeeds on an open item with no dependencies; item transitions to in_progress with token 1', () => {
     const { store, clock } = makeFixture();
     const item = store.insertItem({ title: 'x', spec: 's', spec_format: 'f', created_by: actor() });
@@ -178,8 +177,8 @@ describe('claim() — §3.2 rule 1: atomic compare-and-set', () => {
   // from "JS-level" atomicity. To actually prove the guard is enforced by
   // SQLite itself (not by never letting two calls interleave), this spawns
   // several genuine OS threads (node:worker_threads — independent
-  // connections to the SAME db file, matching §4's "two simultaneous
-  // sessions on one machine writing the same board is ordinary") that all
+  // connections to the SAME db file, matching the "two simultaneous
+  // sessions on one machine writing the same board is ordinary" case) that all
   // race to claim the identical item at once. The worker's SQL is the exact
   // CAS statement claims.ts's claim() runs (verified byte-for-byte below,
   // not merely "similar") — so a passing race here is a passing race for
@@ -278,7 +277,7 @@ describe('claim() — §3.2 rule 1: atomic compare-and-set', () => {
   });
 });
 
-describe('renew() — §3.2 rule 2 amendment: renew is itself a CAS', () => {
+describe('renew() — renew is itself a CAS', () => {
   it('succeeds while in_progress, token matches, and the lease has not expired; extends lease_expires', () => {
     const { store, clock, setNow } = makeFixture();
     const item = store.insertItem({ title: 'x', spec: 's', spec_format: 'f', created_by: actor() });
@@ -323,7 +322,7 @@ describe('renew() — §3.2 rule 2 amendment: renew is itself a CAS', () => {
     expect((thrown as ClaimEngineError).code).toBe('INVALID_CLAIM');
   });
 
-  it('a renew arriving after expiry fails with a typed error — the lazy check already reopened the item (§3.2 rule 2 amendment)', () => {
+  it('a renew arriving after expiry fails with a typed error — the lazy check already reopened the item', () => {
     const { store, clock, setNow } = makeFixture();
     const item = store.insertItem({ title: 'x', spec: 's', spec_format: 'f', created_by: actor() });
     const claimed = claim(store, clock, item.id, actor(), { leaseMs: 60_000 }); // 1 minute lease
@@ -347,7 +346,7 @@ describe('renew() — §3.2 rule 2 amendment: renew is itself a CAS', () => {
   });
 });
 
-describe('complete() — §3.2 rule 3 amended: fencing + optional note', () => {
+describe('complete() — fencing + optional note', () => {
   it('succeeds with the current token; transitions to done; note lands on the event', () => {
     const { store, clock } = makeFixture();
     const item = store.insertItem({ title: 'x', spec: 's', spec_format: 'f', created_by: actor() });
@@ -363,7 +362,7 @@ describe('complete() — §3.2 rule 3 amended: fencing + optional note', () => {
     expect(completeEvent?.claim_token).toBe(claimed.claim!.claim_token);
   });
 
-  it('an absent note still records the transition (structural fallback, C1/Q-34)', () => {
+  it('an absent note still records the transition (structural fallback)', () => {
     const { store, clock } = makeFixture();
     const item = store.insertItem({ title: 'x', spec: 's', spec_format: 'f', created_by: actor() });
     const claimed = claim(store, clock, item.id, actor());
@@ -426,7 +425,7 @@ describe('complete() — §3.2 rule 3 amended: fencing + optional note', () => {
     expect(() => complete(store, clock, '01JZM8Z0000000000000000000', 1)).toThrowError(ClaimEngineError);
   });
 
-  it('F-301-001 C1: the completion event is attributed to the CLAIM HOLDER, never a caller-supplied actor — complete() takes no actor parameter at all', () => {
+  it('the completion event is attributed to the CLAIM HOLDER, never a caller-supplied actor — complete() takes no actor parameter at all', () => {
     const { store, clock } = makeFixture();
     const item = store.insertItem({ title: 'x', spec: 's', spec_format: 'f', created_by: actor('creator') });
     const claimed = claim(store, clock, item.id, actor('holder'));
@@ -442,7 +441,7 @@ describe('complete() — §3.2 rule 3 amended: fencing + optional note', () => {
     expect(completeEvent?.actor).not.toEqual(actor('creator'));
   });
 
-  it('F-301-001 S2: THE KLEPPMANN RECLAIMED-TOKEN FENCING TEST for renew() — an old token, reassigned to a NEW holder via a genuine reclaim, is rejected on renew', () => {
+  it('THE KLEPPMANN RECLAIMED-TOKEN FENCING TEST for renew() — an old token, reassigned to a NEW holder via a genuine reclaim, is rejected on renew', () => {
     const { store, clock, setNow } = makeFixture();
     const item = store.insertItem({ title: 'x', spec: 's', spec_format: 'f', created_by: actor() });
 
@@ -474,7 +473,7 @@ describe('complete() — §3.2 rule 3 amended: fencing + optional note', () => {
   });
 });
 
-describe('completion-record post-commit hook (WI-306) — closes boundary contract §2 row 1', () => {
+describe('completion-record post-commit hook', () => {
   /** A minimal, type-correct successful AppendResult stub — the injected
    *  writer never goes through the real RecordStore, so this just needs to
    *  satisfy the return type, not real gate/serialize behavior (that is
@@ -634,7 +633,7 @@ describe('completion-record post-commit hook (WI-306) — closes boundary contra
   });
 });
 
-describe('release() — §3.2 rule 4: token-checked handoff', () => {
+describe('release() — token-checked handoff', () => {
   it('returns the item to open with a handoff note event', () => {
     const { store, clock } = makeFixture();
     const item = store.insertItem({ title: 'x', spec: 's', spec_format: 'f', created_by: actor() });
@@ -681,7 +680,7 @@ describe('release() — §3.2 rule 4: token-checked handoff', () => {
     expect(second.claim?.claim_token).toBeGreaterThan(first.claim!.claim_token);
   });
 
-  it('F-301-001 C1: the release event is attributed to the CLAIM HOLDER, never a caller-supplied actor — release() takes no actor parameter at all', () => {
+  it('the release event is attributed to the CLAIM HOLDER, never a caller-supplied actor — release() takes no actor parameter at all', () => {
     const { store, clock } = makeFixture();
     const item = store.insertItem({ title: 'x', spec: 's', spec_format: 'f', created_by: actor('creator') });
     const claimed = claim(store, clock, item.id, actor('holder'));
@@ -694,7 +693,7 @@ describe('release() — §3.2 rule 4: token-checked handoff', () => {
     expect(releaseEvent?.actor).not.toEqual(actor('creator'));
   });
 
-  it('F-301-001 S2: THE KLEPPMANN RECLAIMED-TOKEN FENCING TEST for release() — an old token, reassigned to a NEW holder via a genuine reclaim, is rejected on release', () => {
+  it('THE KLEPPMANN RECLAIMED-TOKEN FENCING TEST for release() — an old token, reassigned to a NEW holder via a genuine reclaim, is rejected on release', () => {
     const { store, clock, setNow } = makeFixture();
     const item = store.insertItem({ title: 'x', spec: 's', spec_format: 'f', created_by: actor() });
 
@@ -725,7 +724,7 @@ describe('release() — §3.2 rule 4: token-checked handoff', () => {
   });
 });
 
-describe('lazy expiry check fires from every claim-engine entry point (§3.2 rule 2 amendment)', () => {
+describe('lazy expiry check fires from every claim-engine entry point', () => {
   function expireOldClaim(store: WorkStateStore, clock: Clock, setNow: (iso: string) => void): {
     itemId: string;
     staleToken: number;

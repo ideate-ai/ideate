@@ -1,17 +1,17 @@
-// plugin/src/work-state/tx.test.ts — WI-307 acceptance tests for the shared
+// plugin/src/work-state/tx.test.ts — acceptance tests for the shared
 // write-transaction / busy-wrap helper.
 //
 // Pins: (1) `withWriteTransaction`'s own commit/rollback/rethrow contract in
 // isolation, using a raw node:sqlite connection with a deliberately SHORT
 // busy_timeout so the fixture stays fast; (2) `withBusyWrap`'s identical
 // contract for a bare autocommit statement; (3) the grep-falsifiable
-// invariant (criterion 2) that no file under work-state/ OTHER than this
-// one issues `db.exec('BEGIN IMMEDIATE')`; (4) P-41-style genuine-contention
-// fixtures (mirrors schema.test.ts's own P-41 guard: a review-reproduced
+// invariant that no file under work-state/ OTHER than this
+// one issues `db.exec('BEGIN IMMEDIATE')`; (4) genuine-contention
+// fixtures (mirrors schema.test.ts's own guard: a reproduced
 // regression gets a REAL, non-mocked concurrency test, not a stubbed error)
 // proving the typed `WorkStateError('BUSY', ...)` actually surfaces, through
 // the PRODUCTION busy_timeout (schema.ts's `BUSY_TIMEOUT_MS`, 5000ms), from
-// one representative verb of EACH module this work item touches: a store
+// one representative verb of EACH module this touches: a store
 // primitive (`updateMeta`), a claim verb (`claim`), a board verb
 // (`cancel`, via `transitionStatus`), and `checkExpiry`. Those four tests
 // each genuinely wait out the real 5s timeout (a second, real connection
@@ -281,10 +281,10 @@ describe('withBusyWrap — bare autocommit statement contract (criterion 1)', ()
 });
 
 // ---------------------------------------------------------------------------
-// P-41 fixtures: real busy_timeout exhaustion (production BUSY_TIMEOUT_MS,
+// Fixtures for real busy_timeout exhaustion (production BUSY_TIMEOUT_MS,
 // schema.ts) reached through one representative verb of EACH module this
-// work item touches, via a REAL second connection holding the write lock —
-// no mocked/stubbed errors (criterion 3). Each of these genuinely waits out
+// touches, via a REAL second connection holding the write lock —
+// no mocked/stubbed errors. Each of these genuinely waits out
 // BUSY_TIMEOUT_MS (5s) before the operation under test gives up, so each
 // test's own timeout below is generous.
 // ---------------------------------------------------------------------------

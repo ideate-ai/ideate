@@ -1,12 +1,12 @@
-// plugin/src/record/store.test.ts — WI-271 acceptance tests for the record
+// plugin/src/record/store.test.ts — acceptance tests for the record
 // store core.
 //
 // Pins: round-trip serialization; four-contract-fields-always-present
-// enforcement (boundary contract §6.2); date-sharded config-resolved paths
-// with ULID filename stems (architecture §2.1); gate-before-persist with a
+// enforcement; date-sharded config-resolved paths
+// with ULID filename stems; gate-before-persist with a
 // PLANTED SECRET asserted masked in the raw on-disk bytes; the telemetry
-// wiring (capture_fired / capture_write_failed, and — WI-281 — every
-// redaction routed to the dedicated sixth counter); typed no-throw failure on
+// wiring (capture_fired / capture_write_failed, and every
+// redaction routed to the dedicated counter); typed no-throw failure on
 // an unwritable directory; newest-first scope-filtered limited reads with no
 // index; and the append-only API surface (no update/delete/rank anywhere).
 //
@@ -87,7 +87,7 @@ function input(overrides?: Partial<RecordInput>): RecordInput {
     claim: 'The vitest fork pool must stay capped at 4 to avoid OOM.',
     verification_anchor: 'vitest.config.ts',
     scope: 'test infrastructure changes',
-    source: { capture_point: 'session_end', session_id: 'sess-1', task_id: 'WI-271' },
+    source: { capture_point: 'session_end', session_id: 'sess-1', task_id: 'T-271' },
     content: 'Raising maxForks above 4 crashed a 32GB box during v2; the cap is load-bearing.',
     ...overrides,
   };
@@ -104,9 +104,10 @@ describe('round-trip serialization', () => {
       source: {
         capture_point: 'commit_boundary',
         session_id: 'sess-42',
-        task_id: 'WI-271',
+        task_id: 'T-271',
         timestamp: FIXED_ISO,
       },
+      references: [],
       content: '\nLeading newline, an embedded fence:\n---\nid: "fake"\n---\nand a trailing newline\n',
     };
     expect(parseRecord(serializeRecord(record))).toEqual(record);
@@ -120,9 +121,43 @@ describe('round-trip serialization', () => {
       verification_anchor: '',
       scope: '',
       source: { capture_point: 'session_end', session_id: 's', timestamp: FIXED_ISO },
+      references: [],
       content: '',
     };
     expect(parseRecord(serializeRecord(record))).toEqual(record);
+  });
+
+  it('round-trips a record carrying supersedes + a general typed edge', () => {
+    const record: ProcessRecord = {
+      id: '01JZM8Z0000000000000000009',
+      kind: 'decision',
+      claim: 'new decision replacing an old one',
+      verification_anchor: '',
+      scope: '',
+      source: { capture_point: 'mcp:record_decision', session_id: 's', timestamp: FIXED_ISO },
+      references: [
+        { rel: 'supersedes', id: '01JZM8Z0000000000000000000' },
+        { rel: 'relates-to', id: '01JZM8Z0000000000000000001' },
+      ],
+      content: '',
+    };
+    expect(parseRecord(serializeRecord(record))).toEqual(record);
+  });
+
+  it('a reference-less record serializes byte-identically to the pre-references format', () => {
+    // No `references:` line is emitted when the edge list is empty, so existing
+    // on-disk records and reference-less writes are unchanged.
+    const record: ProcessRecord = {
+      id: '01JZM8Z0000000000000000002',
+      kind: 'finding',
+      claim: 'c',
+      verification_anchor: '',
+      scope: '',
+      source: { capture_point: 'mcp:record_append', session_id: 's', timestamp: FIXED_ISO },
+      references: [],
+      content: 'body',
+    };
+    expect(serializeRecord(record)).not.toContain('references:');
   });
 
   it('appended records read back identical through the store', () => {
@@ -135,7 +170,7 @@ describe('round-trip serialization', () => {
   });
 });
 
-describe('four contract fields always present (boundary contract §6.2)', () => {
+describe('four contract fields always present', () => {
   it('accepts empty strings — emptiness is a valid record, not a failure', () => {
     const { store } = makeFixture();
     const result = store.append(
@@ -193,7 +228,7 @@ describe('four contract fields always present (boundary contract §6.2)', () => 
   });
 });
 
-describe('date-sharded config-resolved paths (architecture §2.1)', () => {
+describe('date-sharded config-resolved paths', () => {
   it('writes to record.path/YYYY/MM/{ulid}.md derived from the injected clock', () => {
     const { store, recordDir } = makeFixture();
     const result = store.append(input());
@@ -263,7 +298,7 @@ describe('gate before persist (secret gate wired ahead of any write)', () => {
     );
     expect(result.ok).toBe(true);
 
-    // The dashboard read observes the redactions — cycle-7 S1 closed.
+    // The dashboard read observes the redactions.
     const { report } = reportFromDir(telemetryDir);
     expect(report.redactions.total).toBe(2);
     expect(report.redactions.events).toBe(2);
@@ -351,7 +386,7 @@ describe('read: straight off the files, newest first, selection only', () => {
     // Matches kind.
     expect(fx.store.read({ scope: 'finding' }).map((r) => r.id)).toEqual([ids.second]);
     // Matches source.task_id.
-    expect(fx.store.read({ scope: 'wi-271' })).toHaveLength(3);
+    expect(fx.store.read({ scope: 't-271' })).toHaveLength(3);
     // No match.
     expect(fx.store.read({ scope: 'nonexistent-vocabulary' })).toEqual([]);
   });
@@ -369,7 +404,51 @@ describe('read: straight off the files, newest first, selection only', () => {
   });
 });
 
-describe('append-only API surface (boundary contract §4.2)', () => {
+describe('readViews: derived backlinks, never stored (append-only reverse edges)', () => {
+  it('attaches referenced_by to a superseded record without persisting it', () => {
+    const fx = makeFixture();
+    fx.setNow('2026-05-01T00:00:00.000Z');
+    const a = fx.store.append(input({ kind: 'decision', scope: 'the old choice' }));
+    fx.setNow('2026-06-01T00:00:00.000Z');
+    if (!a.ok) throw new Error('seed a failed');
+    const b = fx.store.append(
+      input({ kind: 'decision', scope: 'the new choice', references: [{ rel: 'supersedes', id: a.record.id }] }),
+    );
+    if (!b.ok) throw new Error('seed b failed');
+
+    const views = fx.store.readViews();
+    const viewA = views.find((v) => v.id === a.record.id);
+    const viewB = views.find((v) => v.id === b.record.id);
+    // A learns it was superseded — the DERIVED reverse edge.
+    expect(viewA?.referenced_by).toEqual([{ rel: 'supersedes', id: b.record.id }]);
+    // B carries the forward edge and has no backlinks of its own.
+    expect(viewB?.references).toEqual([{ rel: 'supersedes', id: a.record.id }]);
+    expect(viewB?.referenced_by).toEqual([]);
+    // Nothing was written back to A — the on-disk record has no reverse edge.
+    expect(fx.store.read().find((r) => r.id === a.record.id)?.references).toEqual([]);
+  });
+
+  it('derives the backlink even when the referring record is excluded by the scope filter', () => {
+    const fx = makeFixture();
+    fx.setNow('2026-05-01T00:00:00.000Z');
+    const a = fx.store.append(input({ kind: 'decision', scope: 'target-scope' }));
+    fx.setNow('2026-06-01T00:00:00.000Z');
+    if (!a.ok) throw new Error('seed a failed');
+    const b = fx.store.append(
+      input({ kind: 'decision', scope: 'other-scope', references: [{ rel: 'supersedes', id: a.record.id }] }),
+    );
+    if (!b.ok) throw new Error('seed b failed');
+
+    // The filter selects only A; B (the newer referrer) is scanned but excluded
+    // from the result — yet A's backlink still resolves, because the referrer
+    // map is built from every scanned record, not just the returned ones.
+    const views = fx.store.readViews({ scope: 'target-scope' });
+    expect(views.map((v) => v.id)).toEqual([a.record.id]);
+    expect(views[0]?.referenced_by).toEqual([{ rel: 'supersedes', id: b.record.id }]);
+  });
+});
+
+describe('append-only API surface', () => {
   it('the record modules export no update/delete/rank/score verb', async () => {
     for (const mod of [await import('./store.js'), await import('./schema.js'), await import('./id.js')]) {
       for (const name of Object.keys(mod)) {

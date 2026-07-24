@@ -1,4 +1,4 @@
-// plugin/src/record/tools.test.ts — WI-273 acceptance tests for the three
+// plugin/src/record/tools.test.ts — acceptance tests for the three
 // record MCP verbs.
 //
 // Pins: exactly three tools registered (no update/delete verb exists);
@@ -137,7 +137,7 @@ describe('SDK zod primitive shape-pin: the zString/zNumber derivation base', () 
   });
 });
 
-describe('the tool surface: exactly three verbs, no update/delete (§1.1, §4.2)', () => {
+describe('the tool surface: exactly three verbs, no update/delete', () => {
   it('registers exactly record_append, record_read, record_decision — nothing else', async () => {
     const fx = makeFixture();
     expect(registeredNames(fx.server)).toEqual([...RECORD_TOOL_NAMES].sort());
@@ -156,7 +156,7 @@ describe('the tool surface: exactly three verbs, no update/delete (§1.1, §4.2)
   });
 });
 
-describe('side-effect-free registration, first-call lazy init (config §2.3)', () => {
+describe('side-effect-free registration, first-call lazy init', () => {
   it('registration (and even connecting) creates NO files; the first CALL creates config + record dir', async () => {
     const fx = makeFixture();
     // Registration touched nothing: the temp project root is still empty.
@@ -175,7 +175,7 @@ describe('side-effect-free registration, first-call lazy init (config §2.3)', (
   });
 });
 
-describe('record_append: the unconditional Tier A write (§2.1)', () => {
+describe('record_append: the unconditional Tier A write', () => {
   it('writes a real record file and returns its id — verified by raw on-disk read', async () => {
     const fx = makeFixture();
     const client = await fx.connect();
@@ -183,7 +183,7 @@ describe('record_append: the unconditional Tier A write (§2.1)', () => {
       ...minimalAppend,
       verification_anchor: 'vitest.config.ts',
       scope: 'test infrastructure',
-      task_id: 'WI-273',
+      task_id: 'T-273',
     });
 
     expect(result['ok']).toBe(true);
@@ -202,7 +202,7 @@ describe('record_append: the unconditional Tier A write (§2.1)', () => {
     // Provenance comes from the tool context, not the caller.
     expect(record.source.capture_point).toBe('mcp:record_append');
     expect(record.source.session_id).toBe(SESSION_ID);
-    expect(record.source.task_id).toBe('WI-273');
+    expect(record.source.task_id).toBe('T-273');
     expect(record.source.timestamp).toBe(FIXED_ISO);
   });
 
@@ -241,7 +241,7 @@ describe('record_append: the unconditional Tier A write (§2.1)', () => {
   });
 });
 
-describe('record_decision: sugar over the identical write path (§2 row 4)', () => {
+describe('record_decision: sugar over the identical write path', () => {
   it('hits the same store.append path as record_append, with an equivalent input shape', async () => {
     const appendSpy = vi.spyOn(RecordStore.prototype, 'append');
     const fx = makeFixture();
@@ -251,12 +251,12 @@ describe('record_decision: sugar over the identical write path (§2 row 4)', () 
       kind: 'decision',
       claim: 'Ship the record core before the board verbs.',
       content: 'Decision: Ship the record core before the board verbs.',
-      scope: 'PR-005 sequencing',
+      scope: 'record sequencing',
     });
     const viaDecision = payload(
       await client.callTool({
         name: 'record_decision',
-        arguments: { claim: 'Ship the record core before the board verbs.', scope: 'PR-005 sequencing' },
+        arguments: { claim: 'Ship the record core before the board verbs.', scope: 'record sequencing' },
       }),
     );
     expect(viaAppend['ok']).toBe(true);
@@ -300,7 +300,7 @@ describe('record_decision: sugar over the identical write path (§2 row 4)', () 
   });
 });
 
-describe('record_read: standalone priming — unranked, scope-filtered, limited (§4.3)', () => {
+describe('record_read: standalone priming — unranked, scope-filtered, limited', () => {
   async function seedThree(fx: Fixture, client: Client): Promise<{ first: string; second: string; third: string }> {
     fx.setNow('2026-05-01T00:00:00.000Z');
     const first = await callAppend(client, { ...minimalAppend, kind: 'decision', scope: 'auth flow' });

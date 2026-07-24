@@ -1,4 +1,4 @@
-// plugin/src/cli/ideate-record.test.ts — WI-274 acceptance tests for the
+// plugin/src/cli/ideate-record.test.ts — acceptance tests for the
 // `ideate-record` CLI, the second transport over the gated record core.
 //
 // Every test drives the REAL executable (bin/ideate-record) through
@@ -8,9 +8,9 @@
 // hook's stdin JSON into a recall-shaped prose record (≥25 words with a
 // transcript, minimal-but-present without one, exit 0 always); prime emits
 // a bounded, unranked, newest-first digest wrapped in the untrusted-data
-// framing envelope (cycle-7 S2/Q-46 — presentation-layer only, never
-// stored) and exits 0 with NO output on an empty store; append with bad
-// args exits 1 (the direct-use side of the exit-code split).
+// framing envelope (presentation-layer only, never stored) and exits 0 with
+// NO output on an empty store; append with bad args exits 1 (the direct-use
+// side of the exit-code split).
 
 import { execFileSync, spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
@@ -155,7 +155,7 @@ describe('append (direct-use path)', () => {
       '--scope',
       'deploy work',
       '--task',
-      'WI-274',
+      'T-274',
     ]);
     expect(isUlid(id)).toBe(true);
 
@@ -170,7 +170,7 @@ describe('append (direct-use path)', () => {
     expect(file.raw).toContain('[REDACTED:aws-access-key-id]');
     expect(file.record.kind).toBe('finding');
     expect(file.record.scope).toBe('deploy work');
-    expect(file.record.source.task_id).toBe('WI-274');
+    expect(file.record.source.task_id).toBe('T-274');
     expect(file.record.source.capture_point).toBe('cli:append');
   });
 
@@ -232,6 +232,29 @@ describe('read (direct-use path)', () => {
     const result = runCliRaw(['read', '--limit', 'ten'], { cwd: root });
     expect(result.status).toBe(1);
     expect(result.stderr).toContain('--limit must be a non-negative integer');
+  });
+
+  it('renders forward edges and derived backlinks (supersedes / superseded-by)', () => {
+    const root = makeProjectRoot();
+    const oldId = appendRecord(root, 'first');
+    const newId = appendRecord(root, 'second', ['--supersedes', oldId]);
+
+    const text = runCli(['read'], { cwd: root });
+    expect(text).toContain(`→ supersedes: ${oldId}`); // forward edge on the new record
+    expect(text).toContain(`⚠ superseded by: ${newId}`); // derived backlink on the old record
+
+    const json = JSON.parse(runCli(['read', '--json'], { cwd: root })) as Array<{
+      id: string;
+      references: { rel: string; id: string }[];
+      referenced_by: { rel: string; id: string }[];
+    }>;
+    const oldRec = json.find((r) => r.id === oldId);
+    const newRec = json.find((r) => r.id === newId);
+    // The backlink is DERIVED at read time — never written back to the old record's file.
+    expect(oldRec?.referenced_by).toEqual([{ rel: 'supersedes', id: newId }]);
+    expect(oldRec?.references).toEqual([]);
+    expect(newRec?.references).toEqual([{ rel: 'supersedes', id: oldId }]);
+    expect(newRec?.referenced_by).toEqual([]);
   });
 });
 
@@ -356,7 +379,24 @@ describe('prime (hook path)', () => {
     expect(digest).not.toContain('Backend-only claim.');
   });
 
-  it('wraps every non-empty digest in the untrusted-data framing envelope (cycle-7 S2/Q-46)', () => {
+  it('flags a superseded record in the digest, naming its replacement', () => {
+    const root = makeProjectRoot();
+    const oldId = appendRecord(root, 'Old guidance that gets overturned.');
+    const newId = appendRecord(root, 'New guidance replacing it.', ['--supersedes', oldId]);
+
+    const digest = runCli(['prime'], { cwd: root });
+    // The overturned record's digest line announces its replacement via the
+    // DERIVED backlink, so priming never surfaces it as still-current guidance.
+    const oldLine = digest.split('\n').find((l) => l.includes('Old guidance that gets overturned.'));
+    expect(oldLine).toBeDefined();
+    expect(oldLine).toContain(`[⚠ superseded by ${newId}]`);
+    // The newer record carries no such marker.
+    const newLine = digest.split('\n').find((l) => l.includes('New guidance replacing it.'));
+    expect(newLine).toBeDefined();
+    expect(newLine).not.toContain('superseded by');
+  });
+
+  it('wraps every non-empty digest in the untrusted-data framing envelope', () => {
     const root = makeProjectRoot();
     // Instruction-shaped record content — exactly the injection surface the
     // envelope exists to flag as quoted history.

@@ -1,4 +1,4 @@
-// WI-269 / WI-277 — in-process boot tests for the ideate MCP server entrypoint.
+// In-process boot tests for the ideate MCP server entrypoint.
 // No real stdio session: constructs the server object directly. The full
 // boot-the-shipped-artifact test (spawn node dist/server.js over real stdio)
 // lives in tests/composition/server-boot.test.ts.
@@ -9,6 +9,8 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 
 import { RECORD_TOOL_NAMES } from './record/tools.js';
 import { createServer, registerTools, toolRegistrars, SERVER_NAME, SERVER_VERSION } from './server.js';
+import { STEERING_TOOL_NAMES } from './steering/tools.js';
+import { USAGE_TOOL_NAMES } from './usage/tools.js';
 import { WORK_STATE_TOOL_NAMES } from './work-state/tools.js';
 
 /** The composed production root, captured at import so tests can restore it. */
@@ -27,11 +29,13 @@ afterEach(() => {
 });
 
 describe('ideate MCP server boot', () => {
-  it('the composed default serves the record tools plus the work-state tools (WI-277/WI-303 composition root)', () => {
-    expect(toolRegistrars).toHaveLength(2);
+  it('the composed default serves the record tools plus the work-state, steering, and usage tools (composition root)', () => {
+    expect(toolRegistrars).toHaveLength(4);
     const server = createServer();
     expect(server).toBeInstanceOf(McpServer);
-    expect(registeredToolNames(server).sort()).toEqual([...RECORD_TOOL_NAMES, ...WORK_STATE_TOOL_NAMES].sort());
+    expect(registeredToolNames(server).sort()).toEqual(
+      [...RECORD_TOOL_NAMES, ...WORK_STATE_TOOL_NAMES, ...STEERING_TOOL_NAMES, ...USAGE_TOOL_NAMES].sort(),
+    );
   });
 
   it('a bare server (explicit empty registrars) still boots clean with zero tools', () => {
@@ -59,7 +63,13 @@ describe('ideate MCP server boot', () => {
 
     expect(registrar).toHaveBeenCalledTimes(1);
     expect(registrar).toHaveBeenCalledWith(server);
-    expect(registeredToolNames(server)).toEqual([...RECORD_TOOL_NAMES, ...WORK_STATE_TOOL_NAMES, 'mock_tool']);
+    expect(registeredToolNames(server)).toEqual([
+      ...RECORD_TOOL_NAMES,
+      ...WORK_STATE_TOOL_NAMES,
+      ...STEERING_TOOL_NAMES,
+      ...USAGE_TOOL_NAMES,
+      'mock_tool',
+    ]);
   });
 
   it('registerTools applies an explicit registrar list in order to an existing server', () => {
@@ -73,7 +83,9 @@ describe('ideate MCP server boot', () => {
   it('registerTools defaults to the composed root registrars', () => {
     const server = new McpServer({ name: SERVER_NAME, version: SERVER_VERSION });
     registerTools(server);
-    expect(registeredToolNames(server).sort()).toEqual([...RECORD_TOOL_NAMES, ...WORK_STATE_TOOL_NAMES].sort());
+    expect(registeredToolNames(server).sort()).toEqual(
+      [...RECORD_TOOL_NAMES, ...WORK_STATE_TOOL_NAMES, ...STEERING_TOOL_NAMES, ...USAGE_TOOL_NAMES].sort(),
+    );
   });
 
   it('writes nothing to stdout on boot (stdio protocol purity), even fully composed', () => {

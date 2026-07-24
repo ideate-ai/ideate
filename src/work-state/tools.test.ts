@@ -1,4 +1,4 @@
-// plugin/src/work-state/tools.test.ts — WI-303 acceptance tests for the
+// plugin/src/work-state/tools.test.ts — acceptance tests for the
 // eleven work-state MCP verbs.
 //
 // Pins: exactly eleven tools registered; side-effect-free registration with
@@ -161,6 +161,91 @@ describe('work_create / work_get / work_list / work_update_meta', () => {
   });
 });
 
+describe('parent_id containment over the MCP surface', () => {
+  it('work_create accepts a parent_id and round-trips it', async () => {
+    const fixture = makeFixture();
+    const client = await fixture.connect();
+
+    const parent = await call(client, 'work_create', {
+      title: 'parent',
+      spec: 's',
+      spec_format: 'text/plain',
+      actor_human: 'dan',
+    });
+    const parentId = (parent.body.item as Record<string, unknown>).id as string;
+
+    const child = await call(client, 'work_create', {
+      title: 'child',
+      spec: 's',
+      spec_format: 'text/plain',
+      actor_human: 'dan',
+      parent_id: parentId,
+    });
+    expect(child.isError).toBe(false);
+    expect((child.body.item as Record<string, unknown>).parent_id).toBe(parentId);
+
+    // A create without parent_id is a root.
+    expect((parent.body.item as Record<string, unknown>).parent_id).toBeNull();
+  });
+
+  it('work_create rejects a dangling parent_id as a typed DANGLING_PARENT payload', async () => {
+    const fixture = makeFixture();
+    const client = await fixture.connect();
+
+    const result = await call(client, 'work_create', {
+      title: 'x',
+      spec: 's',
+      spec_format: 'text/plain',
+      actor_human: 'dan',
+      parent_id: 'no-such-item',
+    });
+    expect(result.isError).toBe(true);
+    expect(result.body.code).toBe('DANGLING_PARENT');
+  });
+
+  it('work_update_meta sets and clears parent_id (tri-state)', async () => {
+    const fixture = makeFixture();
+    const client = await fixture.connect();
+
+    const parent = await call(client, 'work_create', { title: 'p', spec: 's', spec_format: 'text/plain', actor_human: 'dan' });
+    const parentId = (parent.body.item as Record<string, unknown>).id as string;
+    const created = await call(client, 'work_create', { title: 'x', spec: 's', spec_format: 'text/plain', actor_human: 'dan' });
+    const item = created.body.item as Record<string, unknown>;
+
+    // Set the parent.
+    const set = await call(client, 'work_update_meta', { id: item.id as string, expected_version: item.version as number, parent_id: parentId });
+    expect(set.isError).toBe(false);
+    const setItem = set.body.item as Record<string, unknown>;
+    expect(setItem.parent_id).toBe(parentId);
+
+    // Clear it back to root with an explicit null.
+    const cleared = await call(client, 'work_update_meta', { id: item.id as string, expected_version: setItem.version as number, parent_id: null });
+    expect(cleared.isError).toBe(false);
+    expect((cleared.body.item as Record<string, unknown>).parent_id).toBeNull();
+  });
+
+  it('work_list filters children-of a parent and roots-only (parent_id: null)', async () => {
+    const fixture = makeFixture();
+    const client = await fixture.connect();
+
+    const parent = await call(client, 'work_create', { title: 'parent', spec: 's', spec_format: 'text/plain', actor_human: 'dan' });
+    const parentId = (parent.body.item as Record<string, unknown>).id as string;
+    const childA = await call(client, 'work_create', { title: 'a', spec: 's', spec_format: 'text/plain', actor_human: 'dan', parent_id: parentId });
+    const childAId = (childA.body.item as Record<string, unknown>).id as string;
+    await call(client, 'work_create', { title: 'otherRoot', spec: 's', spec_format: 'text/plain', actor_human: 'dan' });
+
+    const children = await call(client, 'work_list', { parent_id: parentId });
+    const childIds = (children.body.items as Array<Record<string, unknown>>).map((i) => i.id);
+    expect(childIds).toEqual([childAId]);
+
+    const roots = await call(client, 'work_list', { parent_id: null });
+    const rootIds = (roots.body.items as Array<Record<string, unknown>>).map((i) => i.id);
+    // parent + otherRoot are roots; the child is not.
+    expect(rootIds).toHaveLength(2);
+    expect(rootIds).not.toContain(childAId);
+  });
+});
+
 describe('secret gate pass-through (criterion 6 — no double-gating)', () => {
   it('a secret-shaped title comes back masked exactly as the store gates it, once', async () => {
     const fixture = makeFixture();
@@ -227,7 +312,7 @@ describe('actor derivation mirrors the engine signatures exactly (criterion 1)',
   });
 });
 
-describe('the real expiry check is wired (criterion 2 — closes the WI-302 seam)', () => {
+describe('the real expiry check is wired (criterion 2 — closes the expiry seam)', () => {
   it('work_get on an item whose lease already expired auto-reclaims it to open', async () => {
     const fixture = makeFixture();
     const client = await fixture.connect();

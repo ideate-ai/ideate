@@ -1,23 +1,18 @@
-// plugin/src/secret-gate/patterns.ts — known-pattern secret registry (WI-272).
+// plugin/src/secret-gate/patterns.ts — known-pattern secret registry.
 //
-// Spec: docs/spikes/v3-boundary-contract.md §2 "Capture-time secret-scanning
-// gate" + cycle-7 amendment I (C2 / Q-35 — Dan's ratified decision). Every
-// record write passes its content through a known-pattern scan before the
-// write executes; matched content is masked IN PLACE as
+// Every record write passes its content through a known-pattern scan before
+// the write executes; matched content is masked IN PLACE as
 // `[REDACTED:pattern-name]`, preserving all surrounding text.
 //
 // Reference art: the gitleaks / trufflehog pattern classes. Reference art
-// ONLY — the amendment is explicit that they are "not a dependency mandate".
-// Every regex here is hand-rolled; this module has zero dependencies (not
-// even on the telemetry module — the scanner reports redactions through an
-// injected callback, see scan.ts).
+// ONLY — they are not a dependency mandate. Every regex here is hand-rolled;
+// this module has zero dependencies (not even on the telemetry module — the
+// scanner reports redactions through an injected callback, see scan.ts).
 //
-// The honest limit, restated from the amendment: known shapes only. A novel
-// secret can pass this gate — which is exactly why the §4.2
-// extraordinary-redaction exception exists as the after-the-fact remedy.
-// That procedure is a documented MANUAL one and is deliberately NOT
-// automated here: §4.2's own guard says a proposal to automate it is
-// store-creep.
+// The honest limit: known shapes only. A novel secret can pass this gate —
+// which is exactly why the extraordinary-redaction exception exists as the
+// after-the-fact remedy. That procedure is a documented MANUAL one and is
+// deliberately NOT automated here: automating it would be store-creep.
 
 /** One entry in the known-pattern registry. */
 export interface SecretPattern {
@@ -99,8 +94,8 @@ export function shannonEntropy(token: string): number {
 // the context-anchored patterns (e.g. aws-secret-access-key), and the
 // residual gap is part of the stated honest limit.
 //
-// `entropyThreshold` is tunable via scan options (per the WI-272 spec:
-// options may tune the callback and the entropy threshold). Tuning affects
+// `entropyThreshold` is tunable via scan options: options may tune the
+// callback and the entropy threshold. Tuning affects
 // ONLY this heuristic — the shape-specific patterns above it always run.
 
 /** Minimum candidate length for the high-entropy heuristic. ULIDs (26 chars) sit below it. */

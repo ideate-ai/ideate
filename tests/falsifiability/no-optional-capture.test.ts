@@ -1,11 +1,10 @@
-// plugin/tests/falsifiability/no-optional-capture.test.ts — WI-276 source-
+// plugin/tests/falsifiability/no-optional-capture.test.ts — source-
 // inspection suite: the grep-falsifiability standard, executed as tests.
 //
-// Spec: docs/spikes/v3-boundary-contract.md §2 — for every capture point the
-// record-write call sits UNCONDITIONALLY inside the state transition; no
-// capture is reachable only via an optional call. docs/design/
-// v3-composable-surface.md §2.1/§2.2 — the check is grep-shaped by design:
-// an implementation review greps each Tier-A handler for the append call and
+// Invariant: for every capture point the record-write call sits
+// UNCONDITIONALLY inside the state transition; no capture is reachable only
+// via an optional call. The check is grep-shaped by design: an
+// implementation review greps each capture handler for the append call and
 // finds it unguarded.
 //
 // These tests read the .ts sources AS TEXT at test time (paths resolved
@@ -81,7 +80,7 @@ function indicesOf(haystack: string, needle: string): number[] {
   return out;
 }
 
-/** The optionality vocabulary no capture path may mention (boundary §2). */
+/** The optionality vocabulary no capture path may mention. */
 const OPTIONALITY = /\b(skip|skipped|disable|disabled|enable|enabled|dry[_-]?run|dryrun|opt[_-]?out|optout|no[_-]?capture)\b/i;
 
 interface WritePathAnalysis {
@@ -135,7 +134,7 @@ function interfaceKeys(source: string, interfaceName: string): string[] {
 // 1. The shared write path: one unconditional `.append(` call site
 // ---------------------------------------------------------------------------
 
-describe('tools.ts: the capture write is unconditional (boundary contract §2, surface §2.1)', () => {
+describe('tools.ts: the capture write is unconditional', () => {
   const analysis = analyzeWritePath(toolsSource);
 
   it('has exactly one `.append(` call site in the whole module — no second write path', () => {
@@ -163,7 +162,7 @@ describe('tools.ts: the capture write is unconditional (boundary contract §2, s
 // 2. Both write verbs route through the one shared function
 // ---------------------------------------------------------------------------
 
-describe('tools.ts: both write verbs share the single writeRecord path (§2 row 4)', () => {
+describe('tools.ts: both write verbs share the single writeRecord path', () => {
   const segments = registrationSegments(toolsSource);
 
   it('registers exactly the three ratified verbs', () => {
@@ -200,7 +199,7 @@ describe('tools.ts: both write verbs share the single writeRecord path (§2 row 
 // 3. scan.ts admits no skip: ScanOptions is exactly the two documented keys
 // ---------------------------------------------------------------------------
 
-describe('scan.ts: ScanOptions declares exactly the two documented keys (amendment I: no exempt path)', () => {
+describe('scan.ts: ScanOptions declares exactly the two documented keys (no exempt path)', () => {
   it('the declared keys are exactly onRedaction and entropyThreshold', () => {
     expect(interfaceKeys(scanSource, 'ScanOptions').sort()).toEqual(['entropyThreshold', 'onRedaction']);
   });

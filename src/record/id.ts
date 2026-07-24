@@ -1,7 +1,7 @@
-// plugin/src/record/id.ts — ULID record identifiers (WI-271).
+// plugin/src/record/id.ts — ULID record identifiers.
 //
-// Spec: docs/design/v3-architecture.md §2.1 — "Record IDs are ULIDs,
-// generated with per-session entropy." The ULID is the record's filename
+// Record IDs are ULIDs, generated with per-session entropy. The ULID is the
+// record's filename
 // stem (`record.path/YYYY/MM/{id}.md`) and the stable ID the KG's sourceUri
 // scheme embeds (`ideate:{project}/{record-id}`). Two properties are
 // load-bearing:

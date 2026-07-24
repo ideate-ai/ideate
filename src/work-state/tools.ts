@@ -1,29 +1,27 @@
-// plugin/src/work-state/tools.ts — the eleven work-state MCP verbs (WI-303),
-// closing the delegation-board surface begun by WI-300/301/302.
+// plugin/src/work-state/tools.ts — the eleven work-state MCP verbs, closing
+// the delegation-board surface begun by store.ts/claims.ts/verbs.ts.
 //
-// Spec: docs/spikes/v3-work-delegation.md §3.5 — the eleven-verb surface:
-// `create`, `get`, `list`, `update_meta`, `claim`, `renew`, `release`,
-// `complete`, `cancel`, `reopen`, `events`. This module is a thin MCP
-// adapter over the already-built logic layer:
+// The eleven-verb surface: `create`, `get`, `list`, `update_meta`, `claim`,
+// `renew`, `release`, `complete`, `cancel`, `reopen`, `events`. This module is
+// a thin MCP adapter over the already-built logic layer:
 //   - the seven non-claim verbs (create/get/list/update_meta/cancel/reopen/
-//     events) go through `WorkStateVerbs` (verbs.ts, WI-302);
+//     events) go through `WorkStateVerbs` (verbs.ts);
 //   - the four claim-lifecycle verbs (claim/renew/release/complete) call
-//     claims.ts's (WI-301) module-level functions directly — they are not
-//     methods on `WorkStateVerbs` (verbs.ts's own header: "Claim-lifecycle
-//     verbs... are WI-301's scope, built in a sibling file").
+//     claims.ts's module-level functions directly — they are not methods on
+//     `WorkStateVerbs` (per verbs.ts's own header, claim-lifecycle verbs are
+//     built in a sibling file).
 // No business logic lives here: every verb's validation, CAS, cycle
 // guard, and audit-event append already lives one layer down.
 //
-// Actor derivation (criterion 1): tool inputs carry an explicit
-// `actor_human`/`actor_agent` pair (the wire-level flattening of the
-// contract's `ActorRef`) for `create`, `cancel`, `reopen`, and `claim` — the
-// four verbs whose engine-level signature accepts an actor. `renew`,
-// `complete`, and `release` accept NO actor input whatsoever (no schema
-// field for it): claims.ts's own functions have no actor parameter for
-// these three — the claim token proves identity, and the audit event is
-// always attributed to the claim's own holder, read back off the row inside
-// the same locked transaction (claims.ts, F-301-001 C1). Mirroring the
-// engine's signatures exactly here means there is no wire-level path that
+// Actor derivation: tool inputs carry an explicit `actor_human`/`actor_agent`
+// pair (the wire-level flattening of the contract's `ActorRef`) for `create`,
+// `cancel`, `reopen`, and `claim` — the four verbs whose engine-level
+// signature accepts an actor. `renew`, `complete`, and `release` accept NO
+// actor input whatsoever (no schema field for it): claims.ts's own functions
+// have no actor parameter for these three — the claim token proves identity,
+// and the audit event is always attributed to the claim's own holder, read
+// back off the row inside the same locked transaction (claims.ts). Mirroring
+// the engine's signatures exactly here means there is no wire-level path that
 // could ever let a caller misattribute a renew/complete/release to someone
 // else.
 //
@@ -39,20 +37,20 @@
 // exact; the ActorRef CONCEPT is carried as two flat fields instead of one
 // nested object.
 //
-// The real expiry seam (criterion 2): every id-scoped `WorkStateVerbs` call
-// below (`get`/`update_meta`/`cancel`/`reopen`/`events`) is passed a REAL
+// The real expiry seam: every id-scoped `WorkStateVerbs` call below
+// (`get`/`update_meta`/`cancel`/`reopen`/`events`) is passed a REAL
 // `ExpiryCheck` built on expiry.ts's `checkExpiry` — never the `noopExpiryCheck`
 // default verbs.ts ships for its own standalone testability. This closes the
-// WI-302 seam: an id-scoped touch through this MCP surface always evaluates
-// (and, if needed, reclaims) an expired lease first. `claim`/`renew`/
+// verb-layer seam: an id-scoped touch through this MCP surface always
+// evaluates (and, if needed, reclaims) an expired lease first. `claim`/`renew`/
 // `complete`/`release` need no such wiring here — claims.ts's own functions
 // already call `checkExpiry` internally as their documented first step.
 //
-// Error surface (criterion 1): every handler below is wrapped in one
-// try/catch; any `WorkStateModuleError` (the shared base every typed
-// work-state failure — `WorkStateError`, `DagError`, `VerbError`,
-// `ClaimEngineError` — extends, per types.ts's own F-301-001 S1 note) is
-// caught with ONE `instanceof` check and shaped into a typed
+// Error surface: every handler below is wrapped in one try/catch; any
+// `WorkStateModuleError` (the shared base every typed work-state failure —
+// `WorkStateError`, `DagError`, `VerbError`, `ClaimEngineError` — extends, per
+// types.ts's own note) is caught with ONE `instanceof` check and shaped into a
+// typed
 // `{ ok: false, code, message }` MCP error payload. Anything else (a
 // genuinely unexpected internal error) is re-thrown and falls through to
 // the MCP SDK's own generic error handling — this module never silently
@@ -97,7 +95,7 @@ import type { ActorRef, UpdateMetaInput, WorkItemStatus } from './types.js';
 import type { ExpiryCheck } from './verbs.js';
 import { WorkStateVerbs } from './verbs.js';
 
-/** The complete work-state tool surface — eleven verbs (§3.5). */
+/** The complete work-state tool surface — eleven verbs. */
 export const WORK_STATE_TOOL_NAMES = [
   'work_create',
   'work_get',
@@ -161,7 +159,7 @@ interface ToolContext {
   telemetry: TelemetryCounters;
   sessionId: string;
   projectRoot: string;
-  /** WI-306: built once per context (not per completion) — see this
+  /** Built once per context (not per completion) — see this
    *  factory's own composition edge below. */
   completionRecordWriter: CompletionRecordWriter;
 }
@@ -212,7 +210,7 @@ export function createWorkStateToolsRegistrar(options: WorkStateToolsOptions = {
       const clock = options.clock ?? (() => new Date());
       const projectRoot = options.projectRoot ?? process.cwd();
       // First call = onboarding: loadConfig lazily creates .ideate.json and
-      // the record directory when absent (ideate-config.ts §2.3) — the
+      // the record directory when absent (see ideate-config.ts) — the
       // work-state store itself stays lazy-init on its OWN first write
       // (schema.ts), independent of this.
       const config = loadConfig(projectRoot);
@@ -221,7 +219,7 @@ export function createWorkStateToolsRegistrar(options: WorkStateToolsOptions = {
       const verbs = new WorkStateVerbs(store, clock);
       const telemetry = new TelemetryCounters(options.telemetryDir ?? join(projectRoot, '.ideate-telemetry'), clock);
       const sessionId = options.sessionId ?? `mcp-${createUlidGenerator(clock)()}`;
-      // WI-306: the completion-record writer, built ONCE from the same
+      // The completion-record writer, built ONCE from the same
       // project root/telemetry/clock this context already resolved, so
       // `.ideate.json` is not re-read on every `work_complete` call.
       const completionRecordWriter = createRealCompletionRecordWriter(projectRoot, telemetry, clock);
@@ -240,8 +238,12 @@ export function createWorkStateToolsRegistrar(options: WorkStateToolsOptions = {
         inputSchema: {
           title: zString.describe('One line, human-readable.'),
           spec: zString.describe('Opaque tool-specific payload — never parsed, never interpreted.'),
-          spec_format: zString.describe('Free-form hint, e.g. "superpowers/plan-v2", "speckit/spec".'),
+          spec_format: zString.describe('Free-form hint, e.g. "plan/outline", "speckit/spec".'),
           depends_on: zString.array().describe('IDs of items that must be done before this one is claimable.').optional(),
+          parent_id: zString
+            .describe('Optional CONTAINMENT parent — the id of the item this one belongs to. Omit (or null) to create a root/top-level item. Orthogonal to depends_on. Rejected (typed DagError) if it names a nonexistent item.')
+            .nullable()
+            .optional(),
           tenant_id: zString.describe('Team/board scope. Default: the local-mode single tenant.').optional(),
           actor_human: zString.describe('The creating actor — a human principal.'),
           actor_agent: zString.describe('The named agent acting on the human principal\'s behalf, if any.').optional(),
@@ -255,6 +257,10 @@ export function createWorkStateToolsRegistrar(options: WorkStateToolsOptions = {
             spec: args.spec,
             spec_format: args.spec_format,
             ...(args.depends_on === undefined ? {} : { depends_on: args.depends_on }),
+            // Thread parent_id only when supplied. Absent OR null both
+            // create a root; null is passed through so the store records a
+            // root explicitly (harmless, same as absent).
+            ...(args.parent_id === undefined ? {} : { parent_id: args.parent_id }),
             ...(args.tenant_id === undefined ? {} : { tenant_id: args.tenant_id }),
             created_by: actorFromArgs(args.actor_human, args.actor_agent),
           });
@@ -287,10 +293,16 @@ export function createWorkStateToolsRegistrar(options: WorkStateToolsOptions = {
       {
         description:
           'List work items, with the derived claimability view attached to each (an open item every direct ' +
-          'depends_on entry of which is done). Selection only — never ranking.',
+          'depends_on entry of which is done). Selection only — never ranking. The parent_id filter is tri-state: ' +
+          'omit for no containment filter, a string for the direct children of that parent, or null for roots-only ' +
+          '(top-level items).',
         inputSchema: {
           tenant_id: zString.describe('Filter to one tenant.').optional(),
           status: zString.describe('Filter to one status: open | in_progress | done | cancelled.').optional(),
+          parent_id: zString
+            .describe('CONTAINMENT filter (tri-state): omit = no filter; a string = direct children of that parent; null = roots-only (top-level items).')
+            .nullable()
+            .optional(),
         },
       },
       async (args): Promise<CallToolResult> => {
@@ -300,6 +312,10 @@ export function createWorkStateToolsRegistrar(options: WorkStateToolsOptions = {
           const filter: ListItemsFilter = {
             ...(args.tenant_id === undefined ? {} : { tenant_id: args.tenant_id }),
             ...(status === undefined ? {} : { status }),
+            // Tri-state: absent = no filter; a string = children-of;
+            // null = roots-only. The key is only added when supplied, so an
+            // absent arg leaves the filter free of any containment clause.
+            ...(args.parent_id === undefined ? {} : { parent_id: args.parent_id }),
           };
           const items = ctx.verbs.list(filter);
           return ok({ items });
@@ -313,8 +329,10 @@ export function createWorkStateToolsRegistrar(options: WorkStateToolsOptions = {
       'work_update_meta',
       {
         description:
-          'Update metadata (title/spec/spec_format/depends_on) via optimistic CAS on version. Rejects a ' +
-          'depends_on edit that would introduce a dangling reference or a cycle. Runs the lazy-expiry seam first.',
+          'Update metadata (title/spec/spec_format/depends_on/parent_id) via optimistic CAS on version. Rejects a ' +
+          'depends_on edit that would introduce a dangling reference or a cycle, and a parent_id edit that dangles ' +
+          'or would make the item its own ancestor. parent_id is tri-state: omit to leave unchanged, a string to ' +
+          'set/move the parent, or null to clear it back to root. Runs the lazy-expiry seam first.',
         inputSchema: {
           id: zString.describe('The work item id.'),
           expected_version: zNumber.int().describe('The version this edit expects to be current.'),
@@ -322,6 +340,10 @@ export function createWorkStateToolsRegistrar(options: WorkStateToolsOptions = {
           spec: zString.optional(),
           spec_format: zString.optional(),
           depends_on: zString.array().optional(),
+          parent_id: zString
+            .describe('CONTAINMENT parent (tri-state): omit = unchanged; a string = set/move parent; null = clear to root. Orthogonal to depends_on.')
+            .nullable()
+            .optional(),
         },
       },
       async (args): Promise<CallToolResult> => {
@@ -332,6 +354,11 @@ export function createWorkStateToolsRegistrar(options: WorkStateToolsOptions = {
             ...(args.spec === undefined ? {} : { spec: args.spec }),
             ...(args.spec_format === undefined ? {} : { spec_format: args.spec_format }),
             ...(args.depends_on === undefined ? {} : { depends_on: args.depends_on }),
+            // Tri-state: the key is added iff the arg is present (a
+            // string OR null). Absent = leave unchanged; a string = set/move;
+            // null = clear to root. The wire adapter thus preserves the
+            // "key absent vs present-null" distinction the store depends on.
+            ...(args.parent_id === undefined ? {} : { parent_id: args.parent_id }),
           };
           const item = ctx.verbs.updateMeta(args.id, args.expected_version, patch, makeExpiryCheck(ctx));
           return ok({ item });
@@ -435,7 +462,7 @@ export function createWorkStateToolsRegistrar(options: WorkStateToolsOptions = {
       async (args): Promise<CallToolResult> => {
         const ctx = getContext();
         try {
-          // WI-306: completion-record post-commit hook — same call site as
+          // Completion-record post-commit hook — same call site as
           // every other verb's dependencies, reusing this context's own
           // project root/telemetry/session id/writer.
           const item = complete(ctx.store, ctx.clock, args.id, args.claim_token, args.note, {

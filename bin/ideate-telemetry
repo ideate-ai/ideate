@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // plugin/bin/ideate-telemetry — executable edge for the native telemetry
-// counters (WI-262; docs/design/v3-architecture.md §3.5).
+// counters.
 //
 // Thin loader only: all logic lives in src/telemetry/cli.ts (compiled to
 // dist/telemetry/cli.js). Dynamic import keeps this wrapper working whether

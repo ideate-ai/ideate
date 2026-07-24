@@ -1,8 +1,8 @@
 #!/usr/bin/env node
-// plugin/bin/ideate-work — executable edge for the v3 work-state CLI
-// (WI-303; docs/spikes/v3-work-delegation.md §3.5: the eleven-verb surface,
-// mirrored here as the CLI's second transport, plus the CLI-only `sweep`
-// subcommand — hooks invoke this via ${CLAUDE_PLUGIN_ROOT}/bin/ideate-work).
+// plugin/bin/ideate-work — executable edge for the work-state CLI: the
+// eleven-verb surface, mirrored here as the CLI's second transport, plus the
+// CLI-only `sweep` subcommand — hooks invoke this via
+// ${CLAUDE_PLUGIN_ROOT}/bin/ideate-work.
 //
 // Thin loader only: all logic lives in src/cli/ideate-work.ts (compiled to
 // dist/cli/ideate-work.js). Dynamic import keeps this wrapper working

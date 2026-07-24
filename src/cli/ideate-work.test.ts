@@ -1,10 +1,10 @@
-// plugin/src/cli/ideate-work.test.ts — WI-303 acceptance tests for the
+// plugin/src/cli/ideate-work.test.ts — acceptance tests for the
 // `ideate-work` CLI, the second transport over the work-state logic layer.
 //
 // Every test drives the REAL executable (bin/ideate-work) through
 // child_process against a mkdtemp project root — the real `.ideate-work/`
-// is never touched. Pins: --help/-h/no-args prints USAGE and exits 0 (WI-296
-// pattern); direct-use subcommands exit 1 on failure; renew/release/complete
+// is never touched. Pins: --help/-h/no-args prints USAGE and exits 0;
+// direct-use subcommands exit 1 on failure; renew/release/complete
 // accept no actor flags at all (mirrors the engine's own signatures); --json
 // on get/list/events; the CLI-only `sweep` subcommand always exits 0 with
 // silent stdout.
@@ -68,7 +68,7 @@ describe('bin wiring', () => {
   });
 });
 
-describe('--help / -h / no-args (general usage edge, WI-296 pattern)', () => {
+describe('--help / -h / no-args (general usage edge)', () => {
   it('prints usage covering all twelve subcommands and exits 0 for --help', () => {
     const root = makeProjectRoot();
     const result = runCliRaw(['--help'], { cwd: root });

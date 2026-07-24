@@ -1,11 +1,10 @@
 #!/usr/bin/env node
-// plugin/hooks/session-end.mjs — SessionEnd hook (WI-303): wraps the
-// session-outcome capture hooks.json previously invoked directly against
-// bin/ideate-record, and ADDITIONALLY triggers the opportunistic work-state
-// board sweep (docs/spikes/v3-work-delegation.md §3.2 rule 2b — the hybrid
-// expiry mechanism's second half; the per-verb lazy check is the first
+// plugin/hooks/session-end.mjs — SessionEnd hook: wraps the session-outcome
+// capture hooks.json previously invoked directly against bin/ideate-record,
+// and ADDITIONALLY triggers the opportunistic work-state board sweep — the
+// hybrid expiry mechanism's second half; the per-verb lazy check is the first
 // half, wired into every id-scoped work-state MCP tool call —
-// work-state/tools.ts).
+// work-state/tools.ts.
 //
 // Capture (unchanged behavior, now wrapped rather than invoked directly):
 // the SessionEnd hook payload from stdin is forwarded VERBATIM to
@@ -17,8 +16,8 @@
 // The board sweep runs AFTER capture, is non-blocking (never affects this
 // hook's own exit code, always 0), and both children's stdout stay silent —
 // only stderr is forwarded, unconditionally (existing hook discipline —
-// hook-lib.mjs; WI-281 closes cycle-7 S1: reading stderr only on nonzero
-// exit would discard the secret-gate redaction warnings in transit).
+// hook-lib.mjs: reading stderr only on nonzero exit would discard the
+// secret-gate redaction warnings in transit).
 
 import { spawnSync } from 'node:child_process';
 import { join } from 'node:path';
@@ -43,10 +42,10 @@ try {
     process.stderr.write(`ideate session-end hook: could not run ideate-record (${errorMessage(captureResult.error)})\n`);
   }
 
-  // Opportunistic board sweep (§3.2 rule 2b) — non-blocking: exit 0 always,
-  // silent stdout, stderr forwarded.
-  // Shared resolution (F-303-001 minor: an earlier inline copy of this logic
-  // was weaker than hook-lib's — it accepted an empty-string cwd).
+  // Opportunistic board sweep — non-blocking: exit 0 always, silent stdout,
+  // stderr forwarded.
+  // Shared resolution (an earlier inline copy of this logic was weaker than
+  // hook-lib's — it accepted an empty-string cwd).
   let cwd = process.cwd();
   try {
     cwd = resolveProjectRoot(JSON.parse(raw));

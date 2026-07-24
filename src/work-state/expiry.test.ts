@@ -1,12 +1,10 @@
-// plugin/src/work-state/expiry.test.ts — WI-301 acceptance tests for the
+// plugin/src/work-state/expiry.test.ts — acceptance tests for the
 // hybrid lease-expiry mechanism.
 //
-// Spec: docs/spikes/v3-work-delegation.md §3.2 rule 2, amended 2026-07-09
-// (cycle-6 finding S3 / Q-36): the hybrid is (a) a lazy check evaluated
-// first by every claim-engine entry point (exercised end-to-end in
-// claims.test.ts; this file pins `checkExpiry` in isolation) and (b) an
-// opportunistic board-wide sweep at session boundaries (`sweepBoard`, the
-// entry point WI-303's hooks will call).
+// The hybrid is (a) a lazy check evaluated first by every claim-engine entry
+// point (exercised end-to-end in claims.test.ts; this file pins `checkExpiry`
+// in isolation) and (b) an opportunistic board-wide sweep at session
+// boundaries (`sweepBoard`, the entry point the hooks call).
 //
 // No test in this file sleeps — lease expiry is simulated by advancing an
 // injected fake clock (repo convention, record/id.ts's `Clock`).
@@ -64,7 +62,7 @@ function actor(human = 'dan'): ActorRef {
   return { human };
 }
 
-describe('DEFAULT_LEASE_MS — "hours, not seconds" (§3.2)', () => {
+describe('DEFAULT_LEASE_MS — "hours, not seconds"', () => {
   it('defaults to an hours-scale lease, not a seconds-scale one', () => {
     expect(DEFAULT_LEASE_MS).toBeGreaterThanOrEqual(60 * 60 * 1000); // at least 1 hour
   });
@@ -166,7 +164,7 @@ describe('sweepBoard — the opportunistic session-boundary sweep (hybrid part (
     expect(sweepBoard(store, clock)).toEqual([]);
   });
 
-  it('recovers every expired in_progress item on an untouched board — the falsifiable orphan-recovery criterion (spec §5)', () => {
+  it('recovers every expired in_progress item on an untouched board — the falsifiable orphan-recovery criterion', () => {
     const { store, clock, setNow } = makeFixture();
     const expiredA = store.insertItem({ title: 'a', spec: 's', spec_format: 'f', created_by: actor() });
     const expiredB = store.insertItem({ title: 'b', spec: 's', spec_format: 'f', created_by: actor() });

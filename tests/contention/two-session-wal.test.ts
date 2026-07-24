@@ -1,16 +1,15 @@
-// plugin/tests/contention/two-session-wal.test.ts — WI-304 falsifiability
-// evidence for §4's local-concurrency amendment (docs/spikes/
-// v3-work-delegation.md): "Two simultaneous sessions on one machine writing
-// the same board — two terminals, or main session plus subagent — is
-// ordinary, not exceptional... engine-level concurrency is a stated
-// requirement, not an accident." Pins the same invariant schema.test.ts's
+// plugin/tests/contention/two-session-wal.test.ts — falsifiability
+// evidence for local concurrency: two simultaneous sessions on one machine
+// writing the same board — two terminals, or main session plus subagent — is
+// ordinary, not exceptional; engine-level concurrency is a stated
+// requirement, not an accident. Pins the same invariant schema.test.ts's
 // worker-thread test proves in-process (WAL + busy-timeout, by
 // construction), but from two REAL, SEPARATE OS processes.
 //
 // Two child processes, barrier-synchronized (readiness handshake — see
 // helpers.ts), each hammer the SAME board with a bounded burst of mixed
-// reads/writes through WorkStateVerbs (create/list/get/update_meta — the
-// four verbs criterion 5 names): zero "database is locked"/"busy" errors,
+// reads/writes through WorkStateVerbs (create/list/get/update_meta): zero
+// "database is locked"/"busy" errors,
 // zero corruption. Each process only ever `update_meta`s items IT created
 // (so any legitimate VERSION_CONFLICT from a genuine cross-process race is
 // out of scope here — that contention path already has its own coverage;
@@ -27,8 +26,7 @@
 // host contention (this suite's own barrier-synchronized start deliberately
 // concentrates the FIRST write of both sessions into the same instant, and a
 // full `pnpm test` run adds unrelated concurrent test files' own processes on
-// top of that — see this work item's completion report for the measured
-// full-suite flake this wrapper fixes). It is safe to retry blindly: SQLite's
+// top of that, which this wrapper absorbs). It is safe to retry blindly: SQLite's
 // `BEGIN IMMEDIATE` either acquires the write lock or throws WITHOUT having
 // mutated anything, so a failed attempt can never leave a partial write
 // behind. A genuine regression (e.g. `busy_timeout` accidentally dropped to
@@ -180,10 +178,9 @@ interface SessionSummary {
 }
 
 /** Reconstruct an item's status purely from its event log, using the
- *  contract's own §3.3 transition table — this is the "every item's events
- *  reconstruct its status" check criterion 5 asks for, done by interpreting
- *  the ALREADY-READ event array (via `store.events`, the contract's own
- *  reader), never raw SQL. */
+ *  contract's transition table — the "every item's events reconstruct its
+ *  status" check, done by interpreting the ALREADY-READ event array (via
+ *  `store.events`, the contract's own reader), never raw SQL. */
 function reconstructStatus(events: readonly WorkStateEvent[]): string {
   let status = 'unknown';
   for (const event of events) {
@@ -215,7 +212,7 @@ function reconstructStatus(events: readonly WorkStateEvent[]): string {
   return status;
 }
 
-describe('two-session WAL — §4 local-concurrency amendment', () => {
+describe('two-session WAL — local concurrency on one board', () => {
   it(
     `two REAL processes interleaving ${String(ITERATIONS_PER_SESSION * 2)} create/list/get/update_meta bursts: zero locked errors, zero corruption`,
     async () => {

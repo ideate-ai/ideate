@@ -1,12 +1,11 @@
 #!/usr/bin/env node
-// plugin/hooks/session-start.mjs — SessionStart hook (WI-303): wraps the
-// priming call hooks.json previously invoked directly against
-// bin/ideate-record, and ADDITIONALLY triggers the opportunistic work-state
-// board sweep (docs/spikes/v3-work-delegation.md §3.2 rule 2b: "the host
-// session-start/end hooks may trigger a board-wide expiry pass" — the
-// hybrid expiry mechanism's second half; the lazy per-verb check,
-// expiry.ts's `checkExpiry`, is the first half, wired into every id-scoped
-// work-state MCP tool call — work-state/tools.ts).
+// plugin/hooks/session-start.mjs — SessionStart hook: wraps the priming call
+// hooks.json previously invoked directly against bin/ideate-record, and
+// ADDITIONALLY triggers the opportunistic work-state board sweep — the host
+// session-start/end hooks may trigger a board-wide expiry pass, the hybrid
+// expiry mechanism's second half; the lazy per-verb check, expiry.ts's
+// `checkExpiry`, is the first half, wired into every id-scoped work-state MCP
+// tool call — work-state/tools.ts.
 //
 // Priming (unchanged behavior, now wrapped rather than invoked directly):
 // per the current hooks docs (verified 2026-07-09,
@@ -51,9 +50,8 @@ try {
     }
   }
 
-  // Opportunistic board sweep (§3.2 rule 2b) — non-blocking: exit 0 always,
-  // silent stdout (never allowed to leak into the digest above), stderr
-  // forwarded.
+  // Opportunistic board sweep — non-blocking: exit 0 always, silent stdout
+  // (never allowed to leak into the digest above), stderr forwarded.
   const sweepResult = spawnSync(process.execPath, [WORK_BIN, 'sweep'], {
     cwd: projectRoot,
     encoding: 'utf8',

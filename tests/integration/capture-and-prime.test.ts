@@ -1,10 +1,10 @@
-// plugin/tests/integration/capture-and-prime.test.ts — WI-276: the
-// end-to-end floor, cross-module, against ONE temp project root.
+// plugin/tests/integration/capture-and-prime.test.ts — the end-to-end
+// floor, cross-module, against ONE temp project root.
 //
-// Spec: docs/design/v3-composable-surface.md §2.2 (capture point 2:
-// SessionEnd → session-outcome record), §2.3 (hook floor-raisers), §3 (the
-// priming digest); docs/spikes/v3-boundary-contract.md §6.2 (four contract
-// fields, recall-shaped prose ≥ the G8 word floor) and §2 amendment I.
+// Covers: capture point 2 (SessionEnd → session-outcome record), the hook
+// floor-raisers, the priming digest, the four contract fields with
+// recall-shaped prose above the word floor, and the gate-before-persist
+// invariant.
 //
 // The chain proven here, in order, over one project root:
 //   1. The real SessionEnd path: a fixture hook payload (with a fixture
@@ -21,7 +21,7 @@
 //      capture_write_failed.
 //   5. Registration purity at the integration level: constructing the MCP
 //      server + registrar writes NOTHING until the first tool call.
-//   6. Redaction observability (WI-281, closes cycle-7 S1): a planted secret
+//   6. Redaction observability: a planted secret
 //      pushed through a hook script is masked on disk, increments the
 //      dedicated `redactions` telemetry counter (read via reportFromDir),
 //      AND its warning text reaches the hook's own stderr — on a SUCCESSFUL
@@ -172,7 +172,7 @@ function wordCount(text: string): number {
 /** The session-outcome record test 1 captures; tests 2–3 build on it. */
 let sessionOutcome: StoredRecord | undefined;
 
-describe('1. the real SessionEnd path (surface §2.2 capture point 2)', () => {
+describe('1. the real SessionEnd path (capture point 2)', () => {
   it('bin/ideate-record session-end writes the record and exits 0', () => {
     const payload = {
       session_id: SESSION_ID,
@@ -194,7 +194,7 @@ describe('1. the real SessionEnd path (surface §2.2 capture point 2)', () => {
     expect(sessionOutcome?.path).toMatch(/\/\d{4}\/\d{2}\/[0-9A-HJKMNP-TV-Z]{26}\.md$/);
   });
 
-  it('all four contract fields are physically present in the frontmatter (§6.2)', () => {
+  it('all four contract fields are physically present in the frontmatter', () => {
     const raw = sessionOutcome?.raw ?? '';
     for (const key of ['claim: ', 'verification_anchor: ', 'scope: ', 'source:']) {
       expect(raw, `frontmatter is missing ${key.trim()}`).toContain(`\n${key}`);
@@ -208,7 +208,7 @@ describe('1. the real SessionEnd path (surface §2.2 capture point 2)', () => {
     expect(record.source.timestamp.length).toBeGreaterThan(0);
   });
 
-  it('the prose body clears the 25-word recall-shape floor (§6.2 / gate G8)', () => {
+  it('the prose body clears the 25-word recall-shape floor', () => {
     const record = sessionOutcome?.record as ProcessRecord;
     expect(wordCount(record.content)).toBeGreaterThanOrEqual(25);
     // Prose, not bare metadata: the transcript's substance is in the words.
@@ -221,7 +221,7 @@ describe('1. the real SessionEnd path (surface §2.2 capture point 2)', () => {
 // 2. Capture → prime round trip: the floor works end to end
 // ---------------------------------------------------------------------------
 
-describe('2. bin/ideate-record prime surfaces the just-captured record (surface §3)', () => {
+describe('2. bin/ideate-record prime surfaces the just-captured record', () => {
   it('the digest exits 0 and carries the session-outcome claim verbatim', () => {
     const result = runBin(['prime']);
     expect(result.status).toBe(0);
@@ -236,13 +236,13 @@ describe('2. bin/ideate-record prime surfaces the just-captured record (surface 
 // 3. A hook .mjs fires: record lands, capture_fired increments
 // ---------------------------------------------------------------------------
 
-describe('3. task-completed.mjs: hook payload → record + telemetry (surface §2.3)', () => {
+describe('3. task-completed.mjs: hook payload → record + telemetry', () => {
   it('the hook exits 0 with silent stdout and its record lands', () => {
     const payload = {
       session_id: SESSION_ID,
       task_id: 'T-42',
       task_title: 'Wire the capture-and-prime integration suite',
-      task_description: 'End-to-end floor test for WI-276.',
+      task_description: 'End-to-end floor test for the capture-and-prime suite.',
       cwd: projectRoot,
     };
     const result = spawnSync(process.execPath, [TASK_COMPLETED_HOOK], {
@@ -302,7 +302,7 @@ describe('4. simulated capture-write failure (unwritable record dir)', () => {
 // 5. Registration purity at the integration level
 // ---------------------------------------------------------------------------
 
-describe('5. constructing server + registrar writes NOTHING until first call (§2.3 lazy init)', () => {
+describe('5. constructing server + registrar writes NOTHING until first call (lazy init)', () => {
   it('an empty project root stays byte-empty through construction, then first call onboards', async () => {
     const pureRoot = mkdtempSync(join(tmpdir(), 'ideate-e2e-pure-'));
     extraRoots.push(pureRoot);
@@ -331,7 +331,7 @@ describe('5. constructing server + registrar writes NOTHING until first call (§
 });
 
 // ---------------------------------------------------------------------------
-// 6. Redaction observability end to end (WI-281, closes cycle-7 S1)
+// 6. Redaction observability end to end
 // ---------------------------------------------------------------------------
 
 describe('6. planted secret through a hook: counted on the dashboard AND visible on hook stderr', () => {

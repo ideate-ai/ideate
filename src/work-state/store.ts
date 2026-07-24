@@ -1,13 +1,13 @@
 // plugin/src/work-state/store.ts — the persistence core of the work-state
-// contract (WI-300).
+// contract.
 //
-// Spec: docs/spikes/v3-work-delegation.md §3 (the contract), §4 (local-mode
-// equivalence — SQLite, WAL, busy-timeout). This module owns row<->type
-// mapping and the storage PRIMITIVES only: insert, get, list, the
-// metadata-update primitive (version bump), event append, and the per-item
-// claim-token counter. Claim acquisition/renewal/completion semantics
-// (compare-and-set, lease expiry, cycle detection) are OUT OF SCOPE — that is
-// WI-301 (claim logic) and WI-302 (verbs), built on top of these primitives.
+// Covers the contract and local-mode equivalence (SQLite, WAL, busy-timeout).
+// This module owns row<->type mapping and the storage PRIMITIVES only:
+// insert, get, list, the metadata-update primitive (version bump), event
+// append, and the per-item claim-token counter. Claim
+// acquisition/renewal/completion semantics (compare-and-set, lease expiry,
+// cycle detection) are OUT OF SCOPE — that is claims.ts and verbs.ts, built on
+// top of these primitives.
 //
 // Gate-before-persist (mirrors record/store.ts): the two free-text fields
 // this layer accepts — `title` and an event's `note` — pass through
@@ -15,21 +15,20 @@
 // opaque, store-as-is, no code path may parse OR transform it (masking would
 // be a transform).
 //
-// Intentional narrowing beyond §3.1 (F-300-001 M1): `title`, `spec`, and
+// Intentional narrowing beyond the contract: `title`, `spec`, and
 // `spec_format` must be NON-EMPTY strings on insert. The contract is silent
 // on minimum length; this layer treats an empty value as a caller bug.
 // Presence-checked, never parsed — the opacity guarantee is untouched.
 // Relax here if bare-task use ever matters; nothing downstream depends on
 // non-emptiness.
 //
-// Reserved-field guard (§3.1 ratification note, 2026-07-08): `rank` is a
-// reserved name. Any top-level `rank` key on a create/update-meta payload is
-// rejected with a typed `WorkStateError('RESERVED_FIELD', ...)`. The other
-// deliberately-absent fields (priority, estimates, sprints, labels, review
-// states) simply have no place in the validated shape below — they are never
-// read out of an input payload, so supplying them is a silent no-op rather
-// than a stored field. Only `rank` gets the explicit, named rejection the
-// spec calls for.
+// Reserved-field guard: `rank` is a reserved name. Any top-level `rank` key on
+// a create/update-meta payload is rejected with a typed
+// `WorkStateError('RESERVED_FIELD', ...)`. The other deliberately-absent
+// fields (priority, estimates, sprints, labels, review states) simply have no
+// place in the validated shape below — they are never read out of an input
+// payload, so supplying them is a silent no-op rather than a stored field.
+// Only `rank` gets the explicit, named rejection.
 //
 // Events table discipline: this file contains NO `UPDATE events` and NO
 // `DELETE FROM events` statement — the only SQL touching `events` is the
@@ -59,10 +58,25 @@ import type {
   WorkStateEvent,
 } from './types.js';
 
-/** Filter for {@link WorkStateStore.listItems} — selection only, no ranking. */
+/**
+ * Filter for {@link WorkStateStore.listItems} — selection only, no ranking.
+ *
+ * `parent_id` is the CONTAINMENT filter, and it is TRI-STATE — the
+ * distinction between "key absent" and "key present with value null" is
+ * load-bearing (mirrors `UpdateMetaInput.parent_id`; see types.ts):
+ *   - ABSENT (key not on the filter): no containment filter — list everything
+ *     matching tenant/status (the behavior before containment existed).
+ *   - PRESENT as a string: CHILDREN-OF — only the direct children of that
+ *     parent (`WHERE parent_id = ?`).
+ *   - PRESENT as `null`: ROOTS-ONLY — only top-level items (`WHERE parent_id
+ *     IS NULL`).
+ * Direct children only (one level) — matches the board's existing direct-only
+ * posture (`claimable`); no transitive/recursive query is added.
+ */
 export interface ListItemsFilter {
   tenant_id?: string;
   status?: WorkItemStatus;
+  parent_id?: string | null;
 }
 
 /** Gate one free-text field through the secret scanner before persist. */
@@ -75,7 +89,7 @@ function assertNoReservedField(raw: Record<string, unknown>, context: string): v
   if ('rank' in raw) {
     throw new WorkStateError(
       'RESERVED_FIELD',
-      `work-state store: "rank" is a reserved field name and may not be supplied on a ${context} payload (v3-work-delegation.md §3.1); encode any ordering hint inside "spec" instead`,
+      `work-state store: "rank" is a reserved field name and may not be supplied on a ${context} payload; encode any ordering hint inside "spec" instead`,
     );
   }
 }
@@ -105,6 +119,22 @@ function requireOptionalString(value: unknown, field: string): string | undefine
   return value;
 }
 
+/**
+ * Validate a `parent_id`-shaped field: a value whose domain legitimately
+ * includes `null` (a real "root" value, NOT an "unchanged" sentinel — see
+ * types.ts's `UpdateMetaInput.parent_id`). `null` passes through as `null`;
+ * a string passes through as-is; anything else is a typed SCHEMA error.
+ * Callers own the tri-state "key absent vs present" distinction (this helper
+ * is only reached when the key IS present).
+ */
+function requireNullableString(value: unknown, field: string): string | null {
+  if (value === null) return null;
+  if (typeof value !== 'string') {
+    throw new WorkStateError('SCHEMA', `work-state store: field "${field}" must be a string or null when present`);
+  }
+  return value;
+}
+
 function requireStringArray(value: unknown, field: string): string[] {
   if (!Array.isArray(value) || value.some((v) => typeof v !== 'string')) {
     throw new WorkStateError('SCHEMA', `work-state store: field "${field}" must be an array of strings`);
@@ -125,6 +155,9 @@ interface ValidatedNewWorkItemInput {
   spec: string;
   spec_format: string;
   depends_on: string[];
+  /** The resolved CONTAINMENT parent: a parent id, or `null` for a
+   *  root. Absent-or-null on the input both resolve to `null` here. */
+  parent_id: string | null;
   created_by: ActorRef;
 }
 
@@ -139,6 +172,9 @@ function validateNewWorkItemInput(input: unknown): ValidatedNewWorkItemInput {
     spec: requireNonEmptyString(raw['spec'], 'spec'),
     spec_format: requireNonEmptyString(raw['spec_format'], 'spec_format'),
     depends_on: raw['depends_on'] === undefined ? [] : requireStringArray(raw['depends_on'], 'depends_on'),
+    // Containment parent: absent OR null both mean "create as a root".
+    // Fully orthogonal to `depends_on` — never read against it here.
+    parent_id: raw['parent_id'] === undefined ? null : requireNullableString(raw['parent_id'], 'parent_id'),
     created_by: validateActorRef(raw['created_by'], 'created_by'),
   };
 }
@@ -148,6 +184,10 @@ interface ValidatedUpdateMetaInput {
   spec?: string;
   spec_format?: string;
   depends_on?: string[];
+  /** Present iff the patch sets `parent_id`. ABSENT on this
+   *  validated shape = leave unchanged; PRESENT (a string OR `null`) = the
+   *  new value, where `null` clears the parent back to root. */
+  parent_id?: string | null;
 }
 
 function validateUpdateMetaInput(input: unknown): ValidatedUpdateMetaInput {
@@ -158,6 +198,11 @@ function validateUpdateMetaInput(input: unknown): ValidatedUpdateMetaInput {
   if (raw['spec'] !== undefined) out.spec = requireNonEmptyString(raw['spec'], 'spec');
   if (raw['spec_format'] !== undefined) out.spec_format = requireNonEmptyString(raw['spec_format'], 'spec_format');
   if (raw['depends_on'] !== undefined) out.depends_on = requireStringArray(raw['depends_on'], 'depends_on');
+  // Tri-state: a `parent_id` key present with a string OR `null` is a
+  // real set (`null` clears to root); a key absent (=== undefined) is left
+  // unchanged. This is the one UpdateMeta field whose set value legitimately
+  // includes `null` — see types.ts's `UpdateMetaInput.parent_id`.
+  if (raw['parent_id'] !== undefined) out.parent_id = requireNullableString(raw['parent_id'], 'parent_id');
   return out;
 }
 
@@ -200,6 +245,10 @@ interface ItemRow {
   spec_format: string;
   status: string;
   depends_on: string;
+  /** The nullable CONTAINMENT column. A legacy read against a schema
+   *  that predates the column would surface `undefined` — `rowToWorkItem`
+   *  defaults that to `null` (a root). */
+  parent_id: string | null;
   created_by_human: string;
   created_by_agent: string | null;
   created_at: string;
@@ -238,6 +287,9 @@ function rowToWorkItem(row: ItemRow): WorkItem {
     status: row.status as WorkItemStatus,
     claim,
     depends_on: JSON.parse(row.depends_on) as string[],
+    // Always present on a read (mirrors `claim`), `null` for a root.
+    // `?? null` defends a legacy read where the column is absent.
+    parent_id: row.parent_id ?? null,
     created_by:
       row.created_by_agent === null
         ? { human: row.created_by_human }
@@ -277,7 +329,7 @@ function getItemRow(db: DatabaseSync, id: string): ItemRow | undefined {
 /** The single INSERT this module ever issues against `events`. A standalone
  *  function (not a class method) — it touches no store instance state — so
  *  both the class's own `appendEvent` and the internal-but-exported
- *  `appendEventRowOn` (F-301-001 S3, below) share the exact one statement. */
+ *  `appendEventRowOn` (below) share the exact one statement. */
 function insertEventRow(db: DatabaseSync, event: ValidatedAppendEventInput): void {
   db.prepare(
     `INSERT INTO events (item_id, actor_human, actor_agent, transition, claim_token, note, at) VALUES (?, ?, ?, ?, ?, ?, ?)`,
@@ -296,9 +348,9 @@ function insertEventRow(db: DatabaseSync, event: ValidatedAppendEventInput): voi
  * Append one immutable transition event on an ALREADY-OPEN connection, for a
  * caller that is running its own `BEGIN IMMEDIATE ... COMMIT` unit and needs
  * the event insert to commit atomically with the state transition it records
- * (F-301-001 S3: "every transition appends an immutable event" — a crash
- * between a transition's own commit and a separately-connected event insert
- * would otherwise leave the transition unaudited). Internal-but-exported:
+ * (every transition appends an immutable event — a crash between a
+ * transition's own commit and a separately-connected event insert would
+ * otherwise leave the transition unaudited). Internal-but-exported:
  * not part of `WorkStateStore`'s public surface (siblings import it
  * directly), but validation — including the secret gate on `note` — is
  * IDENTICAL to `appendEvent`'s; this is not a relaxed or partial path.
@@ -320,7 +372,7 @@ export function appendEventRowOn(db: DatabaseSync, input: unknown, defaultAt: ()
 }
 
 /**
- * The v3 work-state store. One instance per (session, database file); its
+ * The work-state store. One instance per (session, database file); its
  * ULID generator carries the per-session entropy convention shared with the
  * process record store (record/id.ts).
  *
@@ -359,23 +411,22 @@ export class WorkStateStore {
       const id = this.#nextId();
       const now = this.#clock().toISOString();
       const title = gate(validated.title);
-      // F-301-001 S3: the item insert and its `create` event commit as ONE
-      // atomic unit — previously these were two separate auto-committing
-      // statements on the same connection, so a crash between them could
-      // leave an item with no `create` event, violating §3.3's "every
-      // transition appends an immutable event". WI-307: the BEGIN
-      // IMMEDIATE/COMMIT/ROLLBACK boilerplate now lives in tx.ts's
-      // `withWriteTransaction`, which also re-types an exhausted
-      // busy_timeout as `WorkStateError('BUSY', ...)` instead of letting a
-      // raw node:sqlite lock error escape.
+      // The item insert and its `create` event commit as ONE atomic unit —
+      // otherwise these would be two separate auto-committing statements on
+      // the same connection, so a crash between them could leave an item with
+      // no `create` event, violating the "every transition appends an
+      // immutable event" invariant. The BEGIN IMMEDIATE/COMMIT/ROLLBACK
+      // boilerplate lives in tx.ts's `withWriteTransaction`, which also
+      // re-types an exhausted busy_timeout as `WorkStateError('BUSY', ...)`
+      // instead of letting a raw node:sqlite lock error escape.
       withWriteTransaction(db, (db) => {
         db.prepare(
           `INSERT INTO items (
-            id, tenant_id, title, spec, spec_format, status, depends_on,
+            id, tenant_id, title, spec, spec_format, status, depends_on, parent_id,
             created_by_human, created_by_agent, created_at, updated_at, version,
             claim_token_counter, claim_holder_human, claim_holder_agent,
             claim_token, claim_acquired_at, claim_lease_expires
-          ) VALUES (?, ?, ?, ?, ?, 'open', ?, ?, ?, ?, ?, 1, 0, NULL, NULL, NULL, NULL, NULL)`,
+          ) VALUES (?, ?, ?, ?, ?, 'open', ?, ?, ?, ?, ?, ?, 1, 0, NULL, NULL, NULL, NULL, NULL)`,
         ).run(
           id,
           validated.tenant_id,
@@ -383,6 +434,7 @@ export class WorkStateStore {
           validated.spec,
           validated.spec_format,
           JSON.stringify(validated.depends_on),
+          validated.parent_id,
           validated.created_by.human,
           validated.created_by.agent ?? null,
           now,
@@ -433,6 +485,20 @@ export class WorkStateStore {
         clauses.push('status = ?');
         params.push(filter.status);
       }
+      // Containment filter, tri-state (see {@link ListItemsFilter}).
+      // `= NULL` cannot be expressed via a bound param, so the roots-only case
+      // emits the literal `parent_id IS NULL` clause with no param; the
+      // children-of case binds the parent id. A `parent_id` key that is absent
+      // (or present-but-undefined) applies no containment filter at all.
+      if (filter !== undefined && 'parent_id' in filter) {
+        const parentFilter = filter.parent_id;
+        if (parentFilter === null) {
+          clauses.push('parent_id IS NULL');
+        } else if (parentFilter !== undefined) {
+          clauses.push('parent_id = ?');
+          params.push(parentFilter);
+        }
+      }
       const where = clauses.length > 0 ? ` WHERE ${clauses.join(' AND ')}` : '';
       const rows = db.prepare(`SELECT * FROM items${where} ORDER BY created_at DESC, id DESC`).all(...params) as unknown as ItemRow[];
       return rows.map(rowToWorkItem);
@@ -447,7 +513,7 @@ export class WorkStateStore {
    * exactly 1 and stamps `updated_at`. Throws `NOT_FOUND` if the item does
    * not exist, `VERSION_CONFLICT` if `expectedVersion` does not match the
    * item's current version. Cycle detection over `depends_on` is a verb-level
-   * concern (WI-302) — not enforced here.
+   * concern — not enforced here.
    */
   updateMeta(id: string, expectedVersion: number, patch: unknown): WorkItem {
     const validated = validateUpdateMetaInput(patch);
@@ -468,20 +534,25 @@ export class WorkStateStore {
       const nextSpec = validated.spec === undefined ? current.spec : validated.spec;
       const nextSpecFormat = validated.spec_format === undefined ? current.spec_format : validated.spec_format;
       const nextDependsOn = validated.depends_on === undefined ? current.depends_on : JSON.stringify(validated.depends_on);
-      // The version predicate lives in the UPDATE itself (F-302-001's
-      // systemic note: the check above alone is a TOCTOU window — a
-      // concurrent update_meta between the SELECT and this write would be
-      // silently overwritten). The pre-check stays for the precise typed
-      // error; this WHERE clause is the actual guarantee. WI-307: this bare
-      // autocommit statement is wrapped in `withBusyWrap` (tx.ts) so an
-      // exhausted busy_timeout surfaces as a typed `WorkStateError('BUSY',
+      // Tri-state: absent on the validated patch (=== undefined) leaves
+      // the stored parent unchanged; present (a string OR null) is the new
+      // value, null clearing to root. `?? null` on the current value defends a
+      // legacy read whose column predates the migration. Orthogonal to
+      // `depends_on` — this never reads or writes the dependency column.
+      const nextParentId = validated.parent_id === undefined ? (current.parent_id ?? null) : validated.parent_id;
+      // The version predicate lives in the UPDATE itself (the check above
+      // alone is a TOCTOU window — a concurrent update_meta between the SELECT
+      // and this write would be silently overwritten). The pre-check stays for
+      // the precise typed error; this WHERE clause is the actual guarantee.
+      // This bare autocommit statement is wrapped in `withBusyWrap` (tx.ts) so
+      // an exhausted busy_timeout surfaces as a typed `WorkStateError('BUSY',
       // ...)` rather than a raw node:sqlite lock error.
       const result = withBusyWrap(() =>
         db
           .prepare(
-            `UPDATE items SET title = ?, spec = ?, spec_format = ?, depends_on = ?, updated_at = ?, version = version + 1 WHERE id = ? AND version = ?`,
+            `UPDATE items SET title = ?, spec = ?, spec_format = ?, depends_on = ?, parent_id = ?, updated_at = ?, version = version + 1 WHERE id = ? AND version = ?`,
           )
-          .run(nextTitle, nextSpec, nextSpecFormat, nextDependsOn, now, id, expectedVersion),
+          .run(nextTitle, nextSpec, nextSpecFormat, nextDependsOn, nextParentId, now, id, expectedVersion),
       );
       if (result.changes !== 1) {
         throw new WorkStateError(
@@ -502,8 +573,8 @@ export class WorkStateStore {
    * connection. `note`, when present, is gated through the secret scanner
    * before persist. This is the standalone entry point for a caller that has
    * no already-open transaction of its own to fold the event into; a caller
-   * that DOES (claims.ts, expiry.ts, verbs.ts's `transitionStatus` —
-   * F-301-001 S3) uses {@link appendEventRowOn} instead, so the event commits
+   * that DOES (claims.ts, expiry.ts, verbs.ts's `transitionStatus`) uses
+   * {@link appendEventRowOn} instead, so the event commits
    * atomically with the transition it records rather than on a second,
    * separate connection.
    */
@@ -511,7 +582,7 @@ export class WorkStateStore {
     const validated = validateAppendEventInput(input, () => this.#clock().toISOString());
     const db = openForWrite(this.#dbPath);
     try {
-      // WI-307: bare autocommit INSERT, wrapped so an exhausted busy_timeout
+      // Bare autocommit INSERT, wrapped so an exhausted busy_timeout
       // surfaces as a typed `WorkStateError('BUSY', ...)`.
       withBusyWrap(() => insertEventRow(db, validated));
       return {
@@ -542,16 +613,16 @@ export class WorkStateStore {
 
   /**
    * Atomically increment and return the per-item claim-token counter. This
-   * is the fencing-token monotonicity source (spec §4): a counter column on
+   * is the fencing-token monotonicity source: a counter column on
    * the item row, so a token is never reused even after a claim is released
    * or a lease expires and the claim fields are cleared. Building the actual
    * claim/renew/complete compare-and-set on top of this primitive is
-   * WI-301's scope.
+   * claims.ts's scope.
    */
   nextClaimToken(id: string): number {
     const db = openForWrite(this.#dbPath);
     try {
-      // WI-307: bare autocommit UPDATE...RETURNING, wrapped so an exhausted
+      // Bare autocommit UPDATE...RETURNING, wrapped so an exhausted
       // busy_timeout surfaces as a typed `WorkStateError('BUSY', ...)`.
       const row = withBusyWrap(() =>
         db

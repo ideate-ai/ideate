@@ -1,5 +1,5 @@
-// plugin/src/work-state/priming-hook.test.ts — WI-303 acceptance tests for
-// the claim-time priming hook point, MECHANICALLY GATED OFF (GP-23).
+// plugin/src/work-state/priming-hook.test.ts — acceptance tests for
+// the claim-time priming hook point, MECHANICALLY GATED OFF.
 //
 // Pins:
 // - flag absent -> primeOnClaim emits nothing observable except the

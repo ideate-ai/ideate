@@ -2,15 +2,13 @@ import { defineConfig } from 'vitest/config';
 
 // @ideate/plugin — standalone vitest config.
 //
-// Scoped to plugin tests only, and self-contained: this file must work both
-// (a) invoked directly from `plugin/` inside the monorepo, and (b) invoked
-// from `plugin/` copied into a repo of its own with no workspace context
-// (P-34 fresh-copy test, scripts/fresh-copy-check.mjs). It intentionally does
-// NOT extend or reference the monorepo root vitest.config.ts.
+// Scoped to plugin tests only, and self-contained: it works when invoked
+// directly from this package and when the package is copied into a scratch
+// location with no surrounding workspace context (the fresh-copy check,
+// scripts/fresh-copy-check.mjs).
 //
-// maxForks is HARD-capped at 4: the default fan-out OOM-crashed a 32GB box
-// during v2. Do not raise without revisiting that failure mode (see the root
-// vitest.config.ts, which carries the identical cap for the same reason).
+// maxForks is HARD-capped at 4: the default fan-out has OOM-crashed a 32GB
+// box. Do not raise without revisiting that failure mode.
 export default defineConfig({
   test: {
     pool: 'forks',

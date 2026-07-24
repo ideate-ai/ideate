@@ -1,27 +1,24 @@
 // plugin/src/work-state/completion-record.ts — the completion-record
-// composer + writer seam (WI-306), wiring claims.ts's `complete()` to the v3
-// process record store (closes capstone GAP-1 / boundary contract capture
-// point 1 for the work-state board).
+// composer + writer seam, wiring claims.ts's `complete()` to the process
+// record store (the work-completion capture point for the work-state board).
 //
-// Spec: docs/spikes/v3-boundary-contract.md §2 row 1 ("Task (work item)
-// completion" — one discovery-candidate record per completed work item,
-// content mechanism amended 2026-07-09/C1/Q-34: the completion note IS the
-// content carrier; absent, structural extraction is the floor) and
-// docs/spikes/v3-work-delegation.md §3.2 rule 3 / §3.5 (the `note` parameter
-// this module reads its content from). Pre-made design decisions (WI-306
-// brief — implemented here, not re-litigated):
+// One discovery-candidate record is written per completed work item. The
+// completion note IS the content carrier; when it is absent, structural
+// extraction is the floor. The `note` parameter this module reads its content
+// from is the same one the `complete` verb accepts. Pre-made design decisions,
+// implemented here:
 //
 //   - `kind: 'work-completion'`.
 //   - `claim`: item title + the completion note when one is supplied;
-//     item title + transition metadata (the §3.2 amendment's structural
-//     fallback) when it is not.
+//     item title + transition metadata (the structural fallback) when it is
+//     not.
 //   - `verification_anchor`: `board:<item-id>#complete@<event-at>`.
 //   - `scope`: `<tenant_id>/<item-id>`.
 //   - No dedup with the board's own `complete` event — the board event and
 //     this record serve different consumers (process-state authority vs.
 //     knowledge capture), so both persist independently.
 //
-// ORDERING/FAILURE SEMANTICS (GP-21: the board is the state authority, the
+// ORDERING/FAILURE SEMANTICS (the board is the state authority, the
 // record is capture only). `runCompletionRecordHook` — the single function
 // claims.ts's `complete()` calls — is invoked ONLY after that function's own
 // CAS + audit event have already committed (claims.ts's own call site proves
@@ -48,7 +45,7 @@ import type { AppendResult } from '../record/store.js';
 import type { TelemetryCounters } from '../telemetry/counters.js';
 import type { ActorRef, WorkItem } from './types.js';
 
-/** The record's `kind` (WI-306 pre-made decision). */
+/** The record's `kind`. */
 export const COMPLETION_RECORD_KIND = 'work-completion';
 
 /**
@@ -67,9 +64,9 @@ export const COMPLETION_CAPTURE_POINT = 'work-completion';
 export interface CompletionRecordFacts {
   /** The completed item, post-commit (status 'done', claim cleared). */
   item: WorkItem;
-  /** The completion note, verbatim — absent triggers the structural fallback
-   *  (§3.2 rule 3 amendment). An empty string is treated the same as absent:
-   *  there is no content to carry. */
+  /** The completion note, verbatim — absent triggers the structural fallback.
+   *  An empty string is treated the same as absent: there is no content to
+   *  carry. */
   note: string | undefined;
   /** The actor the completion was attributed to — the claim's own holder
    *  (claims.ts never accepts a caller-supplied actor for `complete`). */
@@ -131,7 +128,7 @@ export interface CompletionRecordConfig {
 /**
  * Compose the record's `claim` field (contract field 1): title + note when a
  * note is supplied, or the structural fallback (title + transition metadata)
- * when it is not — the §3.2 amendment's own floor. An empty-string note is
+ * when it is not — the amendment's own floor. An empty-string note is
  * treated as absent: there is no prose to carry.
  */
 export function composeCompletionClaim(
@@ -143,13 +140,13 @@ export function composeCompletionClaim(
   const agentSuffix = facts.completedBy.agent === undefined ? '' : ` (${facts.completedBy.agent})`;
   return (
     `${facts.item.title} — completed by ${facts.completedBy.human}${agentSuffix} at ${facts.completedAt} ` +
-    '(no completion note provided; structural fallback per v3-work-delegation.md §3.2 rule 3 amendment)'
+    '(no completion note provided; structural fallback)'
   );
 }
 
 /**
  * Compose the record's `verification_anchor` (contract field 2): the board
- * item id plus the completion event reference (WI-306 brief).
+ * item id plus the completion event reference.
  */
 export function composeCompletionAnchor(itemId: string, completedAt: string): string {
   return `board:${itemId}#complete@${completedAt}`;
@@ -163,8 +160,7 @@ export function composeCompletionScope(tenantId: string, itemId: string): string
 /**
  * Compose the record's prose `content`: the note verbatim when present, or
  * the same structural-fallback sentence the `claim` field carries — the
- * boundary contract's §6.2 recall-shaped body, never empty even on the
- * fallback path.
+ * recall-shaped body, never empty even on the fallback path.
  */
 export function composeCompletionContent(
   facts: Pick<CompletionRecordFacts, 'item' | 'note' | 'completedBy' | 'completedAt'>,
@@ -209,8 +205,8 @@ export function createRealCompletionRecordWriter(
 /**
  * The post-commit hook claims.ts's `complete()` calls, unconditionally
  * whenever a transport supplies a {@link CompletionRecordConfig}, once its
- * own CAS + event have already committed (GP-21 — this function must never
- * influence whether the claim stays completed).
+ * own CAS + event have already committed (this function must never influence
+ * whether the claim stays completed).
  *
  * NEVER throws. Two distinct failure modes are both loud + counted, never
  * re-thrown:

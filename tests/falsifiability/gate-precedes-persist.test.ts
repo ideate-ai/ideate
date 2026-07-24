@@ -1,7 +1,6 @@
-// plugin/tests/falsifiability/gate-precedes-persist.test.ts — WI-276: the
-// cycle-7 amendment I pin, cross-module. "Gate precedes persist, no exempt
-// path" (docs/spikes/v3-boundary-contract.md §2 amendment I; docs/design/
-// v3-composable-surface.md §2.1 "Secret gate on every write").
+// plugin/tests/falsifiability/gate-precedes-persist.test.ts — the
+// "gate precedes persist, no exempt path" invariant, pinned cross-module
+// (secret gate on every write).
 //
 // Three angles, one contract:
 //   SOURCE  — in store.ts's append path the scanAndMask invocation precedes
@@ -128,7 +127,7 @@ function analyzeGateOrder(source: string): GateOrderAnalysis {
 // SOURCE: gate before persist, one write site (store.ts)
 // ---------------------------------------------------------------------------
 
-describe('store.ts source: scanAndMask precedes the one and only fs write (amendment I)', () => {
+describe('store.ts source: scanAndMask precedes the one and only fs write', () => {
   const storeSource = readFileSync(STORE_TS, 'utf8');
   const analysis = analyzeGateOrder(storeSource);
 
@@ -267,14 +266,14 @@ describe('hooks.json: every command invokes bin/ideate-record or a hooks/*.mjs s
   });
 });
 
-describe('hook scripts: no direct fs writes — the CLI is the only write path (§2.1)', () => {
+describe('hook scripts: no direct fs writes — the CLI is the only write path', () => {
   it.each(hookScriptNames())('%s performs no writeFile/appendFile/createWriteStream call', (name) => {
     const source = readFileSync(join(HOOKS_DIR, name), 'utf8');
     expect([...source.matchAll(FS_WRITE_CALL)]).toHaveLength(0);
   });
 });
 
-describe('hooks never block (surface §1.1 hook policy, §2.2 falsifiability restated)', () => {
+describe('hooks never block (hook policy: the host is never blocked)', () => {
   const blockingSources = ['hooks.json', ...hookScriptNames()];
 
   it.each(blockingSources)('%s carries no decision / permissionDecision / continue:false', (name) => {

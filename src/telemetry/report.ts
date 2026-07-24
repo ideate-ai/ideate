@@ -1,6 +1,5 @@
 // plugin/src/telemetry/report.ts — fold-on-read for the native telemetry
-// counters (WI-262; sixth counter WI-281, cycle-9 amendment; seventh counter
-// (work_claims) WI-303; docs/design/v3-architecture.md §3.5).
+// counters.
 //
 // The state is an append-only NDJSON event stream (counters.ts). This module
 // reads it and folds it into totals plus per-point / per-session / per-source
@@ -13,7 +12,7 @@ import { join } from 'node:path';
 import { TELEMETRY_FILE } from './counters.js';
 import type { TelemetryEvent } from './counters.js';
 
-/** A stored priming-usefulness signal, verbatim (semantics deferred; gate G3). */
+/** A stored priming-usefulness signal, verbatim (semantics deferred). */
 export interface PrimingUsefulnessRecord {
   sessionId: string;
   signal: unknown;
@@ -29,7 +28,7 @@ export interface FrontierStats {
   last: number | null;
 }
 
-/** The folded report: one key per closed-set counter (§3.5 + WI-303's work_claims). */
+/** The folded report: one key per closed-set counter. */
 export interface TelemetryReport {
   captureFired: {
     total: number;
@@ -70,8 +69,8 @@ export interface TelemetryReport {
     byPattern: Record<string, number>;
     bySession: Record<string, number>;
   };
-  /** Counter 7 (WI-303) — work-state claim-lifecycle events, the future
-   *  claim-time priming eval's denominator (see work-state/priming-hook.ts). */
+  /** Counter 7 — work-state claim-lifecycle events, the future claim-time
+   *  priming eval's denominator (see work-state/priming-hook.ts). */
   workClaims: {
     total: number;
     byItem: Record<string, number>;
