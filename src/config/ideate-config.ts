@@ -1,52 +1,51 @@
-// .ideate.json — the ideate v3 project config module.
+// .ideate.json — the ideate project config module.
 //
-// Spec: docs/design/v3-architecture.md §2.3 (config schema, lazy init,
-// non-destructive v9 detection) and §2.1 (the record path's role: default
-// `.ideate/record/`, configurable per project; the config tells the ingester
-// and the tools where to look — record IDs, not paths, are the stable URIs).
+// Config schema, lazy init, and non-destructive detection of a legacy config.
+// The record path defaults to `.ideate/record/` and is configurable per
+// project; the config tells the ingester and the tools where to look — record
+// IDs, not paths, are the stable URIs.
 //
-// The v3 config is minimal: `schema_version` (a new major, marking the v3
-// config family), `record.path`, and `backend`. v2's schema_version-9
+// The config is minimal: `schema_version` (the current schema family),
+// `record.path`, and `backend`. A legacy schema_version-9 config's
 // knowledge-store fields (`importance_weights`, `decay_lambda`,
-// `reinforcement_deltas`, `vague_rule_thresholds`) are DROPPED from the v3
-// schema, not migrated — they belong to the parked knowledge tier (GP-21).
+// `reinforcement_deltas`, `vague_rule_thresholds`) are DROPPED from the
+// current schema, not migrated.
 //
-// Migration posture (§2.3): non-destructive. Lazy init detects a v9 config
-// and writes the v3 keys alongside it without touching any existing field;
+// Migration posture: non-destructive. Lazy init detects a legacy config and
+// writes the current keys alongside it without touching any existing field;
 // the file may carry both shapes during the transition. Because
-// `schema_version` is itself an existing v2 field in a v9 file, it is NOT
-// rewritten during coexistence — v3 presence is detected by v3's own keys
-// (`record`, `backend`), and the in-memory v3 view always reports the v3
-// schema version. A freshly lazy-initialized file (no v2 shape present)
-// carries `schema_version: 10` directly.
+// `schema_version` is itself an existing field in a legacy file, it is NOT
+// rewritten during coexistence — current-schema presence is detected by its
+// own keys (`record`, `backend`), and the in-memory view always reports the
+// current schema version. A freshly lazy-initialized file (no legacy shape
+// present) carries `schema_version: 10` directly.
 //
-// `work_state` (WI-300, work-state core): an OPTIONAL block, `{ "path": ... }`,
-// giving the work-state (delegation board) SQLite store a configurable
-// location, mirroring `record.path`. Unlike `record`, this key is NEVER
-// written by `loadConfig` — it stays entirely absent from the file unless a
-// user configures it by hand, so its introduction is byte-preserving by
-// construction (no existing config, v9 or v3, gains a new key it didn't
-// already have). `workStatePath()` applies `DEFAULT_WORK_STATE_PATH` whenever
-// the block is absent, the same coexistence discipline the v9→v3 merge used
-// for `record`/`backend`.
+// `work_state`: an OPTIONAL block, `{ "path": ... }`, giving the work-state
+// (delegation board) SQLite store a configurable location, mirroring
+// `record.path`. Unlike `record`, this key is NEVER written by `loadConfig` —
+// it stays entirely absent from the file unless a user configures it by hand,
+// so its introduction is byte-preserving by construction (no existing config,
+// legacy or current, gains a new key it didn't already have). `workStatePath()`
+// applies `DEFAULT_WORK_STATE_PATH` whenever the block is absent, the same
+// coexistence discipline the legacy-to-current merge used for `record`/`backend`.
 
 import * as fs from "node:fs";
 import * as path from "node:path";
 
-/** The v3 config schema major — one past v2's 9. */
+/** The config schema major. */
 export const V3_SCHEMA_VERSION = 10;
 
-/** Default record directory, relative to the project root (§2.1). */
+/** Default record directory, relative to the project root. */
 export const DEFAULT_RECORD_PATH = ".ideate/record/";
 
 /** Default work-state (delegation board) store directory, relative to the
- *  project root (WI-300). */
+ *  project root. */
 export const DEFAULT_WORK_STATE_PATH = ".ideate-work/";
 
 /** The config file's name at the project root. */
 export const CONFIG_FILENAME = ".ideate.json";
 
-/** The v3 config shape — exactly these fields, nothing from the v2 knowledge tier. */
+/** The config shape — exactly these fields, nothing from the legacy knowledge-store schema. */
 export interface IdeateConfigV3 {
   schema_version: typeof V3_SCHEMA_VERSION;
   record: {
@@ -55,7 +54,7 @@ export interface IdeateConfigV3 {
   };
   /** Board backend selection: local SQLite now, hosted later. */
   backend: "local";
-  /** Optional work-state (delegation board) store location (WI-300). Absent
+  /** Optional work-state (delegation board) store location. Absent
    *  by default — see the file header note above; consumers resolve the
    *  effective path via `workStatePath()`, never this field directly. */
   work_state?: {
@@ -64,7 +63,7 @@ export interface IdeateConfigV3 {
      *  {@link DEFAULT_WORK_STATE_PATH}, so a block carrying only
      *  `claim_priming` is valid. */
     path?: string;
-    /** Claim-time priming gate (WI-303, GP-23): absent/false = the hook
+    /** Claim-time priming gate: absent/false = the hook
      *  point stays mechanically disabled. No env-var override exists.
      *  NOTE: priming-hook.ts reads this field via its own side-effect-free
      *  raw read (a hook path must never trigger config lazy-init writes);
@@ -100,7 +99,7 @@ export class IdeateConfigError extends Error {
  * the codebase may compute `<projectRoot>/<record.path>` — every consumer
  * (the ingester's read side, the record writer, the store) resolves the
  * directory through this function and this function only. Migration-forward
- * (§2.1) depends on the path being read from exactly one place.
+ * depends on the path being read from exactly one place.
  */
 export function recordPath(config: IdeateConfigV3, projectRoot: string): string {
   return path.resolve(projectRoot, config.record.path);
@@ -122,13 +121,13 @@ export function workStatePath(config: IdeateConfigV3, projectRoot: string): stri
 /**
  * Load the project's `.ideate.json`, lazily initializing it on first use.
  *
- * - No file → lazy init (§2.3 onboarding): create `.ideate.json` with the
+ * - No file → lazy init (onboarding): create `.ideate.json` with the
  *   defaults and create the record directory. No ceremony, no interview.
- * - File with pre-v3 fields (a v2 schema_version-9 config) and no v3 keys →
- *   v9 detected: merge the v3 keys into the file WITHOUT touching any
- *   existing field (every v2 field is preserved verbatim; nothing deleted,
- *   nothing rewritten), create the record directory, return the v3 view.
- * - File already carrying the v3 keys → return them; the file is not
+ * - File with legacy fields (a schema_version-9 config) and no current keys →
+ *   legacy detected: merge the current keys into the file WITHOUT touching any
+ *   existing field (every legacy field is preserved verbatim; nothing deleted,
+ *   nothing rewritten), create the record directory, return the current view.
+ * - File already carrying the current keys → return them; the file is not
  *   rewritten.
  * - Corrupt/unparseable file → IdeateConfigError, loudly; never overwritten.
  */
@@ -142,11 +141,10 @@ export function loadConfig(projectRoot: string): IdeateConfigV3 {
     if ((err as NodeJS.ErrnoException).code === "ENOENT") {
       // Lazy init: first call creates the config and the record directory.
       //
-      // WI-307 (ENOENT lazy-init race): two concurrent sessions can both
-      // observe ENOENT here (WI-302's own concurrent-boards posture — "two
-      // simultaneous sessions on one machine... is ordinary, not
-      // exceptional" applies just as much to config lazy-init as it does to
-      // board.db). The write below uses the `wx` flag (exclusive create,
+      // ENOENT lazy-init race: two concurrent sessions can both observe
+      // ENOENT here (two simultaneous sessions on one machine is ordinary,
+      // not exceptional — it applies just as much to config lazy-init as it
+      // does to board.db). The write below uses the `wx` flag (exclusive create,
       // fails loudly with `EEXIST` rather than silently overwriting) so a
       // losing writer can never clobber whatever the winner already wrote.
       // The EEXIST branch below is deliberately non-fatal: BOTH writers
@@ -196,12 +194,12 @@ export function loadConfig(projectRoot: string): IdeateConfigV3 {
   if (carriesV3Keys) {
     const config = readV3View(file, configPath);
     ensureRecordDir(config, projectRoot);
-    return config; // No write: an already-v3 file passes through unchanged.
+    return config; // No write: an already-current file passes through unchanged.
   }
 
-  // Pre-v3 config detected (v9 in practice). Non-destructive merge: every
-  // existing field — including v2's schema_version — is carried into the
-  // output object verbatim; only the v3 keys are added alongside.
+  // Legacy config detected (schema_version-9 in practice). Non-destructive
+  // merge: every existing field — including its schema_version — is carried
+  // into the output object verbatim; only the current keys are added alongside.
   const merged: Record<string, unknown> = {
     ...file,
     record: { path: DEFAULT_RECORD_PATH },
@@ -214,7 +212,7 @@ export function loadConfig(projectRoot: string): IdeateConfigV3 {
   return config;
 }
 
-/** The exact lazy-init defaults (§2.3). */
+/** The exact lazy-init defaults. */
 function defaultConfig(): IdeateConfigV3 {
   return {
     schema_version: V3_SCHEMA_VERSION,
@@ -223,7 +221,7 @@ function defaultConfig(): IdeateConfigV3 {
   };
 }
 
-/** Validate the v3 keys of a parsed config object and return the v3 view. */
+/** Validate the current-schema keys of a parsed config object and return the view. */
 function readV3View(file: Record<string, unknown>, configPath: string): IdeateConfigV3 {
   const schemaVersion = file["schema_version"];
   if (typeof schemaVersion === "number" && schemaVersion > V3_SCHEMA_VERSION) {

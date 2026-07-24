@@ -1,4 +1,4 @@
-// plugin/src/work-state/verbs.test.ts — WI-302 acceptance tests for the
+// plugin/src/work-state/verbs.test.ts — acceptance tests for the
 // seven non-claim board verbs (create, get, list, update_meta, cancel,
 // reopen, events).
 //
@@ -7,7 +7,7 @@
 // directly against the `items` table (via schema.ts's exported
 // `openForWrite`, the same seam verbs.ts itself uses for cancel/reopen) —
 // this is deliberate test scaffolding standing in for the claim/complete
-// verbs, which are WI-301's scope and are not implemented in this file.
+// verbs, which are claims.ts's scope and are not implemented in this file.
 
 import { mkdtempSync, readFileSync, readdirSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -288,7 +288,7 @@ describe('update_meta', () => {
     expect(verbs.get(a.id)?.depends_on).toEqual([]);
   });
 
-  it('recovery per §3.1: a corrected update_meta (no cycle) succeeds after a rejected one', () => {
+  it('recovery: a corrected update_meta (no cycle) succeeds after a rejected one', () => {
     const { verbs } = makeFixture();
     const a = createBasic(verbs, 'a');
     const b = createBasic(verbs, 'b', [a.id]);
@@ -304,6 +304,155 @@ describe('update_meta', () => {
     const item = createBasic(verbs, 'x');
     const updated = verbs.updateMeta(item.id, item.version, { spec: opaque });
     expect(updated.spec).toBe(opaque);
+  });
+});
+
+describe('parent_id containment', () => {
+  it('create accepts a parent_id and stores it', () => {
+    const { verbs } = makeFixture();
+    const parent = createBasic(verbs, 'parent');
+    const child = verbs.create({
+      title: 'child',
+      spec: 'plain prompt',
+      spec_format: 'text/plain',
+      created_by: actor(),
+      parent_id: parent.id,
+    });
+    expect(child.parent_id).toBe(parent.id);
+  });
+
+  it('create rejects a dangling parent_id with a typed DANGLING_PARENT error, before any write', () => {
+    const { verbs } = makeFixture();
+    let thrown: unknown;
+    try {
+      verbs.create({
+        title: 'child',
+        spec: 'plain prompt',
+        spec_format: 'text/plain',
+        created_by: actor(),
+        parent_id: '01JZM8Z0000000000000000000',
+      });
+    } catch (err) {
+      thrown = err;
+    }
+    expect(thrown).toBeInstanceOf(DagError);
+    expect((thrown as DagError).code).toBe('DANGLING_PARENT');
+    // Nothing persisted.
+    expect(verbs.list()).toEqual([]);
+  });
+
+  it('update_meta sets, moves, and clears parent_id (tri-state)', () => {
+    const { verbs } = makeFixture();
+    const p1 = createBasic(verbs, 'p1');
+    const p2 = createBasic(verbs, 'p2');
+    const item = createBasic(verbs, 'x');
+    expect(item.parent_id).toBeNull();
+
+    const set = verbs.updateMeta(item.id, item.version, { parent_id: p1.id });
+    expect(set.parent_id).toBe(p1.id);
+
+    const moved = verbs.updateMeta(item.id, set.version, { parent_id: p2.id });
+    expect(moved.parent_id).toBe(p2.id);
+
+    const cleared = verbs.updateMeta(item.id, moved.version, { parent_id: null });
+    expect(cleared.parent_id).toBeNull();
+  });
+
+  it('update_meta rejects a self-parent with a typed PARENT_CYCLE naming the cycle', () => {
+    const { verbs } = makeFixture();
+    const item = createBasic(verbs, 'x');
+    let thrown: unknown;
+    try {
+      verbs.updateMeta(item.id, item.version, { parent_id: item.id });
+    } catch (err) {
+      thrown = err;
+    }
+    expect(thrown).toBeInstanceOf(DagError);
+    expect((thrown as DagError).code).toBe('PARENT_CYCLE');
+    expect((thrown as DagError).message).toContain(`${item.id} → ${item.id}`);
+    // Unchanged — the rejected edit never reached the store.
+    expect(verbs.get(item.id)?.parent_id).toBeNull();
+  });
+
+  it('update_meta rejects a deeper ancestor cycle, naming the full chain with real ids', () => {
+    const { verbs } = makeFixture();
+    // a is a root; b's parent = a; c's parent = b. Proposing a's parent = c
+    // closes a -> c -> b -> a.
+    const a = createBasic(verbs, 'a');
+    const b = verbs.create({ title: 'b', spec: 's', spec_format: 'text/plain', created_by: actor(), parent_id: a.id });
+    const c = verbs.create({ title: 'c', spec: 's', spec_format: 'text/plain', created_by: actor(), parent_id: b.id });
+
+    let thrown: unknown;
+    try {
+      verbs.updateMeta(a.id, a.version, { parent_id: c.id });
+    } catch (err) {
+      thrown = err;
+    }
+    expect(thrown).toBeInstanceOf(DagError);
+    expect((thrown as DagError).code).toBe('PARENT_CYCLE');
+    expect((thrown as DagError).message).toContain(`${a.id} → ${c.id} → ${b.id} → ${a.id}`);
+  });
+
+  it('update_meta rejects a dangling parent_id with a typed DANGLING_PARENT error', () => {
+    const { verbs } = makeFixture();
+    const item = createBasic(verbs, 'x');
+    let thrown: unknown;
+    try {
+      verbs.updateMeta(item.id, item.version, { parent_id: '01JZM8Z0000000000000000000' });
+    } catch (err) {
+      thrown = err;
+    }
+    expect(thrown).toBeInstanceOf(DagError);
+    expect((thrown as DagError).code).toBe('DANGLING_PARENT');
+    expect(verbs.get(item.id)?.version).toBe(item.version);
+  });
+
+  it('parent_id is independent of depends_on — setting one never mutates the other', () => {
+    const { verbs } = makeFixture();
+    const dep = createBasic(verbs, 'dep');
+    const parent = createBasic(verbs, 'parent');
+    const item = createBasic(verbs, 'x', [dep.id]);
+    expect(item.depends_on).toEqual([dep.id]);
+    expect(item.parent_id).toBeNull();
+
+    // Setting the parent leaves depends_on untouched.
+    const parented = verbs.updateMeta(item.id, item.version, { parent_id: parent.id });
+    expect(parented.parent_id).toBe(parent.id);
+    expect(parented.depends_on).toEqual([dep.id]);
+
+    // Replacing depends_on leaves the parent untouched.
+    const redep = verbs.updateMeta(parented.id, parented.version, { depends_on: [] });
+    expect(redep.depends_on).toEqual([]);
+    expect(redep.parent_id).toBe(parent.id);
+  });
+
+  it('NO cascade: cancelling a parent does not touch its children', () => {
+    const { verbs } = makeFixture();
+    const parent = createBasic(verbs, 'parent');
+    const child = verbs.create({ title: 'child', spec: 's', spec_format: 'text/plain', created_by: actor(), parent_id: parent.id });
+
+    verbs.cancel(parent.id, actor());
+    expect(verbs.get(parent.id)?.status).toBe('cancelled');
+    // The child is entirely unaffected — still open, still parented.
+    const childAfter = verbs.get(child.id);
+    expect(childAfter?.status).toBe('open');
+    expect(childAfter?.parent_id).toBe(parent.id);
+  });
+
+  it('list filters children-of a parent and roots-only, with claimable still computed', () => {
+    const { verbs } = makeFixture();
+    const parent = createBasic(verbs, 'parent');
+    const childA = verbs.create({ title: 'a', spec: 's', spec_format: 'text/plain', created_by: actor(), parent_id: parent.id });
+    const childB = verbs.create({ title: 'b', spec: 's', spec_format: 'text/plain', created_by: actor(), parent_id: parent.id });
+    const otherRoot = createBasic(verbs, 'other');
+
+    const children = verbs.list({ parent_id: parent.id });
+    expect(children.map((i) => i.id).sort()).toEqual([childA.id, childB.id].sort());
+    // claimable is still derived per item (open, no deps => true).
+    expect(children.every((i) => i.claimable)).toBe(true);
+
+    const roots = verbs.list({ parent_id: null });
+    expect(roots.map((i) => i.id).sort()).toEqual([parent.id, otherRoot.id].sort());
   });
 });
 
@@ -436,7 +585,7 @@ describe('the lazy-expiry seam', () => {
     verbs.updateMeta(item.id, item.version, { title: 'renamed' }, spy);
     verbs.cancel(item.id, actor(), spy);
 
-    // F-302-001 M2: `reopen` was missing from this seam test. The item is
+    // `reopen` is included in this seam test too. The item is
     // `cancelled` at this point (from the `cancel` call above), so `reopen`
     // (which requires `done`) is EXPECTED to throw its own typed
     // `INVALID_TRANSITION` error here — that rejection is a different
@@ -463,7 +612,7 @@ describe('the lazy-expiry seam', () => {
   });
 });
 
-describe('"blocked" is never a stored status — it is a derived view only (§3.3)', () => {
+describe('"blocked" is never a stored status — it is a derived view only', () => {
   it('the word "blocked" is absent from every non-test work-state source file, outside comments', () => {
     const srcDir = fileURLToPath(new URL('.', import.meta.url));
     const offenders: string[] = [];

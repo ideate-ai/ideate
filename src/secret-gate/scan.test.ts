@@ -1,6 +1,6 @@
-// plugin/src/secret-gate/scan.test.ts — WI-272 acceptance tests.
+// plugin/src/secret-gate/scan.test.ts — acceptance tests.
 //
-// Asserts the amendment-I contract (docs/spikes/v3-boundary-contract.md §2):
+// Asserts the gate contract:
 // per-pattern detection with in-place [REDACTED:pattern-name] masking;
 // negatives (git SHAs, ULIDs, prose, file paths, already-masked content,
 // code fences) pass through byte-identical; every redaction is reported via
@@ -154,7 +154,7 @@ describe('negatives — byte-identical passthrough', () => {
     UUID: 'trace 550e8400-e29b-41d4-a716-446655440000 sampled',
     'ordinary prose':
       'The gate lives inside the same write paths as capture itself — no human in the loop.',
-    'file path': 'see /Users/dan/code/ideate/plugin/src/secret-gate/patterns.ts line 40',
+    'file path': 'see plugin/src/secret-gate/patterns.ts line 40',
     'deep dependency path':
       'plugin/node_modules/.pnpm/@modelcontextprotocol+sdk@1.29.0/node_modules/zod/dist/index.js',
     'the [REDACTED:x] string itself': 'value was [REDACTED:x] after the gate ran',

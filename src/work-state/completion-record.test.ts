@@ -1,10 +1,10 @@
-// plugin/src/work-state/completion-record.test.ts — WI-306 acceptance tests
+// plugin/src/work-state/completion-record.test.ts — acceptance tests
 // for the completion-record composer + writer seam and its wiring through
 // BOTH transports (work-state/tools.ts's `work_complete` MCP handler and
 // cli/ideate-work.ts's `complete` subcommand).
 //
 // Pins:
-// - the composer functions (claim/anchor/scope/content) per the WI-306 brief
+// - the composer functions (claim/anchor/scope/content)
 //   (title + note; structural fallback when the note is absent; anchor
 //   references item id + event; scope from tenant/item);
 // - the real writer persists exactly one 'work-completion' record through
@@ -17,8 +17,8 @@
 //   (complete() itself never throws) and the failure surfaces on stderr.
 //
 // completion-record.test.ts intentionally does NOT modify tools.test.ts or
-// ideate-work.test.ts (out of this work item's file scope) — "both
-// transports" coverage lives here instead, driving each transport's own real
+// ideate-work.test.ts — "both transports" coverage lives here instead,
+// driving each transport's own real
 // composition function directly (createWorkStateToolsRegistrar for MCP; the
 // real built CLI binary, subprocess, for the CLI path — mirroring each
 // sibling test file's own established pattern).
@@ -58,13 +58,12 @@ const FIXED_ISO = '2026-07-11T12:00:00.000Z';
 
 const PLUGIN_DIR = fileURLToPath(new URL('../..', import.meta.url));
 
-// F-306-001 M1: every shipped transport must inject the real completion-
-// record writer — complete()'s parameter is optional BY DESIGN (a direct
-// engine caller has no project root to resolve a record from), so the
-// capture guarantee lives entirely at the transport edges. This pin makes
-// that mechanically grep-falsifiable: a future transport (or a refactor of
-// an existing one) that drops the injection fails here, not in production
-// silence (P-41).
+// Every shipped transport must inject the real completion-record writer —
+// complete()'s parameter is optional BY DESIGN (a direct engine caller has no
+// project root to resolve a record from), so the capture guarantee lives
+// entirely at the transport edges. This pin makes that mechanically
+// grep-falsifiable: a future transport (or a refactor of an existing one) that
+// drops the injection fails here, not in production silence.
 describe('every shipped transport injects the completion-record writer', () => {
   it('tools.ts and ideate-work.ts both construct createRealCompletionRecordWriter and thread completionRecord into complete()', async () => {
     const { readFileSync } = await import('node:fs');
@@ -133,7 +132,7 @@ function makeFacts(overrides?: Partial<CompletionRecordFacts>): CompletionRecord
 }
 
 // ---------------------------------------------------------------------------
-// Composer unit tests (the pre-made design decisions from the WI-306 brief)
+// Composer unit tests (the pre-made design decisions)
 // ---------------------------------------------------------------------------
 
 describe('composeCompletionClaim / composeCompletionContent — note present vs. structural fallback', () => {
@@ -166,13 +165,13 @@ describe('composeCompletionClaim / composeCompletionContent — note present vs.
   });
 });
 
-describe('composeCompletionAnchor / composeCompletionScope — WI-306 brief', () => {
+describe('composeCompletionAnchor / composeCompletionScope — T-306 brief', () => {
   it('anchor references the board item id + the completion event', () => {
-    expect(composeCompletionAnchor('WI-306-item', FIXED_ISO)).toBe(`board:WI-306-item#complete@${FIXED_ISO}`);
+    expect(composeCompletionAnchor('T-306-item', FIXED_ISO)).toBe(`board:T-306-item#complete@${FIXED_ISO}`);
   });
 
   it('scope is tenant/item', () => {
-    expect(composeCompletionScope('local', 'WI-306-item')).toBe('local/WI-306-item');
+    expect(composeCompletionScope('local', 'T-306-item')).toBe('local/T-306-item');
   });
 });
 
@@ -374,7 +373,7 @@ describe('CLI transport (cli/ideate-work.ts) — complete produces exactly one w
     const claimed = JSON.parse(runCli(['claim', '--id', created.id, '--human', 'dan'], root)) as { claim: { claim_token: number } };
 
     // `create`/`claim` above already triggered loadConfig's lazy-init, which
-    // creates the record directory (config/ideate-config.ts §2.3) — force
+    // creates the record directory (see config/ideate-config.ts) — force
     // every write under it to fail.
     const config = realConfig();
     const dir = recordPath(config, root);

@@ -1,4 +1,4 @@
-// plugin/src/work-state/dag.test.ts — WI-302 acceptance tests for the
+// plugin/src/work-state/dag.test.ts — acceptance tests for the
 // depends_on cycle + dangling-reference guard.
 //
 // Pure graph logic: an in-memory `Map<string, string[]>` stands in for the
@@ -7,11 +7,24 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { DagError, assertDependenciesExist, assertNoCycle } from './dag.js';
-import type { DependsOnLookup } from './dag.js';
+import {
+  DagError,
+  assertDependenciesExist,
+  assertNoCycle,
+  assertNoParentCycle,
+  assertParentExists,
+} from './dag.js';
+import type { DependsOnLookup, ParentLookup } from './dag.js';
 
 function lookupFrom(graph: Record<string, string[]>): DependsOnLookup {
   return (id: string) => graph[id];
+}
+
+/** Parent-chain lookup from an in-memory map: a key present maps to its
+ *  `parent_id` (a string, or `null` for a root); a key ABSENT maps to
+ *  `undefined` (the item does not exist). */
+function parentLookupFrom(graph: Record<string, string | null>): ParentLookup {
+  return (id: string) => (id in graph ? graph[id] : undefined);
 }
 
 describe('assertDependenciesExist', () => {
@@ -112,6 +125,85 @@ describe('assertNoCycle', () => {
     }
     expect(thrown).toBeInstanceOf(DagError);
     expect((thrown as DagError).code).toBe('CYCLE');
+    expect((thrown as DagError).message).toContain('x → y → x');
+  });
+});
+
+describe('assertParentExists (containment)', () => {
+  it('passes silently when the parent resolves (including a parent that is itself a root)', () => {
+    const lookup = parentLookupFrom({ p: null, q: 'p' });
+    expect(() => assertParentExists('p', lookup)).not.toThrow();
+    expect(() => assertParentExists('q', lookup)).not.toThrow();
+  });
+
+  it('throws a typed DANGLING_PARENT error naming the missing parent id', () => {
+    const lookup = parentLookupFrom({ p: null });
+    let thrown: unknown;
+    try {
+      assertParentExists('ghost', lookup);
+    } catch (err) {
+      thrown = err;
+    }
+    expect(thrown).toBeInstanceOf(DagError);
+    expect((thrown as DagError).code).toBe('DANGLING_PARENT');
+    expect((thrown as DagError).message).toContain('ghost');
+  });
+});
+
+describe('assertNoParentCycle (containment)', () => {
+  it('passes silently on an acyclic parent chain terminating at a root', () => {
+    // c -> b -> a -> (root). Proposing d's parent = c walks up cleanly.
+    const lookup = parentLookupFrom({ a: null, b: 'a', c: 'b' });
+    expect(() => assertNoParentCycle('d', 'c', lookup)).not.toThrow();
+  });
+
+  it('rejects a direct self-parent: a is its own parent, naming "a → a"', () => {
+    const lookup = parentLookupFrom({ a: null });
+    let thrown: unknown;
+    try {
+      assertNoParentCycle('a', 'a', lookup);
+    } catch (err) {
+      thrown = err;
+    }
+    expect(thrown).toBeInstanceOf(DagError);
+    expect((thrown as DagError).code).toBe('PARENT_CYCLE');
+    expect((thrown as DagError).message).toContain('a → a');
+  });
+
+  it('rejects a longer ancestor cycle and NAMES the full chain', () => {
+    // Existing: c -> b, b -> a (a is a root). Proposing a's parent = c closes
+    // the loop a -> c -> b -> a.
+    const lookup = parentLookupFrom({ a: null, b: 'a', c: 'b' });
+    let thrown: unknown;
+    try {
+      assertNoParentCycle('a', 'c', lookup);
+    } catch (err) {
+      thrown = err;
+    }
+    expect(thrown).toBeInstanceOf(DagError);
+    expect((thrown as DagError).code).toBe('PARENT_CYCLE');
+    expect((thrown as DagError).message).toContain('a → c → b → a');
+  });
+
+  it('treats a dangling ancestor as a clean dead end — that is assertParentExists\'s job', () => {
+    // The proposed parent exists, but ITS parent points at a nonexistent item.
+    const lookup = parentLookupFrom({ p: 'ghost' });
+    expect(() => assertNoParentCycle('a', 'p', lookup)).not.toThrow();
+  });
+
+  it('catches a PRE-EXISTING corrupt ancestor chain not passing through the item (defense-in-depth)', () => {
+    // x -> y -> x already exists (corruption); proposing a brand-new synthetic
+    // item's parent = x must still surface (and name) that cycle rather than
+    // looping forever.
+    const lookup = parentLookupFrom({ x: 'y', y: 'x' });
+    let thrown: unknown;
+    try {
+      assertNoParentCycle('__synthetic__', 'x', lookup);
+    } catch (err) {
+      thrown = err;
+    }
+    expect(thrown).toBeInstanceOf(DagError);
+    expect((thrown as DagError).code).toBe('PARENT_CYCLE');
     expect((thrown as DagError).message).toContain('x → y → x');
   });
 });

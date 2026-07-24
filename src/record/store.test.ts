@@ -1,12 +1,12 @@
-// plugin/src/record/store.test.ts — WI-271 acceptance tests for the record
+// plugin/src/record/store.test.ts — acceptance tests for the record
 // store core.
 //
 // Pins: round-trip serialization; four-contract-fields-always-present
-// enforcement (boundary contract §6.2); date-sharded config-resolved paths
-// with ULID filename stems (architecture §2.1); gate-before-persist with a
+// enforcement; date-sharded config-resolved paths
+// with ULID filename stems; gate-before-persist with a
 // PLANTED SECRET asserted masked in the raw on-disk bytes; the telemetry
-// wiring (capture_fired / capture_write_failed, and — WI-281 — every
-// redaction routed to the dedicated sixth counter); typed no-throw failure on
+// wiring (capture_fired / capture_write_failed, and every
+// redaction routed to the dedicated counter); typed no-throw failure on
 // an unwritable directory; newest-first scope-filtered limited reads with no
 // index; and the append-only API surface (no update/delete/rank anywhere).
 //
@@ -87,7 +87,7 @@ function input(overrides?: Partial<RecordInput>): RecordInput {
     claim: 'The vitest fork pool must stay capped at 4 to avoid OOM.',
     verification_anchor: 'vitest.config.ts',
     scope: 'test infrastructure changes',
-    source: { capture_point: 'session_end', session_id: 'sess-1', task_id: 'WI-271' },
+    source: { capture_point: 'session_end', session_id: 'sess-1', task_id: 'T-271' },
     content: 'Raising maxForks above 4 crashed a 32GB box during v2; the cap is load-bearing.',
     ...overrides,
   };
@@ -104,7 +104,7 @@ describe('round-trip serialization', () => {
       source: {
         capture_point: 'commit_boundary',
         session_id: 'sess-42',
-        task_id: 'WI-271',
+        task_id: 'T-271',
         timestamp: FIXED_ISO,
       },
       references: [],
@@ -170,7 +170,7 @@ describe('round-trip serialization', () => {
   });
 });
 
-describe('four contract fields always present (boundary contract §6.2)', () => {
+describe('four contract fields always present', () => {
   it('accepts empty strings — emptiness is a valid record, not a failure', () => {
     const { store } = makeFixture();
     const result = store.append(
@@ -228,7 +228,7 @@ describe('four contract fields always present (boundary contract §6.2)', () => 
   });
 });
 
-describe('date-sharded config-resolved paths (architecture §2.1)', () => {
+describe('date-sharded config-resolved paths', () => {
   it('writes to record.path/YYYY/MM/{ulid}.md derived from the injected clock', () => {
     const { store, recordDir } = makeFixture();
     const result = store.append(input());
@@ -298,7 +298,7 @@ describe('gate before persist (secret gate wired ahead of any write)', () => {
     );
     expect(result.ok).toBe(true);
 
-    // The dashboard read observes the redactions — cycle-7 S1 closed.
+    // The dashboard read observes the redactions.
     const { report } = reportFromDir(telemetryDir);
     expect(report.redactions.total).toBe(2);
     expect(report.redactions.events).toBe(2);
@@ -386,7 +386,7 @@ describe('read: straight off the files, newest first, selection only', () => {
     // Matches kind.
     expect(fx.store.read({ scope: 'finding' }).map((r) => r.id)).toEqual([ids.second]);
     // Matches source.task_id.
-    expect(fx.store.read({ scope: 'wi-271' })).toHaveLength(3);
+    expect(fx.store.read({ scope: 't-271' })).toHaveLength(3);
     // No match.
     expect(fx.store.read({ scope: 'nonexistent-vocabulary' })).toEqual([]);
   });
@@ -448,7 +448,7 @@ describe('readViews: derived backlinks, never stored (append-only reverse edges)
   });
 });
 
-describe('append-only API surface (boundary contract §4.2)', () => {
+describe('append-only API surface', () => {
   it('the record modules export no update/delete/rank/score verb', async () => {
     for (const mod of [await import('./store.js'), await import('./schema.js'), await import('./id.js')]) {
       for (const name of Object.keys(mod)) {

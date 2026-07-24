@@ -1,20 +1,19 @@
-// plugin/src/work-state/verbs.ts — the seven non-claim board verbs (WI-302).
+// plugin/src/work-state/verbs.ts — the seven non-claim board verbs.
 //
-// Spec: docs/spikes/v3-work-delegation.md §3.1 (cycle rejection amendment),
-// §3.3 (status model + transitions), §3.5 (the verb surface — eleven verbs
-// total; this file owns the seven that are NOT claim/renew/release/complete):
-// `create`, `get`, `list(filter)`, `update_meta(version)`, `cancel`,
-// `reopen`, `events(item)`. Claim-lifecycle verbs (claim/renew/release/
-// complete) are WI-301's scope, built in a sibling file (claims.ts) — this
-// file never touches them.
+// Covers cycle rejection, the status model + transitions, and the verb
+// surface (eleven verbs total; this file owns the seven that are NOT
+// claim/renew/release/complete): `create`, `get`, `list(filter)`,
+// `update_meta(version)`, `cancel`, `reopen`, `events(item)`. Claim-lifecycle
+// verbs (claim/renew/release/complete) are claims.ts's scope, built in a
+// sibling file — this file never touches them.
 //
-// Built on top of the WI-300 storage primitives (store.ts): insertItem,
-// getItem, listItems, updateMeta (metadata only — status/claim untouched),
-// appendEvent. Two things store.ts deliberately does NOT provide, which this
-// file supplies itself:
+// Built on top of the store.ts storage primitives: insertItem, getItem,
+// listItems, updateMeta (metadata only — status/claim untouched), appendEvent.
+// Two things store.ts deliberately does NOT provide, which this file supplies
+// itself:
 //
-//   1. depends_on cycle/dangling-reference rejection (dag.ts, WI-302) — a
-//      write-time DFS run before create/update_meta ever reach the store.
+//   1. depends_on cycle/dangling-reference rejection (dag.ts) — a write-time
+//      DFS run before create/update_meta ever reach the store.
 //   2. status transitions for cancel/reopen. store.ts's `updateMeta` is
 //      metadata-only by contract (see its own doc comment: "status/claim
 //      transitions are NOT metadata edits"), and it has no companion
@@ -22,28 +21,26 @@
 //      `items` table's `status` and `claim_*` columns directly through
 //      schema.ts's exported `openForWrite` — the same columns store.ts owns,
 //      opened the same way store.ts opens them. This is NOT a layering
-//      violation of the sibling boundary: WI-301/WI-303's claims.ts and
-//      expiry.ts are never imported here, and this file never reaches into
-//      THEIR code — only into the shared `items` table columns, exactly as
-//      the work item brief directs ("coordinate ONLY through the store's
-//      columns, not the sibling's files").
+//      violation of the sibling boundary: claims.ts and expiry.ts are never
+//      imported here, and this file never reaches into THEIR code — only into
+//      the shared `items` table columns (coordinate ONLY through the store's
+//      columns, not the sibling's files).
 //
-// THE LAZY-EXPIRY SEAM (§3.2 rule 2a): every verb that touches one item is,
-// per the full contract, supposed to first evaluate whether that item's
-// active claim has expired and, if so, atomically reclaim it (transition to
-// `open`, void the token, append the orphan-recovery event) before the verb's
-// own logic runs. That check's real implementation is WI-301/WI-303's
-// (claims.ts + expiry.ts, built concurrently with this file). This module
-// does not implement or import it. Instead, every verb below that operates
-// on a single item id accepts an injectable `ExpiryCheck` hook, called FIRST,
-// before any other logic — defaulting to `noopExpiryCheck`, a true no-op.
-// WI-303 is expected to wire the real expiry check in as this parameter.
-// `create` and `list` have no single-item `ExpiryCheck` call: `create`
-// operates on an item that does not exist yet, and `list` is a many-item
-// selection view (see its own doc comment for why it does not sweep expiry
-// itself).
+// THE LAZY-EXPIRY SEAM: every verb that touches one item is, per the full
+// contract, supposed to first evaluate whether that item's active claim has
+// expired and, if so, atomically reclaim it (transition to `open`, void the
+// token, append the orphan-recovery event) before the verb's own logic runs.
+// That check's real implementation lives in claims.ts + expiry.ts. This
+// module does not implement or import it. Instead, every verb below that
+// operates on a single item id accepts an injectable `ExpiryCheck` hook,
+// called FIRST, before any other logic — defaulting to `noopExpiryCheck`, a
+// true no-op. The hook wiring supplies the real expiry check as this
+// parameter. `create` and `list` have no single-item `ExpiryCheck` call:
+// `create` operates on an item that does not exist yet, and `list` is a
+// many-item selection view (see its own doc comment for why it does not sweep
+// expiry itself).
 //
-// Opacity (§3.1/§3.5, criterion 4): no code path in this file parses, masks,
+// Opacity: no code path in this file parses, masks,
 // or transforms `spec` — every verb here that touches metadata inspects only
 // `depends_on` (structured contract data, not the opaque payload) and passes
 // `spec`/`spec_format` straight through to the store untouched.
@@ -55,13 +52,14 @@ import type { ListItemsFilter, WorkStateStore } from './store.js';
 import { withWriteTransaction } from './tx.js';
 import { WorkStateError, WorkStateModuleError } from './types.js';
 import type { ActorRef, UpdateMetaInput, WorkItem, WorkItemStatus, WorkStateEvent } from './types.js';
-import { assertDependenciesExist, assertNoCycle } from './dag.js';
-import type { DependsOnLookup } from './dag.js';
+import { assertDependenciesExist, assertNoCycle, assertNoParentCycle, assertParentExists } from './dag.js';
+import type { DependsOnLookup, ParentLookup } from './dag.js';
 
 /**
  * The lazy-expiry seam. `itemId` is the item about to be touched; the hook
  * runs BEFORE the verb's own read/write logic. The real implementation
- * (WI-301/WI-303) evaluates the item's active claim's `lease_expires` and,
+ * (claims.ts + expiry.ts) evaluates the item's active claim's `lease_expires`
+ * and,
  * if expired, atomically reclaims it. The default here is a genuine no-op —
  * this file is fully usable and independently testable before that wiring
  * lands.
@@ -75,14 +73,14 @@ export const noopExpiryCheck: ExpiryCheck = () => {
 
 /** Typed failure codes raised by this module's own transition guards
  *  (distinct from `WorkStateErrorCode`, which is store.ts's persistence-
- *  layer contract and out of this work item's scope to extend). `NOT_FOUND`
+ *  layer contract). `NOT_FOUND`
  *  and `VERSION_CONFLICT` failures from the store layer propagate as
  *  `WorkStateError` unchanged — this type only covers failures this file
  *  itself detects. */
 export type VerbErrorCode = 'INVALID_TRANSITION';
 
 /** Typed, loud verb-layer failure — thrown, never silently swallowed.
- *  Extends `WorkStateModuleError` (F-301-001 S1) so callers can catch any
+ *  Extends `WorkStateModuleError` so callers can catch any
  *  work-state failure with one `instanceof` check; its own `name` and its
  *  own narrow `code` union are unchanged. */
 export class VerbError extends WorkStateModuleError {
@@ -96,7 +94,7 @@ export class VerbError extends WorkStateModuleError {
 }
 
 /**
- * A listed work item with the §3.3 DERIVED claimability view attached.
+ * A listed work item with the DERIVED claimability view attached.
  * `claimable` is never stored (see types.ts/schema.ts: there is no column
  * and no status-enum member for the concept this field names) — it is
  * computed fresh on every `list()` call from live `depends_on` statuses, so
@@ -107,10 +105,10 @@ export interface ListedWorkItem extends WorkItem {
    *  status `'done'`. This is DIRECT-ONLY — checking one level of
    *  `depends_on` — deliberately matching `claim()`'s own CAS gate in
    *  claims.ts (`NOT EXISTS (... WHERE dep.status != 'done')`, also
-   *  direct-only). It is NOT "transitivity for free" (F-302-001 M1 fixed
-   *  this comment: the previous claim that a dependency's own `done` status
-   *  could only have been reached after ITS dependencies were satisfied is
-   *  FALSE under `reopen` — §3.3 lets a `done` item go back to `open` at any
+   *  direct-only). It is NOT "transitivity for free": the tempting
+   *  claim that a dependency's own `done` status could only have been reached
+   *  after ITS dependencies were satisfied is FALSE under `reopen` — the
+   *  status model lets a `done` item go back to `open` at any
    *  time, which can silently invalidate a grandparent's satisfied-frontier
    *  assumption without ever touching the grandparent's own `depends_on`
    *  list). Both surfaces stay consistent with each other, and with what
@@ -125,7 +123,7 @@ export interface ListedWorkItem extends WorkItem {
  *  uppercase Crockford-base32 characters — see record/id.ts): `#` and the
  *  lowercase letters are all outside that alphabet. The delimiters must
  *  stay printable non-NUL bytes — an earlier `\x00`-delimited version made
- *  git/grep treat this whole file as binary (F-307-001 M2). Stands in for
+ *  git/grep treat this whole file as binary. Stands in for
  *  a not-yet-assigned id when running the cycle guard against a `create`
  *  payload. See `create()`'s own doc comment for why the check still runs
  *  even though a brand-new item cannot structurally be part of an existing
@@ -145,6 +143,25 @@ function peekDependsOn(input: unknown): string[] | undefined {
   if (raw === undefined) return undefined;
   if (!Array.isArray(raw) || raw.some((v) => typeof v !== 'string')) return undefined;
   return raw as string[];
+}
+
+/** Best-effort extraction of a TRI-STATE `parent_id` from an otherwise-
+ *  `unknown` create/update_meta payload, for this file's OWN pre-write parent
+ *  guards only. Distinguishes "key absent" (`present: false` — leave
+ *  unchanged / create as root, no guard) from "key present" (`present: true`,
+ *  with `value` being the parent id, or `null` for clear-to-root). A malformed
+ *  value (present but neither string nor null) is reported as absent so the
+ *  store's own authoritative validation raises the typed error when the
+ *  payload reaches it — this function never inspects `spec` or `depends_on`. */
+function peekParentId(input: unknown): { present: boolean; value: string | null } {
+  if (input === null || typeof input !== 'object' || Array.isArray(input)) return { present: false, value: null };
+  const raw = input as Record<string, unknown>;
+  if (!('parent_id' in raw)) return { present: false, value: null };
+  const v = raw['parent_id'];
+  if (v === undefined) return { present: false, value: null };
+  if (v === null) return { present: true, value: null };
+  if (typeof v === 'string') return { present: true, value: v };
+  return { present: false, value: null };
 }
 
 /** Result of a direct status transition against the `items` table. */
@@ -175,18 +192,18 @@ type TransitionEventBuilder = (voidedClaimToken: number | null) => unknown;
  * that store.ts's `updateMeta` does not provide (metadata-only by contract —
  * see this file's header). When `voidClaim` is true, the five `claim_*`
  * columns are cleared in the SAME statement — this is how `cancel` voids an
- * active claim on an `in_progress` item (criterion 5): one atomic write,
+ * active claim on an `in_progress` item: one atomic write,
  * touching only the shared `items` table columns store.ts itself owns, never
  * anything from the sibling claims.ts/expiry.ts files.
  *
  * `buildEvent` is called (and its event appended via `appendEventRowOn`,
  * store.ts) INSIDE this same `BEGIN IMMEDIATE ... COMMIT` unit, only on the
- * success path, before the commit (F-301-001 S3): the transition and its
- * audit event now commit as one atomic write, or neither does. Previously
- * `cancel`/`reopen` called `store.appendEvent` on a SEPARATE connection after
- * this function had already committed and closed — a crash in that window
- * left a transition with no event, violating §3.3's "every transition
- * appends an immutable event".
+ * success path, before the commit: the transition and its audit event commit
+ * as one atomic write, or neither does. Otherwise `cancel`/`reopen` would call
+ * `store.appendEvent` on a SEPARATE connection after this function had already
+ * committed and closed — a crash in that window would leave a transition with
+ * no event, violating the "every transition appends an immutable event"
+ * invariant.
  */
 function transitionStatus(
   dbPath: string,
@@ -200,20 +217,19 @@ function transitionStatus(
   const db = openForWrite(dbPath);
   let result: TransitionResult = { ok: false, observedStatus: null, voidedClaimToken: null };
   try {
-    // F-302-001 C1: the previous SELECT-check-then-UPDATE shape was a TOCTOU
-    // race — a review probe reproduced cancel() clobbering a concurrent
-    // legitimate complete(), forcing an illegal done→cancelled transition.
-    // Two properties are needed atomically: (a) the transition only happens
-    // from an allowed status, and (b) the PRE-image claim_token is captured
-    // for the audit event (UPDATE...RETURNING yields the post-image, so a
-    // single statement cannot both void the token and report it). BEGIN
-    // IMMEDIATE takes the write lock up front, making the read+write pair a
-    // single atomic unit against every other connection; the status
-    // predicate stays in the UPDATE's WHERE clause as well, so even a
-    // same-connection interleaving bug could not write from a disallowed
-    // state. WI-307: the BEGIN IMMEDIATE/COMMIT/ROLLBACK boilerplate now
-    // lives in tx.ts's `withWriteTransaction`, which also re-types an
-    // exhausted busy_timeout as `WorkStateError('BUSY', ...)` instead of
+    // A naive SELECT-check-then-UPDATE shape would be a TOCTOU race — it can
+    // let cancel() clobber a concurrent legitimate complete(), forcing an
+    // illegal done→cancelled transition. Two properties are needed atomically:
+    // (a) the transition only happens from an allowed status, and (b) the
+    // PRE-image claim_token is captured for the audit event
+    // (UPDATE...RETURNING yields the post-image, so a single statement cannot
+    // both void the token and report it). BEGIN IMMEDIATE takes the write lock
+    // up front, making the read+write pair a single atomic unit against every
+    // other connection; the status predicate stays in the UPDATE's WHERE
+    // clause as well, so even a same-connection interleaving bug could not
+    // write from a disallowed state. The BEGIN IMMEDIATE/COMMIT/ROLLBACK
+    // boilerplate lives in tx.ts's `withWriteTransaction`, which also re-types
+    // an exhausted busy_timeout as `WorkStateError('BUSY', ...)` instead of
     // letting a raw node:sqlite lock error escape.
     withWriteTransaction(db, (db) => {
       const before = db.prepare('SELECT status, claim_token FROM items WHERE id = ?').get(id) as
@@ -245,8 +261,8 @@ function transitionStatus(
         result = { ok: false, observedStatus, voidedClaimToken: null };
         return;
       }
-      // F-301-001 S3: same transaction, same connection — commits with the
-      // transition above or not at all.
+      // Same transaction, same connection — commits with the transition above
+      // or not at all.
       appendEventRowOn(db, buildEvent(voidedClaimToken), () => now);
       result = { ok: true, observedStatus, voidedClaimToken };
     });
@@ -257,7 +273,7 @@ function transitionStatus(
 }
 
 /**
- * The board's seven non-claim verbs (§3.5), built on one `WorkStateStore`.
+ * The board's seven non-claim verbs, built on one `WorkStateStore`.
  * One instance per (session, database) — mirrors `WorkStateStore` itself;
  * construct with the SAME clock instance a co-located `WorkStateStore` (and,
  * eventually, the sibling claim verbs) use, so timestamps stay coherent
@@ -274,6 +290,17 @@ export class WorkStateVerbs {
 
   #lookup(): DependsOnLookup {
     return (id: string) => this.#store.getItem(id)?.depends_on;
+  }
+
+  /** The `parent_id` resolver backing the containment guards: a
+   *  missing item maps to `undefined`, a present item's `parent_id`
+   *  (`string | null`) passes straight through. Kept SEPARATE from
+   *  {@link #lookup} — the two guards walk two orthogonal edges. */
+  #parentLookup(): ParentLookup {
+    return (id: string) => {
+      const item = this.#store.getItem(id);
+      return item === null ? undefined : item.parent_id;
+    };
   }
 
   /**
@@ -297,6 +324,21 @@ export class WorkStateVerbs {
       assertDependenciesExist(dependsOn, lookup);
       assertNoCycle(CREATE_CYCLE_SENTINEL, dependsOn, lookup);
     }
+    // Containment guards, symmetric with the depends_on path above and
+    // fully orthogonal to it — this branch never reads `depends_on`, and the
+    // one above never reads `parent_id`. A present-and-non-null parent is
+    // existence-checked, then cycle-checked against the sentinel id (a
+    // brand-new item cannot yet be referenced, so a genuine self-cycle is
+    // structurally impossible here — the check runs for symmetry with
+    // updateMeta and for defense-in-depth against a pre-existing corrupt
+    // ancestor chain, exactly as the depends_on path does). A present-null
+    // parent (create-as-root) needs no guard.
+    const parent = peekParentId(input);
+    if (parent.present && parent.value !== null) {
+      const parentLookup = this.#parentLookup();
+      assertParentExists(parent.value, parentLookup);
+      assertNoParentCycle(CREATE_CYCLE_SENTINEL, parent.value, parentLookup);
+    }
     return this.#store.insertItem(input);
   }
 
@@ -308,14 +350,14 @@ export class WorkStateVerbs {
   }
 
   /**
-   * List work items, with the §3.3 derived claimability view attached to
+   * List work items, with the derived claimability view attached to
    * each (see `ListedWorkItem`). Does NOT run the lazy-expiry seam per item:
    * `list` is a many-item selection view, and running a per-item reclaim
-   * side effect on every board read (rather than on the touches §3.2 rule 2
-   * actually specifies) would be a design decision beyond this work item's
-   * scope — noted here rather than silently assumed. The opportunistic
-   * session-boundary sweep (§3.2 rule 2b) is the mechanism that keeps a
-   * read-mostly board from drifting stale.
+   * side effect on every board read (rather than on the single-item touches
+   * the contract actually specifies) would be a design decision beyond this
+   * layer's scope — noted here rather than silently assumed. The opportunistic
+   * session-boundary sweep is the mechanism that keeps a read-mostly board
+   * from drifting stale.
    */
   list(filter?: ListItemsFilter): ListedWorkItem[] {
     const items = this.#store.listItems(filter);
@@ -337,8 +379,8 @@ export class WorkStateVerbs {
    * Update metadata (title/spec/spec_format/depends_on) via optimistic CAS
    * on `version` (store.ts's `updateMeta` primitive). When `depends_on` is
    * present in `patch`, rejects (typed, `DagError`) a dangling reference or
-   * a cycle-introducing edit BEFORE the store is touched — recovery, per
-   * §3.1's amendment, is calling `update_meta` again with a corrected list.
+   * a cycle-introducing edit BEFORE the store is touched — recovery is calling
+   * `update_meta` again with a corrected list.
    * A stale `expectedVersion` surfaces as the store's own typed
    * `WorkStateError('VERSION_CONFLICT', …)`, unchanged. Runs the lazy-expiry
    * seam first.
@@ -351,13 +393,25 @@ export class WorkStateVerbs {
       assertDependenciesExist(dependsOn, lookup);
       assertNoCycle(id, dependsOn, lookup);
     }
+    // Containment guards, orthogonal to the depends_on path above:
+    // setting/moving `parent_id` never reads or mutates `depends_on`, and vice
+    // versa. Only a present-and-non-null parent is guarded — present-null
+    // (clear to root) can neither dangle nor introduce a cycle, and an absent
+    // key leaves the parent unchanged. Recovery from a rejected edit is the
+    // same as depends_on's: call update_meta again with a corrected parent_id.
+    const parent = peekParentId(patch);
+    if (parent.present && parent.value !== null) {
+      const parentLookup = this.#parentLookup();
+      assertParentExists(parent.value, parentLookup);
+      assertNoParentCycle(id, parent.value, parentLookup);
+    }
     return this.#store.updateMeta(id, expectedVersion, patch);
   }
 
   /**
-   * Cancel an item from `open` or `in_progress` (§3.3: "any tenant member;
-   * audited"). When the item was `in_progress`, its active claim is voided
-   * in the SAME atomic write (criterion 5) — the item leaves the claimable
+   * Cancel an item from `open` or `in_progress` (any tenant member; audited).
+   * When the item was `in_progress`, its active claim is voided
+   * in the SAME atomic write — the item leaves the claimable
    * pool, and the voided token is recorded on the appended `cancel` event.
    * `NOT_FOUND` (no such item) and `INVALID_TRANSITION` (item is `done` or
    * already `cancelled`) are both typed and thrown before any write.
@@ -398,9 +452,9 @@ export class WorkStateVerbs {
   }
 
   /**
-   * Reopen an item from `done` back to `open` (§3.3: "any tenant member;
-   * audited"). `done` items carry no active claim (claims are cleared on
-   * `complete` — WI-301's scope), so there is nothing to void here.
+   * Reopen an item from `done` back to `open` (any tenant member; audited).
+   * `done` items carry no active claim (claims are cleared on `complete` —
+   * claims.ts's scope), so there is nothing to void here.
    * `NOT_FOUND` and `INVALID_TRANSITION` (item is not `done`, e.g.
    * reopen-on-open) are both typed and thrown before any write. Runs the
    * lazy-expiry seam first.

@@ -1,9 +1,8 @@
-// plugin/tests/contention/orphan-recovery.test.ts — WI-304 falsifiability
-// evidence for the spec's §5 "orphan recovery" criterion
-// (docs/spikes/v3-work-delegation.md): "kill a claiming agent mid-task; the
-// item must return to `open` within one lease period with no human
-// intervention," amended 2026-07-09 (S3/Q-36) into two distinct mechanisms,
-// both exercised here against a REAL, killed OS process:
+// plugin/tests/contention/orphan-recovery.test.ts — falsifiability
+// evidence for the orphan-recovery guarantee: kill a claiming agent
+// mid-task; the item must return to `open` within one lease period with no
+// human intervention. Two distinct mechanisms, both exercised here against a
+// REAL, killed OS process:
 //
 //   (a) the LAZY check — recovery on the next board contact by ANOTHER
 //       process (a `get()` call, run through the built dist modules).
@@ -111,7 +110,7 @@ async function claimThenKill(root: string, dbPath: string, itemId: string): Prom
   return token;
 }
 
-describe('orphan recovery — §5 falsifiability, §3.2 rule 2 hybrid expiry', () => {
+describe('orphan recovery — falsifiability of the hybrid expiry rule', () => {
   it(
     '(a) lazy check: another REAL process touching the board recovers the item to open',
     async () => {

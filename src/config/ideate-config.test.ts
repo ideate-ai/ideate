@@ -1,4 +1,4 @@
-// Tests for the .ideate.json v3 config module (v3-architecture §2.3, §2.1).
+// Tests for the .ideate.json config module.
 // All filesystem work happens in per-test temp dirs — never a real workspace.
 
 import * as fs from "node:fs";
@@ -19,9 +19,9 @@ import {
   type IdeateConfigV3,
 } from "./ideate-config.js";
 
-/** A faithful v2 schema_version-9 config: all four knowledge-store fields plus
- *  the other v2 top-level fields. The exact values are arbitrary; the test
- *  contract is that every one of them survives byte-for-byte. */
+/** A faithful legacy schema_version-9 config: all four knowledge-store fields
+ *  plus the other legacy top-level fields. The exact values are arbitrary; the
+ *  test contract is that every one of them survives byte-for-byte. */
 const V9_FIXTURE = {
   schema_version: 9,
   artifact_directory: ".ideate",
@@ -31,13 +31,12 @@ const V9_FIXTURE = {
   vague_rule_thresholds: { min_specificity: 0.6, max_hedge_terms: 2 },
 } as const;
 
-/** This repo's REAL root .ideate.json shape after the dogfood record-path
- *  override (v3-architecture §5 dogfood-transition note; cycle-7 S4/Q-45,
- *  Dan's ratified decision): the live v2 schema_version-9 fields verbatim —
- *  including v2's own top-level `backend` — plus the v3 `record` key with the
- *  path overridden to a directory disjoint from the v2 artifact directory.
- *  Key order mirrors the real file. */
-const DOGFOOD_REPO_FIXTURE = {
+/** A fixture representing a legacy schema_version-9 config that has already
+ *  had a current-schema record-path override applied: the legacy fields
+ *  verbatim — including a legacy top-level `backend` — plus the current
+ *  `record` key with the path overridden to a directory disjoint from the
+ *  legacy artifact directory. Key order mirrors a real file. */
+const LEGACY_CONFIG_FIXTURE = {
   schema_version: 9,
   artifact_directory: ".ideate",
   backend: "local",
@@ -141,14 +140,14 @@ describe("v9 detection (v2 config present, no v3 keys)", () => {
     for (const key of Object.keys(V9_FIXTURE)) {
       expect(after).toHaveProperty(key);
     }
-    // ...and every v2 field is byte-preserved (serialized form identical).
+    // ...and every legacy field is byte-preserved (serialized form identical).
     for (const [key, value] of Object.entries(V9_FIXTURE)) {
       expect(JSON.stringify(after[key])).toBe(JSON.stringify(value));
     }
     // The v3 keys were merged alongside.
     expect(after["record"]).toEqual({ path: ".ideate/record/" });
     expect(after["backend"]).toBe("local");
-    // schema_version is an existing v2 field: NOT rewritten (coexistence).
+    // schema_version is an existing legacy field: NOT rewritten (coexistence).
     expect(after["schema_version"]).toBe(9);
     // Exactly the union of shapes — no stray keys.
     expect(Object.keys(after).sort()).toEqual(
@@ -226,14 +225,15 @@ describe("existing v3 config", () => {
 
 describe("dogfood repo shape (v9 fields + v3 record-path override)", () => {
   it("resolves .ideate-record/ and passes through as already-v3 — no rewrite", () => {
-    const raw = `${JSON.stringify(DOGFOOD_REPO_FIXTURE, null, 2)}\n`;
+    const raw = `${JSON.stringify(LEGACY_CONFIG_FIXTURE, null, 2)}\n`;
     fs.writeFileSync(configFile(), raw, "utf8");
     const before = fs.statSync(configFile());
 
     const config = loadConfig(root);
 
-    // The v3 view: the override wins, and the in-memory view reports the v3
-    // schema major even though the file's schema_version stays 9 (coexistence).
+    // The current-schema view: the override wins, and the in-memory view
+    // reports the current schema major even though the file's schema_version
+    // stays 9 (coexistence).
     expect(config).toEqual({
       schema_version: 10,
       record: { path: ".ideate-record/" },
@@ -241,8 +241,8 @@ describe("dogfood repo shape (v9 fields + v3 record-path override)", () => {
     });
     expect(recordPath(config, root)).toBe(path.resolve(root, ".ideate-record"));
 
-    // Disjoint territories (cycle-7 S4/Q-45): the record directory is created
-    // beside — never inside — the v2 artifact directory, which stays untouched.
+    // Disjoint territories: the record directory is created beside — never
+    // inside — the legacy artifact directory, which stays untouched.
     expect(fs.statSync(path.join(root, ".ideate-record")).isDirectory()).toBe(true);
     expect(fs.existsSync(path.join(root, ".ideate"))).toBe(false);
 
@@ -252,7 +252,7 @@ describe("dogfood repo shape (v9 fields + v3 record-path override)", () => {
   });
 
   it("is idempotent across repeated loads — content equality holds every time", () => {
-    const raw = `${JSON.stringify(DOGFOOD_REPO_FIXTURE, null, 2)}\n`;
+    const raw = `${JSON.stringify(LEGACY_CONFIG_FIXTURE, null, 2)}\n`;
     fs.writeFileSync(configFile(), raw, "utf8");
 
     loadConfig(root);
@@ -263,7 +263,7 @@ describe("dogfood repo shape (v9 fields + v3 record-path override)", () => {
   });
 });
 
-describe("work_state.claim_priming (WI-303 rework, F-303-001 S2)", () => {
+describe("work_state.claim_priming", () => {
   it("a block carrying ONLY claim_priming is valid; workStatePath falls back to the default", () => {
     const raw = `${JSON.stringify(
       {
@@ -281,7 +281,7 @@ describe("work_state.claim_priming (WI-303 rework, F-303-001 S2)", () => {
 
     expect(config.work_state).toEqual({ claim_priming: true });
     expect(workStatePath(config, root)).toBe(path.resolve(root, DEFAULT_WORK_STATE_PATH));
-    // Byte-preservation: loadConfig never rewrites a valid v3 file.
+    // Byte-preservation: loadConfig never rewrites a valid current-schema file.
     expect(readConfigFileRaw()).toBe(raw);
   });
 

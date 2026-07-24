@@ -1,17 +1,17 @@
-// ideate MCP server entrypoint (WI-269, PR-005).
+// ideate MCP server entrypoint.
 //
 // Launched by the plugin's `.mcp.json` as `node ${CLAUDE_PLUGIN_ROOT}/dist/server.js`
 // over the stdio transport. stdout belongs EXCLUSIVELY to the MCP protocol:
 // nothing in this module (or anything it registers) may write diagnostics to
-// stdout — stderr only. See docs/design/v3-composable-surface.md §5 (Layer 0).
+// stdout — stderr only.
 //
-// Tool surface: this module is the COMPOSITION ROOT (WI-277). The record
-// verbs (record_append, record_read, record_decision — spec §1.1) and, as of
-// WI-303, the eleven work-state verbs (work_create, work_get, work_list,
-// work_update_meta, work_claim, work_renew, work_release, work_complete,
-// work_cancel, work_reopen, work_events — spec §3.5) are wired into
-// `toolRegistrars` at module scope below, so the shipped artifact —
-// `node dist/server.js`, exactly as .mcp.json launches it — serves them.
+// Tool surface: this module is the COMPOSITION ROOT. The record verbs
+// (record_append, record_read, record_decision) and the eleven work-state
+// verbs (work_create, work_get, work_list, work_update_meta, work_claim,
+// work_renew, work_release, work_complete, work_cancel, work_reopen,
+// work_events) are wired into `toolRegistrars` at module scope below, so the
+// shipped artifact — `node dist/server.js`, exactly as .mcp.json launches it —
+// serves them.
 // Registrar construction is side-effect free (record/tools.ts, work-state/
 // tools.ts: each store is composed lazily inside the first tool CALL), so
 // composing here keeps boot pure: no filesystem writes, nothing on stdout.
@@ -22,6 +22,8 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 
 import { createRecordToolsRegistrar } from './record/tools.js';
+import { createSteeringToolsRegistrar } from './steering/tools.js';
+import { createUsageToolsRegistrar } from './usage/tools.js';
 import { createWorkStateToolsRegistrar } from './work-state/tools.js';
 
 /** Server identity, mirrored from .claude-plugin/plugin.json. */
@@ -47,7 +49,12 @@ export type ToolRegistrar = (server: McpServer) => void;
  * call, which is what makes module-scope composition safe — nothing is read
  * or written until a tool actually runs.
  */
-export const toolRegistrars: ToolRegistrar[] = [createRecordToolsRegistrar(), createWorkStateToolsRegistrar()];
+export const toolRegistrars: ToolRegistrar[] = [
+  createRecordToolsRegistrar(),
+  createWorkStateToolsRegistrar(),
+  createSteeringToolsRegistrar(),
+  createUsageToolsRegistrar(),
+];
 
 /** Apply each registrar in `registrars` (default: the composed root) to `server`, in order. */
 export function registerTools(server: McpServer, registrars: readonly ToolRegistrar[] = toolRegistrars): void {

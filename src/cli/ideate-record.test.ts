@@ -1,4 +1,4 @@
-// plugin/src/cli/ideate-record.test.ts — WI-274 acceptance tests for the
+// plugin/src/cli/ideate-record.test.ts — acceptance tests for the
 // `ideate-record` CLI, the second transport over the gated record core.
 //
 // Every test drives the REAL executable (bin/ideate-record) through
@@ -8,9 +8,9 @@
 // hook's stdin JSON into a recall-shaped prose record (≥25 words with a
 // transcript, minimal-but-present without one, exit 0 always); prime emits
 // a bounded, unranked, newest-first digest wrapped in the untrusted-data
-// framing envelope (cycle-7 S2/Q-46 — presentation-layer only, never
-// stored) and exits 0 with NO output on an empty store; append with bad
-// args exits 1 (the direct-use side of the exit-code split).
+// framing envelope (presentation-layer only, never stored) and exits 0 with
+// NO output on an empty store; append with bad args exits 1 (the direct-use
+// side of the exit-code split).
 
 import { execFileSync, spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
@@ -155,7 +155,7 @@ describe('append (direct-use path)', () => {
       '--scope',
       'deploy work',
       '--task',
-      'WI-274',
+      'T-274',
     ]);
     expect(isUlid(id)).toBe(true);
 
@@ -170,7 +170,7 @@ describe('append (direct-use path)', () => {
     expect(file.raw).toContain('[REDACTED:aws-access-key-id]');
     expect(file.record.kind).toBe('finding');
     expect(file.record.scope).toBe('deploy work');
-    expect(file.record.source.task_id).toBe('WI-274');
+    expect(file.record.source.task_id).toBe('T-274');
     expect(file.record.source.capture_point).toBe('cli:append');
   });
 
@@ -396,7 +396,7 @@ describe('prime (hook path)', () => {
     expect(newLine).not.toContain('superseded by');
   });
 
-  it('wraps every non-empty digest in the untrusted-data framing envelope (cycle-7 S2/Q-46)', () => {
+  it('wraps every non-empty digest in the untrusted-data framing envelope', () => {
     const root = makeProjectRoot();
     // Instruction-shaped record content — exactly the injection surface the
     // envelope exists to flag as quoted history.

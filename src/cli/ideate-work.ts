@@ -1,16 +1,16 @@
-// plugin/src/cli/ideate-work.ts — the `ideate-work` CLI (WI-303): the
+// plugin/src/cli/ideate-work.ts — the `ideate-work` CLI: the
 // SECOND transport over the same work-state logic layer the MCP verbs
 // (work-state/tools.ts) use.
 //
-// Spec: docs/spikes/v3-work-delegation.md §3.5 — the eleven-verb surface,
-// mirrored here one subcommand per verb (create/get/list/update-meta/claim/
-// renew/release/complete/cancel/reopen/events), PLUS one CLI-ONLY twelfth
-// subcommand, `sweep`, that is NOT part of the eleven-verb MCP surface: it
-// runs expiry.ts's `sweepBoard` (the opportunistic board-wide expiry pass,
-// §3.2 rule 2b), the mechanism the SessionStart/SessionEnd hooks trigger
-// (hooks/session-start.mjs, hooks/session-end.mjs).
+// The eleven-verb surface, mirrored here one subcommand per verb (create/get/
+// list/update-meta/claim/renew/release/complete/cancel/reopen/events), PLUS
+// one CLI-ONLY twelfth subcommand, `sweep`, that is NOT part of the
+// eleven-verb MCP surface: it runs expiry.ts's `sweepBoard` (the
+// opportunistic board-wide expiry pass), the mechanism the
+// SessionStart/SessionEnd hooks trigger (hooks/session-start.mjs,
+// hooks/session-end.mjs).
 //
-// EXIT-CODE SPLIT (mirrors cli/ideate-record.ts, WI-296 pattern):
+// EXIT-CODE SPLIT (mirrors cli/ideate-record.ts):
 //   - --help/-h/no-args: print USAGE to stdout, exit 0 — a safe, informative
 //     no-op, not an error.
 //   - Direct-use verbs (create/get/list/update-meta/claim/renew/release/
@@ -184,7 +184,7 @@ interface CliContext {
   telemetry: TelemetryCounters;
   sessionId: string;
   projectRoot: string;
-  /** WI-306: built once per invocation (mirrors work-state/tools.ts's own
+  /** Built once per invocation (mirrors work-state/tools.ts's own
    *  memoized context). */
   completionRecordWriter: CompletionRecordWriter;
 }
@@ -197,7 +197,7 @@ function buildContext(projectRoot: string): CliContext {
   const verbs = new WorkStateVerbs(store, clock);
   const telemetry = new TelemetryCounters(join(projectRoot, '.ideate-telemetry'), clock);
   const sessionId = `cli-${createUlidGenerator(clock)()}`;
-  // WI-306: the completion-record writer, built from the SAME project
+  // The completion-record writer, built from the SAME project
   // root/telemetry/clock this context already resolved.
   const completionRecordWriter = createRealCompletionRecordWriter(projectRoot, telemetry, clock);
   return { store, verbs, clock, telemetry, sessionId, projectRoot, completionRecordWriter };
@@ -391,7 +391,7 @@ function runClaim(argv: readonly string[], stdout: NodeJS.WritableStream, stderr
     const leaseMs = leaseMsRaw === undefined ? undefined : parseIntArg(leaseMsRaw, '--lease-ms');
     const actor = actorFrom(human, parsed.values.get('--agent'));
     const item = claim(ctx.store, ctx.clock, id, actor, leaseMs === undefined ? undefined : { leaseMs });
-    // Wired, mechanically-gated-off claim-time priming seam (criterion 5) —
+    // Wired, mechanically-gated-off claim-time priming seam —
     // same call site as the MCP work_claim tool (work-state/tools.ts).
     primeOnClaim({ projectRoot: ctx.projectRoot, itemId: id, actor, sessionId: ctx.sessionId, telemetry: ctx.telemetry });
     printItem(item, stdout, false);
@@ -467,7 +467,7 @@ function runComplete(argv: readonly string[], stdout: NodeJS.WritableStream, std
   const ctx = buildContext(process.cwd());
   try {
     const token = parseIntArg(tokenRaw, '--token');
-    // WI-306: completion-record post-commit hook — same call site as the MCP
+    // Completion-record post-commit hook — same call site as the MCP
     // work_complete tool (work-state/tools.ts), reusing this context's own
     // project root/telemetry/session id/writer.
     const item = complete(ctx.store, ctx.clock, id, token, parsed.values.get('--note'), {

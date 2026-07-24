@@ -1,17 +1,16 @@
-// plugin/src/record/schema.ts — the v3 process record shape and its
-// Markdown-with-YAML-frontmatter serialization (WI-271).
+// plugin/src/record/schema.ts — the process record shape and its
+// Markdown-with-YAML-frontmatter serialization.
 //
-// Spec: docs/design/v3-architecture.md §2.1 property 3 ("Markdown body
-// carries the recall-shaped prose; frontmatter carries the structured
-// fields") and docs/spikes/v3-boundary-contract.md §6.2 (the four contract
-// fields — Claim, Verification anchor, Scope/applicability, Source — are
-// ALWAYS PRESENT at the schema level; they may be empty when a capture point
-// produced no qualifying content, but their ABSENCE is a schema error).
+// The Markdown body carries the recall-shaped prose; the frontmatter carries
+// the structured fields. The four contract fields — Claim, Verification
+// anchor, Scope/applicability, Source — are ALWAYS PRESENT at the schema
+// level; they may be empty when a capture point produced no qualifying
+// content, but their ABSENCE is a schema error.
 //
 // Serialization posture:
 // - Frontmatter carries: id, kind, the four contract fields (claim,
 //   verification_anchor, scope, source). The prose body is `content` — the
-//   recall-shaped words a future question might use (§6.2).
+//   recall-shaped words a future question might use.
 // - Every scalar frontmatter value is written as a JSON string, which is a
 //   valid YAML double-quoted scalar. JSON escaping makes the round trip
 //   exact for any content — embedded newlines, quotes, colons, even `---`
@@ -33,9 +32,9 @@ export interface RecordReference {
   id: string;
 }
 
-/** Provenance — the fourth contract field (boundary contract §6.2 "Source"). */
+/** Provenance — the fourth contract field ("Source"). */
 export interface RecordSource {
-  /** The originating capture point (boundary contract §2, rows 1–6). */
+  /** The originating capture point. */
   capture_point: string;
   /** Session that produced the record. */
   session_id: string;
@@ -52,7 +51,7 @@ export interface RecordSource {
  * a schema change.
  */
 export interface ProcessRecord {
-  /** ULID — filename stem and the KG sourceUri's record ID (§2.1). */
+  /** ULID — filename stem and the KG sourceUri's record ID. */
   id: string;
   kind: string;
   /** Contract field 1 — the candidate discovery statement. May be empty. */
@@ -69,7 +68,7 @@ export interface ProcessRecord {
    * reverse edge is derived on read, never stored (append-only).
    */
   references: RecordReference[];
-  /** Recall-shaped prose body (boundary contract §6.2). May be empty. */
+  /** Recall-shaped prose body. May be empty. */
   content: string;
 }
 
@@ -139,7 +138,7 @@ export function validateRecord(input: unknown): ProcessRecord {
   if (sourceRaw === null || typeof sourceRaw !== 'object' || Array.isArray(sourceRaw)) {
     throw new RecordSchemaError(
       'source',
-      'record schema: field "source" must be present as an object (boundary contract §6.2: fields always present)',
+      'record schema: field "source" must be present as an object (fields always present)',
     );
   }
   const src = sourceRaw as Record<string, unknown>;

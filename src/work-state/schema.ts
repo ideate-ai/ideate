@@ -1,13 +1,12 @@
 // plugin/src/work-state/schema.ts — SQLite DDL and open/init for the
-// work-state store (WI-300).
+// work-state store.
 //
-// Spec: docs/spikes/v3-work-delegation.md §4 (local-mode equivalence: SQLite
-// on the IC's machine, WAL mode with a busy-timeout — "two simultaneous
-// sessions on one machine writing the same board... is ordinary, not
-// exceptional"). Runtime floor: `node:sqlite` (node's built-in SQLite binding)
-// requires Node >=22.5.0 — verified against the Node.js docs at the 22.5.0
-// and 22.4.1 tags; plugin/package.json's `engines` field is tightened to
-// match (was >=22.0.0).
+// Local-mode equivalence: SQLite on the IC's machine, WAL mode with a
+// busy-timeout — two simultaneous sessions on one machine writing the same
+// board is ordinary, not exceptional. Runtime floor: `node:sqlite` (node's
+// built-in SQLite binding) requires Node >=22.5.0 — verified against the
+// Node.js docs at the 22.5.0 and 22.4.1 tags; plugin/package.json's `engines`
+// field is tightened to match (was >=22.0.0).
 //
 // This module owns exactly two things:
 // - The DDL for the two tables (`items`, `events`).
@@ -55,7 +54,7 @@ function requireSqliteModule(): typeof import('node:sqlite') {
 /**
  * Busy-timeout applied to every write connection (milliseconds).
  *
- * Compounded worst-case wait (WI-307): every id-scoped claim verb
+ * Compounded worst-case wait: every id-scoped claim verb
  * (claim/renew/complete/release, claims.ts) runs `checkExpiry` (expiry.ts)
  * FIRST, as its own separate `BEGIN IMMEDIATE ... COMMIT` unit
  * (tx.ts's `withWriteTransaction`), and then the verb's own CAS as a SECOND,
@@ -83,17 +82,31 @@ export const BUSY_TIMEOUT_MS = 5000;
  * same way to a human. Bump this when `ITEMS_TABLE_DDL` / `EVENTS_TABLE_DDL`
  * change in a way old code cannot read; see {@link checkSchemaVersion} for
  * what happens on a mismatch.
+ *
+ * v2: adds the nullable `parent_id` containment column to `items`.
+ * The bump lights up the FIRST real migration rung — an additive,
+ * metadata-only `ALTER TABLE items ADD COLUMN parent_id TEXT` (see
+ * {@link openForWrite}). Every pre-migration row lands with `parent_id NULL`
+ * (a root), with no data rewrite.
  */
-export const BOARD_SCHEMA_VERSION = 1;
+export const BOARD_SCHEMA_VERSION = 2;
 
 /**
  * `items`: one row per work item. `depends_on` is stored as a JSON array of
  * ULID strings (store.ts owns the (de)serialization — this module is DDL
  * only). `claim_token_counter` is the fencing-token monotonicity source: a
  * counter column on the item row, NOT a derivation from `events`, so it
- * survives claim deletion/reclamation (spec §4). The five `claim_*` columns
+ * survives claim deletion/reclamation. The five `claim_*` columns
  * mirror the {@link "./types.js".Claim} shape; all NULL together means
  * `claim: null`.
+ *
+ * `parent_id` (v2) is the nullable CONTAINMENT edge — the single
+ * optional pointer to the item this one belongs to (its "parent"). NULL means
+ * the item is a root (a top-level item, or a "phase" itself). It is fully
+ * orthogonal to `depends_on` (sequencing): store.ts owns its (de)serialization
+ * and dag.ts owns its ancestor-cycle/parent-existence guards — this module is
+ * DDL only. A freshly-created v2 board has the column from `CREATE TABLE`; an
+ * existing v1 board gets it via the additive migration in {@link openForWrite}.
  */
 const ITEMS_TABLE_DDL = `
 CREATE TABLE IF NOT EXISTS items (
@@ -104,6 +117,7 @@ CREATE TABLE IF NOT EXISTS items (
   spec_format           TEXT NOT NULL,
   status                TEXT NOT NULL,
   depends_on            TEXT NOT NULL,
+  parent_id             TEXT,
   created_by_human      TEXT NOT NULL,
   created_by_agent      TEXT,
   created_at            TEXT NOT NULL,
@@ -140,7 +154,7 @@ const EVENTS_INDEX_DDL = `CREATE INDEX IF NOT EXISTS idx_events_item_id ON event
 /**
  * Set the busy-timeout and WAL mode on a freshly opened connection.
  *
- * ORDER MATTERS (F-300-001 C1): a new connection defaults to
+ * ORDER MATTERS: a new connection defaults to
  * busy_timeout = 0, so the timeout must be set FIRST — otherwise the
  * `journal_mode = WAL` statement itself has no retry budget and throws a
  * raw "database is locked" under a genuinely concurrent writer.
@@ -164,29 +178,31 @@ function readUserVersion(db: DatabaseSync): number {
 }
 
 /**
- * Enforce the one rule this schema version understands: v1 accepts a file
- * stamped `user_version` 0 (unversioned — see {@link openForWrite}'s
- * handling below) or exactly {@link BOARD_SCHEMA_VERSION}. Anything else is
- * a typed, loud failure — never a silent misread:
+ * Enforce the one rule this schema version understands: a file stamped
+ * `user_version` at or below {@link BOARD_SCHEMA_VERSION} is acceptable; a
+ * file stamped ABOVE it is a typed, loud failure — never a silent misread:
  *
  * - `user_version` > {@link BOARD_SCHEMA_VERSION}: the file was written by a
  *   NEWER plugin than this one. Mirrors `ideate-config.ts`'s
  *   `schema_version` check almost verbatim ("newer than this ideate
- *   understands") — same honest-failure posture, same wording style.
- * - `user_version` < {@link BOARD_SCHEMA_VERSION} and non-zero: the file was
- *   written by an OLDER plugin than this one, on a schema version this
- *   plugin no longer accepts as-is. There is no migration ladder yet — v1
- *   is the first stamped version, so this branch cannot fire against a
- *   real board today, but it is written now (rather than left as a TODO)
- *   so that the FIRST future version bump gets this check for free. When
- *   that ladder exists, this is where it will be invoked; until then, the
- *   error says so plainly rather than guessing at a migration.
+ *   understands") — same honest-failure posture, same wording style. A v2
+ *   board opened by a v1 plugin throws HERE, on the older plugin's side —
+ *   that is the intended honest failure, not a silent misread of the
+ *   parent_id column.
+ * - `user_version` <= {@link BOARD_SCHEMA_VERSION}: acceptable. `0` (unstamped
+ *   pre-versioning) and any stamped version below the current one are
+ *   migrated FORWARD by {@link openForWrite}'s additive ladder (the first
+ *   rung is v1->v2). This is the difference from the pre-v2 shape,
+ *   which had no ladder and rejected any non-zero version below current.
  *
  * Called on EVERY open (read and write) — this is the "a newer board file
  * against an older plugin is silently misread" half of the gap this module
- * closes; {@link openForWrite}'s post-check stamping closes the other half
- * (an older plugin's un-stamped DDL silently no-op'ing against a future
- * plugin's expectations).
+ * closes; {@link openForWrite}'s migration + stamping closes the other half
+ * (an older plugin's un-stamped/older DDL silently no-op'ing against a newer
+ * plugin's expectations). NOTE: a read connection cannot migrate (it is
+ * read-only), so a below-current board is only actually brought to the
+ * current shape on the next {@link openForWrite}; the version check here
+ * merely refuses to fail loud on a file a write WOULD migrate.
  */
 function checkSchemaVersion(userVersion: number): void {
   if (userVersion > BOARD_SCHEMA_VERSION) {
@@ -194,12 +210,35 @@ function checkSchemaVersion(userVersion: number): void {
       `board.db has user_version ${String(userVersion)}, newer than this ideate understands (${String(BOARD_SCHEMA_VERSION)})`,
     );
   }
-  if (userVersion !== 0 && userVersion < BOARD_SCHEMA_VERSION) {
-    throw new WorkStateError('SCHEMA_VERSION',
-      `board.db has user_version ${String(userVersion)}, older than this ideate understands (${String(BOARD_SCHEMA_VERSION)}); there is no migration ladder yet — that is future work, not a bug, and this file cannot be opened until one exists`,
-    );
+  // userVersion in [0, BOARD_SCHEMA_VERSION]: fine. Below-current versions are
+  // migrated forward by openForWrite; the current version is a no-op.
+}
+
+/** True if `table` already has a column named `column`. */
+function columnExists(db: DatabaseSync, table: string, column: string): boolean {
+  const rows = db.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[];
+  return rows.some((r) => r.name === column);
+}
+
+/**
+ * Run the additive schema migrations that bring a below-current board up to
+ * {@link BOARD_SCHEMA_VERSION}, in place, on a WRITE connection. Every rung is
+ * additive and idempotent-guardable so this is safe to run against a `0`
+ * (unstamped) board that ALREADY has the current DDL (a genuinely brand-new
+ * file, whose `ensureSchema` just created the column) as well as a real
+ * below-current board that predates the column.
+ *
+ * v1->v2: `parent_id TEXT` (nullable). `ALTER TABLE ... ADD COLUMN`
+ * with a nullable column is an O(1) metadata-only operation in SQLite — no row
+ * rewrite; every pre-existing row's `parent_id` reads as NULL (a root). Guarded
+ * by a `PRAGMA table_info` existence check so it is a no-op when the column is
+ * already present (the fresh-create case). Treats `0` and `1` identically —
+ * the simplest correct rule.
+ */
+function migrateSchema(db: DatabaseSync): void {
+  if (!columnExists(db, 'items', 'parent_id')) {
+    db.exec('ALTER TABLE items ADD COLUMN parent_id TEXT');
   }
-  // userVersion === 0 (unstamped) or === BOARD_SCHEMA_VERSION: fine.
 }
 
 /**
@@ -213,20 +252,25 @@ function checkSchemaVersion(userVersion: number): void {
  * opens one connection per call rather than holding a pool, matching the
  * SQLite-is-cheap-to-open posture and keeping lazy-init easy to reason about.
  *
- * Schema versioning (WI-308, closing GAP-2 / gap 3): the pragmas are applied
- * FIRST — busy_timeout before anything else, per F-300-001's ordering lesson
+ * Schema versioning: the pragmas are applied FIRST — busy_timeout before
+ * anything else, per the ordering lesson above
  * (a fresh connection's busy_timeout defaults to 0, so any statement run
  * before it is set, including reading `user_version`, has no retry budget
  * under contention) — THEN `user_version` is checked
  * ({@link checkSchemaVersion}, shared with {@link openForRead}), THEN the DDL
- * runs. A `user_version` of 0 means one of two things, handled identically:
- * a genuinely brand-new file (just created above, nothing to preserve), or
- * a pre-versioning board written by a PH-044-era plugin build that predates
- * this check (real data, never stamped). Either way this is a one-time
- * grace: the very next `openForWrite` stamps it to
- * {@link BOARD_SCHEMA_VERSION} and every subsequent open is checked
- * normally. There is no separate migration step because v1 IS the
- * pre-versioning shape — stamping is the whole migration.
+ * runs, THEN any below-current board is migrated forward and re-stamped.
+ *
+ * A `user_version` BELOW {@link BOARD_SCHEMA_VERSION} (0 = unstamped
+ * pre-versioning or a genuinely brand-new file; 1 = a real stamped v1 board)
+ * is brought to the current shape here: `ensureSchema` first runs the current
+ * `CREATE TABLE IF NOT EXISTS` DDL (a no-op on an existing table — so a real
+ * v1 table does NOT gain `parent_id` from this step), then {@link migrateSchema}
+ * runs the additive `ALTER TABLE` rungs (idempotent-guarded, so a brand-new
+ * file that already has the column is untouched), then the file is stamped to
+ * {@link BOARD_SCHEMA_VERSION}. This is a one-time step per version: every
+ * subsequent open reads the current version and skips it. The migration is
+ * metadata-only (additive nullable column) — no row rewrite, and every legacy
+ * row reads `parent_id === null` (a root).
  */
 export function openForWrite(dbPath: string): DatabaseSync {
   mkdirSync(dirname(dbPath), { recursive: true });
@@ -236,7 +280,8 @@ export function openForWrite(dbPath: string): DatabaseSync {
   const userVersion = readUserVersion(db);
   checkSchemaVersion(userVersion);
   ensureSchema(db);
-  if (userVersion === 0) {
+  if (userVersion < BOARD_SCHEMA_VERSION) {
+    migrateSchema(db);
     db.exec(`PRAGMA user_version = ${String(BOARD_SCHEMA_VERSION)}`);
   }
   return db;
@@ -253,10 +298,10 @@ export function openForWrite(dbPath: string): DatabaseSync {
  * connection transparently reads through WAL without re-applying that
  * pragma. busy_timeout, however, is PER-CONNECTION and defaults to 0 —
  * without it, reads under write contention fail with raw "database is
- * locked" errors instead of waiting (F-300-001 C2: reproduced at a
- * 30-50% failure rate with concurrent writers before this line existed).
+ * locked" errors instead of waiting (reproduced at a 30-50% failure rate
+ * with concurrent writers before this line existed).
  *
- * Schema versioning (WI-308): busy_timeout is still set FIRST, then
+ * Schema versioning: busy_timeout is still set FIRST, then
  * `user_version` is checked ({@link checkSchemaVersion}, shared with
  * {@link openForWrite}) — same ordering rule, same reason. A `user_version`
  * of 0 (unstamped) is accepted here too: a read must not fail just because

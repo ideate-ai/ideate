@@ -1,24 +1,23 @@
-// plugin/src/work-state/expiry.ts — hybrid lease-expiry mechanism (WI-301).
+// plugin/src/work-state/expiry.ts — hybrid lease-expiry mechanism.
 //
-// Spec: docs/spikes/v3-work-delegation.md §3.2 rule 2, AS AMENDED 2026-07-09
-// (cycle-6 finding S3 / Q-36): "Expiry enforcement is a hybrid, specified
-// explicitly: (a) lazy check — every verb touching an item first evaluates
-// expiry and, if expired, atomically transitions the item to `open`, voids
-// the token, and appends the orphan-recovery event. Correct by construction;
-// no daemon. Plus (b) opportunistic sweep at session boundaries — the host
-// session-start/end hooks may trigger a board-wide expiry pass — which
-// bounds the orphan-recovery promise."
+// Expiry enforcement is a hybrid, specified explicitly: (a) lazy check —
+// every verb touching an item first evaluates expiry and, if expired,
+// atomically transitions the item to `open`, voids the token, and appends the
+// orphan-recovery event. Correct by construction; no daemon. Plus (b)
+// opportunistic sweep at session boundaries — the host session-start/end
+// hooks may trigger a board-wide expiry pass — which bounds the
+// orphan-recovery promise.
 //
 // This module owns BOTH halves of the hybrid:
 // - `checkExpiry` — the lazy check (a). claims.ts's every entry point
 //   (claim/renew/complete/release) calls this FIRST, before its own
-//   compare-and-set, per the rule above ("evaluated FIRST").
+//   compare-and-set ("evaluated FIRST").
 // - `sweepBoard` — the opportunistic sweep (b), the session-boundary entry
-//   point WI-303 (hooks) will call. It walks every `in_progress` item and
-//   applies the SAME lazy check via `checkExpiry` — one mechanism, two call
-//   sites, per the spec's own framing ("the same lazy check").
+//   point the hooks call. It walks every `in_progress` item and applies the
+//   SAME lazy check via `checkExpiry` — one mechanism, two call sites (the
+//   same lazy check).
 //
-// `DEFAULT_LEASE_MS`: "hours, not seconds — ICs are humans" (§3.2, the
+// `DEFAULT_LEASE_MS`: "hours, not seconds — ICs are humans" (see the
 // `Claim.lease_expires` field comment). A constant default, overridable
 // per-call (claims.ts threads a `leaseMs` option through to `claim`/`renew`)
 // — so tests can use short leases without sleeping (see the injectable-clock
@@ -31,21 +30,21 @@
 // what lets expiry.test.ts exercise "lease expired" by advancing a fake
 // clock rather than sleeping.
 //
-// Atomicity (mirrors claims.ts's rule-1 discipline): the state-mutating
+// Atomicity (mirrors claims.ts's claim-CAS discipline): the state-mutating
 // step — flipping `in_progress` -> `open` and voiding the token — is ONE
 // `UPDATE ... WHERE ...` statement whose WHERE clause re-validates
 // `status = 'in_progress' AND claim_token = ? AND claim_lease_expires <= ?`
 // at execution time. A preliminary SELECT reads the about-to-expire claim's
 // holder/token purely to enrich the orphan-recovery event; it is not part of
 // the guard. Because no verb in this contract ever deletes an item row (the
-// state machine only transitions status), and because rule 1 guarantees at
-// most one active claim per item ever, re-validating the same predicates in
-// the UPDATE's WHERE clause is exactly as safe as a single round trip: if
-// the row changed between the SELECT and the UPDATE (renewed just in time,
-// or already expired-and-recovered by a concurrent sweep — §4's "engine-level
-// concurrency is a stated requirement, not an accident"), the UPDATE simply
-// matches zero rows and this function reports `expired: false` — no
-// double-recovery, no stale event.
+// state machine only transitions status), and because the claim rule
+// guarantees at most one active claim per item ever, re-validating the same
+// predicates in the UPDATE's WHERE clause is exactly as safe as a single
+// round trip: if the row changed between the SELECT and the UPDATE (renewed
+// just in time, or already expired-and-recovered by a concurrent sweep —
+// engine-level concurrency is a stated requirement, not an accident), the
+// UPDATE simply matches zero rows and this function reports `expired: false`
+// — no double-recovery, no stale event.
 
 import { openForWrite } from './schema.js';
 import type { Clock } from '../record/id.js';
@@ -54,10 +53,10 @@ import type { WorkStateStore } from './store.js';
 import { withWriteTransaction } from './tx.js';
 import type { ActorRef } from './types.js';
 
-/** Default lease length: 4 hours — "hours, not seconds" (§3.2). Config-
- *  parameterized per the spec's open question 2 ("needs the orphan-recovery
- *  eval to tune"); every claims.ts entry point accepts an override for
- *  exactly that reason, and so tests never need to wait out a real lease. */
+/** Default lease length: 4 hours — "hours, not seconds". Config-
+ *  parameterized (the right value needs measurement to tune); every claims.ts
+ *  entry point accepts an override for exactly that reason, and so tests never
+ *  need to wait out a real lease. */
 export const DEFAULT_LEASE_MS = 4 * 60 * 60 * 1000;
 
 /** Result of one `checkExpiry` call. */
@@ -83,7 +82,7 @@ function toNumber(value: number | bigint): number {
 }
 
 /**
- * The lazy expiry check (§3.2 rule 2, hybrid part (a)). Evaluated FIRST by
+ * The lazy expiry check (hybrid part (a)). Evaluated FIRST by
  * every claims.ts entry point, and by `sweepBoard` for every `in_progress`
  * item on the board. A no-op (returns `{ expired: false }`) for an item that
  * does not exist, is not `in_progress`, or whose lease has not yet passed —
@@ -100,19 +99,19 @@ export function checkExpiry(store: WorkStateStore, clock: Clock, itemId: string)
   const db = openForWrite(store.dbPath);
   let result: ExpiryCheckResult = { expired: false };
   try {
-    // F-301-001 S3: the reclaim (UPDATE) and its orphan-recovery event now
-    // commit as ONE atomic unit — previously the event was appended via
-    // `store.appendEvent` on a SEPARATE connection after this one had
-    // already committed and closed, so a crash in that window could leave a
-    // reclaimed item with no orphan-recovery event, violating §3.3's "every
-    // transition appends an immutable event". The write lock also closes the
-    // same read-then-write race the file header already documents for the
-    // SELECT/UPDATE pair. WI-307: the BEGIN IMMEDIATE/COMMIT/ROLLBACK
-    // boilerplate now lives in tx.ts's `withWriteTransaction`, which also
-    // re-types an exhausted busy_timeout as `WorkStateError('BUSY', ...)`
-    // instead of letting a raw node:sqlite lock error escape — this call is
-    // the FIRST thing every claims.ts entry point runs, so it is the most
-    // common place that failure would otherwise have surfaced unwrapped.
+    // The reclaim (UPDATE) and its orphan-recovery event commit as ONE atomic
+    // unit — otherwise the event could be appended via `store.appendEvent` on
+    // a SEPARATE connection after this one had already committed and closed,
+    // so a crash in that window could leave a reclaimed item with no
+    // orphan-recovery event, violating the "every transition appends an
+    // immutable event" invariant. The write lock also closes the same
+    // read-then-write race the file header already documents for the
+    // SELECT/UPDATE pair. The BEGIN IMMEDIATE/COMMIT/ROLLBACK boilerplate
+    // lives in tx.ts's `withWriteTransaction`, which also re-types an
+    // exhausted busy_timeout as `WorkStateError('BUSY', ...)` instead of
+    // letting a raw node:sqlite lock error escape — this call is the FIRST
+    // thing every claims.ts entry point runs, so it is the most common place
+    // that failure would otherwise have surfaced unwrapped.
     withWriteTransaction(db, (db) => {
       const pre = db
         .prepare(
@@ -142,8 +141,8 @@ export function checkExpiry(store: WorkStateStore, clock: Clock, itemId: string)
         .run(itemId, pre.claim_token, nowIso);
       if (changed.changes === 0) {
         // Lost the race to a concurrent recovery/renewal between the SELECT
-        // and this UPDATE (§4 local-concurrency amendment) — not our event to
-        // log; whoever won already handled (or extended) this claim.
+        // and this UPDATE — not our event to log; whoever won already handled
+        // (or extended) this claim.
         return;
       }
 
@@ -163,7 +162,7 @@ export function checkExpiry(store: WorkStateStore, clock: Clock, itemId: string)
             actor: formerHolder,
             transition: 'orphan-recovery',
             ...(voidedToken === undefined ? {} : { claim_token: voidedToken }),
-            note: `lease expired at ${pre.claim_lease_expires ?? ''}; item auto-reopened by the lazy expiry check (§3.2 rule 2)`,
+            note: `lease expired at ${pre.claim_lease_expires ?? ''}; item auto-reopened by the lazy expiry check`,
             at: nowIso,
           },
           () => nowIso,
@@ -183,15 +182,15 @@ export function checkExpiry(store: WorkStateStore, clock: Clock, itemId: string)
 }
 
 /**
- * The opportunistic sweep (§3.2 rule 2, hybrid part (b)) — "the host
- * session-start/end hooks may trigger a board-wide expiry pass." This is the
- * session-boundary entry point WI-303 (hooks) calls; it walks every
- * `in_progress` item and applies the exact same lazy check `checkExpiry`
- * uses per-verb, so there is exactly one expiry-transition implementation in
- * this module, exercised from two call sites.
+ * The opportunistic sweep (hybrid part (b)) — the host session-start/end
+ * hooks may trigger a board-wide expiry pass. This is the session-boundary
+ * entry point the hooks call; it walks every `in_progress` item and applies
+ * the exact same lazy check `checkExpiry` uses per-verb, so there is exactly
+ * one expiry-transition implementation in this module, exercised from two
+ * call sites.
  *
  * Optionally scoped to one tenant (a hosted-mode board sweep should not
- * touch other tenants' claims — TenantGuard posture, §3.4).
+ * touch other tenants' claims — TenantGuard posture).
  */
 export function sweepBoard(
   store: WorkStateStore,

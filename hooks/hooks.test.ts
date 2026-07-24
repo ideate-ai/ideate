@@ -1,7 +1,5 @@
-// plugin/hooks/hooks.test.ts — WI-275 acceptance tests for the plugin's
-// host hooks: the mechanical capture and priming floors
-// (docs/design/v3-composable-surface.md §1.1 hook policy, §2.2 capture
-// point 2, §2.3 floor-raisers, §3 priming floor).
+// plugin/hooks/hooks.test.ts — acceptance tests for the plugin's host hooks:
+// the mechanical capture and priming floors.
 //
 // Pins:
 // - hooks.json registers EXACTLY the seven ratified events (2 priming +
@@ -10,7 +8,7 @@
 //   does the narrowing — asserted on config, not runtime); the rejected
 //   events (Stop, UserPromptSubmit, broad Write|Edit) are absent.
 // - No blocking constructs anywhere in hooks.json or the hook scripts
-//   (grep-asserted, per §2.2's falsifiability standard).
+//   (grep-asserted, per the falsifiability standard).
 // - Every capture script, run as the real executable with a fixture stdin
 //   payload against a mkdtemp project root, writes the expected record kind
 //   through the CLI (file verified on disk, recall-shaped prose over the
@@ -196,7 +194,7 @@ describe('hooks.json registration', () => {
 
   it('does NOT register the explicitly rejected events or broad Write|Edit matchers', () => {
     const config = loadHooksConfig();
-    // Stop and UserPromptSubmit were rejected upstream (surface §2.3).
+    // Stop and UserPromptSubmit were rejected upstream.
     expect(config.hooks['Stop']).toBeUndefined();
     expect(config.hooks['UserPromptSubmit']).toBeUndefined();
     // No matcher anywhere targets file-write tools.
@@ -225,7 +223,7 @@ describe('hooks.json registration', () => {
     }
   });
 
-  it('SessionStart primes on startup|resume|clear via the wrapper script (priming verbatim + board sweep, WI-303)', () => {
+  it('SessionStart primes on startup|resume|clear via the wrapper script (priming verbatim + board sweep)', () => {
     const config = loadHooksConfig();
     const entries = config.hooks['SessionStart'];
     expect(entries).toHaveLength(1);
@@ -239,7 +237,7 @@ describe('hooks.json registration', () => {
     expect(command).toBe('"${CLAUDE_PLUGIN_ROOT}/hooks/subagent-start.mjs"');
   });
 
-  it('SessionEnd routes through the wrapper script (capture verbatim + board sweep, WI-303)', () => {
+  it('SessionEnd routes through the wrapper script (capture verbatim + board sweep)', () => {
     const config = loadHooksConfig();
     const command = config.hooks['SessionEnd']?.[0]?.hooks[0]?.command;
     expect(command).toBe('"${CLAUDE_PLUGIN_ROOT}/hooks/session-end.mjs"');
@@ -271,10 +269,10 @@ describe('hooks.json registration', () => {
 });
 
 // ---------------------------------------------------------------------------
-// Non-blocking policy (§1.1): grep-asserted absence of blocking constructs
+// Non-blocking policy: grep-asserted absence of blocking constructs
 // ---------------------------------------------------------------------------
 
-describe('non-blocking policy (surface §1.1)', () => {
+describe('non-blocking policy', () => {
   it.each([...HOOK_SOURCE_FILES])('%s contains no blocking constructs', (file) => {
     const raw = readFileSync(join(HOOKS_DIR, file), 'utf8');
     // Never a decision field of any kind, in code OR comments.
@@ -370,10 +368,10 @@ describe('subagent-stop.mjs', () => {
 });
 
 // ---------------------------------------------------------------------------
-// Redaction observability across the hook transport (WI-281, cycle-7 S1)
+// Redaction observability across the hook transport
 // ---------------------------------------------------------------------------
 
-describe('hook stderr forwarding (WI-281): redactions are visible on the SUCCESS path', () => {
+describe('hook stderr forwarding: redactions are visible on the SUCCESS path', () => {
   it('a planted secret in the payload surfaces the redaction warning on the hook stderr, exit 0', () => {
     const root = makeProjectRoot();
     const ghToken = `ghp_${'A1b2C3d4'.repeat(5)}`; // ghp_ + 40 alnum chars
@@ -569,8 +567,8 @@ describe('subagent-start.mjs', () => {
     const digest = specific['additionalContext'] as string;
     expect(digest).toContain('The hooks suite seeded this record.');
     expect(digest).toContain('unranked');
-    // The CLI's untrusted-data framing envelope (surface §3, cycle-7
-    // S2/Q-46) survives the wrapper verbatim: the script re-emits the CLI's
+    // The CLI's untrusted-data framing envelope survives the wrapper
+    // verbatim: the script re-emits the CLI's
     // stdout (trimmed) as additionalContext, so the envelope is the first
     // and last thing the subagent receives.
     expect(digest.startsWith(DIGEST_FRAME_OPEN)).toBe(true);
@@ -599,9 +597,9 @@ describe('subagent-start.mjs', () => {
 });
 
 // ---------------------------------------------------------------------------
-// session-start.mjs / session-end.mjs — the WI-303 wrapper scripts
-// (F-303-001 S1: these two were live-wired into hooks.json without the
-// per-script behavioral coverage every other hook has).
+// session-start.mjs / session-end.mjs — the wrapper scripts
+// (these two were live-wired into hooks.json without the per-script
+// behavioral coverage every other hook has).
 // ---------------------------------------------------------------------------
 
 /** Seed a work-state board in `root` with one item whose claim is ALREADY

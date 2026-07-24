@@ -1,37 +1,32 @@
 #!/usr/bin/env node
-// plugin/scripts/fresh-copy-check.mjs — the P-34 FRESH-COPY TEST.
+// plugin/scripts/fresh-copy-check.mjs — the FRESH-COPY CHECK.
 //
-// This is the phase's central verification criterion: it copies the plugin
-// directory to a temp location with NO monorepo context whatsoever (no root
-// package.json, no pnpm-workspace.yaml, no root pnpm-lock.yaml — none of
-// those live inside the copied subtree, so a plain recursive copy already
-// omits them), then runs `pnpm install` + build + test THERE, and asserts
-// all three are green.
+// This is the central standalone-verification criterion: it copies the
+// plugin directory to a temp location with NO surrounding workspace context
+// whatsoever (no parent package.json, no pnpm-workspace.yaml, no parent
+// pnpm-lock.yaml — none of those live inside the copied subtree, so a plain
+// recursive copy already omits them), then runs `pnpm install` + build +
+// test THERE, and asserts all three are green.
 //
-// Why this exists: plugin/ is meant to become its own standalone repo. This
-// script is the mechanical proof that it already stands alone — it proves
-// the claim by exercising it, not by inspection (P-34: verification boots/
-// exercises the shipped artifact).
+// Why this exists: this package is meant to stand entirely on its own. This
+// script is the mechanical proof that it does — it proves the claim by
+// exercising it, not by inspection.
 //
 // Portability requirement: this script locates the plugin directory
 // RELATIVE TO ITSELF (one directory up from wherever it lives — `scripts/`
-// or `tests/`) and never references any other monorepo path. That is what
-// lets it run unchanged:
-//   (a) from inside this monorepo, invoked as
-//       `node plugin/scripts/fresh-copy-check.mjs` or
-//       `pnpm --filter @ideate/plugin test:fresh-copy`, and
-//   (b) later, inside the split standalone repo, where this same script
-//       becomes that repo's CI backbone and "one directory up" is simply
-//       the repo root.
+// or `tests/`) and never references any path outside the package. That is
+// what lets it run unchanged as `node scripts/fresh-copy-check.mjs` or
+// `pnpm test:fresh-copy`, with "one directory up" being simply the repo
+// root.
 //
-// The temp copy has no lockfile entry for a workspace it is no longer part
-// of, so a plain `pnpm install` (NOT --frozen-lockfile) is correct there —
-// pnpm generates a fresh, self-contained lockfile for the standalone copy.
+// The temp copy has no lockfile entry for any enclosing workspace, so a
+// plain `pnpm install` (NOT --frozen-lockfile) is correct there — pnpm
+// generates a fresh, self-contained lockfile for the standalone copy.
 //
 // Excludes from the copy: node_modules, dist, and any .tsbuildinfo files —
-// none of those may leak stale monorepo-built state into the fresh install.
+// none of those may leak stale built state into the fresh install.
 //
-// P-40(a) — proofs must exercise at least one no-build path: after the
+// The check also exercises at least one no-build path: after the
 // install -> build -> test cycle above passes (phase 1, the "built" proof),
 // this script deletes dist/ and any *.tsbuildinfo files from the fresh copy
 // and re-runs the composition boot test file alone (phase 2, the "no-build"
@@ -59,7 +54,7 @@ const pluginDir = join(scriptDir, '..');
  * Never copy these, wherever they occur in the tree. '.git' matters in a
  * submodule checkout, where it is a gitlink FILE pointing at a parent
  * repo's modules dir — exactly the kind of enclosing-layout reference the
- * fresh copy must not carry (P-36/P-40(c)).
+ * fresh copy must not carry.
  */
 const EXCLUDED_NAMES = new Set(['node_modules', 'dist', '.git']);
 // Note: today the only *.tsbuildinfo lives at dist/.tsbuildinfo (single
@@ -147,9 +142,9 @@ function main() {
     return;
   }
 
-  console.log('\nfresh-copy-check: phase 1 (install, build, test) PASSED with no monorepo context.');
+  console.log('\nfresh-copy-check: phase 1 (install, build, test) PASSED with no surrounding workspace context.');
 
-  // Phase 2 (P-40(a) no-build proof): strip every dist/ and *.tsbuildinfo
+  // Phase 2 (no-build proof): strip every dist/ and *.tsbuildinfo
   // from the fresh copy, then re-run the composition boot test alone. Its
   // own beforeAll lazily rebuilds dist/ via the package-local tsc — this is
   // the truly-clean-state exercise of that path.
@@ -169,7 +164,7 @@ function main() {
     return;
   }
 
-  console.log('\nfresh-copy-check: PASSED — phase 1 (install, build, test) and phase 2 (no-build lazy-rebuild boot test) both green with no monorepo context.');
+  console.log('\nfresh-copy-check: PASSED — phase 1 (install, build, test) and phase 2 (no-build lazy-rebuild boot test) both green with no surrounding workspace context.');
   if (process.env['KEEP_FRESH_COPY'] === '1') {
     console.log(`fresh-copy-check: KEEP_FRESH_COPY=1 set; leaving fresh copy at ${copyDir}`);
   } else {

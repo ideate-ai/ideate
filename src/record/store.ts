@@ -1,21 +1,18 @@
-// plugin/src/record/store.ts — the single shared write/read core of the v3
-// process record (WI-271).
+// plugin/src/record/store.ts — the single shared write/read core of the
+// process record.
 //
-// Spec: docs/design/v3-architecture.md §2.1 (one Markdown file per record,
-// ULID filename stems, date-sharded `record.path/YYYY/MM/{id}.md`) and §2.2
-// (reads go straight to the sharded files — NO index ships, no cache);
-// docs/spikes/v3-boundary-contract.md §4.2 (the three-property guard) and
-// §6.2 (the four contract fields). Both capture transports — the MCP
-// `record_append` handler and the hook-invoked CLI — write through this one
-// implementation.
+// One Markdown file per record, ULID filename stems, date-sharded
+// `record.path/YYYY/MM/{id}.md`. Reads go straight to the sharded files — NO
+// index ships, no cache. Both capture transports — the MCP `record_append`
+// handler and the hook-invoked CLI — write through this one implementation.
 //
-// The three-property guard (§4.2), enforced here BY API ABSENCE:
+// The three-property guard, enforced here BY API ABSENCE:
 // - Project-local: the store resolves exactly one project's record path (via
 //   config/ideate-config.ts's recordPath — THE single resolver; this module
 //   never computes `<root>/<record.path>` itself).
 // - Append-only: there is NO update, NO delete. Files are opened with `wx`
 //   (exclusive create), so no code path can overwrite an existing record. A
-//   correction is a NEW record referencing the superseded id. The §4.2
+//   correction is a NEW record referencing the superseded id. The
 //   extraordinary-redaction exception is a documented MANUAL procedure —
 //   deliberately, this store exposes no verb for it.
 // - Never curated or ranked: `read` performs SELECTION only (substring
@@ -27,9 +24,8 @@
 // There is no code path that persists ungated content — the masked record is
 // the only thing ever serialized.
 //
-// Redaction telemetry routing (WI-271 design note, resolved by WI-281 on
-// 2026-07-09): the telemetry counter set grew its dedicated sixth counter
-// (`redactions` — cycle-9 amendment, closes cycle-7 S1/Q-44), so scan.ts's
+// Redaction telemetry routing: the telemetry counter set has a dedicated
+// counter (`redactions`), so scan.ts's
 // `onRedaction` now routes PRIMARILY to telemetry.redactionApplied (per
 // pattern, per session) — the dashboard read. The process warning (code
 // IDEATE_RECORD_REDACTION, naming the pattern and count — NEVER the
@@ -58,7 +54,7 @@ import { RecordSchemaError, parseRecord, serializeRecord, validateRecord } from 
  * Record-ish append input. The store assigns `id` when absent and stamps
  * `source.timestamp` from the injected clock when absent; every other field
  * must be PRESENT (empty string is a valid value — absence is a schema
- * error, per boundary contract §6.2).
+ * error).
  */
 export interface RecordInput {
   /** Optional pre-minted ULID (e.g. from the other capture transport). */
@@ -131,8 +127,8 @@ function errorMessage(err: unknown): string {
 }
 
 /**
- * The v3 process-record store. One instance per session/process; its ULID
- * generator carries the per-session entropy of architecture §2.1.
+ * The process-record store. One instance per session/process; its ULID
+ * generator carries the per-session entropy.
  *
  * The exported API is append + read. There is deliberately NO update, NO
  * delete, and NO rank — see the three-property guard note above.
@@ -254,7 +250,7 @@ export class RecordStore {
 
   /**
    * Read records straight off the sharded files, newest first — no index,
-   * no cache (architecture §2.2). The date sharding plus ULID filename sort
+   * no cache. The date sharding plus ULID filename sort
    * give reverse-chronological order for free: walk year dirs descending,
    * month dirs descending, filenames descending.
    *
@@ -326,7 +322,7 @@ export class RecordStore {
 
   /**
    * Walk the sharded record files newest-first, yielding each parsed record —
-   * no index, no cache (architecture §2.2). Year dirs descending, month dirs
+   * no index, no cache. Year dirs descending, month dirs
    * descending, ULID filenames descending give reverse-chronological order for
    * free. Unparseable files are skipped with a warning so one stray file can't
    * poison the walk. Shared by {@link read} and {@link readViews}.

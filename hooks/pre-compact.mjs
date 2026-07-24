@@ -1,10 +1,10 @@
 #!/usr/bin/env node
-// plugin/hooks/pre-compact.mjs — PreCompact capture hook (WI-275; surface
-// §2.3). Compaction is the host destroying context — exactly the moment
-// un-captured session knowledge is about to become unrecoverable — so this
-// hook appends a compaction-snapshot record through bin/ideate-record (the
-// gated core) before the compaction runs. Non-blocking by policy (§1.1):
-// exit 0 unconditionally, stdout stays silent.
+// plugin/hooks/pre-compact.mjs — PreCompact capture hook. Compaction is the
+// host destroying context — exactly the moment un-captured session knowledge
+// is about to become unrecoverable — so this hook appends a
+// compaction-snapshot record through bin/ideate-record (the gated core) before
+// the compaction runs. Non-blocking by policy: exit 0 unconditionally, stdout
+// stays silent.
 
 import {
   appendRecord,

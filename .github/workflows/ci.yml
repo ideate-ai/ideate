@@ -1,24 +1,10 @@
-# @ideate/plugin CI — WI-287, updated WI-293.
+# @ideate/plugin CI.
 #
-# LIVE: since the PH-043 split, this file IS the root
-# .github/workflows/ci.yml of github.com/ideate-ai/ideate (public) and runs
-# on every push and pull request there — GitHub Actions only reads
-# workflows from a repository's ROOT .github/ directory, and plugin/ is now
-# that root.
-#
-# Historical note (accurate as of authoring, no longer current): this file
-# was originally checked in while plugin/ was still a subdirectory of the
-# private ideate monorepo, before it had a root of its own — written
-# deliberately ahead of the split so that the day plugin/ became its own
-# repo, this file would already be sitting at that repo's root
-# .github/workflows/ci.yml, unchanged, with no extra setup step needed.
-#
-# Modeled on the monorepo root's /Users/dan/code/ideate/.github/workflows/ci.yml
-# (WI-280 / PR-005 / PH-042), adapted to a standalone single-package repo:
-# no `-r` recursion, install/build/test run directly against this package.
+# Runs on every push and pull request. Single-package repo: install, build,
+# and test run directly against this package.
 #
 # Two verification layers beyond build+test:
-#   - The P-34 boot test (tests/composition/server-boot.test.ts) runs inside
+#   - The boot test (tests/composition/server-boot.test.ts) runs inside
 #     `pnpm run test` — it launches dist/server.js over stdio exactly as a
 #     consumer's .mcp.json does.
 #   - The fresh-copy check re-proves standalone coherence on every push: it
@@ -36,8 +22,7 @@ concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
-# Least-privilege token: this lands in a PUBLIC repo at split time; CI only
-# reads the checkout, so grant nothing else.
+# Least-privilege token: CI only reads the checkout, so grant nothing else.
 permissions:
   contents: read
 
@@ -65,12 +50,12 @@ jobs:
       - name: Build
         run: pnpm run build
 
-      # Fork-capped (maxForks: 4, vitest.config.ts); includes the server
-      # boot test — same OOM-avoidance discipline as the monorepo root.
+      # Fork-capped (maxForks: 4, vitest.config.ts) to avoid OOM; includes
+      # the server boot test.
       - name: Test
         run: pnpm run test
 
-      # P-34 standalone proof: fresh copy, no repo context, full
+      # Standalone proof: fresh copy, no repo context, full
       # install/build/test cycle from scratch (scripts/fresh-copy-check.mjs).
       - name: Fresh-copy check
         run: pnpm run test:fresh-copy

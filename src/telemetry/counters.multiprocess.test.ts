@@ -1,5 +1,5 @@
 // plugin/src/telemetry/counters.multiprocess.test.ts — a REAL two-OS-process
-// append race over one telemetry state dir (WI-285).
+// append race over one telemetry state dir.
 //
 // counters.ts claims its appends are single atomic O_APPEND writes, so two
 // concurrent PROCESSES never corrupt the state. The in-process interleaving
@@ -8,8 +8,7 @@
 // barrier, released together, and each append N events to the SAME state
 // file through the real compiled TelemetryCounters; the fold must then see
 // exactly 2N events with zero skipped (torn/corrupt) lines. This makes the
-// "race-tested with two real processes" claim (commit 50804e5) true going
-// forward.
+// "race-tested with two real processes" claim true going forward.
 //
 // Kept fork-cap friendly: one test, two short-lived children, well under 10s.
 

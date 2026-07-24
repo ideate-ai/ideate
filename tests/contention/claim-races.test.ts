@@ -1,17 +1,17 @@
-// plugin/tests/contention/claim-races.test.ts — WI-304 falsifiability
-// evidence for the spec's §5 "duplicate-work rate" criterion and §3.2 rule 1
-// (docs/spikes/v3-work-delegation.md): "with >=2 ICs on one board... zero
-// instances of two ICs completing the same item under valid claims."
+// plugin/tests/contention/claim-races.test.ts — falsifiability
+// evidence for the duplicate-work-rate guarantee: with >=2 workers on one
+// board, zero instances of two workers completing the same item under valid
+// claims.
 //
 // Two scenarios, both REAL, separate OS processes (child_process.spawn
 // against process.execPath — never worker_threads, never a vitest fork),
-// racing through the BUILT dist modules (P-34):
+// racing through the BUILT dist modules:
 //
-//   1. N-way claim() race on ONE item (criterion 1): exactly one winner,
+//   1. N-way claim() race on ONE item: exactly one winner,
 //      n-1 typed NOT_CLAIMABLE losers, run at N=2 and N=6.
-//   2. Cross-verb TOCTOU race (criterion 4, carried from F-302-001):
-//      cancel() vs complete() on the same in_progress item, 20 iterations,
-//      exactly one transition wins every time.
+//   2. Cross-verb TOCTOU race: cancel() vs complete() on the same
+//      in_progress item, 20 iterations, exactly one transition wins every
+//      time.
 //
 // Every contended call goes through claims.ts/verbs.ts's own exported
 // functions (claim/complete, WorkStateVerbs.cancel) — no raw SQL anywhere in
@@ -33,7 +33,7 @@ import {
 } from './helpers.js';
 // Type-only imports (erased at build time — see tsconfig's own `.test.ts`
 // exclude): the RUNTIME value in this file always comes from a dynamic
-// `import(distUrl(...))` against the BUILT dist module (P-34); these give
+// `import(distUrl(...))` against the BUILT dist module; these give
 // that dynamic import's result a real shape to check against instead of
 // `any`.
 import type { claim as ClaimFn, complete as CompleteFn } from '../../src/work-state/claims.js';
@@ -58,7 +58,7 @@ const allSpawnedPids: number[] = [];
 afterAll(() => {
   cleanupTempDirs();
   const alive = stillAlivePids(allSpawnedPids);
-  // Report (criterion 7): every pid this file ever spawned, and which (if
+  // Report: every pid this file ever spawned, and which (if
   // any) are still alive after the suite finished.
   // eslint-disable-next-line no-console
   console.log(
@@ -73,7 +73,7 @@ const CLAIMS_URL = distUrl('work-state/claims.js');
 const VERBS_URL = distUrl('work-state/verbs.js');
 
 // ---------------------------------------------------------------------------
-// Scenario 1: N-way claim() race (criterion 1)
+// Scenario 1: N-way claim() race
 // ---------------------------------------------------------------------------
 
 function claimRaceChildSource(): string {
@@ -162,9 +162,9 @@ async function runClaimRace(n: number): Promise<void> {
     expect(loser.code).toBe('NOT_CLAIMABLE');
   }
 
-  // Post-hoc board-state check via the contract interface (F-304-001 M1:
-  // the oracle uses verbs.get with the default no-op expiry check — an
-  // oracle must never mutate the state it observes).
+  // Post-hoc board-state check via the contract interface: the oracle uses
+  // verbs.get with the default no-op expiry check — an oracle must never
+  // mutate the state it observes.
   const { WorkStateStore } = (await import(STORE_URL)) as StoreModule;
   const { WorkStateVerbs } = (await import(VERBS_URL)) as VerbsModule;
   const store = new WorkStateStore(dbPath, () => new Date());
@@ -174,7 +174,7 @@ async function runClaimRace(n: number): Promise<void> {
   expect(finalItem?.claim?.claim_token).toBe(winners[0]?.token);
 }
 
-describe('N-way claim() race — §5 duplicate-work-rate falsifiability, §3.2 rule 1', () => {
+describe('N-way claim() race — duplicate-work-rate falsifiability', () => {
   it(
     '2-way: exactly one winner, one typed NOT_CLAIMABLE loser',
     async () => {
@@ -193,8 +193,7 @@ describe('N-way claim() race — §5 duplicate-work-rate falsifiability, §3.2 r
 });
 
 // ---------------------------------------------------------------------------
-// Scenario 2: cross-verb TOCTOU race — cancel() vs complete() (criterion 4,
-// carried from F-302-001)
+// Scenario 2: cross-verb TOCTOU race — cancel() vs complete()
 // ---------------------------------------------------------------------------
 
 function cancelChildSource(): string {
@@ -327,7 +326,7 @@ async function runOneToctouIteration(iteration: number): Promise<void> {
   expect(otherTransitionEvents, `events: ${JSON.stringify(events)}`).toHaveLength(0);
 }
 
-describe('cross-verb TOCTOU race: cancel() vs complete() (criterion 4, F-302-001)', () => {
+describe('cross-verb TOCTOU race: cancel() vs complete()', () => {
   it(
     '20 iterations — exactly one transition wins every time, invariant holds every run',
     async () => {

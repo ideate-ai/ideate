@@ -1,10 +1,9 @@
-// plugin/src/telemetry/counters.test.ts — WI-262 acceptance tests.
+// plugin/src/telemetry/counters.test.ts — acceptance tests.
 //
-// Asserts the §3.5 contract: exactly six counters (sixth — redactions —
-// added 2026-07-09, WI-281, cycle-9 amendment); on by default (no opt-in
-// flag anywhere); append-only NDJSON persistence that survives process
-// restarts and interleaved concurrent writers; the folded report shape; and
-// a CLI smoke test via child_process against a temp state dir.
+// Asserts the counter contract: the closed set of counters; on by default
+// (no opt-in flag anywhere); append-only NDJSON persistence that survives
+// process restarts and interleaved concurrent writers; the folded report
+// shape; and a CLI smoke test via child_process against a temp state dir.
 
 import { execFileSync } from 'node:child_process';
 import { appendFileSync, existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
@@ -39,7 +38,7 @@ afterEach(() => {
 });
 
 describe('closed counter set', () => {
-  it('exposes exactly the seven named counters of §3.5 + WI-303', () => {
+  it('exposes exactly the seven named counters', () => {
     expect([...COUNTER_NAMES]).toEqual([
       'capture_fired',
       'priming',

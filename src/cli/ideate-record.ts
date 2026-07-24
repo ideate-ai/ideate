@@ -1,47 +1,42 @@
-// plugin/src/cli/ideate-record.ts — the `ideate-record` CLI (WI-274): the
-// SECOND transport over the same gated record core (WI-271).
+// plugin/src/cli/ideate-record.ts — the `ideate-record` CLI: the
+// SECOND transport over the same gated record core.
 //
-// Spec: docs/design/v3-composable-surface.md §1.1 — one implementation, two
-// transports. This executable exposes the SAME RecordStore append/read path
-// the MCP verbs (record/tools.ts) use, as a plugin `bin/` executable, so
-// host hooks can write capture records with no MCP server and no agent in
-// the loop (hooks invoke it via `${CLAUDE_PLUGIN_ROOT}/bin/ideate-record`).
-// §2.1 Tier B: a hook-written record passes the same capture-time secret
-// gate as every other write, because the ONLY write path here is
-// RecordStore.append — gate-before-persist lives inside the core, and this
-// module deliberately adds no second write path that could bypass it.
+// One implementation, two transports. This executable exposes the SAME
+// RecordStore append/read path the MCP verbs (record/tools.ts) use, as a
+// plugin `bin/` executable, so host hooks can write capture records with no
+// MCP server and no agent in the loop (hooks invoke it via
+// `${CLAUDE_PLUGIN_ROOT}/bin/ideate-record`). A hook-written record passes the
+// same capture-time secret gate as every other write, because the ONLY write
+// path here is RecordStore.append — gate-before-persist lives inside the core,
+// and this module deliberately adds no second write path that could bypass it.
 //
 // Subcommands:
 //   append       — build one record and append it through the gated core;
 //                  prints the new record id.
 //   read         — unranked, scope-filtered, newest-first read passthrough.
-//   session-end  — Tier B capture point 2 (composable surface §2.2 row 2):
-//                  reads the SessionEnd hook payload from STDIN
-//                  (session_id, transcript_path, cwd, hook_event_name,
-//                  reason) and appends a recall-shaped session-outcome
-//                  record whose content is PROSE — structural extraction
-//                  from the transcript JSONL composed into sentences, never
-//                  bare metadata (boundary contract §6.2: findable
-//                  vocabulary must be physically present as words; gate G8
-//                  measures this floor). A missing/unreadable transcript
-//                  still produces a minimal prose record; the hook never
-//                  fails.
-//   prime        — the priming digest (composable surface §3; boundary
-//                  contract §4.3): a bounded, UNRANKED selection of the most
-//                  recent (optionally scope-filtered) records, formatted as
-//                  a compact digest suitable for hook additionalContext
-//                  output. Recency + scope selection ONLY — ranking the
-//                  record is curating it (§4.2/§4.3) and no rank/score
-//                  function exists anywhere on this path.
+//   session-end  — session-outcome capture point: reads the SessionEnd hook
+//                  payload from STDIN (session_id, transcript_path, cwd,
+//                  hook_event_name, reason) and appends a recall-shaped
+//                  session-outcome record whose content is PROSE — structural
+//                  extraction from the transcript JSONL composed into
+//                  sentences, never bare metadata (findable vocabulary must be
+//                  physically present as words). A missing/unreadable
+//                  transcript still produces a minimal prose record; the hook
+//                  never fails.
+//   prime        — the priming digest: a bounded, UNRANKED selection of the
+//                  most recent (optionally scope-filtered) records, formatted
+//                  as a compact digest suitable for hook additionalContext
+//                  output. Recency + scope selection ONLY — ranking the record
+//                  is curating it, and no rank/score function exists anywhere
+//                  on this path.
 //
 // EXIT-CODE SPLIT (deliberate, documented, tested):
 //   - Direct-use paths (`append`, `read`) exit 1 on bad arguments or any
 //     internal failure, so scripts can detect errors.
 //   - Hook-invoked paths (`session-end`, `prime`) exit 0 UNCONDITIONALLY,
 //     printing diagnostics to stderr only: a capture/priming failure must
-//     NEVER look like a hook failure to the host (composable surface §2.2
-//     falsifiability note — "log + count, never block"). Record-write
-//     failures are already telemetry-counted by the store
+//     NEVER look like a hook failure to the host (log + count, never block).
+//     Record-write failures are already telemetry-counted by the store
 //     (capture_write_failed); this edge adds no swallowing beyond the exit
 //     code.
 //
@@ -63,19 +58,18 @@ import { TelemetryCounters } from '../telemetry/counters.js';
 /**
  * Default prime budget — a COUNT CAP (number of records), not a token
  * estimate. The number 10 is a PLACEHOLDER: any tuning of this default is an
- * intelligence-adjacent claim and goes through the eval harness first
- * (GP-23; composable surface §3 "small fixed budget... a count cap, not a
- * tuned relevance system").
+ * intelligence-adjacent claim and goes through evaluation first — a small
+ * fixed budget, a count cap, not a tuned relevance system.
  */
 export const DEFAULT_PRIME_BUDGET = 10;
 
 /**
  * Ceiling on the prime `--budget` override — also a COUNT CAP. Like the
- * default above, 50 is a tune-through-the-harness number (GP-23): raising or
- * lowering it is an intelligence-adjacent claim about how much history is
- * worth injecting, and goes through the eval harness first, never ad hoc.
- * Values above it clamp to the max (with a stderr note); they never error —
- * this is a hook path, and a hooks.json typo must not become a hook failure.
+ * default above, 50 is a tune-through-evaluation number: raising or lowering
+ * it is an intelligence-adjacent claim about how much history is worth
+ * injecting, and goes through evaluation first, never ad hoc. Values above it
+ * clamp to the max (with a stderr note); they never error — this is a hook
+ * path, and a hooks.json typo must not become a hook failure.
  */
 export const MAX_PRIME_BUDGET = 50;
 
@@ -164,7 +158,7 @@ async function readAll(stream: NodeJS.ReadableStream & { isTTY?: boolean }): Pro
 }
 
 // ---------------------------------------------------------------------------
-// Composition edge: config → telemetry → store (the WI-271 core)
+// Composition edge: config → telemetry → store (the gated record core)
 // ---------------------------------------------------------------------------
 
 interface CliContext {
@@ -174,7 +168,7 @@ interface CliContext {
 }
 
 /**
- * Build the per-invocation context. `loadConfig` is the §2.3 lazy-init
+ * Build the per-invocation context. `loadConfig` is the lazy-init
  * onboarding: the first hook fire / first CLI call creates `.ideate.json`
  * and the record directory. The telemetry dir mirrors record/tools.ts's
  * default (`<projectRoot>/.ideate-telemetry`) so both transports and the
@@ -434,11 +428,11 @@ interface SessionOutcome {
 }
 
 /**
- * COMPOSE SENTENCES from the structural extraction (§2.2 row 2: a
- * hook-written record is not exempt from the recall-shape requirement — the
- * generating script must emit prose, not bare metadata). With a readable
- * transcript the composed content aims for ≥25 words (the G8 floor); without
- * one it is minimal prose built from the payload alone.
+ * COMPOSE SENTENCES from the structural extraction: a hook-written record is
+ * not exempt from the recall-shape requirement — the generating script must
+ * emit prose, not bare metadata. With a readable transcript the composed
+ * content aims for ≥25 words (the recall-shape floor); without one it is
+ * minimal prose built from the payload alone.
  */
 function composeSessionOutcome(
   sessionId: string,
@@ -539,9 +533,9 @@ async function runSessionEnd(
 // ---------------------------------------------------------------------------
 
 /**
- * Untrusted-data framing for the prime digest (surface §3; cycle-7 finding
- * S2 / Q-46). Digest entries are verbatim excerpts of stored record content
- * — commit messages, subagent final reports, transcript text — i.e. a
+ * Untrusted-data framing for the prime digest. Digest entries are verbatim
+ * excerpts of stored record content — commit messages, subagent final
+ * reports, transcript text — i.e. a
  * prompt-injection surface if injected bare into additionalContext. Every
  * NON-EMPTY digest is wrapped in this envelope so the host model sees the
  * entries explicitly flagged as quoted historical DATA, never as
@@ -613,7 +607,7 @@ function runPrime(argv: readonly string[], stdout: NodeJS.WritableStream, stderr
   }
 
   const ctx = buildContext(process.cwd());
-  // Counter 2: a priming injection fired from this source (telemetry §3.5).
+  // Counter 2: a priming injection fired from this source.
   ctx.telemetry.primingRequested('cli:prime', ctx.sessionId);
   const scope = parsed.values.get('--scope');
   // SELECTION, not ranking: the store returns newest-first, scope-substring-
@@ -622,7 +616,7 @@ function runPrime(argv: readonly string[], stdout: NodeJS.WritableStream, stderr
   // overturned records (still selection only — a backlink is not a score).
   const records = ctx.store.readViews({ ...(scope === undefined ? {} : { scope }), limit: budget });
   // An empty store injects nothing — silence, not noise; specifically no
-  // framing envelope wrapped around emptiness (cycle-7 S2 convention).
+  // framing envelope wrapped around emptiness.
   if (records.length === 0) return 0;
   stdout.write(formatDigest(records, scope));
   return 0;

@@ -1,7 +1,7 @@
-// plugin/tests/contention/fencing.test.ts — WI-304 falsifiability evidence
-// for §3.2 rule 3 (docs/spikes/v3-work-delegation.md): "A worker whose lease
-// expired and was reclaimed by someone else holds a stale token and is
-// rejected — preventing the classic delayed-writer bug (Kleppmann)."
+// plugin/tests/contention/fencing.test.ts — falsifiability evidence
+// for the fencing rule: a worker whose lease expired and was reclaimed by
+// someone else holds a stale token and is rejected — preventing the classic
+// delayed-writer bug (Kleppmann).
 //
 // The FULL delayed-writer sequence, ACROSS PROCESSES:
 //   1. Process A claims the item (short lease) — token TA.
@@ -159,7 +159,7 @@ async function seedItem(dbPath: string): Promise<string> {
   return item.id;
 }
 
-describe('fencing — §3.2 rule 3, the Kleppmann delayed-writer sequence, across processes', () => {
+describe('fencing — the Kleppmann delayed-writer sequence, across processes', () => {
   it(
     "A's stale-token renew/complete/release all reject typed after B reclaims; B's complete succeeds",
     async () => {

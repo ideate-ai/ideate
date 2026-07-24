@@ -1,10 +1,10 @@
 // plugin/tests/contention/helpers.ts — shared process-spawn/barrier utilities
-// for the WI-304 contention suite.
+// for the contention suite.
 //
 // Every test in this suite drives the work-state contract through the BUILT
-// dist modules (P-34 discipline — the same discipline schema.test.ts's
-// worker-thread test and telemetry/counters.multiprocess.test.ts's two-real-
-// process test already apply), from REAL, SEPARATE OS processes spawned with
+// dist modules (the same discipline schema.test.ts's worker-thread test and
+// telemetry/counters.multiprocess.test.ts's two-real-process test already
+// apply), from REAL, SEPARATE OS processes spawned with
 // `node:child_process`'s `spawn` — never `node:worker_threads`, never vitest
 // forks. Child bodies are written out as plain `.mjs` files (Node cannot
 // execute `.ts` without a loader) and imported by the built `dist/work-state/
@@ -12,7 +12,7 @@
 // the two precedents above.
 //
 // Barrier pattern (ported byte-for-byte in spirit from
-// telemetry/counters.multiprocess.test.ts, WI-285): every child spins on a
+// telemetry/counters.multiprocess.test.ts): every child spins on a
 // `goFile`'s existence before doing anything contentious; the parent writes
 // the go file only once every child is already spawned and spinning, so the
 // race is genuine (all children enter their contended call at once) rather
@@ -35,7 +35,7 @@ export const DIST_DIR = join(PLUGIN_DIR, 'dist');
  * store.js` is missing — mirrors the identical bootstrap in
  * telemetry/counters.multiprocess.test.ts and schema.test.ts, so this suite
  * stays self-sufficient when run in isolation, even though the documented
- * order (criterion 8) is `pnpm run build` then the suite.
+ * order is `pnpm run build` then the suite.
  */
 export function ensureBuilt(): void {
   const marker = join(DIST_DIR, 'work-state', 'store.js');
@@ -127,7 +127,7 @@ export interface RunningChild {
 
 /** Spawn a real, separate Node OS process running `scriptPath` with `args`.
  *  Never a worker thread, never a vitest fork — `child_process.spawn` against
- *  `process.execPath`, exactly like the WI-285 precedent. */
+ *  `process.execPath`, exactly like the multiprocess-test precedent. */
 export function runNodeScript(scriptPath: string, args: readonly string[] = []): RunningChild {
   const child = spawn(process.execPath, [scriptPath, ...args], { stdio: ['ignore', 'pipe', 'pipe'] });
   if (child.pid === undefined) {
@@ -211,7 +211,7 @@ export function runNodeScript(scriptPath: string, args: readonly string[] = []):
 }
 
 /**
- * Criterion 7 (machine discipline): verify, with a REAL `ps` invocation, that
+ * Machine discipline: verify, with a REAL `ps` invocation, that
  * none of `pids` is still alive. Returns the (empty-on-success) list of pids
  * still found alive, so the caller can both `expect(...).toEqual([])` and
  * print a human-readable report.
@@ -222,7 +222,7 @@ export function stillAlivePids(pids: readonly number[]): number[] {
     try {
       // `ps -p <pid>` exits 0 with a matching row iff the process still
       // exists; exits nonzero (throws here) once it's reaped. This is the
-      // literal `ps` check criterion 7 asks for — not a `process.kill(pid,
+      // literal `ps` check we want here — not a `process.kill(pid,
       // 0)` signal probe.
       execFileSync('ps', ['-p', String(pid)], { stdio: 'pipe' });
       alive.push(pid);
@@ -243,13 +243,14 @@ export function sleep(ms: number): Promise<void> {
 
 /**
  * The readiness-handshake barrier this suite uses for genuine N-way races
- * (criterion 1) and cross-process TOCTOU races (criterion 4): every child
+ * and cross-process TOCTOU races: every child
  * warms up (imports, opens/probes its own DB connection) BEFORE printing
  * `readyLine`, then spins on `goFile`. Only once every child has printed its
  * ready line does the parent release the barrier — so the contended call
  * genuinely starts for every child within one poll-loop tick of each other,
  * regardless of per-process Node/V8 startup jitter (a plain "write goFile
- * right after spawn", the WI-285 precedent's shape, is not tight enough here:
+ * right after spawn", the multiprocess-test precedent's shape, is not tight
+ * enough here:
  * that test's contended operation was a 500-iteration loop that dominates
  * startup jitter; ours is a single sub-millisecond CAS, so startup jitter
  * alone could decide the "race" without this handshake).

@@ -1,34 +1,32 @@
-// plugin/src/record/tools.ts — the three record MCP verbs (WI-273), closing
-// the Layer-0 record core.
+// plugin/src/record/tools.ts — the three record MCP verbs, closing
+// the record core.
 //
-// Spec: docs/design/v3-composable-surface.md §1.1 — EXACTLY three
-// process-record verbs: `record_append` (append one discovery-candidate
-// record), `record_read` (unranked, scope-filtered read — standalone priming,
-// boundary contract §4.3), `record_decision` (sugar for
+// EXACTLY three process-record verbs: `record_append` (append one
+// discovery-candidate record), `record_read` (unranked, scope-filtered read —
+// standalone priming), `record_decision` (sugar for
 // `record_append(kind=decision)`, the ADR entry point). Append-only: no
-// update/delete verb exists at this surface (boundary contract §4.2 — the
-// guard is enforced BY ABSENCE, here exactly as in store.ts).
+// update/delete verb exists at this surface — the guard is enforced BY
+// ABSENCE, here exactly as in store.ts.
 //
-// Tier A capture (composable surface §2.1): each write handler performs the
-// capture write as a synchronous `store.append(...)` statement before it
-// returns — unguarded, unconditional. No parameter, flag, or option gates
-// whether the record is written; the only way to not write is to not call
-// the verb. The falsifiability check is grep-shaped by design: `writeRecord`
-// below contains the single `store.append` call both write verbs share, and
-// each handler calls it unconditionally as its first act after arg
-// validation. `record_decision` IS its capture (boundary contract §2 row 4):
-// the decision write and the capture are one operation, because
+// Each write handler performs the capture write as a synchronous
+// `store.append(...)` statement before it returns — unguarded, unconditional.
+// No parameter, flag, or option gates whether the record is written; the only
+// way to not write is to not call the verb. The falsifiability check is
+// grep-shaped by design: `writeRecord` below contains the single
+// `store.append` call both write verbs share, and each handler calls it
+// unconditionally as its first act after arg validation. `record_decision` IS
+// its capture: the decision write and the capture are one operation, because
 // `record_decision` composes prose and calls the SAME `writeRecord` path as
 // `record_append` — there is no separate decision store to fall out of sync.
 //
-// Secret gate: every write goes through RecordStore.append (the WI-271
-// core), whose gate-before-persist masks every text field before any
-// filesystem write. This module adds no second write path — the gate cannot
-// be bypassed from here.
+// Secret gate: every write goes through RecordStore.append, whose
+// gate-before-persist masks every text field before any filesystem write.
+// This module adds no second write path — the gate cannot be bypassed from
+// here.
 //
 // Registration is SIDE-EFFECT FREE: registering the tools touches no
 // filesystem. The composition edge (loadConfig → TelemetryCounters →
-// RecordStore) is built lazily inside the first tool CALL, so the §2.3
+// RecordStore) is built lazily inside the first tool CALL, so the
 // lazy-init onboarding — first MCP call creates `.ideate.json` and the
 // record directory — fires on first use, never at boot. (Note: the SDK
 // advertises the `tools` capability as soon as a tool registers; that is
@@ -125,9 +123,9 @@ function referencesFromArgs(
 }
 
 /**
- * `source.capture_point`, derived from kind: a decision write is boundary
- * contract §2 row 4 (`record_decision` IS the capture), everything else
- * enters through the generic append verb. Derivation lives in the shared
+ * `source.capture_point`, derived from kind: a decision write IS the capture
+ * (`record_decision`), everything else enters through the generic append
+ * verb. Derivation lives in the shared
  * write path, so `record_append(kind=decision)` and `record_decision(...)`
  * stamp identical provenance — the sugar is byte-equivalent.
  */
@@ -138,8 +136,7 @@ function capturePointFor(kind: string): string {
 /**
  * THE one write path. Both write verbs call this and nothing else writes;
  * the `store.append` statement below is the Tier A capture write —
- * synchronous, before return, unguarded by any parameter or flag
- * (composable surface §2.1 falsifiability standard).
+ * synchronous, before return, unguarded by any parameter or flag.
  */
 function writeRecord(ctx: ToolContext, params: WriteParams): AppendResult {
   return ctx.store.append({
@@ -196,7 +193,7 @@ function composeDecisionContent(claim: string, rationale: string | undefined): s
  *
  * Calling the registrar registers tools and does NOTHING else: config
  * loading, directory creation, and store construction all wait for the first
- * tool call (the lazy-init onboarding of config/ideate-config.ts §2.3).
+ * tool call (the lazy-init onboarding of config/ideate-config.ts).
  */
 export function createRecordToolsRegistrar(options: RecordToolsOptions = {}): ToolRegistrar {
   let context: ToolContext | undefined;
@@ -207,7 +204,7 @@ export function createRecordToolsRegistrar(options: RecordToolsOptions = {}): To
       const clock = options.clock ?? (() => new Date());
       const projectRoot = options.projectRoot ?? process.cwd();
       // First call = onboarding: loadConfig lazily creates .ideate.json and
-      // the record directory when absent (ideate-config.ts §2.3).
+      // the record directory when absent (ideate-config.ts).
       const config = loadConfig(projectRoot);
       const telemetry = new TelemetryCounters(options.telemetryDir ?? join(projectRoot, '.ideate-telemetry'), clock);
       const sessionId = options.sessionId ?? `mcp-${createUlidGenerator(clock)()}`;
@@ -312,8 +309,8 @@ export function createRecordToolsRegistrar(options: RecordToolsOptions = {}): To
         const ctx = getContext();
         const refs = referencesFromArgs(args.supersedes, args.references);
         if ('error' in refs) return referencesErrorResult(refs.error);
-        // Tier A capture write — the SAME code path as record_append
-        // (boundary contract §2 row 4: the write is the capture), unconditional.
+        // Capture write — the SAME code path as record_append
+        // (the write is the capture), unconditional.
         const result = writeRecord(ctx, {
           kind: 'decision',
           claim: args.claim,

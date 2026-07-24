@@ -1,13 +1,13 @@
-// plugin/src/work-state/priming-hook.ts — the claim-time priming hook point
-// (WI-303), MECHANICALLY GATED OFF (GP-23, Dan's ruling).
+// plugin/src/work-state/priming-hook.ts — the claim-time priming hook point,
+// MECHANICALLY GATED OFF.
 //
 // Claim-time priming — automatically surfacing related context the moment a
 // worker claims a work item — is a FUTURE, intelligence-adjacent capability.
-// Per GP-23 (nothing that shapes what a model attends to ships ahead of the
-// eval harness that measures it), this file wires the SEAM today — the exact
-// point in the claim path where priming will eventually run — without
-// shipping any actual priming behavior. `primeOnClaim` is called from the
-// `work_claim` tool path (work-state/tools.ts) immediately AFTER a
+// On the principle that nothing which shapes what a model attends to ships
+// ahead of the evaluation that measures it, this file wires the SEAM today —
+// the exact point in the claim path where priming will eventually run —
+// without shipping any actual priming behavior. `primeOnClaim` is called from
+// the `work_claim` tool path (work-state/tools.ts) immediately AFTER a
 // successful claim.
 //
 // The gate has two parts:
@@ -15,9 +15,8 @@
 //   (a) a config flag, `work_state.claim_priming` in `.ideate.json`, default
 //       ABSENT -> false. Read DIRECTLY off the raw config JSON here rather
 //       than through config/ideate-config.ts's typed `IdeateConfigV3` /
-//       `loadConfig`: the typed schema now DECLARES work_state.claim_priming
-//       (ideate-config.ts, coordinator rework on F-303-001) — the raw read
-//       below stays deliberately, because a hook path must be
+//       `loadConfig`: the typed schema now DECLARES work_state.claim_priming,
+//       but the raw read below stays deliberately.
 //       Reading the raw file directly also keeps this check read-only and
 //       side-effect-free (it never triggers `loadConfig`'s lazy-init of
 //       `.ideate.json`/the record directory) — a claim that never touches
@@ -125,8 +124,8 @@ export function primeOnClaim(input: PrimeOnClaimInput): void {
     throw new PrimingHookError(
       'NOT_IMPLEMENTED',
       `work-state priming-hook: claim-time priming is enabled (work_state.claim_priming=true) for item ${input.itemId}, ` +
-        'but the actual priming implementation does not exist yet — it is a future work item, gated behind the eval ' +
-        'harness per GP-23. This claim already succeeded and is unaffected.',
+        'but the actual priming implementation does not exist yet — it is a future work item, gated behind an ' +
+        'optional evaluation feature. This claim already succeeded and is unaffected.',
     );
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);

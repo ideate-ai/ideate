@@ -1,10 +1,7 @@
-// plugin/src/secret-gate/scan.ts — the capture-time secret-scanning gate
-// (WI-272).
+// plugin/src/secret-gate/scan.ts — the capture-time secret-scanning gate.
 //
-// Spec: docs/spikes/v3-boundary-contract.md §2 + cycle-7 amendment I
-// (C2 / Q-35). `scanAndMask` is the gate every record write passes its
-// content through before the write executes (the wiring into the Tier A /
-// Tier B write paths is WI-253's scope; telemetry wiring is WI-271's).
+// `scanAndMask` is the gate every record write passes its content through
+// before the write executes.
 //
 // Design invariants:
 //
@@ -13,33 +10,33 @@
 //   injected `onRedaction` callback — this module never imports the
 //   telemetry module, so it stays a dependency-free transform.
 //
-// - MECHANICAL, PER GP-22 (GP-24 exemplar: zero inference). No human in the
-//   loop, no agent discretion. The function signature does not admit a skip:
-//   ScanOptions can tune the callback and the entropy threshold, but there
-//   is deliberately NO enable/disable/skip flag anywhere in this API, and
-//   scan.test.ts pins that shut at both the type level and runtime.
+// - MECHANICAL: zero inference. No human in the loop, no agent discretion.
+//   The function signature does not admit a skip: ScanOptions can tune the
+//   callback and the entropy threshold, but there is deliberately NO
+//   enable/disable/skip flag anywhere in this API, and scan.test.ts pins that
+//   shut at both the type level and runtime.
 //
 // - IN-PLACE MASKING. Matches become `[REDACTED:pattern-name]`; all
 //   surrounding text is preserved. Content with no matches passes through
 //   byte-identical (the very same string reference).
 //
 // - HONEST LIMIT. Known shapes only (see patterns.ts). Novel secrets are
-//   handled by the §4.2 extraordinary-redaction MANUAL procedure, which is
+//   handled by the extraordinary-redaction MANUAL procedure, which is
 //   deliberately not automated here.
 
 import { DEFAULT_ENTROPY_THRESHOLD, SECRET_PATTERNS, redactionMarker } from './patterns.js';
 
 /**
  * Injected redaction observer. Invoked once per pattern that matched, with
- * that pattern's match count for this scan. WI-271 wires this to the capture
- * telemetry so every redaction event is logged and counted (amendment I);
+ * that pattern's match count for this scan. This wires to the capture
+ * telemetry so every redaction event is logged and counted;
  * this module stays telemetry-agnostic.
  */
 export type OnRedaction = (patternName: string, count: number) => void;
 
 /**
  * Tuning knobs ONLY. This options surface must never grow an
- * enable/disable/skip switch — the gate is mechanical per GP-22 and runs on
+ * enable/disable/skip switch — the gate is mechanical and runs on
  * every call, unconditionally. scan.test.ts asserts the key set is exactly
  * { onRedaction, entropyThreshold }.
  */

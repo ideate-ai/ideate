@@ -1,17 +1,16 @@
 // plugin/hooks/hook-lib.mjs — shared plumbing for the ideate capture hook
-// scripts (WI-275; docs/design/v3-composable-surface.md §2.3).
+// scripts.
 //
 // Every hook script is THIN: parse the event JSON from stdin, compose a
-// small recall-shaped prose record (sentences, not bare metadata — these
-// records feed gate G8), and hand it to `bin/ideate-record append` — the
-// ONLY write path, so every hook-written record passes the same
-// capture-time secret gate as every other write (surface §2.1). The plugin
-// root is resolved from THIS file's location, never from cwd — hooks must
-// not depend on where the host happened to spawn them.
+// small recall-shaped prose record (sentences, not bare metadata), and hand
+// it to `bin/ideate-record append` — the ONLY write path, so every
+// hook-written record passes the same capture-time secret gate as every other
+// write. The plugin root is resolved from THIS file's location, never from
+// cwd — hooks must not depend on where the host happened to spawn them.
 //
-// Hook policy (surface §1.1): every ideate hook is non-blocking — exit 0
-// always, side effects only. Nothing here ever writes a blocking field to
-// stdout; the child CLI's stdout is captured, never inherited.
+// Hook policy: every ideate hook is non-blocking — exit 0 always, side effects
+// only. Nothing here ever writes a blocking field to stdout; the child CLI's
+// stdout is captured, never inherited.
 
 import { spawnSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
@@ -23,7 +22,7 @@ const HOOKS_DIR = dirname(fileURLToPath(import.meta.url));
 /** The plugin root, resolved from this file's own location (cwd-free). */
 export const PLUGIN_ROOT = join(HOOKS_DIR, '..');
 
-/** The one write path: the gated `ideate-record` CLI (surface §2.1). */
+/** The one write path: the gated `ideate-record` CLI. */
 export const RECORD_BIN = join(PLUGIN_ROOT, 'bin', 'ideate-record');
 
 export function errorMessage(err) {
@@ -81,9 +80,9 @@ export function excerptOf(text, maxLength = 160) {
  * The child's stdout (the new record id) is CAPTURED, never inherited:
  * this process's stdout is host-visible hook output and stays silent. The
  * child's STDERR, by contrast, is forwarded to this hook's own stderr
- * UNCONDITIONALLY — on success AND on failure (WI-281, closes cycle-7 S1:
- * reading it only on nonzero exit discarded the secret-gate redaction
- * warnings in transit, because a redaction is a successful append). Stderr
+ * UNCONDITIONALLY — on success AND on failure: reading it only on nonzero
+ * exit would discard the secret-gate redaction warnings in transit, because
+ * a redaction is a successful append. Stderr
  * is diagnostic-only to the host, so forwarding never blocks anything and
  * exit-0 behavior is unchanged. A failed append is likewise diagnosed on
  * stderr only — the store has already counted it (capture_write_failed);

@@ -1,5 +1,4 @@
-// plugin/tests/composition/server-boot.test.ts — WI-277: boot the SHIPPED
-// artifact (P-34's exemplar; fixes cycle-7 CRITICAL C1).
+// plugin/tests/composition/server-boot.test.ts — boot the SHIPPED artifact.
 //
 // Every other server test hand-wires its own McpServer in-process, so none of
 // them could catch the shipped server exposing zero tools. This suite launches
@@ -10,12 +9,12 @@
 //   1. initialize  → serverInfo.name is `ideate` AND the tools capability is
 //      advertised (a zero-tool boot would omit it),
 //   2. tools/list  → exactly the three record verbs PLUS the eleven
-//      work-state verbs (WI-303), fourteen total,
+//      work-state verbs PLUS the two steering verbs, sixteen total,
 //   3. one record_append round trip whose record file lands on disk under the
 //      child's cwd (a temp project root — lazy-init onboarding writes go
 //      there, never to the repo's real .ideate/),
 //   4. one work_create round trip whose work-state SQLite store lands on
-//      disk under the same temp project root — the P-34/C1 lesson applied
+//      disk under the same temp project root — the same lesson applied
 //      to the work-state surface too: wired, not just built.
 // The child is killed cleanly via the client/transport close.
 
@@ -32,6 +31,8 @@ import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js'
 import { CONFIG_FILENAME, DEFAULT_RECORD_PATH, DEFAULT_WORK_STATE_PATH } from '../../src/config/ideate-config.js';
 import { RECORD_TOOL_NAMES } from '../../src/record/tools.js';
 import { SERVER_NAME, SERVER_VERSION } from '../../src/server.js';
+import { STEERING_TOOL_NAMES } from '../../src/steering/tools.js';
+import { USAGE_TOOL_NAMES } from '../../src/usage/tools.js';
 import { WORK_STATE_TOOL_NAMES } from '../../src/work-state/tools.js';
 
 const PLUGIN_DIR = fileURLToPath(new URL('../..', import.meta.url));
@@ -53,7 +54,7 @@ function newestSourceMtime(): number {
 function ensureDistCurrent(): void {
   if (!existsSync(DIST_SERVER) || statSync(DIST_SERVER).mtimeMs < newestSourceMtime()) {
     // `pnpm run build` ≡ `tsc -b` in plugin/; invoke the package-local tsc
-    // directly (P-36: never assume an enclosing repository layout) so the
+    // directly (never assume an enclosing repository layout) so the
     // test needs nothing beyond this package's own node_modules.
     execFileSync(join(PLUGIN_DIR, 'node_modules', '.bin', 'tsc'), ['-b'], { cwd: PLUGIN_DIR, stdio: 'pipe' });
   }
@@ -94,14 +95,16 @@ describe('boot the shipped artifact (node dist/server.js, real stdio)', () => {
     const serverInfo = client.getServerVersion();
     expect(serverInfo?.name).toBe(SERVER_NAME);
     expect(serverInfo?.version).toBe(SERVER_VERSION);
-    // A zero-tool boot (the cycle-7 C1 failure) would not advertise `tools`.
+    // A zero-tool boot would not advertise `tools`.
     expect(client.getServerCapabilities()?.tools).toBeDefined();
   });
 
-  it('tools/list: the three record verbs plus the eleven work-state verbs, fourteen total', async () => {
+  it('tools/list: the three record verbs plus the eleven work-state verbs plus the two steering verbs plus the two usage verbs, eighteen total', async () => {
     const { tools } = await client.listTools();
-    expect(tools.map((t) => t.name).sort()).toEqual([...RECORD_TOOL_NAMES, ...WORK_STATE_TOOL_NAMES].sort());
-    expect(tools).toHaveLength(14);
+    expect(tools.map((t) => t.name).sort()).toEqual(
+      [...RECORD_TOOL_NAMES, ...WORK_STATE_TOOL_NAMES, ...STEERING_TOOL_NAMES, ...USAGE_TOOL_NAMES].sort(),
+    );
+    expect(tools).toHaveLength(18);
   });
 
   it('record_append round trip: the call succeeds and the record lands on disk in the temp root', async () => {
@@ -112,7 +115,7 @@ describe('boot the shipped artifact (node dist/server.js, real stdio)', () => {
         kind: 'finding',
         claim,
         verification_anchor: 'plugin/tests/composition/server-boot.test.ts',
-        scope: 'WI-277 composition remediation',
+        scope: 'composition boot test',
         content:
           'Booted node dist/server.js exactly as .mcp.json launches it, spoke stdio JSON-RPC ' +
           'as an external client, and appended this record through the real record_append verb.',

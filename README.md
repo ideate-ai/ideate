@@ -161,10 +161,9 @@ standalone executable — this is what the capture hooks invoke):
 ## The work-state board (local backend)
 
 The delegation board's LOCAL backend — the ratified work-state contract
-(`docs/spikes/v3-work-delegation.md` in the project monorepo) implemented
-over SQLite in WAL mode. One sentence of model: work items carry an opaque
-`spec` payload the board never parses (bring any methodology — a
-superpowers plan, a Spec Kit URI, a plain prompt); **claims are
+implemented over SQLite in WAL mode. One sentence of model: work items carry
+an opaque `spec` payload the board never parses (bring any methodology — a
+plan document, a Spec Kit URI, a plain prompt); **claims are
 server-authoritative leases with fencing tokens** — `claim` is an atomic
 compare-and-set that succeeds only on an open item whose dependencies are
 all done, leases expire (default hours-scale) so crashed workers can never
@@ -197,20 +196,19 @@ from the append-only process record (`record.path`, default
 versa. `board.db` also carries a schema version (`PRAGMA user_version`, checked on every
 open); if a build ever reports a version-mismatch error, that is
 deliberate, not a bug — it means the file was written by a different
-plugin version than the one reading it, and per P-35 this project makes no
+plugin version than the one reading it, and this project makes no
 promises about migration timelines. Older, pre-versioning boards are
 handled with a one-time grace (stamped on their next write) rather than
 rejected outright.
 
-**One item's lifecycle — a real trace.** The transcript below is from an
-actual work item run end-to-end through this repo's own board (this
-project dogfoods its board; outputs trimmed for width). It illustrates
-the shape of the lifecycle — it does not prescribe a workflow, and every
-verb is equally available over MCP:
+**One item's lifecycle — an example trace.** The transcript below runs a
+work item end-to-end through the board (outputs trimmed for width). It
+illustrates the shape of the lifecycle — it does not prescribe a workflow,
+and every verb is equally available over MCP:
 
 ```sh
 $ ideate-work create \
-    --title "WI-311: Replace NUL bytes in CREATE_CYCLE_SENTINEL" \
+    --title "Add retry backoff to the fetch client" \
     --spec "<the work-item body — opaque to the board>" \
     --spec-format "ideate/wi-v1" --human dan
 {"id":"01KXBQDD7P…","status":"open","version":1,…}
@@ -222,8 +220,7 @@ $ ideate-work claim --id 01KXBQDD7P… --human dan --agent claude-coordinator
 # …the actual work happens here…
 
 $ ideate-work complete --id 01KXBQDD7P… --token 1 \
-    --note "NUL delimiters replaced with '#' (outside the Crockford-base32
-            ULID alphabet); full suite 450/450. Plugin commit 646d54b."
+    --note "Exponential backoff added with jitter; full suite green."
 {"status":"done","claim":null,…}
 
 $ ideate-work events --id 01KXBQDD7P…
@@ -241,7 +238,7 @@ like any other record:
 $ ideate-record read --scope <item-id> --json
 [{"kind":"work-completion",
   "verification_anchor":"board:01KXBQDD7P…#complete@2026-07-12T17:55:58.126Z",
-  "claim":"WI-311: Replace NUL bytes… — NUL delimiters replaced…",…}]
+  "claim":"Add retry backoff to the fetch client — Exponential backoff added…",…}]
 ```
 
 ## Honest status
@@ -256,14 +253,14 @@ $ ideate-record read --scope <item-id> --json
   multi-person coordination). Its ratified trigger is a concrete second
   contributor; the local board implements the identical contract, so that
   move is configuration, not a rewrite.
-- **Eval-gated, present but off:** claim-time priming — the hook point
-  exists in the claim path and a `work_claims` telemetry counter records
-  the denominator, but priming itself is mechanically disabled
-  (`work_state.claim_priming` config flag, default off, no environment
-  override) until the evaluation harness licenses it. Same discipline as
-  the rest of the gated set: planning-time gap identification (designed,
-  not built, gated on G4) and per-prompt priming (deferred, gated on
-  G1/G2). None of this plugin's shipped behavior depends on any of these.
+- **Present but off:** claim-time priming — the hook point exists in the
+  claim path and a `work_claims` telemetry counter records the denominator,
+  but priming itself is mechanically disabled (`work_state.claim_priming`
+  config flag, default off, no environment override) pending further
+  validation. Same discipline as the rest of the deferred set:
+  planning-time gap identification (designed, not built) and per-prompt
+  priming (deferred). None of this plugin's shipped behavior depends on any
+  of these.
 - This package is `"private": true` in `package.json` and stays that way
   until publishing this plugin to npm is separately ratified.
 

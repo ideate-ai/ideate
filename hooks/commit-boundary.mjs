@@ -1,14 +1,13 @@
 #!/usr/bin/env node
 // plugin/hooks/commit-boundary.mjs — PostToolUse capture hook, narrowed by
-// hooks.json to git commits via `if: "Bash(git commit*)"` (WI-275; surface
-// §2.3 — the highest-value floor-raiser: a git commit is the one
-// work-completion signal every workflow shares). Appends a commit-boundary
-// record — commit message + changed paths as the verification anchor —
-// through bin/ideate-record (the gated core). The stdin payload carries the
-// commit COMMAND, not the resulting commit, so a best-effort `git`
-// subprocess enriches the record with hash/subject/changed paths; if git is
-// unavailable the record is written from the payload alone — never fail.
-// Non-blocking by policy (§1.1): exit 0 unconditionally, stdout stays
+// hooks.json to git commits via `if: "Bash(git commit*)"` — the highest-value
+// floor-raiser: a git commit is the one work-completion signal every workflow
+// shares. Appends a commit-boundary record — commit message + changed paths as
+// the verification anchor — through bin/ideate-record (the gated core). The
+// stdin payload carries the commit COMMAND, not the resulting commit, so a
+// best-effort `git` subprocess enriches the record with hash/subject/changed
+// paths; if git is unavailable the record is written from the payload alone —
+// never fail. Non-blocking by policy: exit 0 unconditionally, stdout stays
 // silent. The HOST does the narrowing; this script records whatever it is
 // handed.
 
