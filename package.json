@@ -1,6 +1,6 @@
 {
   "name": "@ideate/plugin",
-  "version": "3.0.0-dev.0",
+  "version": "3.0.0",
   "private": true,
   "license": "AGPL-3.0-only",
   "description": "ideate v3 public composable surface. Stays \"private\": true until npm publishing is ratified — see README.md status section.",
