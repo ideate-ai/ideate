@@ -15,3 +15,4 @@ scripts/migrate-v2/
 .ideate.json
 .ideate-work/
 .ideate-telemetry/
+.bootstrap.lock/

@@ -1,0 +1,17 @@
+#!/bin/sh
+# bin/ideate-mcp — MCP server launcher.
+#
+# Claude Code's .mcp.json points here (via `sh`) instead of straight at
+# `node dist/server.js`, so a fresh git-clone install works: this ensures the
+# plugin is built and its dependency installed (hooks/bootstrap.sh) before
+# handing off to Node. bootstrap.sh writes only to stderr, so stdout stays
+# clean for the MCP stdio protocol that `node dist/server.js` then speaks.
+#
+# If Node is missing or the build fails, bootstrap.sh has already printed
+# actionable guidance to stderr; the exec below then fails and Claude Code
+# reports the server as unavailable — the expected result of a missing runtime.
+
+ROOT="${CLAUDE_PLUGIN_ROOT:-$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)}"
+
+sh "$ROOT/hooks/bootstrap.sh"
+exec node "$ROOT/dist/server.js"
