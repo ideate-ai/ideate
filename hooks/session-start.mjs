@@ -33,6 +33,11 @@ try {
   const payload = parsePayload(await readStdin(), 'session-start');
   const projectRoot = resolveProjectRoot(payload);
 
+  // Fresh-install bootstrap: ensure dist/ and dependencies exist before we
+  // spawn the bins below (which run the compiled CLI). Runtime-free, writes
+  // only to stderr, idempotent fast-path when already built. See bootstrap.sh.
+  spawnSync('sh', [join(PLUGIN_ROOT, 'hooks', 'bootstrap.sh')], { stdio: ['ignore', 'ignore', 'inherit'] });
+
   const primeResult = spawnSync(process.execPath, [RECORD_BIN, 'prime', '--budget', '10'], {
     cwd: projectRoot,
     encoding: 'utf8',
