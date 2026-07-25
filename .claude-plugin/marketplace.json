@@ -5,14 +5,14 @@
   },
   "metadata": {
     "description": "ideate plugin marketplace - the composable process record for Claude Code",
-    "version": "3.0.0-dev.0"
+    "version": "3.0.0"
   },
   "plugins": [
     {
       "name": "ideate",
       "source": "./",
       "description": "Composable process framework primitives: an append-only process record with a mechanical capture and priming floor.",
-      "version": "3.0.0-dev.0"
+      "version": "3.0.0"
     }
   ]
 }

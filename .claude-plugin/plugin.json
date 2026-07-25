@@ -1,6 +1,6 @@
 {
   "name": "ideate",
-  "version": "3.0.0-dev.0",
+  "version": "3.0.0",
   "description": "Composable process framework primitives: an append-only process record with a mechanical capture and priming floor.",
   "author": {
     "name": "Dan Singer",
