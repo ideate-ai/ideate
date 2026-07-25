@@ -456,13 +456,13 @@ performs every write.
 | Agent | Role | Model | Used by |
 |---|---|---|---|
 | `architect` | Survey existing code (analyze) or design a system (design); returns a design brief | opus | init, refine, autopilot |
-| `researcher` | Investigate an open question; return sourced findings + a recommendation | sonnet | init, refine, autopilot |
+| `researcher` | Investigate an open question; return sourced findings + a recommendation | sonnet | refine |
 | `decomposer` | Break a goal into board items with explicit DAG/containment edges; returns item JSON | opus | refine, autopilot |
 | `worker` | Implement **one** board item — the only agent with edit tools; returns a verified completion report | sonnet | execute, autopilot |
 | `code-reviewer` | Review a change for correctness, security, quality; returns severity-classified findings | sonnet | execute, review, autopilot |
 | `spec-reviewer` | Check work against its spec and steering; returns adherence findings | sonnet | review, execute, autopilot |
 | `gap-analyst` | Find what's *missing* — uncovered requirements, unupdated callers, absent tests | sonnet | review, autopilot |
-| `journal-keeper` | Compose a concise, recall-shaped cycle/session narrative | sonnet | review, autopilot |
+| `journal-keeper` | Compose a concise, recall-shaped cycle/session narrative | sonnet | review |
 | `domain-curator` | Keep steering coherent; return proposed `steering_put` changes | opus | review, autopilot |
 | `proxy-human` | Stand in for the user on Andon during unattended autopilot; return a bounded decision | opus | autopilot |
 
