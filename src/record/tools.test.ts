@@ -97,6 +97,13 @@ async function callAppend(client: Client, args: Record<string, unknown>): Promis
   return payload(await client.callTool({ name: 'record_append', arguments: args }));
 }
 
+/** Count persisted record files under the project's record directory (recursive). */
+function recordFileCount(root: string): number {
+  const dir = join(root, '.ideate', 'record');
+  if (!existsSync(dir)) return 0;
+  return readdirSync(dir, { recursive: true, encoding: 'utf8' }).filter((p) => p.endsWith('.md')).length;
+}
+
 const minimalAppend = {
   kind: 'finding',
   claim: 'The fork pool cap is load-bearing.',
@@ -297,6 +304,99 @@ describe('record_decision: sugar over the identical write path', () => {
     expect(record.content).toBe(
       'Decision: Use ULIDs for record ids.\n\nRationale: Sortable by construction and collision-safe without a server.',
     );
+  });
+});
+
+describe('supersedes/references: typed-edge validation at the MCP layer', () => {
+  // A well-formed ULID to use as a reference target (it need not exist as a
+  // record — validation is structural, not existential).
+  const VALID_ULID = '01JZM8Z0000000000000000000';
+  const MALFORMED_ID = 'not-a-ulid';
+
+  it('record_append with a valid supersedes ULID writes the forward edge to disk', async () => {
+    const fx = makeFixture();
+    const client = await fx.connect();
+    const result = await callAppend(client, { ...minimalAppend, supersedes: VALID_ULID });
+    expect(result['ok']).toBe(true);
+    const filePath = join(fx.projectRoot, '.ideate', 'record', '2026', '07', `${result['id'] as string}.md`);
+    const record = parseRecord(readFileSync(filePath, 'utf8'));
+    expect(record.references).toEqual([{ rel: 'supersedes', id: VALID_ULID }]);
+  });
+
+  it('record_append with a malformed supersedes id returns a typed SCHEMA error and writes nothing', async () => {
+    const fx = makeFixture();
+    const client = await fx.connect();
+    const result = await callAppend(client, { ...minimalAppend, supersedes: MALFORMED_ID });
+    expect(result['ok']).toBe(false);
+    expect(result['code']).toBe('SCHEMA');
+    expect(result['reason']).toMatch(/supersedes.*not a well-formed ULID/);
+    // Nothing was persisted.
+    expect(recordFileCount(fx.projectRoot)).toBe(0);
+  });
+
+  it('record_append with a valid references JSON array writes the typed edges', async () => {
+    const fx = makeFixture();
+    const client = await fx.connect();
+    const result = await callAppend(client, {
+      ...minimalAppend,
+      references: JSON.stringify([
+        { rel: 'supersedes', id: VALID_ULID },
+        { rel: 'refutes', id: '01JZM8Z0000000000000000001' },
+      ]),
+    });
+    expect(result['ok']).toBe(true);
+    const filePath = join(fx.projectRoot, '.ideate', 'record', '2026', '07', `${result['id'] as string}.md`);
+    const record = parseRecord(readFileSync(filePath, 'utf8'));
+    expect(record.references).toEqual([
+      { rel: 'supersedes', id: VALID_ULID },
+      { rel: 'refutes', id: '01JZM8Z0000000000000000001' },
+    ]);
+  });
+
+  it('record_append with a references JSON array containing a non-ULID id returns a SCHEMA error', async () => {
+    const fx = makeFixture();
+    const client = await fx.connect();
+    const result = await callAppend(client, {
+      ...minimalAppend,
+      references: JSON.stringify([{ rel: 'supersedes', id: 'typo-id' }]),
+    });
+    expect(result['ok']).toBe(false);
+    expect(result['code']).toBe('SCHEMA');
+    expect(result['reason']).toMatch(/references.*not a well-formed ULID/);
+    expect(recordFileCount(fx.projectRoot)).toBe(0);
+  });
+
+  it('record_append with malformed references JSON returns the envelope error', async () => {
+    const fx = makeFixture();
+    const client = await fx.connect();
+    const result = await callAppend(client, { ...minimalAppend, references: '{not json' });
+    expect(result['ok']).toBe(false);
+    expect(result['code']).toBe('SCHEMA');
+    expect(result['reason']).toMatch(/not valid JSON/);
+  });
+
+  it('record_append with a non-array references JSON returns the envelope error', async () => {
+    const fx = makeFixture();
+    const client = await fx.connect();
+    const result = await callAppend(client, { ...minimalAppend, references: '{"rel":"x","id":"y"}' });
+    expect(result['ok']).toBe(false);
+    expect(result['code']).toBe('SCHEMA');
+    expect(result['reason']).toMatch(/must be a JSON array/);
+  });
+
+  it('record_decision with a malformed supersedes id returns a SCHEMA error (same write path)', async () => {
+    const fx = makeFixture();
+    const client = await fx.connect();
+    const result = payload(
+      await client.callTool({
+        name: 'record_decision',
+        arguments: { claim: 'Overturn the prior choice.', supersedes: MALFORMED_ID },
+      }),
+    );
+    expect(result['ok']).toBe(false);
+    expect(result['code']).toBe('SCHEMA');
+    expect(result['reason']).toMatch(/supersedes.*not a well-formed ULID/);
+    expect(recordFileCount(fx.projectRoot)).toBe(0);
   });
 });
 

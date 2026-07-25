@@ -51,7 +51,7 @@ import { loadConfig } from '../config/ideate-config.js';
 import type { ToolRegistrar } from '../server.js';
 import { TelemetryCounters } from '../telemetry/counters.js';
 import type { Clock } from './id.js';
-import { createUlidGenerator } from './id.js';
+import { createUlidGenerator, isUlid } from './id.js';
 import type { RecordReference } from './schema.js';
 import { RecordStore } from './store.js';
 import type { AppendResult } from './store.js';
@@ -100,15 +100,23 @@ interface WriteParams {
  * Assemble the forward-edge list from the two write-verb arguments: the
  * ergonomic `supersedes` (a single record id → a `supersedes` edge) and the
  * general `references` escape hatch (a JSON array of `{rel, id}` for arbitrary
- * typed edges). Element SHAPE is validated downstream by the store's schema;
- * here we only parse the JSON envelope and reject a malformed one.
+ * typed edges). The JSON envelope is parsed here; each reference id is
+ * validated as a well-formed ULID so a typo is rejected with a typed SCHEMA
+ * error at the tool layer before it can persist as a silent dangling edge.
+ * (The store re-validates at the write chokepoint — defense in depth for the
+ * CLI/migration transports that bypass this function.)
  */
 function referencesFromArgs(
   supersedes: string | undefined,
   referencesJson: string | undefined,
 ): { refs: RecordReference[] } | { error: string } {
   const refs: RecordReference[] = [];
-  if (supersedes !== undefined && supersedes !== '') refs.push({ rel: 'supersedes', id: supersedes });
+  if (supersedes !== undefined && supersedes !== '') {
+    if (!isUlid(supersedes)) {
+      return { error: `supersedes: ${JSON.stringify(supersedes)} is not a well-formed ULID` };
+    }
+    refs.push({ rel: 'supersedes', id: supersedes });
+  }
   if (referencesJson !== undefined && referencesJson !== '') {
     let parsed: unknown;
     try {
@@ -117,7 +125,13 @@ function referencesFromArgs(
       return { error: 'references: not valid JSON (expected an array of {rel, id})' };
     }
     if (!Array.isArray(parsed)) return { error: 'references: must be a JSON array of {rel, id}' };
-    for (const item of parsed) refs.push(item as RecordReference);
+    for (const item of parsed) {
+      const ref = item as RecordReference;
+      if (typeof ref?.id !== 'string' || !isUlid(ref.id)) {
+        return { error: `references: id ${JSON.stringify(ref?.id)} is not a well-formed ULID` };
+      }
+      refs.push(ref);
+    }
   }
   return { refs };
 }

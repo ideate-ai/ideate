@@ -59,3 +59,39 @@ jobs:
       # install/build/test cycle from scratch (scripts/fresh-copy-check.mjs).
       - name: Fresh-copy check
         run: pnpm run test:fresh-copy
+
+  # The SHIPPED PATH. Users install via `npm install` + `npm run build` (run
+  # automatically by hooks/bootstrap.sh on first launch), not pnpm. This job
+  # proves that exact path end-to-end against the committed package-lock.json,
+  # including the bootstrap rebuild a real first launch relies on. It runs in
+  # parallel with the pnpm dev-verification job above; both must stay green.
+  npm-shipped-path:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      # Reproducible install from the committed lockfile (npm ci fails if it
+      # would need to re-resolve — so this pins the build users actually get).
+      - name: Install (npm ci — reproducible from package-lock.json)
+        run: npm ci
+
+      - name: Build (npm run build — the step bootstrap.sh runs)
+        run: npm run build
+
+      # Prove bootstrap.sh rebuilds a built-less tree: wipe the outputs the
+      # previous steps produced, then run the real bootstrap script exactly as
+      # bin/ideate-mcp does on first launch. It must `npm install` + `npm run
+      # build` from scratch and leave a working dist/server.js behind.
+      - name: Bootstrap rebuilds a built-less tree (the first-launch path)
+        run: |
+          rm -rf dist node_modules
+          CLAUDE_PLUGIN_ROOT="$PWD" sh hooks/bootstrap.sh
+          test -f dist/server.js
+
+      - name: Test (npm test)
+        run: npm test
