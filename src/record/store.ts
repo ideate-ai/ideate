@@ -180,6 +180,23 @@ export class RecordStore {
       id = input?.id ?? this.#nextId();
       const timestamp = input?.source?.timestamp ?? this.#clock().toISOString();
       record = validateRecord({ ...input, id, source: { ...input?.source, timestamp } });
+      // Validate reference ids as ULIDs at the write chokepoint. Done AFTER
+      // validateRecord (which confirms the {rel, id} shape) so a shape error
+      // surfaces as its own SCHEMA failure, and done here — not in
+      // validateReferences — so the READ path (parseRecord → validateRecord)
+      // stays lenient: a record already on disk with a malformed reference id
+      // is still readable (its prose/other fields aren't lost), it merely has
+      // a dangling edge. Rejecting at write time prevents the typo from ever
+      // persisting; every write transport (MCP, CLI, migration) funnels here.
+      for (let i = 0; i < record.references.length; i++) {
+        const ref = record.references[i];
+        if (ref === undefined || !isUlid(ref.id)) {
+          throw new RecordSchemaError(
+            `references[${i}].id`,
+            `record store: reference id is not a well-formed ULID: ${JSON.stringify(ref?.id)}`,
+          );
+        }
+      }
     } catch (err) {
       const reason = errorMessage(err);
       this.#telemetry.captureWriteFailed(point, sessionId, reason);

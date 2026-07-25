@@ -446,6 +446,81 @@ describe('readViews: derived backlinks, never stored (append-only reverse edges)
     expect(views.map((v) => v.id)).toEqual([a.record.id]);
     expect(views[0]?.referenced_by).toEqual([{ rel: 'supersedes', id: b.record.id }]);
   });
+
+  it('fan-in: two records superseding one target both surface as backlinks on it', () => {
+    const fx = makeFixture();
+    fx.setNow('2026-05-01T00:00:00.000Z');
+    const target = fx.store.append(input({ kind: 'decision', scope: 'the original' }));
+    if (!target.ok) throw new Error('seed target failed');
+    fx.setNow('2026-06-01T00:00:00.000Z');
+    const b = fx.store.append(
+      input({ kind: 'decision', scope: 'replacement one', references: [{ rel: 'supersedes', id: target.record.id }] }),
+    );
+    if (!b.ok) throw new Error('seed b failed');
+    fx.setNow('2026-07-01T00:00:00.000Z');
+    const c = fx.store.append(
+      input({ kind: 'decision', scope: 'replacement two', references: [{ rel: 'supersedes', id: target.record.id }] }),
+    );
+    if (!c.ok) throw new Error('seed c failed');
+
+    const views = fx.store.readViews();
+    const targetView = views.find((v) => v.id === target.record.id);
+    // Both B and C point at the target — newest-first read emits both backlinks.
+    expect(targetView?.referenced_by).toEqual([
+      { rel: 'supersedes', id: c.record.id },
+      { rel: 'supersedes', id: b.record.id },
+    ]);
+  });
+
+  it('chain: A←B←C — each link surfaces the next as a backlink, C has none', () => {
+    const fx = makeFixture();
+    fx.setNow('2026-05-01T00:00:00.000Z');
+    const a = fx.store.append(input({ kind: 'decision', scope: 'oldest' }));
+    if (!a.ok) throw new Error('seed a failed');
+    fx.setNow('2026-06-01T00:00:00.000Z');
+    const b = fx.store.append(
+      input({ kind: 'decision', scope: 'middle', references: [{ rel: 'supersedes', id: a.record.id }] }),
+    );
+    if (!b.ok) throw new Error('seed b failed');
+    fx.setNow('2026-07-01T00:00:00.000Z');
+    const c = fx.store.append(
+      input({ kind: 'decision', scope: 'newest', references: [{ rel: 'supersedes', id: b.record.id }] }),
+    );
+    if (!c.ok) throw new Error('seed c failed');
+
+    const views = fx.store.readViews();
+    const viewA = views.find((v) => v.id === a.record.id);
+    const viewB = views.find((v) => v.id === b.record.id);
+    const viewC = views.find((v) => v.id === c.record.id);
+    // A is superseded only by B (C points at B, not A — chains are not transitive).
+    expect(viewA?.referenced_by).toEqual([{ rel: 'supersedes', id: b.record.id }]);
+    expect(viewB?.referenced_by).toEqual([{ rel: 'supersedes', id: c.record.id }]);
+    // C is the newest link — no backlinks of its own.
+    expect(viewC?.referenced_by).toEqual([]);
+  });
+});
+
+describe('append: reference-id ULID validation at the write chokepoint', () => {
+  it('rejects a non-ULID reference id with a typed SCHEMA failure and writes nothing', () => {
+    const fx = makeFixture();
+    const result = fx.store.append(
+      input({ references: [{ rel: 'supersedes', id: 'not-a-ulid' }] }),
+    );
+    expect(result.ok).toBe(false);
+    if (result.ok) throw new Error('expected failure');
+    expect(result.code).toBe('SCHEMA');
+    expect(result.reason).toMatch(/not a well-formed ULID/);
+    // No record directory was created — nothing persisted.
+    expect(existsSync(fx.recordDir)).toBe(false);
+  });
+
+  it('accepts a well-formed ULID reference id', () => {
+    const fx = makeFixture();
+    const result = fx.store.append(
+      input({ references: [{ rel: 'supersedes', id: '01JZM8Z0000000000000000000' }] }),
+    );
+    expect(result.ok).toBe(true);
+  });
 });
 
 describe('append-only API surface', () => {

@@ -200,6 +200,33 @@ describe('append (direct-use path)', () => {
     // Nothing was written on either failure.
     expect(readRecordFiles(root)).toHaveLength(0);
   });
+
+  it('rejects a malformed --supersedes id with a SCHEMA failure and writes nothing', () => {
+    const root = makeProjectRoot();
+    const result = runCliRaw(
+      ['append', '--kind', 'finding', '--claim', 'x', '--content', 'y', '--supersedes', 'not-a-ulid'],
+      { cwd: root },
+    );
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain('append failed (SCHEMA)');
+    expect(result.stderr).toMatch(/not a well-formed ULID/);
+    // Nothing was written.
+    expect(readRecordFiles(root)).toHaveLength(0);
+  });
+
+  it('accepts a well-formed --supersedes ULID and persists the forward edge', () => {
+    const root = makeProjectRoot();
+    // Seed a target first, then supersede it.
+    const targetId = appendRecord(root, 'the original claim');
+    const result = runCliRaw(
+      ['append', '--kind', 'decision', '--claim', 'the replacement', '--content', 'y', '--supersedes', targetId],
+      { cwd: root },
+    );
+    expect(result.status).toBe(0);
+    const files = readRecordFiles(root);
+    const replacement = files.find((f) => f.record.claim === 'the replacement');
+    expect(replacement?.record.references).toEqual([{ rel: 'supersedes', id: targetId }]);
+  });
 });
 
 describe('read (direct-use path)', () => {
