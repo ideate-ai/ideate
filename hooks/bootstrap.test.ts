@@ -65,6 +65,29 @@ function fakeNpmBin(): string {
   return bin;
 }
 
+/**
+ * A fake `node` + `npm` pair for the too-old-Node path. `node -v` reports the
+ * given version; `node -e '…version gate…'` exits 1 when `tooOld` is set (the
+ * signal bootstrap uses to detect <22.5). `npm` is the same fabricating fake
+ * as {@link fakeNpmBin} so a build must NOT fire (the gate rejects before it).
+ */
+function fakeNodeAndNpmBin(opts: { nodeVersion: string; tooOld: boolean }): string {
+  const bin = mkdtempSync(join(tmpdir(), 'ideate-fakebin-'));
+  tmps.push(bin);
+  const gateExit = opts.tooOld ? 1 : 0;
+  writeFileSync(
+    join(bin, 'node'),
+    `#!/bin/sh\nif [ "$1" = "-v" ]; then echo "${opts.nodeVersion}"; exit 0; fi\nif [ "$1" = "-e" ]; then exit ${String(gateExit)}; fi\nexit 0\n`,
+  );
+  writeFileSync(
+    join(bin, 'npm'),
+    '#!/bin/sh\nprintf "%s\\n" "$*" >> ./.npm-calls\nmkdir -p ./node_modules/@modelcontextprotocol ./dist\n: > ./dist/server.js\nexit 0\n',
+  );
+  chmodSync(join(bin, 'node'), 0o755);
+  chmodSync(join(bin, 'npm'), 0o755);
+  return bin;
+}
+
 function run(root: string, path: string): { status: number | null; stderr: string; npmCalled: boolean } {
   const r = spawnSync('sh', [BOOTSTRAP], {
     cwd: root,
@@ -101,13 +124,19 @@ describe('bootstrap.sh', () => {
     expect(res.npmCalled).toBe(true); // rebuilt despite dist/ existing
   });
 
-  it('builds when dist/ is absent (fresh install)', () => {
+  it('builds when dist/ is absent (fresh install) — runs install THEN build', () => {
     const root = makeRoot({ built: false });
     const bin = fakeNpmBin();
     const res = run(root, withNode(bin));
     expect(res.status).toBe(0);
     expect(res.npmCalled).toBe(true);
     expect(existsSync(join(root, 'dist', 'server.js'))).toBe(true);
+    // The clean-build sequence is the full shipped path: `npm install` then
+    // `npm run build` (the bootstrap a user's first launch runs). The fake
+    // npm records every invocation's args, so assert both steps fired.
+    const calls = readFileSync(join(root, '.npm-calls'), 'utf8').trim().split('\n');
+    expect(calls.some((c) => /^install\b/.test(c))).toBe(true);
+    expect(calls.some((c) => /^run build/.test(c))).toBe(true);
   });
 
   it('prints actionable guidance and does NOT build when Node is absent', () => {
@@ -117,6 +146,15 @@ describe('bootstrap.sh', () => {
     const res = run(root, `${bin}:/usr/bin:/bin`);
     expect(res.status).toBe(0); // never blocks
     expect(res.stderr).toMatch(/Node\.js was not found|requires Node/i);
+    expect(res.npmCalled).toBe(false);
+  });
+
+  it('prints actionable guidance and does NOT build when Node is too old (<22.5)', () => {
+    const root = makeRoot({ built: false });
+    const bin = fakeNodeAndNpmBin({ nodeVersion: 'v18.0.0', tooOld: true });
+    const res = run(root, `${bin}:/usr/bin:/bin`);
+    expect(res.status).toBe(0); // never blocks
+    expect(res.stderr).toMatch(/too old|requires Node/i);
     expect(res.npmCalled).toBe(false);
   });
 

@@ -19,7 +19,7 @@ import('../dist/cli/ideate-work.js')
   })
   .catch((err) => {
     console.error(
-      'ideate-work: failed to run the compiled CLI (dist/cli/ideate-work.js). Run `pnpm build` first.',
+      'ideate-work: failed to run the compiled CLI (dist/cli/ideate-work.js). Run `npm install && npm run build` first.',
     );
     console.error(err instanceof Error ? err.message : String(err));
     process.exitCode = HOOK_SUBCOMMANDS.has(process.argv[2]) ? 0 : 1;

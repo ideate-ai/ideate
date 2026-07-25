@@ -11,7 +11,7 @@ import('../dist/telemetry/cli.js')
   })
   .catch((err) => {
     console.error(
-      'ideate-telemetry: failed to load the compiled CLI (dist/telemetry/cli.js). Run `pnpm build` first.',
+      'ideate-telemetry: failed to load the compiled CLI (dist/telemetry/cli.js). Run `npm install && npm run build` first.',
     );
     console.error(err instanceof Error ? err.message : String(err));
     process.exitCode = 1;
