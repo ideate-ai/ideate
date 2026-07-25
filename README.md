@@ -42,13 +42,21 @@ call it.
 - **Telemetry.** Native counters for capture, priming, and failure events,
   inspectable with the `ideate-telemetry` CLI.
 
+## Requirements
+
+**Node.js >= 22.5** must be installed and on your `PATH`. Claude Code ships as
+a native binary and bundles no runtime, so the plugin's MCP server, hooks, and
+CLIs — which run on Node and use the built-in `node:sqlite` — need Node
+available. Install it from <https://nodejs.org> (or your package manager)
+before installing the plugin.
+
 ## Install
 
 There are two ways to wire this plugin into a Claude Code project. Both land
-on the same `dist/server.js` MCP server and `hooks/hooks.json` — the
-manifests below are just two different ways of pointing Claude Code at them.
-This section documents the contracts (what each mechanism provides); it does
-not prescribe which one to use or what workflow to run once installed.
+on the same MCP server and `hooks/hooks.json` — the manifests below are just
+two different ways of pointing Claude Code at them. This section documents the
+contracts (what each mechanism provides); it does not prescribe which one to
+use or what workflow to run once installed.
 
 ### (a) Marketplace install
 
@@ -61,35 +69,33 @@ plugin-marketplace manifest listing this plugin (`name: ideate`, `source:
 /plugin install ideate
 ```
 
-This is the manifest-driven path — Claude Code resolves the plugin and
-wires `.mcp.json` / `hooks/hooks.json` for you. **Known limitation (honest
-status):** this repo deliberately does not commit built output (`dist/` is
-git-ignored), and a plugin install performs no build step — so the MCP
-server and CLIs are NOT functional straight from a marketplace install
-today. Until a distribution mechanism for built output exists (tracked as
-an open question in the project record), use the manual path below, which
-is the tested, supported route. The observable symptom is Claude Code
-reporting that the ideate MCP server failed to start, or that it
-disconnected, immediately after a marketplace install — that is the
-expected result of the missing built output, not a separate bug.
+This is the manifest-driven path — Claude Code resolves the plugin and wires
+`.mcp.json` / `hooks/hooks.json` for you. On first launch the plugin runs a
+one-time setup: because built output (`dist/`) is not committed, it installs
+its single dependency and builds itself, then the MCP server, the mechanical
+capture/priming hooks, and the CLIs are live. The first session may pause
+briefly while that runs; later sessions start instantly. If Node is missing or
+older than 22.5 (see Requirements above), the plugin prints a clear one-line
+message and otherwise does nothing — it never blocks your session.
 
 ### (b) Manual wiring
 
 For a project that wants to point at this plugin directly rather than
 through the marketplace resolver:
 
-1. Build the package: `pnpm install && pnpm run build` (compiles `src/` to
-   `dist/`; required before the MCP server or CLIs will run — `dist/` is not
-   checked in).
-2. Add an MCP server entry to the consuming project's `.mcp.json` pointing
-   at the built server, e.g.:
+1. Build the package: `npm install && npm run build` (compiles `src/` to
+   `dist/`; `dist/` is not committed). A marketplace install runs this for you
+   on first launch; for manual wiring you run it once yourself.
+2. Add an MCP server entry to the consuming project's `.mcp.json` pointing at
+   the launcher, which runs the first-launch bootstrap before starting the
+   server:
 
    ```json
    {
      "mcpServers": {
        "ideate": {
-         "command": "node",
-         "args": ["<path-to-this-plugin>/dist/server.js"]
+         "command": "sh",
+         "args": ["<path-to-this-plugin>/bin/ideate-mcp"]
        }
      }
    }
@@ -110,16 +116,15 @@ through the marketplace resolver:
 
 ### Build / test (contributor path)
 
-Prerequisites: Node >= 22 and a pnpm-compatible install.
+Prerequisites: Node >= 22.5.
 
 ```sh
-pnpm install
-pnpm run build   # compiles src/ to dist/ — required before the MCP server
-                 # or the CLIs will run; dist/ is not checked in
-pnpm test        # vitest, fork pool capped at 4 (see vitest.config.ts)
+npm install
+npm run build    # compiles src/ to dist/ (gitignored)
+npm test         # vitest (fork pool capped — see vitest.config.ts)
 ```
 
-`pnpm run test:fresh-copy` runs `scripts/fresh-copy-check.mjs`, which copies
+`npm run test:fresh-copy` runs `scripts/fresh-copy-check.mjs`, which copies
 this directory to a scratch location with no surrounding project context and
 re-runs install/build/test there — the mechanical proof that this package
 stands alone.
@@ -261,8 +266,9 @@ $ ideate-record read --scope <item-id> --json
   planning-time gap identification (designed, not built) and per-prompt
   priming (deferred). None of this plugin's shipped behavior depends on any
   of these.
-- This package is `"private": true` in `package.json` and stays that way
-  until publishing this plugin to npm is separately ratified.
+- This package is `"private": true` in `package.json`. It is distributed as a
+  Claude Code plugin — a git-source marketplace install that builds itself on
+  first launch — not published to npm, so `private` stays set.
 
 ## License
 
