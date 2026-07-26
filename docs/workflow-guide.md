@@ -199,6 +199,35 @@ part of project setup, because the whole point of `init` is to capture the
 project's steering. If steering is off, `refine`/`review` will notice the
 `GATED` response and offer to enable it.
 
+### Supersession and typed references (all three stores)
+
+All three stores share one **typed-reference** model: an entry can carry a
+forward edge `references: [{ rel, id }]`, with **`supersedes`** as the primary
+`rel` — "this entry replaces that one." The reverse edge is **derived, never
+stored**: reading an entry shows `referenced_by`, the entries that point at
+it, so a superseded item announces its replacement instead of silently
+misleading a reader. The derivation is a full scan on read (the board/steering
+are small; no index — GP-24), and it is **uniform across the three stores** —
+same field name, same `{rel, id}` shape — so consumers learn one model:
+
+- **Process record** (append-only): a correction is a *new* record whose
+  `supersedes` names the one it replaces (`record_append`/`record_decision`).
+- **Work board** (mutable): `work_create`/`work_update_meta` accept
+  `supersedes`/`references`; a cancelled or obsoleted item's replacement names
+  it. A dangling target is rejected (`DANGLING_SUPERSEDES`). Supersession
+  lives on the item row and surfaces via `work_get`/`work_list`; the immutable
+  `work_events` log intentionally records no separate supersession event
+  (matching `update_meta`'s CAS-only, no-event posture).
+- **Steering** (mutable): distinct from *amending in place* (which keeps one
+  item's `history`). **Cross-item** supersession is when item Y *replaces* a
+  different item X — `steering_put` accepts `supersedes`/`references`, and
+  `steering_read` shows X's `referenced_by`. Use amend-in-place to revise a
+  rule; use cross-item supersede when a *new* rule takes over from an old one.
+
+The design is deliberate (decision on record): store only the forward edge and
+derive the backlink — one mental model, and no stored bidirectional edge whose
+two halves can drift apart.
+
 ### Curation
 
 Steering drifts. New findings imply rules that would have prevented them; two
