@@ -120,6 +120,48 @@ describe('create / get / list / update-meta', () => {
     expect(result.stdout.trim()).toBe('(not found)');
   });
 
+  it('create --supersedes authors the forward edge; the superseded item shows the derived backlink on get', () => {
+    const root = makeProjectRoot();
+    const old = JSON.parse(
+      runCli(['create', '--title', 'the old plan', '--spec', 's', '--spec-format', 'text/plain', '--human', 'dan'], { cwd: root }),
+    ) as { id: string };
+    const replacement = JSON.parse(
+      runCli(
+        ['create', '--title', 'the new plan', '--spec', 's', '--spec-format', 'text/plain', '--human', 'dan', '--supersedes', old.id],
+        { cwd: root },
+      ),
+    ) as { id: string; references: { rel: string; id: string }[] };
+    expect(replacement.references).toEqual([{ rel: 'supersedes', id: old.id }]);
+
+    const gotOld = JSON.parse(runCli(['get', '--id', old.id, '--json'], { cwd: root })) as {
+      references: unknown[];
+      referenced_by: { rel: string; id: string }[];
+    };
+    expect(gotOld.referenced_by).toEqual([{ rel: 'supersedes', id: replacement.id }]);
+    // Only the forward edge is stored.
+    expect(gotOld.references).toEqual([]);
+  });
+
+  it('create --supersedes with a malformed or dangling id exits 1 with a typed engine error', () => {
+    const root = makeProjectRoot();
+    // A malformed id never resolves to an existing item, so the verb-layer
+    // existence guard (dag.ts) rejects it before the store's ULID
+    // chokepoint is ever reached — a typed, loud failure either way.
+    const malformed = runCliRaw(
+      ['create', '--title', 'x', '--spec', 's', '--spec-format', 'text/plain', '--human', 'dan', '--supersedes', 'not-a-ulid'],
+      { cwd: root },
+    );
+    expect(malformed.status).toBe(1);
+    expect(malformed.stderr).toContain('DANGLING_SUPERSEDES');
+
+    const dangling = runCliRaw(
+      ['create', '--title', 'x', '--spec', 's', '--spec-format', 'text/plain', '--human', 'dan', '--supersedes', '01JZM8Z0000000000000000000'],
+      { cwd: root },
+    );
+    expect(dangling.status).toBe(1);
+    expect(dangling.stderr).toContain('DANGLING_SUPERSEDES');
+  });
+
   it('update-meta with a stale expected-version exits 1 with a VERSION_CONFLICT message', () => {
     const root = makeProjectRoot();
     const created = JSON.parse(

@@ -110,6 +110,51 @@ function tableColumns(dbPath: string, table: string): string[] {
   return rows.map((r) => r.name);
 }
 
+/**
+ * The v2 `items` DDL — the pre-forward-edge shape, WITH `parent_id` but
+ * WITHOUT the `"references"` column. Used to fabricate a genuine stamped-v2
+ * board so the v2->v3 additive migration can be exercised against a real
+ * legacy shape, exactly as V1_ITEMS_TABLE_DDL fixtures the v1->v2 rung.
+ */
+const V2_ITEMS_TABLE_DDL = `
+CREATE TABLE items (
+  id                    TEXT PRIMARY KEY,
+  tenant_id             TEXT NOT NULL,
+  title                 TEXT NOT NULL,
+  spec                  TEXT NOT NULL,
+  spec_format           TEXT NOT NULL,
+  status                TEXT NOT NULL,
+  depends_on            TEXT NOT NULL,
+  parent_id             TEXT,
+  created_by_human      TEXT NOT NULL,
+  created_by_agent      TEXT,
+  created_at            TEXT NOT NULL,
+  updated_at            TEXT NOT NULL,
+  version               INTEGER NOT NULL,
+  claim_token_counter   INTEGER NOT NULL DEFAULT 0,
+  claim_holder_human    TEXT,
+  claim_holder_agent    TEXT,
+  claim_token           INTEGER,
+  claim_acquired_at     TEXT,
+  claim_lease_expires   TEXT
+)`;
+
+/**
+ * Hand-build a real, stamped-v2 legacy board at `dbPath`: the v2 items table
+ * (with `parent_id`, no `"references"`), one legacy row,
+ * `PRAGMA user_version = 2` — the fixture the v2->v3 migration rung upgrades.
+ */
+function seedLegacyV2Board(dbPath: string): void {
+  const sqliteModule = process.getBuiltinModule('node:sqlite') as typeof import('node:sqlite');
+  const db = new sqliteModule.DatabaseSync(dbPath);
+  db.exec(V2_ITEMS_TABLE_DDL);
+  db.prepare(
+    `INSERT INTO items (id, tenant_id, title, spec, spec_format, status, depends_on, parent_id, created_by_human, created_by_agent, created_at, updated_at, version) VALUES ('legacy', 't', 'L', 's', 'f', 'open', '[]', NULL, 'dan', NULL, 'now', 'now', 1)`,
+  ).run();
+  db.exec('PRAGMA user_version = 2');
+  db.close();
+}
+
 describe('lazy init', () => {
   it('openForRead returns null without creating the directory or the file', () => {
     const root = makeTempDir();
@@ -352,23 +397,23 @@ describe('board schema versioning', () => {
 
 // The parent_id containment column + the v1->v2 additive migration.
 describe('parent_id column + v1->v2 migration', () => {
-  it('BOARD_SCHEMA_VERSION is 2', () => {
-    expect(BOARD_SCHEMA_VERSION).toBe(2);
+  it('BOARD_SCHEMA_VERSION is 3', () => {
+    expect(BOARD_SCHEMA_VERSION).toBe(3);
   });
 
-  it('a fresh v2 board has parent_id in the items table and stamps user_version=2', () => {
+  it('a fresh board has parent_id in the items table and stamps the current user_version', () => {
     const root = makeTempDir();
     const dbPath = join(root, 'board.db');
 
     const db = openForWrite(dbPath);
     const version = db.prepare('PRAGMA user_version').get() as { user_version: number };
-    expect(version.user_version).toBe(2);
+    expect(version.user_version).toBe(3);
     db.close();
 
     expect(tableColumns(dbPath, 'items')).toContain('parent_id');
   });
 
-  it('a fresh v2 board round-trips both a set parent_id and a null parent_id', () => {
+  it('a fresh board round-trips both a set parent_id and a null parent_id', () => {
     const root = makeTempDir();
     const dbPath = join(root, 'board.db');
 
@@ -390,7 +435,7 @@ describe('parent_id column + v1->v2 migration', () => {
     db.close();
   });
 
-  it('opening a stamped-v1 board runs the additive migration: column added, user_version->2, legacy rows read parent_id null, no data rewrite', () => {
+  it('opening a stamped-v1 board runs the additive migration ladder: both columns added, user_version->current, legacy rows intact, no data rewrite', () => {
     const root = makeTempDir();
     const dbPath = join(root, 'board.db');
 
@@ -400,19 +445,21 @@ describe('parent_id column + v1->v2 migration', () => {
 
     const db = openForWrite(dbPath);
     const version = db.prepare('PRAGMA user_version').get() as { user_version: number };
-    expect(version.user_version).toBe(2);
+    expect(version.user_version).toBe(3);
 
-    // The legacy row survived (no rewrite) and now reads parent_id === null.
+    // The legacy row survived (no rewrite): parent_id reads null (a root)
+    // and references reads '[]' (no edges).
     const row = db
-      .prepare('SELECT id, title, parent_id FROM items WHERE id = ?')
-      .get('legacy') as { id: string; title: string; parent_id: string | null };
-    expect(row).toEqual({ id: 'legacy', title: 'L', parent_id: null });
+      .prepare('SELECT id, title, parent_id, "references" FROM items WHERE id = ?')
+      .get('legacy') as { id: string; title: string; parent_id: string | null; references: string };
+    expect(row).toEqual({ id: 'legacy', title: 'L', parent_id: null, references: '[]' });
     db.close();
 
     expect(tableColumns(dbPath, 'items')).toContain('parent_id');
+    expect(tableColumns(dbPath, 'items')).toContain('references');
   });
 
-  it('re-opening an already-migrated v2 board is a no-op (ADD COLUMN is guarded, does not throw on the existing column)', () => {
+  it('re-opening an already-migrated board is a no-op (ADD COLUMN is guarded, does not throw on the existing column)', () => {
     const root = makeTempDir();
     const dbPath = join(root, 'board.db');
 
@@ -420,11 +467,73 @@ describe('parent_id column + v1->v2 migration', () => {
     openForWrite(dbPath).close(); // first migration
     const db = openForWrite(dbPath); // second open — must not re-add the column
     const version = db.prepare('PRAGMA user_version').get() as { user_version: number };
-    expect(version.user_version).toBe(2);
+    expect(version.user_version).toBe(3);
     const row = db
       .prepare('SELECT parent_id FROM items WHERE id = ?')
       .get('legacy') as { parent_id: string | null };
     expect(row.parent_id).toBeNull();
+    db.close();
+  });
+});
+
+// The "references" forward-edge column + the v2->v3 additive migration.
+describe('references column + v2->v3 migration', () => {
+  it('a fresh board has the quoted "references" column', () => {
+    const root = makeTempDir();
+    const dbPath = join(root, 'board.db');
+
+    const db = openForWrite(dbPath);
+    db.close();
+
+    expect(tableColumns(dbPath, 'items')).toContain('references');
+  });
+
+  it('a fresh board round-trips a forward edge through the column', () => {
+    const root = makeTempDir();
+    const dbPath = join(root, 'board.db');
+
+    const db = openForWrite(dbPath);
+    db.prepare(
+      `INSERT INTO items (id, tenant_id, title, spec, spec_format, status, depends_on, parent_id, "references", created_by_human, created_by_agent, created_at, updated_at, version) VALUES ('new', 't', 'N', 's', 'f', 'open', '[]', NULL, '[{"rel":"supersedes","id":"01JZM8Z0000000000000000000"}]', 'dan', NULL, 'now', 'now', 1)`,
+    ).run();
+    const row = db.prepare('SELECT "references" FROM items WHERE id = ?').get('new') as { references: string };
+    expect(JSON.parse(row.references)).toEqual([{ rel: 'supersedes', id: '01JZM8Z0000000000000000000' }]);
+    db.close();
+  });
+
+  it('opening a stamped-v2 board runs the additive migration: column added, user_version->3, legacy rows read references \'[]\', no data rewrite', () => {
+    const root = makeTempDir();
+    const dbPath = join(root, 'board.db');
+
+    seedLegacyV2Board(dbPath);
+    expect(readUserVersionRaw(dbPath)).toBe(2);
+    expect(tableColumns(dbPath, 'items')).not.toContain('references');
+
+    const db = openForWrite(dbPath);
+    const version = db.prepare('PRAGMA user_version').get() as { user_version: number };
+    expect(version.user_version).toBe(3);
+
+    // The legacy row survived (no rewrite) and now reads references '[]'.
+    const row = db
+      .prepare('SELECT id, title, parent_id, "references" FROM items WHERE id = ?')
+      .get('legacy') as { id: string; title: string; parent_id: string | null; references: string };
+    expect(row).toEqual({ id: 'legacy', title: 'L', parent_id: null, references: '[]' });
+    db.close();
+
+    expect(tableColumns(dbPath, 'items')).toContain('references');
+  });
+
+  it('re-opening an already-migrated v3 board is a no-op (ADD COLUMN is guarded, does not throw on the existing column)', () => {
+    const root = makeTempDir();
+    const dbPath = join(root, 'board.db');
+
+    seedLegacyV2Board(dbPath);
+    openForWrite(dbPath).close(); // first migration
+    const db = openForWrite(dbPath); // second open — must not re-add the column
+    const version = db.prepare('PRAGMA user_version').get() as { user_version: number };
+    expect(version.user_version).toBe(3);
+    const row = db.prepare('SELECT "references" FROM items WHERE id = ?').get('legacy') as { references: string };
+    expect(row.references).toBe('[]');
     db.close();
   });
 });

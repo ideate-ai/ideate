@@ -17,6 +17,7 @@
 // `depends_on`, which is structured contract data, not the opaque payload.
 
 import { WorkStateModuleError } from './types.js';
+import type { WorkItemReference } from './types.js';
 
 /** Typed failure codes this module raises. Distinct from `WorkStateErrorCode`
  *  (types.ts) — that union is store.ts's persistence-layer contract and is
@@ -29,8 +30,12 @@ import { WorkStateModuleError } from './types.js';
  *  (CONTAINMENT) — deliberately SEPARATE codes for a deliberately separate,
  *  orthogonal invariant: the two guards walk two independent graphs and share
  *  no traversal state. `DANGLING_PARENT` is the single-parent sibling of
- *  `DANGLING_DEPENDENCY`; `PARENT_CYCLE` the parent-chain sibling of `CYCLE`. */
-export type DagErrorCode = 'CYCLE' | 'DANGLING_DEPENDENCY' | 'PARENT_CYCLE' | 'DANGLING_PARENT';
+ *  `DANGLING_DEPENDENCY`; `PARENT_CYCLE` the parent-chain sibling of `CYCLE`.
+ *  `DANGLING_SUPERSEDES` guards the typed forward-reference edge
+ *  (`references`, REPLACEMENT) — existence only, deliberately NO cycle
+ *  sibling: a supersedes edge is not a sequencing DAG, so acyclicity is not
+ *  its invariant (matching the record store, which cycle-checks nothing). */
+export type DagErrorCode = 'CYCLE' | 'DANGLING_DEPENDENCY' | 'PARENT_CYCLE' | 'DANGLING_PARENT' | 'DANGLING_SUPERSEDES';
 
 /** Typed, loud DAG-guard failure — thrown, never silently swallowed.
  *  Extends `WorkStateModuleError` so callers can catch any
@@ -203,5 +208,39 @@ export function assertNoParentCycle(itemId: string, proposedParentId: string, lo
     }
     onPath.add(current);
     current = lookup(current);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Forward-reference (`references`) guard.
+//
+// The typed reference edge (supersedes primary) is a THIRD structural edge —
+// REPLACEMENT, neither SEQUENCING nor CONTAINMENT. It gets exactly ONE guard,
+// existence, and deliberately no cycle sibling: a replacement edge is not a
+// sequencing DAG (an item may legitimately be superseded by something that
+// itself gets superseded, and even a mutual-supersede pair is recoverable by
+// editing metadata, not a structural impossibility). This matches the record
+// store, which validates reference ids (ULIDs) but cycle-checks nothing.
+// ---------------------------------------------------------------------------
+
+/**
+ * Reject any `references` edge whose target id does not resolve via `lookup`
+ * (backed by `WorkStateStore#getItem`, exactly like {@link DependsOnLookup} —
+ * only the existence signal, `undefined`, is consumed here). A dangling
+ * supersedes edge would mislead a reader into following a replacement that
+ * does not exist, so it is rejected at write time, typed — the board-twin of
+ * {@link assertDependenciesExist}. Every edge in the list is checked
+ * regardless of `rel` (an edge to a nonexistent item is meaningless under any
+ * vocabulary), and every missing id is listed, not just the first.
+ * ULID well-formedness is NOT this guard's job — it is enforced one layer
+ * down at store.ts's write chokepoint (mirroring the record store's split).
+ */
+export function assertSupersedesTargetsExist(references: readonly WorkItemReference[], lookup: DependsOnLookup): void {
+  const missing = references.filter((ref) => lookup(ref.id) === undefined).map((ref) => ref.id);
+  if (missing.length > 0) {
+    throw new DagError(
+      'DANGLING_SUPERSEDES',
+      `work-state dag: references target nonexistent item(s): ${missing.join(', ')}`,
+    );
   }
 }

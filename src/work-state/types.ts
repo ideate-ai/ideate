@@ -21,6 +21,23 @@
 export const DEFAULT_TENANT_ID = 'local';
 
 /**
+ * A typed edge from this item to another item it references. `rel` is an
+ * OPEN vocabulary — `supersedes` (the primary case: a replacement naming the
+ * item it replaces), and freely `refutes` | `answers` | `relates-to` | …
+ * `id` is the ULID of the referenced (pre-existing) item. Backlinks — the
+ * reverse edge, e.g. `superseded_by` — are DERIVED on read (store.ts's
+ * view reads), never stored: only the forward edge is persisted, so the two
+ * directions can never drift. Defined locally rather than reusing
+ * record/schema.ts's `RecordReference`: the shapes coincide, but the record
+ * type's contract is append-only-specific while this edge is mutable via
+ * `update_meta` — two stores, two local types, one mental model.
+ */
+export interface WorkItemReference {
+  rel: string;
+  id: string;
+}
+
+/**
  * Stored status values. `blocked` is derived, never stored — see the
  * file header note.
  */
@@ -82,6 +99,14 @@ export interface WorkItem {
    * the opaque `spec`.
    */
   parent_id: string | null;
+  /**
+   * Typed FORWARD edges to other items (open `rel` vocabulary, `supersedes`
+   * primary). Always present on a read (mirrors `depends_on`), `[]` when the
+   * item names no other item. The reverse edge (`superseded_by`) is DERIVED
+   * on read, never stored — see store.ts's view reads. Structured contract
+   * data, NOT part of the opaque `spec`.
+   */
+  references: WorkItemReference[];
   created_by: ActorRef;
   /** ISO-8601 timestamp. */
   created_at: string;
@@ -108,7 +133,7 @@ export interface WorkStateEvent {
 
 /**
  * Input to create a new work item. `tenant_id` defaults to
- * {@link DEFAULT_TENANT_ID}; `depends_on` defaults to `[]`. `status`,
+ * {@link DEFAULT_TENANT_ID}; `depends_on` and `references` default to `[]`. `status`,
  * `claim`, `id`, `version`, `created_at`, `updated_at` are never accepted
  * here — the store assigns them (`status` always starts `open`, `claim`
  * always starts `null`, `version` always starts `1`).
@@ -125,6 +150,14 @@ export interface NewWorkItemInput {
    * by dag.ts's parent-existence + ancestor-cycle checks at write time.
    */
   parent_id?: string | null;
+  /**
+   * Optional typed forward edges (e.g. a `supersedes` edge naming the item
+   * this one replaces). Absent defaults to `[]`. Every edge id is guarded at
+   * write time: well-formed ULID (store.ts) AND an existing item (dag.ts's
+   * supersedes guard — existence only, never a cycle check: a replacement
+   * edge is not a sequencing DAG).
+   */
+  references?: WorkItemReference[];
   created_by: ActorRef;
 }
 
@@ -154,6 +187,13 @@ export interface UpdateMetaInput {
    * present with null" to preserve this distinction.
    */
   parent_id?: string | null;
+  /**
+   * Replace the typed forward-edge list wholesale (mirrors `depends_on`'s
+   * replace-semantics): ABSENT = unchanged; PRESENT (including `[]`, which
+   * clears every edge) = the new full list. This is how a `supersedes` edge
+   * is set, moved, or cleared after creation.
+   */
+  references?: WorkItemReference[];
 }
 
 /** Input to append one immutable event row. `at` defaults to the store clock. */

@@ -456,6 +456,112 @@ describe('parent_id containment', () => {
   });
 });
 
+describe('supersedes / typed forward references', () => {
+  function createWithReferences(verbs: WorkStateVerbs, title: string, references: { rel: string; id: string }[]) {
+    return verbs.create({
+      title,
+      spec: 'plain prompt',
+      spec_format: 'text/plain',
+      created_by: actor(),
+      references,
+    });
+  }
+
+  it('create with a supersedes edge persists the forward edge; get/list expose the derived superseded_by backlink on the target', () => {
+    const { verbs } = makeFixture();
+    const old = createBasic(verbs, 'the old plan');
+    const replacement = createWithReferences(verbs, 'the new plan', [{ rel: 'supersedes', id: old.id }]);
+    expect(replacement.references).toEqual([{ rel: 'supersedes', id: old.id }]);
+
+    // The target announces its replacement on get — derived, never stored.
+    expect(verbs.get(old.id)?.referenced_by).toEqual([{ rel: 'supersedes', id: replacement.id }]);
+    // …and on list.
+    const listed = verbs.list().find((i) => i.id === old.id);
+    expect(listed?.referenced_by).toEqual([{ rel: 'supersedes', id: replacement.id }]);
+    // The replacement has no backlink of its own.
+    expect(verbs.get(replacement.id)?.referenced_by).toEqual([]);
+    // Only the forward edge is stored: the target's own references stay [].
+    expect(verbs.get(old.id)?.references).toEqual([]);
+  });
+
+  it('create rejects a dangling supersedes target with a typed DANGLING_SUPERSEDES DagError, before any write', () => {
+    const { verbs } = makeFixture();
+    let thrown: unknown;
+    try {
+      createWithReferences(verbs, 'x', [{ rel: 'supersedes', id: '01JZM8Z0000000000000000000' }]);
+    } catch (err) {
+      thrown = err;
+    }
+    expect(thrown).toBeInstanceOf(DagError);
+    expect((thrown as DagError).code).toBe('DANGLING_SUPERSEDES');
+    // Nothing was persisted.
+    expect(verbs.list()).toEqual([]);
+  });
+
+  it('update_meta can set, replace, and clear the supersedes edge (wholesale replace semantics)', () => {
+    const { verbs } = makeFixture();
+    const a = createBasic(verbs, 'a');
+    const b = createBasic(verbs, 'b');
+    const item = createBasic(verbs, 'x');
+
+    // Set.
+    const set = verbs.updateMeta(item.id, item.version, { references: [{ rel: 'supersedes', id: a.id }] });
+    expect(set.references).toEqual([{ rel: 'supersedes', id: a.id }]);
+    expect(verbs.get(a.id)?.referenced_by).toEqual([{ rel: 'supersedes', id: item.id }]);
+
+    // Replace — the derived backlink moves with the forward edge.
+    const replaced = verbs.updateMeta(item.id, set.version, { references: [{ rel: 'supersedes', id: b.id }] });
+    expect(replaced.references).toEqual([{ rel: 'supersedes', id: b.id }]);
+    expect(verbs.get(a.id)?.referenced_by).toEqual([]);
+    expect(verbs.get(b.id)?.referenced_by).toEqual([{ rel: 'supersedes', id: item.id }]);
+
+    // Absent key: unchanged.
+    const renamed = verbs.updateMeta(item.id, replaced.version, { title: 'x2' });
+    expect(renamed.references).toEqual([{ rel: 'supersedes', id: b.id }]);
+
+    // Clear.
+    const cleared = verbs.updateMeta(item.id, renamed.version, { references: [] });
+    expect(cleared.references).toEqual([]);
+    expect(verbs.get(b.id)?.referenced_by).toEqual([]);
+  });
+
+  it('update_meta rejects a dangling supersedes target with a typed DANGLING_SUPERSEDES DagError, before any write', () => {
+    const { verbs } = makeFixture();
+    const item = createBasic(verbs, 'x');
+    let thrown: unknown;
+    try {
+      verbs.updateMeta(item.id, item.version, { references: [{ rel: 'supersedes', id: '01JZM8Z0000000000000000000' }] });
+    } catch (err) {
+      thrown = err;
+    }
+    expect(thrown).toBeInstanceOf(DagError);
+    expect((thrown as DagError).code).toBe('DANGLING_SUPERSEDES');
+    // Unchanged.
+    expect(verbs.get(item.id)?.version).toBe(item.version);
+    expect(verbs.get(item.id)?.references).toEqual([]);
+  });
+
+  it('fan-in and chains derive across the board (mirrors the record store’s supersedes coverage)', () => {
+    const { verbs, setNow } = makeFixture();
+    setNow('2026-05-01T00:00:00.000Z');
+    const target = createBasic(verbs, 'the original');
+    setNow('2026-06-01T00:00:00.000Z');
+    const b = createWithReferences(verbs, 'replacement one', [{ rel: 'supersedes', id: target.id }]);
+    setNow('2026-07-01T00:00:00.000Z');
+    const c = createWithReferences(verbs, 'replacement two', [{ rel: 'supersedes', id: target.id }]);
+    const d = createWithReferences(verbs, 'chain link', [{ rel: 'supersedes', id: b.id }]);
+
+    // Fan-in: both B and C backlink the target, newest first.
+    expect(verbs.get(target.id)?.referenced_by).toEqual([
+      { rel: 'supersedes', id: c.id },
+      { rel: 'supersedes', id: b.id },
+    ]);
+    // Chain: B is superseded by D; D has no backlink of its own.
+    expect(verbs.get(b.id)?.referenced_by).toEqual([{ rel: 'supersedes', id: d.id }]);
+    expect(verbs.get(d.id)?.referenced_by).toEqual([]);
+  });
+});
+
 describe('cancel', () => {
   it('cancels an open item; audited "cancel" event carries no claim_token (nothing to void)', () => {
     const { verbs } = makeFixture();

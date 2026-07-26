@@ -13,7 +13,9 @@
 // itself:
 //
 //   1. depends_on cycle/dangling-reference rejection (dag.ts) — a write-time
-//      DFS run before create/update_meta ever reach the store.
+//      DFS run before create/update_meta ever reach the store. Its sibling:
+//      the dangling-supersedes guard (existence only, no cycle check) over
+//      the typed `references` forward edge, also dag.ts, also pre-write.
 //   2. status transitions for cancel/reopen. store.ts's `updateMeta` is
 //      metadata-only by contract (see its own doc comment: "status/claim
 //      transitions are NOT metadata edits"), and it has no companion
@@ -48,11 +50,11 @@
 import type { Clock } from '../record/id.js';
 import { openForWrite } from './schema.js';
 import { appendEventRowOn } from './store.js';
-import type { ListItemsFilter, WorkStateStore } from './store.js';
+import type { ListItemsFilter, WorkItemView, WorkStateStore } from './store.js';
 import { withWriteTransaction } from './tx.js';
 import { WorkStateError, WorkStateModuleError } from './types.js';
-import type { ActorRef, UpdateMetaInput, WorkItem, WorkItemStatus, WorkStateEvent } from './types.js';
-import { assertDependenciesExist, assertNoCycle, assertNoParentCycle, assertParentExists } from './dag.js';
+import type { ActorRef, UpdateMetaInput, WorkItem, WorkItemReference, WorkItemStatus, WorkStateEvent } from './types.js';
+import { assertDependenciesExist, assertNoCycle, assertNoParentCycle, assertParentExists, assertSupersedesTargetsExist } from './dag.js';
 import type { DependsOnLookup, ParentLookup } from './dag.js';
 
 /**
@@ -98,7 +100,10 @@ export class VerbError extends WorkStateModuleError {
  * `claimable` is never stored (see types.ts/schema.ts: there is no column
  * and no status-enum member for the concept this field names) — it is
  * computed fresh on every `list()` call from live `depends_on` statuses, so
- * it can never drift out of sync with the graph.
+ * it can never drift out of sync with the graph. `referenced_by` is likewise
+ * derived, never stored: the reverse of the typed forward-reference edge
+ * (supersedes primary), attached by store.ts's listItemViews so a superseded
+ * item surfaces its replacement on every list read.
  */
 export interface ListedWorkItem extends WorkItem {
   /** True iff `status === 'open'` AND every id in `depends_on` currently has
@@ -117,6 +122,10 @@ export interface ListedWorkItem extends WorkItem {
    *  Items in any other status report `false` — they are simply not in the
    *  one state where this concept applies. */
   claimable: boolean;
+  /** The DERIVED reverse edges: `referenced_by[i]` means "item `id` points
+   *  at this one with `rel`" — a `supersedes` forward edge surfaces here as
+   *  the backlink announcing this item's replacement. */
+  referenced_by: WorkItemReference[];
 }
 
 /** A synthetic id that can never collide with a real ULID (ULIDs are 26
@@ -162,6 +171,29 @@ function peekParentId(input: unknown): { present: boolean; value: string | null 
   if (v === null) return { present: true, value: null };
   if (typeof v === 'string') return { present: true, value: v };
   return { present: false, value: null };
+}
+
+/** Best-effort extraction of a `references` edge list from an otherwise-
+ *  `unknown` create/update_meta payload, for this file's OWN pre-write
+ *  dangling-supersedes guard only. Returns `undefined` whenever the key is
+ *  absent (no edge edit — no guard) OR the shape is not a clean `{rel, id}`
+ *  list — in that case this file's check is simply skipped, and the store's
+ *  own (authoritative) field validation raises the appropriate typed error
+ *  when the payload reaches it. Mirrors `peekDependsOn`'s contract exactly;
+ *  never inspects `spec`. */
+function peekReferences(input: unknown): WorkItemReference[] | undefined {
+  if (input === null || typeof input !== 'object' || Array.isArray(input)) return undefined;
+  const raw = (input as Record<string, unknown>)['references'];
+  if (raw === undefined) return undefined;
+  if (!Array.isArray(raw)) return undefined;
+  const refs: WorkItemReference[] = [];
+  for (const item of raw) {
+    if (item === null || typeof item !== 'object' || Array.isArray(item)) return undefined;
+    const ref = item as Record<string, unknown>;
+    if (typeof ref['rel'] !== 'string' || typeof ref['id'] !== 'string') return undefined;
+    refs.push({ rel: ref['rel'], id: ref['id'] });
+  }
+  return refs;
 }
 
 /** Result of a direct status transition against the `items` table. */
@@ -339,14 +371,24 @@ export class WorkStateVerbs {
       assertParentExists(parent.value, parentLookup);
       assertNoParentCycle(CREATE_CYCLE_SENTINEL, parent.value, parentLookup);
     }
+    // Forward-reference guard (supersedes primary): existence only, never a
+    // cycle check — a replacement edge is not a sequencing DAG (dag.ts). A
+    // dangling edge would mislead a reader into following a replacement that
+    // does not exist, so it is rejected before the store is touched.
+    const references = peekReferences(input) ?? [];
+    if (references.length > 0) {
+      assertSupersedesTargetsExist(references, this.#lookup());
+    }
     return this.#store.insertItem(input);
   }
 
   /** Fetch one work item by id, or `null` if it does not exist. Runs the
-   *  lazy-expiry seam first. */
-  get(id: string, expiryCheck: ExpiryCheck = noopExpiryCheck): WorkItem | null {
+   *  lazy-expiry seam first. Returns the VIEW (store.ts's `WorkItemView`):
+   *  the item plus its derived `referenced_by` backlinks, so a superseded
+   *  item announces its replacement on every read. */
+  get(id: string, expiryCheck: ExpiryCheck = noopExpiryCheck): WorkItemView | null {
     expiryCheck(id);
-    return this.#store.getItem(id);
+    return this.#store.getItemView(id);
   }
 
   /**
@@ -360,7 +402,7 @@ export class WorkStateVerbs {
    * from drifting stale.
    */
   list(filter?: ListItemsFilter): ListedWorkItem[] {
-    const items = this.#store.listItems(filter);
+    const items = this.#store.listItemViews(filter);
     const cache = new Map<string, WorkItemStatus>(items.map((item) => [item.id, item.status] as const));
     const resolveStatus = (id: string): WorkItemStatus | undefined => {
       const cached = cache.get(id);
@@ -376,11 +418,15 @@ export class WorkStateVerbs {
   }
 
   /**
-   * Update metadata (title/spec/spec_format/depends_on) via optimistic CAS
+   * Update metadata (title/spec/spec_format/depends_on/parent_id/references)
+   * via optimistic CAS
    * on `version` (store.ts's `updateMeta` primitive). When `depends_on` is
    * present in `patch`, rejects (typed, `DagError`) a dangling reference or
    * a cycle-introducing edit BEFORE the store is touched — recovery is calling
-   * `update_meta` again with a corrected list.
+   * `update_meta` again with a corrected list. A present `references` list
+   * (which replaces the edge list wholesale) is likewise rejected when any
+   * target dangles — existence only, never a cycle check (a replacement edge
+   * is not a sequencing DAG).
    * A stale `expectedVersion` surfaces as the store's own typed
    * `WorkStateError('VERSION_CONFLICT', …)`, unchanged. Runs the lazy-expiry
    * seam first.
@@ -404,6 +450,14 @@ export class WorkStateVerbs {
       const parentLookup = this.#parentLookup();
       assertParentExists(parent.value, parentLookup);
       assertNoParentCycle(id, parent.value, parentLookup);
+    }
+    // Forward-reference guard, orthogonal to both paths above: a present
+    // `references` list replaces the edge list wholesale, so every target is
+    // existence-checked (no cycle check — see create()). `[]` (clear all
+    // edges) needs no guard; an absent key leaves the edges untouched.
+    const references = peekReferences(patch);
+    if (references !== undefined && references.length > 0) {
+      assertSupersedesTargetsExist(references, this.#lookup());
     }
     return this.#store.updateMeta(id, expectedVersion, patch);
   }

@@ -80,7 +80,7 @@ import { CursorSchema, ProgressSchema } from '@modelcontextprotocol/sdk/types.js
 
 import { loadConfig, workStatePath } from '../config/ideate-config.js';
 import type { Clock } from '../record/id.js';
-import { createUlidGenerator } from '../record/id.js';
+import { createUlidGenerator, isUlid } from '../record/id.js';
 import { TelemetryCounters } from '../telemetry/counters.js';
 import type { ToolRegistrar } from '../server.js';
 import { claim, complete, release, renew } from './claims.js';
@@ -91,7 +91,7 @@ import { primeOnClaim } from './priming-hook.js';
 import { WorkStateStore } from './store.js';
 import type { ListItemsFilter } from './store.js';
 import { WorkStateError, WorkStateModuleError } from './types.js';
-import type { ActorRef, UpdateMetaInput, WorkItemStatus } from './types.js';
+import type { ActorRef, UpdateMetaInput, WorkItemReference, WorkItemStatus } from './types.js';
 import type { ExpiryCheck } from './verbs.js';
 import { WorkStateVerbs } from './verbs.js';
 
@@ -132,6 +132,60 @@ function parseStatus(value: string | undefined): WorkItemStatus | undefined {
 /** Reassemble the flattened `actor_human`/`actor_agent` wire fields into an `ActorRef`. */
 function actorFromArgs(human: string, agent: string | undefined): ActorRef {
   return agent === undefined ? { human } : { human, agent };
+}
+
+/**
+ * Assemble the forward-edge list from the two write-verb arguments: the
+ * ergonomic `supersedes` (a single item id → a `supersedes` edge) and the
+ * general `references` escape hatch (a JSON array of `{rel, id}` for arbitrary
+ * typed edges). Mirrors record/tools.ts's `referencesFromArgs` exactly, with
+ * one adaptation to this module's own error idiom: a malformed arg THROWS a
+ * typed `WorkStateError('SCHEMA', …)`, which the handlers' existing
+ * try/catch shapes into the standard `{ ok: false, code, message }` payload
+ * (record/tools.ts returns a sentinel object instead because its append path
+ * has no try/catch). Target EXISTENCE is not checked here — that is dag.ts's
+ * write-time guard one layer down; ULID well-formedness is also re-checked at
+ * store.ts's write chokepoint (defense in depth for the CLI transport, which
+ * bypasses this function). Returns `undefined` when neither arg is present —
+ * the caller then omits the `references` key entirely, preserving
+ * update_meta's "absent = unchanged" semantics.
+ */
+function referencesFromArgs(supersedes: string | undefined, referencesJson: string | undefined): WorkItemReference[] | undefined {
+  // An empty string is treated as absent (record/tools.ts's exact rule), so
+  // `supersedes: ""` can never accidentally clear an item's edges on
+  // update_meta — only a present, parsed `references: "[]"` does that.
+  const sup = supersedes === '' ? undefined : supersedes;
+  const refsJson = referencesJson === '' ? undefined : referencesJson;
+  if (sup === undefined && refsJson === undefined) return undefined;
+  const refs: WorkItemReference[] = [];
+  if (sup !== undefined) {
+    if (!isUlid(sup)) {
+      throw new WorkStateError('SCHEMA', `work-state tools: supersedes ${JSON.stringify(sup)} is not a well-formed ULID`);
+    }
+    refs.push({ rel: 'supersedes', id: sup });
+  }
+  if (refsJson !== undefined) {
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(refsJson);
+    } catch {
+      throw new WorkStateError('SCHEMA', 'work-state tools: references is not valid JSON (expected an array of {rel, id})');
+    }
+    if (!Array.isArray(parsed)) {
+      throw new WorkStateError('SCHEMA', 'work-state tools: references must be a JSON array of {rel, id}');
+    }
+    for (const item of parsed) {
+      const ref = item as WorkItemReference;
+      if (typeof ref?.rel !== 'string' || ref.rel.length === 0) {
+        throw new WorkStateError('SCHEMA', `work-state tools: references rel ${JSON.stringify(ref?.rel)} must be a non-empty string`);
+      }
+      if (typeof ref?.id !== 'string' || !isUlid(ref.id)) {
+        throw new WorkStateError('SCHEMA', `work-state tools: references id ${JSON.stringify(ref?.id)} is not a well-formed ULID`);
+      }
+      refs.push({ rel: ref.rel, id: ref.id });
+    }
+  }
+  return refs;
 }
 
 /** Options for the registrar factory — all defaulted at the composition edge,
@@ -234,7 +288,9 @@ export function createWorkStateToolsRegistrar(options: WorkStateToolsOptions = {
       {
         description:
           'Create a new work item on the delegation board. Rejects a depends_on list that references a ' +
-          'nonexistent item or would introduce a cycle (typed DagError).',
+          'nonexistent item or would introduce a cycle (typed DagError). Accepts an optional supersedes edge ' +
+          '(the id of the item this one replaces); the superseded item surfaces the replacement as a derived ' +
+          'backlink on read.',
         inputSchema: {
           title: zString.describe('One line, human-readable.'),
           spec: zString.describe('Opaque tool-specific payload — never parsed, never interpreted.'),
@@ -244,6 +300,12 @@ export function createWorkStateToolsRegistrar(options: WorkStateToolsOptions = {
             .describe('Optional CONTAINMENT parent — the id of the item this one belongs to. Omit (or null) to create a root/top-level item. Orthogonal to depends_on. Rejected (typed DagError) if it names a nonexistent item.')
             .nullable()
             .optional(),
+          supersedes: zString
+            .describe('Id of a work item this one replaces. Recorded as a `supersedes` forward edge; the superseded item surfaces it as a derived backlink on get/list. Rejected if not a well-formed ULID or if it names a nonexistent item.')
+            .optional(),
+          references: zString
+            .describe('Advanced: a JSON array of additional typed edges, e.g. [{"rel":"relates-to","id":"01..."}]. `rel` is open vocabulary; every id must be a well-formed ULID naming an existing item.')
+            .optional(),
           tenant_id: zString.describe('Team/board scope. Default: the local-mode single tenant.').optional(),
           actor_human: zString.describe('The creating actor — a human principal.'),
           actor_agent: zString.describe('The named agent acting on the human principal\'s behalf, if any.').optional(),
@@ -252,6 +314,7 @@ export function createWorkStateToolsRegistrar(options: WorkStateToolsOptions = {
       async (args): Promise<CallToolResult> => {
         const ctx = getContext();
         try {
+          const references = referencesFromArgs(args.supersedes, args.references);
           const item = ctx.verbs.create({
             title: args.title,
             spec: args.spec,
@@ -261,6 +324,7 @@ export function createWorkStateToolsRegistrar(options: WorkStateToolsOptions = {
             // create a root; null is passed through so the store records a
             // root explicitly (harmless, same as absent).
             ...(args.parent_id === undefined ? {} : { parent_id: args.parent_id }),
+            ...(references === undefined ? {} : { references }),
             ...(args.tenant_id === undefined ? {} : { tenant_id: args.tenant_id }),
             created_by: actorFromArgs(args.actor_human, args.actor_agent),
           });
@@ -274,7 +338,7 @@ export function createWorkStateToolsRegistrar(options: WorkStateToolsOptions = {
     server.registerTool(
       'work_get',
       {
-        description: 'Fetch one work item by id, or null if it does not exist. Runs the lazy-expiry seam first.',
+        description: 'Fetch one work item by id, or null if it does not exist. Runs the lazy-expiry seam first. The item carries its DERIVED referenced_by backlinks, so a superseded item shows what replaced it.',
         inputSchema: { id: zString.describe('The work item id.') },
       },
       async (args): Promise<CallToolResult> => {
@@ -295,7 +359,8 @@ export function createWorkStateToolsRegistrar(options: WorkStateToolsOptions = {
           'List work items, with the derived claimability view attached to each (an open item every direct ' +
           'depends_on entry of which is done). Selection only — never ranking. The parent_id filter is tri-state: ' +
           'omit for no containment filter, a string for the direct children of that parent, or null for roots-only ' +
-          '(top-level items).',
+          '(top-level items). Each item also carries its DERIVED referenced_by backlinks, so a superseded item ' +
+          'shows what replaced it.',
         inputSchema: {
           tenant_id: zString.describe('Filter to one tenant.').optional(),
           status: zString.describe('Filter to one status: open | in_progress | done | cancelled.').optional(),
@@ -329,10 +394,12 @@ export function createWorkStateToolsRegistrar(options: WorkStateToolsOptions = {
       'work_update_meta',
       {
         description:
-          'Update metadata (title/spec/spec_format/depends_on/parent_id) via optimistic CAS on version. Rejects a ' +
+          'Update metadata (title/spec/spec_format/depends_on/parent_id/references) via optimistic CAS on version. Rejects a ' +
           'depends_on edit that would introduce a dangling reference or a cycle, and a parent_id edit that dangles ' +
           'or would make the item its own ancestor. parent_id is tri-state: omit to leave unchanged, a string to ' +
-          'set/move the parent, or null to clear it back to root. Runs the lazy-expiry seam first.',
+          'set/move the parent, or null to clear it back to root. supersedes/references replace the forward-edge ' +
+          'list wholesale (omit both to leave it unchanged); every edge id must be a well-formed ULID naming an ' +
+          'existing item. Runs the lazy-expiry seam first.',
         inputSchema: {
           id: zString.describe('The work item id.'),
           expected_version: zNumber.int().describe('The version this edit expects to be current.'),
@@ -344,11 +411,18 @@ export function createWorkStateToolsRegistrar(options: WorkStateToolsOptions = {
             .describe('CONTAINMENT parent (tri-state): omit = unchanged; a string = set/move parent; null = clear to root. Orthogonal to depends_on.')
             .nullable()
             .optional(),
+          supersedes: zString
+            .describe('Id of the work item this one replaces — sets the edge list to a single `supersedes` edge (wholesale replace).')
+            .optional(),
+          references: zString
+            .describe('Advanced: a JSON array of typed edges, e.g. [{"rel":"supersedes","id":"01..."}] — wholesale replace; "[]" clears every edge.')
+            .optional(),
         },
       },
       async (args): Promise<CallToolResult> => {
         const ctx = getContext();
         try {
+          const references = referencesFromArgs(args.supersedes, args.references);
           const patch: UpdateMetaInput = {
             ...(args.title === undefined ? {} : { title: args.title }),
             ...(args.spec === undefined ? {} : { spec: args.spec }),
@@ -359,6 +433,9 @@ export function createWorkStateToolsRegistrar(options: WorkStateToolsOptions = {
             // null = clear to root. The wire adapter thus preserves the
             // "key absent vs present-null" distinction the store depends on.
             ...(args.parent_id === undefined ? {} : { parent_id: args.parent_id }),
+            // Wholesale replace (depends_on's semantics): the key is added
+            // iff either edge arg was supplied; absent = leave unchanged.
+            ...(references === undefined ? {} : { references }),
           };
           const item = ctx.verbs.updateMeta(args.id, args.expected_version, patch, makeExpiryCheck(ctx));
           return ok({ item });

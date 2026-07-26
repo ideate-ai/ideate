@@ -13,6 +13,7 @@ import {
   assertNoCycle,
   assertNoParentCycle,
   assertParentExists,
+  assertSupersedesTargetsExist,
 } from './dag.js';
 import type { DependsOnLookup, ParentLookup } from './dag.js';
 
@@ -205,5 +206,67 @@ describe('assertNoParentCycle (containment)', () => {
     expect(thrown).toBeInstanceOf(DagError);
     expect((thrown as DagError).code).toBe('PARENT_CYCLE');
     expect((thrown as DagError).message).toContain('x → y → x');
+  });
+});
+
+describe('assertSupersedesTargetsExist', () => {
+  it('passes silently when every edge target resolves', () => {
+    const lookup = lookupFrom({ a: [], b: [] });
+    expect(() =>
+      assertSupersedesTargetsExist(
+        [
+          { rel: 'supersedes', id: 'a' },
+          { rel: 'relates-to', id: 'b' },
+        ],
+        lookup,
+      ),
+    ).not.toThrow();
+  });
+
+  it('passes silently on an empty references list', () => {
+    const lookup = lookupFrom({});
+    expect(() => assertSupersedesTargetsExist([], lookup)).not.toThrow();
+  });
+
+  it('throws a typed DANGLING_SUPERSEDES error naming the missing id', () => {
+    const lookup = lookupFrom({ a: [] });
+    let thrown: unknown;
+    try {
+      assertSupersedesTargetsExist([{ rel: 'supersedes', id: 'ghost' }], lookup);
+    } catch (err) {
+      thrown = err;
+    }
+    expect(thrown).toBeInstanceOf(DagError);
+    expect((thrown as DagError).code).toBe('DANGLING_SUPERSEDES');
+    expect((thrown as DagError).message).toContain('ghost');
+  });
+
+  it('checks every edge regardless of rel, and lists every missing id, not just the first', () => {
+    const lookup = lookupFrom({ a: [] });
+    let thrown: unknown;
+    try {
+      assertSupersedesTargetsExist(
+        [
+          { rel: 'supersedes', id: 'ghost1' },
+          { rel: 'relates-to', id: 'a' },
+          { rel: 'refutes', id: 'ghost2' },
+        ],
+        lookup,
+      );
+    } catch (err) {
+      thrown = err;
+    }
+    expect(thrown).toBeInstanceOf(DagError);
+    expect((thrown as DagError).code).toBe('DANGLING_SUPERSEDES');
+    expect((thrown as DagError).message).toContain('ghost1');
+    expect((thrown as DagError).message).toContain('ghost2');
+  });
+
+  it('a self-edge does NOT throw — supersedes is existence-guarded only, never cycle-checked', () => {
+    // A replacement edge is not a sequencing DAG: even an edge pointing back
+    // at the item itself is not this guard's concern (the record store's
+    // posture — cycle-check nothing).
+    const lookup = lookupFrom({ a: [] });
+    expect(() => assertSupersedesTargetsExist([{ rel: 'supersedes', id: 'a' }], lookup)).not.toThrow();
   });
 });

@@ -29,6 +29,7 @@ import {
 import type { IdeateConfigV3 } from '../config/ideate-config.js';
 import { isUlid } from '../record/id.js';
 import type { Clock } from '../record/id.js';
+import { openForWrite } from './schema.js';
 import { DEFAULT_TENANT_ID, WorkStateError } from './types.js';
 import { WorkStateStore } from './store.js';
 
@@ -95,14 +96,17 @@ describe('contract types and forbidden fields', () => {
         'claim',
         'depends_on',
         'parent_id',
+        'references',
         'created_by',
         'created_at',
         'updated_at',
         'version',
       ].sort(),
     );
-    // A create with no parent_id lands as a root.
+    // A create with no parent_id lands as a root, and with no references
+    // lands with no forward edges.
     expect(item.parent_id).toBeNull();
+    expect(item.references).toEqual([]);
     // Forbidden fields never appear.
     for (const forbidden of ['priority', 'estimate', 'estimates', 'sprint', 'sprints', 'labels', 'review_state', 'rank']) {
       expect(item).not.toHaveProperty(forbidden);
@@ -433,6 +437,233 @@ describe('depends_on round-trips', () => {
     const item = store.insertItem({ title: 'x', spec: 's', spec_format: 'f', created_by: actor(), depends_on: [] });
     const updated = store.updateMeta(item.id, item.version, { depends_on: ['some-other-id'] });
     expect(updated.depends_on).toEqual(['some-other-id']);
+  });
+});
+
+describe('references: the stored forward edge (supersedes primary)', () => {
+  it('round-trips a supersedes edge through insert and read; absent defaults to []', () => {
+    const { store } = makeFixture();
+    const old = store.insertItem({ title: 'old plan', spec: 's', spec_format: 'f', created_by: actor() });
+    expect(old.references).toEqual([]);
+
+    const replacement = store.insertItem({
+      title: 'new plan',
+      spec: 's',
+      spec_format: 'f',
+      created_by: actor(),
+      references: [{ rel: 'supersedes', id: old.id }],
+    });
+    expect(replacement.references).toEqual([{ rel: 'supersedes', id: old.id }]);
+    expect(store.getItem(replacement.id)?.references).toEqual([{ rel: 'supersedes', id: old.id }]);
+    // Only the FORWARD edge is stored — the target's own row is untouched.
+    expect(store.getItem(old.id)?.references).toEqual([]);
+  });
+
+  it('updateMeta replaces the edge list wholesale: absent leaves it unchanged, [] clears it', () => {
+    const { store } = makeFixture();
+    const a = store.insertItem({ title: 'a', spec: 's', spec_format: 'f', created_by: actor() });
+    const b = store.insertItem({ title: 'b', spec: 's', spec_format: 'f', created_by: actor() });
+    const item = store.insertItem({
+      title: 'x',
+      spec: 's',
+      spec_format: 'f',
+      created_by: actor(),
+      references: [{ rel: 'supersedes', id: a.id }],
+    });
+
+    // Absent references: unchanged (only title moves).
+    const renamed = store.updateMeta(item.id, item.version, { title: 'x2' });
+    expect(renamed.references).toEqual([{ rel: 'supersedes', id: a.id }]);
+
+    // Present: wholesale replace.
+    const moved = store.updateMeta(renamed.id, renamed.version, { references: [{ rel: 'supersedes', id: b.id }] });
+    expect(moved.references).toEqual([{ rel: 'supersedes', id: b.id }]);
+
+    // Empty list: clears every edge.
+    const cleared = store.updateMeta(moved.id, moved.version, { references: [] });
+    expect(cleared.references).toEqual([]);
+  });
+
+  it('rejects a malformed references shape with a typed SCHEMA error and writes nothing', () => {
+    const { store } = makeFixture();
+    for (const bad of [
+      { references: 'not-an-array' },
+      { references: [{ rel: 'supersedes' }] },
+      { references: [{ id: 'x' }] },
+      { references: [{ rel: '', id: 'x' }] },
+      { references: ['supersedes'] },
+    ]) {
+      let thrown: unknown;
+      try {
+        store.insertItem({ title: 'x', spec: 's', spec_format: 'f', created_by: actor(), ...bad });
+      } catch (err) {
+        thrown = err;
+      }
+      expect(thrown).toBeInstanceOf(WorkStateError);
+      expect((thrown as WorkStateError).code).toBe('SCHEMA');
+    }
+    expect(store.listItems()).toEqual([]);
+  });
+
+  it('rejects a non-ULID reference id at the write chokepoint with a typed SCHEMA error, on create and update_meta', () => {
+    const { store } = makeFixture();
+    let createThrown: unknown;
+    try {
+      store.insertItem({
+        title: 'x',
+        spec: 's',
+        spec_format: 'f',
+        created_by: actor(),
+        references: [{ rel: 'supersedes', id: 'not-a-ulid' }],
+      });
+    } catch (err) {
+      createThrown = err;
+    }
+    expect(createThrown).toBeInstanceOf(WorkStateError);
+    expect((createThrown as WorkStateError).code).toBe('SCHEMA');
+    expect((createThrown as WorkStateError).message).toMatch(/not a well-formed ULID/);
+    expect(store.listItems()).toEqual([]);
+
+    const item = store.insertItem({ title: 'y', spec: 's', spec_format: 'f', created_by: actor() });
+    let updateThrown: unknown;
+    try {
+      store.updateMeta(item.id, item.version, { references: [{ rel: 'supersedes', id: 'not-a-ulid' }] });
+    } catch (err) {
+      updateThrown = err;
+    }
+    expect(updateThrown).toBeInstanceOf(WorkStateError);
+    expect((updateThrown as WorkStateError).code).toBe('SCHEMA');
+    expect(store.getItem(item.id)?.references).toEqual([]);
+  });
+
+  it('accepts a well-formed ULID reference id (existence is the verb layer’s guard, not the store’s)', () => {
+    const { store } = makeFixture();
+    const item = store.insertItem({
+      title: 'x',
+      spec: 's',
+      spec_format: 'f',
+      created_by: actor(),
+      references: [{ rel: 'supersedes', id: '01JZM8Z0000000000000000000' }],
+    });
+    expect(item.references).toEqual([{ rel: 'supersedes', id: '01JZM8Z0000000000000000000' }]);
+  });
+});
+
+describe('view reads: derived referenced_by backlinks, never stored', () => {
+  it('attaches referenced_by to a superseded item without persisting it', () => {
+    const fx = makeFixture();
+    fx.setNow('2026-05-01T00:00:00.000Z');
+    const a = fx.store.insertItem({ title: 'the old plan', spec: 's', spec_format: 'f', created_by: actor() });
+    fx.setNow('2026-06-01T00:00:00.000Z');
+    const b = fx.store.insertItem({
+      title: 'the new plan',
+      spec: 's',
+      spec_format: 'f',
+      created_by: actor(),
+      references: [{ rel: 'supersedes', id: a.id }],
+    });
+
+    const viewA = fx.store.getItemView(a.id);
+    const viewB = fx.store.getItemView(b.id);
+    // A learns it was superseded — the DERIVED reverse edge.
+    expect(viewA?.referenced_by).toEqual([{ rel: 'supersedes', id: b.id }]);
+    // B carries the forward edge and has no backlinks of its own.
+    expect(viewB?.references).toEqual([{ rel: 'supersedes', id: a.id }]);
+    expect(viewB?.referenced_by).toEqual([]);
+    // Nothing was written back to A — the stored row has no reverse edge.
+    expect(fx.store.getItem(a.id)?.references).toEqual([]);
+    // The plain (non-view) reads are untouched: no referenced_by key.
+    expect(fx.store.getItem(a.id)).not.toHaveProperty('referenced_by');
+    // An unknown id still reads null.
+    expect(fx.store.getItemView('01JZM8Z0000000000000000000')).toBeNull();
+  });
+
+  it('listItemViews derives the backlink even when the referring item is excluded by the filter', () => {
+    const fx = makeFixture();
+    fx.setNow('2026-05-01T00:00:00.000Z');
+    const a = fx.store.insertItem({ title: 'target', spec: 's', spec_format: 'f', created_by: actor() });
+    fx.setNow('2026-06-01T00:00:00.000Z');
+    const b = fx.store.insertItem({
+      title: 'replacement',
+      spec: 's',
+      spec_format: 'f',
+      created_by: actor(),
+      references: [{ rel: 'supersedes', id: a.id }],
+    });
+    // Move B out of the 'open' status the filter below selects (test
+    // scaffolding standing in for the cancel verb — the same direct-status
+    // seam verbs.test.ts uses), so B is scanned but excluded from the result.
+    const db = openForWrite(fx.dbPath);
+    try {
+      db.prepare('UPDATE items SET status = ? WHERE id = ?').run('cancelled', b.id);
+    } finally {
+      db.close();
+    }
+
+    const views = fx.store.listItemViews({ status: 'open' });
+    expect(views.map((v) => v.id)).toEqual([a.id]);
+    expect(views[0]?.referenced_by).toEqual([{ rel: 'supersedes', id: b.id }]);
+  });
+
+  it('fan-in: two items superseding one target both surface as backlinks on it', () => {
+    const fx = makeFixture();
+    fx.setNow('2026-05-01T00:00:00.000Z');
+    const target = fx.store.insertItem({ title: 'the original', spec: 's', spec_format: 'f', created_by: actor() });
+    fx.setNow('2026-06-01T00:00:00.000Z');
+    const b = fx.store.insertItem({
+      title: 'replacement one',
+      spec: 's',
+      spec_format: 'f',
+      created_by: actor(),
+      references: [{ rel: 'supersedes', id: target.id }],
+    });
+    fx.setNow('2026-07-01T00:00:00.000Z');
+    const c = fx.store.insertItem({
+      title: 'replacement two',
+      spec: 's',
+      spec_format: 'f',
+      created_by: actor(),
+      references: [{ rel: 'supersedes', id: target.id }],
+    });
+
+    const targetView = fx.store.getItemView(target.id);
+    // Both B and C point at the target — newest-first read emits both backlinks.
+    expect(targetView?.referenced_by).toEqual([
+      { rel: 'supersedes', id: c.id },
+      { rel: 'supersedes', id: b.id },
+    ]);
+  });
+
+  it('chain: A←B←C — each link surfaces the next as a backlink, C has none', () => {
+    const fx = makeFixture();
+    fx.setNow('2026-05-01T00:00:00.000Z');
+    const a = fx.store.insertItem({ title: 'oldest', spec: 's', spec_format: 'f', created_by: actor() });
+    fx.setNow('2026-06-01T00:00:00.000Z');
+    const b = fx.store.insertItem({
+      title: 'middle',
+      spec: 's',
+      spec_format: 'f',
+      created_by: actor(),
+      references: [{ rel: 'supersedes', id: a.id }],
+    });
+    fx.setNow('2026-07-01T00:00:00.000Z');
+    const c = fx.store.insertItem({
+      title: 'newest',
+      spec: 's',
+      spec_format: 'f',
+      created_by: actor(),
+      references: [{ rel: 'supersedes', id: b.id }],
+    });
+
+    const views = fx.store.listItemViews();
+    const viewA = views.find((v) => v.id === a.id);
+    const viewB = views.find((v) => v.id === b.id);
+    const viewC = views.find((v) => v.id === c.id);
+    // A is superseded only by B (C points at B, not A — chains are not transitive).
+    expect(viewA?.referenced_by).toEqual([{ rel: 'supersedes', id: b.id }]);
+    expect(viewB?.referenced_by).toEqual([{ rel: 'supersedes', id: c.id }]);
+    // C is the newest link — no backlinks of its own.
+    expect(viewC?.referenced_by).toEqual([]);
   });
 });
 

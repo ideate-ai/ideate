@@ -54,8 +54,11 @@ const USAGE = `Usage: ideate-work <subcommand> [options]
 
 Subcommands (mirror the eleven MCP work-state verbs):
   create --title <t> --spec <s> --spec-format <f> --human <h> [--agent <a>]
-         [--depends-on <id1,id2,...>] [--tenant <t>]
+         [--depends-on <id1,id2,...>] [--supersedes <id>] [--tenant <t>]
       Create a new work item; prints the created item as JSON.
+      \`--supersedes <id>\` records a supersedes edge to the item this one
+      replaces — the superseded item surfaces the replacement as a derived
+      referenced_by backlink on get/list.
   get --id <id> [--json]
       Fetch one work item by id (or null). Runs the lazy-expiry seam first.
   list [--tenant <t>] [--status <open|in_progress|done|cancelled>] [--json]
@@ -239,6 +242,7 @@ function runCreate(argv: readonly string[], stdout: NodeJS.WritableStream, stder
     '--spec': 'value',
     '--spec-format': 'value',
     '--depends-on': 'value',
+    '--supersedes': 'value',
     '--tenant': 'value',
     '--human': 'value',
     '--agent': 'value',
@@ -257,6 +261,7 @@ function runCreate(argv: readonly string[], stdout: NodeJS.WritableStream, stder
   }
   const dependsOnRaw = parsed.values.get('--depends-on');
   const dependsOn = dependsOnRaw === undefined ? undefined : dependsOnRaw.split(',').filter((s) => s.length > 0);
+  const supersedes = parsed.values.get('--supersedes');
   const tenantId = parsed.values.get('--tenant');
   const agent = parsed.values.get('--agent');
 
@@ -267,6 +272,12 @@ function runCreate(argv: readonly string[], stdout: NodeJS.WritableStream, stder
       spec,
       spec_format: specFormat,
       ...(dependsOn === undefined ? {} : { depends_on: dependsOn }),
+      // The ergonomic supersedes flag maps to one typed forward edge —
+      // mirrors cli/ideate-record.ts's --supersedes exactly. ULID
+      // well-formedness and target existence are validated one layer down
+      // (store.ts's write chokepoint and dag.ts's guard), so a malformed or
+      // dangling id surfaces as a typed engine error here, exit 1.
+      ...(supersedes === undefined || supersedes === '' ? {} : { references: [{ rel: 'supersedes', id: supersedes }] }),
       ...(tenantId === undefined ? {} : { tenant_id: tenantId }),
       created_by: actorFrom(human, agent),
     });

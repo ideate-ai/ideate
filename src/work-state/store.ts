@@ -9,11 +9,20 @@
 // cycle detection) are OUT OF SCOPE — that is claims.ts and verbs.ts, built on
 // top of these primitives.
 //
-// Gate-before-persist (mirrors record/store.ts): the two free-text fields
-// this layer accepts — `title` and an event's `note` — pass through
-// scanAndMask BEFORE any write. `spec` is deliberately NEVER gated: it is
-// opaque, store-as-is, no code path may parse OR transform it (masking would
-// be a transform).
+// Gate-before-persist (mirrors record/store.ts): the free-text fields
+// this layer accepts — `title`, an event's `note`, and the `rel` of every
+// reference edge — pass through scanAndMask BEFORE any write. `spec` is
+// deliberately NEVER gated: it is opaque, store-as-is, no code path may
+// parse OR transform it (masking would be a transform). Edge ids are
+// ULID-validated at the write chokepoint before persist, so a typo can never
+// land as a silent dangling edge (the record store's exact posture).
+//
+// Forward-edge persistence (v3 schema): the `"references"` column stores
+// ONLY the forward typed edge (`supersedes` primary). The reverse edge —
+// `superseded_by` — is DERIVED on read by the view reads
+// ({@link WorkStateStore.getItemView}/{@link WorkStateStore.listItemViews}),
+// never stored: one stored direction, one mental model shared with the
+// process-record store, and no forward/reverse drift is possible.
 //
 // Intentional narrowing beyond the contract: `title`, `spec`, and
 // `spec_format` must be NON-EMPTY strings on insert. The contract is silent
@@ -40,7 +49,7 @@ import type { DatabaseSync } from 'node:sqlite';
 
 import { scanAndMask } from '../secret-gate/scan.js';
 import type { Clock, UlidGenerator } from '../record/id.js';
-import { createUlidGenerator } from '../record/id.js';
+import { createUlidGenerator, isUlid } from '../record/id.js';
 import { openForRead, openForWrite } from './schema.js';
 import { withBusyWrap, withWriteTransaction } from './tx.js';
 import {
@@ -54,6 +63,7 @@ import type {
   NewWorkItemInput,
   UpdateMetaInput,
   WorkItem,
+  WorkItemReference,
   WorkItemStatus,
   WorkStateEvent,
 } from './types.js';
@@ -79,9 +89,25 @@ export interface ListItemsFilter {
   parent_id?: string | null;
 }
 
+/**
+ * A work item enriched with its DERIVED reverse edges — `referenced_by[i]`
+ * means "item `id` points at this one with `rel`" (so a `supersedes` forward
+ * edge surfaces here as a `superseded_by`-style backlink on the superseded
+ * item). Derived per read by {@link WorkStateStore.getItemView} and
+ * {@link WorkStateStore.listItemViews}; never persisted — the board stores
+ * ONLY the forward edge, mirroring record/store.ts's `ProcessRecordView`.
+ */
+export type WorkItemView = WorkItem & { referenced_by: WorkItemReference[] };
+
 /** Gate one free-text field through the secret scanner before persist. */
 function gate(text: string): string {
   return scanAndMask(text).content;
+}
+
+/** Gate every member of every reference edge before persist (see the
+ *  gate-before-persist note in the file header). */
+function gateReferences(references: readonly WorkItemReference[]): WorkItemReference[] {
+  return references.map((ref) => ({ rel: gate(ref.rel), id: gate(ref.id) }));
 }
 
 /** Reject a reserved top-level field (`rank`) on a create/update payload. */
@@ -142,6 +168,46 @@ function requireStringArray(value: unknown, field: string): string[] {
   return value as string[];
 }
 
+/**
+ * Validate a `references` edge list (shape only — mirrors record/schema.ts's
+ * validateReferences). Must be an array of `{rel, id}` objects with NON-EMPTY
+ * strings: an empty `rel` or `id` is a malformed edge, not a valid empty
+ * value. ULID well-formedness is checked separately at the write chokepoint
+ * ({@link assertReferenceIdsAreUlids}) so the two failure classes stay
+ * distinct, exactly the record store's split.
+ */
+function requireReferenceArray(value: unknown, field: string): WorkItemReference[] {
+  if (!Array.isArray(value)) {
+    throw new WorkStateError('SCHEMA', `work-state store: field "${field}" must be an array of {rel, id}`);
+  }
+  return value.map((item, i): WorkItemReference => {
+    const raw = requireObject(item, `${field}[${i}]`);
+    const rel = requireNonEmptyString(raw['rel'], `${field}[${i}].rel`);
+    const id = requireNonEmptyString(raw['id'], `${field}[${i}].id`);
+    return { rel, id };
+  });
+}
+
+/**
+ * Validate every reference id as a well-formed ULID at the write chokepoint
+ * (insertItem/updateMeta — every write transport funnels here), so a typo is
+ * rejected with a typed SCHEMA error before it can persist as a silent
+ * dangling edge. Mirrors record/store.ts's append-time check verbatim in
+ * posture; target EXISTENCE is a separate, verb-level concern (dag.ts's
+ * assertSupersedesTargetsExist).
+ */
+function assertReferenceIdsAreUlids(references: readonly WorkItemReference[], context: string): void {
+  for (let i = 0; i < references.length; i++) {
+    const ref = references[i];
+    if (ref === undefined || !isUlid(ref.id)) {
+      throw new WorkStateError(
+        'SCHEMA',
+        `work-state store: ${context} references[${String(i)}].id is not a well-formed ULID: ${JSON.stringify(ref?.id)}`,
+      );
+    }
+  }
+}
+
 function validateActorRef(value: unknown, field: string): ActorRef {
   const raw = requireObject(value, field);
   const human = requireNonEmptyString(raw['human'], `${field}.human`);
@@ -158,6 +224,9 @@ interface ValidatedNewWorkItemInput {
   /** The resolved CONTAINMENT parent: a parent id, or `null` for a
    *  root. Absent-or-null on the input both resolve to `null` here. */
   parent_id: string | null;
+  /** Typed forward edges (supersedes primary); absent on the input resolves
+   *  to `[]` here. Shape-validated; ids are ULID-checked at the chokepoint. */
+  references: WorkItemReference[];
   created_by: ActorRef;
 }
 
@@ -175,6 +244,7 @@ function validateNewWorkItemInput(input: unknown): ValidatedNewWorkItemInput {
     // Containment parent: absent OR null both mean "create as a root".
     // Fully orthogonal to `depends_on` — never read against it here.
     parent_id: raw['parent_id'] === undefined ? null : requireNullableString(raw['parent_id'], 'parent_id'),
+    references: raw['references'] === undefined ? [] : requireReferenceArray(raw['references'], 'references'),
     created_by: validateActorRef(raw['created_by'], 'created_by'),
   };
 }
@@ -188,6 +258,10 @@ interface ValidatedUpdateMetaInput {
    *  validated shape = leave unchanged; PRESENT (a string OR `null`) = the
    *  new value, where `null` clears the parent back to root. */
   parent_id?: string | null;
+  /** Present iff the patch replaces the forward-edge list wholesale
+   *  (`[]` clears every edge); ABSENT = unchanged — `depends_on`'s exact
+   *  replace-semantics. */
+  references?: WorkItemReference[];
 }
 
 function validateUpdateMetaInput(input: unknown): ValidatedUpdateMetaInput {
@@ -203,6 +277,7 @@ function validateUpdateMetaInput(input: unknown): ValidatedUpdateMetaInput {
   // unchanged. This is the one UpdateMeta field whose set value legitimately
   // includes `null` — see types.ts's `UpdateMetaInput.parent_id`.
   if (raw['parent_id'] !== undefined) out.parent_id = requireNullableString(raw['parent_id'], 'parent_id');
+  if (raw['references'] !== undefined) out.references = requireReferenceArray(raw['references'], 'references');
   return out;
 }
 
@@ -249,6 +324,11 @@ interface ItemRow {
    *  that predates the column would surface `undefined` — `rowToWorkItem`
    *  defaults that to `null` (a root). */
   parent_id: string | null;
+  /** The forward-edge column (JSON array text). A legacy read against a
+   *  pre-v3 schema (a below-current board opened read-only before the next
+   *  write migrates it) would surface `undefined` — `rowToWorkItem` defaults
+   *  that to `'[]'` (no edges), exactly `parent_id`'s defensive posture. */
+  references: string;
   created_by_human: string;
   created_by_agent: string | null;
   created_at: string;
@@ -290,6 +370,9 @@ function rowToWorkItem(row: ItemRow): WorkItem {
     // Always present on a read (mirrors `claim`), `null` for a root.
     // `?? null` defends a legacy read where the column is absent.
     parent_id: row.parent_id ?? null,
+    // Always present on a read (mirrors `depends_on`), `[]` for no edges.
+    // `?? '[]'` defends a legacy read where the pre-v3 column is absent.
+    references: JSON.parse(row.references ?? '[]') as WorkItemReference[],
     created_by:
       row.created_by_agent === null
         ? { human: row.created_by_human }
@@ -324,6 +407,68 @@ function rowToEvent(row: EventRow): WorkStateEvent {
 
 function getItemRow(db: DatabaseSync, id: string): ItemRow | undefined {
   return db.prepare('SELECT * FROM items WHERE id = ?').get(id) as ItemRow | undefined;
+}
+
+/**
+ * Build the reverse-edge map over EVERY item on the board: target id -> the
+ * `{rel, id: referrer-id}` backlinks pointing at it. Scanned newest-created
+ * first (the same order `listItems` emits), so each target's backlink list
+ * reads newest-first, mirroring record/store.ts's readViews walk.
+ *
+ * The map is built from every row — NOT just the rows a list filter returns —
+ * so a backlink is never missed just because the referring item didn't match
+ * the filter (record/store.ts's exact completeness posture). Cost is one full
+ * scan of a small board table; no index is added (GP-24's mechanical,
+ * no-new-index posture). `?? '[]'` defends a legacy pre-v3 read whose column
+ * is absent.
+ */
+function buildReferrerMap(db: DatabaseSync): Map<string, WorkItemReference[]> {
+  const rows = db
+    .prepare('SELECT id, "references" FROM items ORDER BY created_at DESC, id DESC')
+    .all() as unknown as { id: string; references: string }[];
+  const referrers = new Map<string, WorkItemReference[]>();
+  for (const row of rows) {
+    for (const ref of JSON.parse(row.references ?? '[]') as WorkItemReference[]) {
+      const list = referrers.get(ref.id);
+      const back: WorkItemReference = { rel: ref.rel, id: row.id };
+      if (list === undefined) referrers.set(ref.id, [back]);
+      else list.push(back);
+    }
+  }
+  return referrers;
+}
+
+/**
+ * The one filtered-items SELECT, shared by `listItems` and `listItemViews`:
+ * newest-created-first, optional tenant/status filters, and the tri-state
+ * containment filter (see {@link ListItemsFilter}). `= NULL` cannot be
+ * expressed via a bound param, so the roots-only case emits the literal
+ * `parent_id IS NULL` clause with no param; the children-of case binds the
+ * parent id. A `parent_id` key that is absent (or present-but-undefined)
+ * applies no containment filter at all.
+ */
+function selectItemRows(db: DatabaseSync, filter?: ListItemsFilter): ItemRow[] {
+  const clauses: string[] = [];
+  const params: string[] = [];
+  if (filter?.tenant_id !== undefined) {
+    clauses.push('tenant_id = ?');
+    params.push(filter.tenant_id);
+  }
+  if (filter?.status !== undefined) {
+    clauses.push('status = ?');
+    params.push(filter.status);
+  }
+  if (filter !== undefined && 'parent_id' in filter) {
+    const parentFilter = filter.parent_id;
+    if (parentFilter === null) {
+      clauses.push('parent_id IS NULL');
+    } else if (parentFilter !== undefined) {
+      clauses.push('parent_id = ?');
+      params.push(parentFilter);
+    }
+  }
+  const where = clauses.length > 0 ? ` WHERE ${clauses.join(' AND ')}` : '';
+  return db.prepare(`SELECT * FROM items${where} ORDER BY created_at DESC, id DESC`).all(...params) as unknown as ItemRow[];
 }
 
 /** The single INSERT this module ever issues against `events`. A standalone
@@ -406,11 +551,17 @@ export class WorkStateStore {
    */
   insertItem(input: unknown): WorkItem {
     const validated = validateNewWorkItemInput(input);
+    assertReferenceIdsAreUlids(validated.references, 'create');
     const db = openForWrite(this.#dbPath);
     try {
       const id = this.#nextId();
       const now = this.#clock().toISOString();
       const title = gate(validated.title);
+      // Gate both members of every edge — same gate-before-persist posture as
+      // `title`; rel tokens and ULIDs never match a secret pattern, so this is
+      // a no-op in practice but keeps the invariant total (record/store.ts's
+      // exact posture on its own references field).
+      const references = gateReferences(validated.references);
       // The item insert and its `create` event commit as ONE atomic unit —
       // otherwise these would be two separate auto-committing statements on
       // the same connection, so a crash between them could leave an item with
@@ -422,11 +573,11 @@ export class WorkStateStore {
       withWriteTransaction(db, (db) => {
         db.prepare(
           `INSERT INTO items (
-            id, tenant_id, title, spec, spec_format, status, depends_on, parent_id,
+            id, tenant_id, title, spec, spec_format, status, depends_on, parent_id, "references",
             created_by_human, created_by_agent, created_at, updated_at, version,
             claim_token_counter, claim_holder_human, claim_holder_agent,
             claim_token, claim_acquired_at, claim_lease_expires
-          ) VALUES (?, ?, ?, ?, ?, 'open', ?, ?, ?, ?, ?, ?, 1, 0, NULL, NULL, NULL, NULL, NULL)`,
+          ) VALUES (?, ?, ?, ?, ?, 'open', ?, ?, ?, ?, ?, ?, ?, 1, 0, NULL, NULL, NULL, NULL, NULL)`,
         ).run(
           id,
           validated.tenant_id,
@@ -435,6 +586,7 @@ export class WorkStateStore {
           validated.spec_format,
           JSON.stringify(validated.depends_on),
           validated.parent_id,
+          JSON.stringify(references),
           validated.created_by.human,
           validated.created_by.agent ?? null,
           now,
@@ -468,6 +620,26 @@ export class WorkStateStore {
     }
   }
 
+  /**
+   * Like {@link getItem}, but the returned item carries its DERIVED reverse
+   * edges in `referenced_by` — so a caller reading a superseded item sees what
+   * replaced it without scanning the board itself. The backlink map is built
+   * from EVERY item on the board (see {@link buildReferrerMap}), never
+   * persisted. Never creates the database file.
+   */
+  getItemView(id: string): WorkItemView | null {
+    const db = openForRead(this.#dbPath);
+    if (db === null) return null;
+    try {
+      const row = getItemRow(db, id);
+      if (row === undefined) return null;
+      const referrers = buildReferrerMap(db);
+      return { ...rowToWorkItem(row), referenced_by: referrers.get(row.id) ?? [] };
+    } finally {
+      db.close();
+    }
+  }
+
   /** List work items, newest-created-first, optionally filtered by tenant
    *  and/or status — SELECTION only, never ranking. Never creates the
    *  database file. */
@@ -475,33 +647,27 @@ export class WorkStateStore {
     const db = openForRead(this.#dbPath);
     if (db === null) return [];
     try {
-      const clauses: string[] = [];
-      const params: string[] = [];
-      if (filter?.tenant_id !== undefined) {
-        clauses.push('tenant_id = ?');
-        params.push(filter.tenant_id);
-      }
-      if (filter?.status !== undefined) {
-        clauses.push('status = ?');
-        params.push(filter.status);
-      }
-      // Containment filter, tri-state (see {@link ListItemsFilter}).
-      // `= NULL` cannot be expressed via a bound param, so the roots-only case
-      // emits the literal `parent_id IS NULL` clause with no param; the
-      // children-of case binds the parent id. A `parent_id` key that is absent
-      // (or present-but-undefined) applies no containment filter at all.
-      if (filter !== undefined && 'parent_id' in filter) {
-        const parentFilter = filter.parent_id;
-        if (parentFilter === null) {
-          clauses.push('parent_id IS NULL');
-        } else if (parentFilter !== undefined) {
-          clauses.push('parent_id = ?');
-          params.push(parentFilter);
-        }
-      }
-      const where = clauses.length > 0 ? ` WHERE ${clauses.join(' AND ')}` : '';
-      const rows = db.prepare(`SELECT * FROM items${where} ORDER BY created_at DESC, id DESC`).all(...params) as unknown as ItemRow[];
-      return rows.map(rowToWorkItem);
+      return selectItemRows(db, filter).map(rowToWorkItem);
+    } finally {
+      db.close();
+    }
+  }
+
+  /**
+   * Like {@link listItems}, but each returned item carries its DERIVED
+   * reverse edges in `referenced_by` — the list-twin of {@link getItemView},
+   * mirroring record/store.ts's readViews. The backlink map is built over
+   * EVERY item on the board, including ones the filter excludes from the
+   * result, so a returned item's backlink is never missed just because the
+   * referring item didn't match the filter. Never creates the database file.
+   */
+  listItemViews(filter?: ListItemsFilter): WorkItemView[] {
+    const db = openForRead(this.#dbPath);
+    if (db === null) return [];
+    try {
+      const rows = selectItemRows(db, filter);
+      const referrers = buildReferrerMap(db);
+      return rows.map((row) => ({ ...rowToWorkItem(row), referenced_by: referrers.get(row.id) ?? [] }));
     } finally {
       db.close();
     }
@@ -517,6 +683,7 @@ export class WorkStateStore {
    */
   updateMeta(id: string, expectedVersion: number, patch: unknown): WorkItem {
     const validated = validateUpdateMetaInput(patch);
+    if (validated.references !== undefined) assertReferenceIdsAreUlids(validated.references, 'update_meta');
     const db = openForWrite(this.#dbPath);
     try {
       const current = getItemRow(db, id);
@@ -540,6 +707,12 @@ export class WorkStateStore {
       // legacy read whose column predates the migration. Orthogonal to
       // `depends_on` — this never reads or writes the dependency column.
       const nextParentId = validated.parent_id === undefined ? (current.parent_id ?? null) : validated.parent_id;
+      // Wholesale replace (depends_on's exact semantics): absent leaves the
+      // stored edge list unchanged; present — including `[]`, which clears
+      // every edge — is the new full list, gated before persist like every
+      // other free-text field. `?? '[]'` defends a legacy pre-v3 row.
+      const nextReferences =
+        validated.references === undefined ? (current.references ?? '[]') : JSON.stringify(gateReferences(validated.references));
       // The version predicate lives in the UPDATE itself (the check above
       // alone is a TOCTOU window — a concurrent update_meta between the SELECT
       // and this write would be silently overwritten). The pre-check stays for
@@ -550,9 +723,9 @@ export class WorkStateStore {
       const result = withBusyWrap(() =>
         db
           .prepare(
-            `UPDATE items SET title = ?, spec = ?, spec_format = ?, depends_on = ?, parent_id = ?, updated_at = ?, version = version + 1 WHERE id = ? AND version = ?`,
+            `UPDATE items SET title = ?, spec = ?, spec_format = ?, depends_on = ?, parent_id = ?, "references" = ?, updated_at = ?, version = version + 1 WHERE id = ? AND version = ?`,
           )
-          .run(nextTitle, nextSpec, nextSpecFormat, nextDependsOn, nextParentId, now, id, expectedVersion),
+          .run(nextTitle, nextSpec, nextSpecFormat, nextDependsOn, nextParentId, nextReferences, now, id, expectedVersion),
       );
       if (result.changes !== 1) {
         throw new WorkStateError(

@@ -88,8 +88,16 @@ export const BUSY_TIMEOUT_MS = 5000;
  * metadata-only `ALTER TABLE items ADD COLUMN parent_id TEXT` (see
  * {@link openForWrite}). Every pre-migration row lands with `parent_id NULL`
  * (a root), with no data rewrite.
+ *
+ * v3: adds the `"references"` forward-edge column to `items` (typed
+ * supersedes/reference edges — see types.ts's `WorkItemReference`). Same
+ * additive, metadata-only shape as v1->v2: `ALTER TABLE items ADD COLUMN
+ * "references" TEXT NOT NULL DEFAULT '[]'`; every pre-migration row lands
+ * with `'[]'` (no edges), no data rewrite. The name is double-quoted
+ * everywhere it appears in SQL because `REFERENCES` is a reserved SQLite
+ * keyword (the foreign-key clause) — a bare identifier is a syntax error.
  */
-export const BOARD_SCHEMA_VERSION = 2;
+export const BOARD_SCHEMA_VERSION = 3;
 
 /**
  * `items`: one row per work item. `depends_on` is stored as a JSON array of
@@ -107,6 +115,14 @@ export const BOARD_SCHEMA_VERSION = 2;
  * and dag.ts owns its ancestor-cycle/parent-existence guards — this module is
  * DDL only. A freshly-created v2 board has the column from `CREATE TABLE`; an
  * existing v1 board gets it via the additive migration in {@link openForWrite}.
+ *
+ * `"references"` (v3) is the typed FORWARD-edge column — a JSON array of
+ * `{rel, id}` edges (`supersedes` primary), exactly the record store's
+ * `references` field carried onto the board (one mental model across the
+ * stores). NOT NULL DEFAULT '[]' so a legacy row reads as "no edges" with no
+ * rewrite. The reverse edge (`superseded_by`) is never a column: it is
+ * derived on read by store.ts's view reads. Quoted in every SQL statement
+ * (reserved keyword — see {@link BOARD_SCHEMA_VERSION}).
  */
 const ITEMS_TABLE_DDL = `
 CREATE TABLE IF NOT EXISTS items (
@@ -118,6 +134,7 @@ CREATE TABLE IF NOT EXISTS items (
   status                TEXT NOT NULL,
   depends_on            TEXT NOT NULL,
   parent_id             TEXT,
+  "references"          TEXT NOT NULL DEFAULT '[]',
   created_by_human      TEXT NOT NULL,
   created_by_agent      TEXT,
   created_at            TEXT NOT NULL,
@@ -191,8 +208,8 @@ function readUserVersion(db: DatabaseSync): number {
  *   parent_id column.
  * - `user_version` <= {@link BOARD_SCHEMA_VERSION}: acceptable. `0` (unstamped
  *   pre-versioning) and any stamped version below the current one are
- *   migrated FORWARD by {@link openForWrite}'s additive ladder (the first
- *   rung is v1->v2). This is the difference from the pre-v2 shape,
+ *   migrated FORWARD by {@link openForWrite}'s additive ladder (the rungs are
+ *   v1->v2 and v2->v3). This is the difference from the pre-v2 shape,
  *   which had no ladder and rejected any non-zero version below current.
  *
  * Called on EVERY open (read and write) — this is the "a newer board file
@@ -234,10 +251,18 @@ function columnExists(db: DatabaseSync, table: string, column: string): boolean 
  * by a `PRAGMA table_info` existence check so it is a no-op when the column is
  * already present (the fresh-create case). Treats `0` and `1` identically —
  * the simplest correct rule.
+ *
+ * v2->v3: `"references" TEXT NOT NULL DEFAULT '[]'` (quoted — reserved
+ * keyword). Same additive, metadata-only shape: ADD COLUMN with a constant
+ * DEFAULT fills every pre-existing row with `'[]'` (no edges) without a row
+ * rewrite. Same existence-guard idempotence.
  */
 function migrateSchema(db: DatabaseSync): void {
   if (!columnExists(db, 'items', 'parent_id')) {
     db.exec('ALTER TABLE items ADD COLUMN parent_id TEXT');
+  }
+  if (!columnExists(db, 'items', 'references')) {
+    db.exec(`ALTER TABLE items ADD COLUMN "references" TEXT NOT NULL DEFAULT '[]'`);
   }
 }
 

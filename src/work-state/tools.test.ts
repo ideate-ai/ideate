@@ -161,6 +161,179 @@ describe('work_create / work_get / work_list / work_update_meta', () => {
   });
 });
 
+describe('supersedes / typed forward references over the MCP surface', () => {
+  /** Create a plain item; returns its wire shape. */
+  async function createPlain(client: Client, title: string): Promise<Record<string, unknown>> {
+    const created = await call(client, 'work_create', {
+      title,
+      spec: 'plain prompt',
+      spec_format: 'text/plain',
+      actor_human: 'dan',
+    });
+    expect(created.isError).toBe(false);
+    return created.body.item as Record<string, unknown>;
+  }
+
+  it('work_create with supersedes authors the forward edge; work_get/work_list expose the derived superseded_by backlink on the target', async () => {
+    const fixture = makeFixture();
+    const client = await fixture.connect();
+    const old = await createPlain(client, 'the old plan');
+
+    const created = await call(client, 'work_create', {
+      title: 'the new plan',
+      spec: 'plain prompt',
+      spec_format: 'text/plain',
+      actor_human: 'dan',
+      supersedes: old.id as string,
+    });
+    expect(created.isError).toBe(false);
+    const replacement = created.body.item as Record<string, unknown>;
+    expect(replacement.references).toEqual([{ rel: 'supersedes', id: old.id }]);
+
+    // The superseded item announces its replacement on work_get.
+    const gotOld = await call(client, 'work_get', { id: old.id as string });
+    const oldView = gotOld.body.item as Record<string, unknown>;
+    expect(oldView.referenced_by).toEqual([{ rel: 'supersedes', id: replacement.id }]);
+    expect(oldView.references).toEqual([]);
+
+    // …and on work_list.
+    const listed = await call(client, 'work_list', {});
+    const listedOld = (listed.body.items as Record<string, unknown>[]).find((i) => i.id === old.id);
+    expect(listedOld?.referenced_by).toEqual([{ rel: 'supersedes', id: replacement.id }]);
+  });
+
+  it('work_create accepts a references JSON array of typed edges', async () => {
+    const fixture = makeFixture();
+    const client = await fixture.connect();
+    const a = await createPlain(client, 'a');
+    const b = await createPlain(client, 'b');
+
+    const created = await call(client, 'work_create', {
+      title: 'x',
+      spec: 's',
+      spec_format: 'text/plain',
+      actor_human: 'dan',
+      references: JSON.stringify([
+        { rel: 'supersedes', id: a.id as string },
+        { rel: 'relates-to', id: b.id as string },
+      ]),
+    });
+    expect(created.isError).toBe(false);
+    expect((created.body.item as Record<string, unknown>).references).toEqual([
+      { rel: 'supersedes', id: a.id },
+      { rel: 'relates-to', id: b.id },
+    ]);
+  });
+
+  it('rejects a malformed (non-ULID) supersedes id with a typed SCHEMA error payload', async () => {
+    const fixture = makeFixture();
+    const client = await fixture.connect();
+
+    const result = await call(client, 'work_create', {
+      title: 'x',
+      spec: 's',
+      spec_format: 'text/plain',
+      actor_human: 'dan',
+      supersedes: 'not-a-ulid',
+    });
+    expect(result.isError).toBe(true);
+    expect(result.body.ok).toBe(false);
+    expect(result.body.code).toBe('SCHEMA');
+    expect(result.body.message as string).toMatch(/not a well-formed ULID/);
+  });
+
+  it('rejects a malformed references arg (bad JSON, non-ULID id) with a typed SCHEMA error payload', async () => {
+    const fixture = makeFixture();
+    const client = await fixture.connect();
+
+    const badJson = await call(client, 'work_create', {
+      title: 'x',
+      spec: 's',
+      spec_format: 'text/plain',
+      actor_human: 'dan',
+      references: '{not json',
+    });
+    expect(badJson.isError).toBe(true);
+    expect(badJson.body.code).toBe('SCHEMA');
+
+    const badId = await call(client, 'work_create', {
+      title: 'x',
+      spec: 's',
+      spec_format: 'text/plain',
+      actor_human: 'dan',
+      references: JSON.stringify([{ rel: 'supersedes', id: 'not-a-ulid' }]),
+    });
+    expect(badId.isError).toBe(true);
+    expect(badId.body.code).toBe('SCHEMA');
+    expect(badId.body.message as string).toMatch(/not a well-formed ULID/);
+  });
+
+  it('rejects a dangling supersedes target as a typed DANGLING_SUPERSEDES payload (create and update_meta)', async () => {
+    const fixture = makeFixture();
+    const client = await fixture.connect();
+
+    const created = await call(client, 'work_create', {
+      title: 'x',
+      spec: 's',
+      spec_format: 'text/plain',
+      actor_human: 'dan',
+      supersedes: '01JZM8Z0000000000000000000',
+    });
+    expect(created.isError).toBe(true);
+    expect(created.body.code).toBe('DANGLING_SUPERSEDES');
+
+    const item = await createPlain(client, 'y');
+    const updated = await call(client, 'work_update_meta', {
+      id: item.id as string,
+      expected_version: item.version as number,
+      supersedes: '01JZM8Z0000000000000000000',
+    });
+    expect(updated.isError).toBe(true);
+    expect(updated.body.code).toBe('DANGLING_SUPERSEDES');
+  });
+
+  it('work_update_meta sets, replaces, and clears the supersedes edge', async () => {
+    const fixture = makeFixture();
+    const client = await fixture.connect();
+    const a = await createPlain(client, 'a');
+    const b = await createPlain(client, 'b');
+    const item = await createPlain(client, 'x');
+
+    // Set via the ergonomic supersedes arg.
+    const set = await call(client, 'work_update_meta', {
+      id: item.id as string,
+      expected_version: item.version as number,
+      supersedes: a.id as string,
+    });
+    expect(set.isError).toBe(false);
+    expect((set.body.item as Record<string, unknown>).references).toEqual([{ rel: 'supersedes', id: a.id }]);
+    const gotA = await call(client, 'work_get', { id: a.id as string });
+    expect((gotA.body.item as Record<string, unknown>).referenced_by).toEqual([{ rel: 'supersedes', id: item.id }]);
+
+    // Replace via the references JSON arg.
+    const replaced = await call(client, 'work_update_meta', {
+      id: item.id as string,
+      expected_version: (set.body.item as Record<string, unknown>).version as number,
+      references: JSON.stringify([{ rel: 'supersedes', id: b.id as string }]),
+    });
+    expect(replaced.isError).toBe(false);
+    expect((replaced.body.item as Record<string, unknown>).references).toEqual([{ rel: 'supersedes', id: b.id }]);
+    const gotAAfter = await call(client, 'work_get', { id: a.id as string });
+    expect((gotAAfter.body.item as Record<string, unknown>).referenced_by).toEqual([]);
+
+    // Clear with an empty edge list.
+    const cleared = await call(client, 'work_update_meta', {
+      id: item.id as string,
+      expected_version: (replaced.body.item as Record<string, unknown>).version as number,
+      references: '[]',
+    });
+    expect(cleared.isError).toBe(false);
+    expect((cleared.body.item as Record<string, unknown>).references).toEqual([]);
+    const gotBAfter = await call(client, 'work_get', { id: b.id as string });
+    expect((gotBAfter.body.item as Record<string, unknown>).referenced_by).toEqual([]);
+  });
+});
+
 describe('parent_id containment over the MCP surface', () => {
   it('work_create accepts a parent_id and round-trips it', async () => {
     const fixture = makeFixture();
