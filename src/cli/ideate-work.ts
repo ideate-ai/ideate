@@ -64,7 +64,7 @@ Subcommands (mirror the eleven MCP work-state verbs):
   list [--tenant <t>] [--status <open|in_progress|done|cancelled>] [--json]
       List work items with the derived claimability view attached.
   update-meta --id <id> --expected-version <n> [--title <t>] [--spec <s>]
-         [--spec-format <f>] [--depends-on <id1,id2,...>]
+         [--spec-format <f>] [--depends-on <id1,id2,...>] [--supersedes <id>]
       Update metadata via optimistic CAS on version.
   claim --id <id> --human <h> [--agent <a>] [--lease-ms <n>]
       Claim an open, claimable item; mints a fencing token.
@@ -354,6 +354,7 @@ function runUpdateMeta(argv: readonly string[], stdout: NodeJS.WritableStream, s
     '--spec': 'value',
     '--spec-format': 'value',
     '--depends-on': 'value',
+    '--supersedes': 'value',
   });
   if (parsed.errors.length > 0) {
     for (const err of parsed.errors) stderr.write(`ideate-work: update-meta: ${err}\n`);
@@ -369,11 +370,15 @@ function runUpdateMeta(argv: readonly string[], stdout: NodeJS.WritableStream, s
   try {
     const expectedVersion = parseIntArg(expectedVersionRaw, '--expected-version');
     const dependsOnRaw = parsed.values.get('--depends-on');
+    const supersedes = parsed.values.get('--supersedes');
     const patch: UpdateMetaInput = {
       ...(parsed.values.has('--title') ? { title: parsed.values.get('--title') as string } : {}),
       ...(parsed.values.has('--spec') ? { spec: parsed.values.get('--spec') as string } : {}),
       ...(parsed.values.has('--spec-format') ? { spec_format: parsed.values.get('--spec-format') as string } : {}),
       ...(dependsOnRaw === undefined ? {} : { depends_on: dependsOnRaw.split(',').filter((s) => s.length > 0) }),
+      // `--supersedes <id>` maps to one typed forward edge with wholesale-replace
+      // semantics (mirrors `create --supersedes` and the MCP work_update_meta).
+      ...(supersedes === undefined || supersedes === '' ? {} : { references: [{ rel: 'supersedes', id: supersedes }] }),
     };
     const item = ctx.verbs.updateMeta(id, expectedVersion, patch, makeExpiryCheck(ctx));
     printItem(item, stdout, false);

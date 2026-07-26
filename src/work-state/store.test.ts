@@ -13,7 +13,7 @@
 // All filesystem work happens in mkdtemp dirs — the real .ideate-work/ is
 // never touched.
 
-import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -34,6 +34,34 @@ import { DEFAULT_TENANT_ID, WorkStateError } from './types.js';
 import { WorkStateStore } from './store.js';
 
 const FIXED_ISO = '2026-07-11T12:00:00.000Z';
+
+// A v2-shaped items table (with `parent_id`, WITHOUT the `"references"`
+// column) — the fixture for the legacy pre-v3 view-read guard test. Mirrors
+// schema.test.ts's seedLegacyV2Board; the v2->v3 migration only runs on a
+// WRITE open, so a view read (openForRead) over this table never migrates and
+// is the exact path that used to throw `no such column: "references"`.
+const LEGACY_V2_ITEMS_DDL = `
+CREATE TABLE items (
+  id                    TEXT PRIMARY KEY,
+  tenant_id             TEXT NOT NULL,
+  title                 TEXT NOT NULL,
+  spec                  TEXT NOT NULL,
+  spec_format           TEXT NOT NULL,
+  status                TEXT NOT NULL,
+  depends_on            TEXT NOT NULL,
+  parent_id             TEXT,
+  created_by_human      TEXT NOT NULL,
+  created_by_agent      TEXT,
+  created_at            TEXT NOT NULL,
+  updated_at            TEXT NOT NULL,
+  version               INTEGER NOT NULL,
+  claim_token_counter   INTEGER NOT NULL DEFAULT 0,
+  claim_holder_human    TEXT,
+  claim_holder_agent    TEXT,
+  claim_token           INTEGER,
+  claim_acquired_at     TEXT,
+  claim_lease_expires   TEXT
+)`;
 
 const tempDirs: string[] = [];
 
@@ -603,6 +631,31 @@ describe('view reads: derived referenced_by backlinks, never stored', () => {
     const views = fx.store.listItemViews({ status: 'open' });
     expect(views.map((v) => v.id)).toEqual([a.id]);
     expect(views[0]?.referenced_by).toEqual([{ rel: 'supersedes', id: b.id }]);
+  });
+
+  it('a legacy pre-v3 board (no "references" column) reads views as no-edges, never a raw no-such-column throw', () => {
+    const root = makeTempDir();
+    const dbPath = join(root, 'work-state', 'board.db');
+    mkdirSync(join(root, 'work-state'), { recursive: true });
+    const sqlite = process.getBuiltinModule('node:sqlite') as typeof import('node:sqlite');
+    const seedDb = new sqlite.DatabaseSync(dbPath);
+    seedDb.exec(LEGACY_V2_ITEMS_DDL);
+    seedDb
+      .prepare(
+        `INSERT INTO items (id, tenant_id, title, spec, spec_format, status, depends_on, parent_id, created_by_human, created_by_agent, created_at, updated_at, version) VALUES ('legacy', 't', 'L', 's', 'f', 'open', '[]', NULL, 'dan', NULL, 'now', 'now', 1)`,
+      )
+      .run();
+    seedDb.exec('PRAGMA user_version = 2');
+    seedDb.close();
+
+    const store = new WorkStateStore(dbPath, () => new Date(FIXED_ISO));
+    // A pre-v3 board has no edges by definition: the view read derives an
+    // EMPTY backlink via openForRead (no migration) — it does NOT throw
+    // `no such column: "references"` at prepare time.
+    const views = store.listItemViews();
+    expect(views.map((v) => v.id)).toEqual(['legacy']);
+    expect(views[0]?.referenced_by).toEqual([]);
+    expect(store.getItemView('legacy')?.referenced_by).toEqual([]);
   });
 
   it('fan-in: two items superseding one target both surface as backlinks on it', () => {

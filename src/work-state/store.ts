@@ -419,14 +419,27 @@ function getItemRow(db: DatabaseSync, id: string): ItemRow | undefined {
  * so a backlink is never missed just because the referring item didn't match
  * the filter (record/store.ts's exact completeness posture). Cost is one full
  * scan of a small board table; no index is added (GP-24's mechanical,
- * no-new-index posture). `?? '[]'` defends a legacy pre-v3 read whose column
- * is absent.
+ * no-new-index posture).
+ *
+ * Legacy pre-v3 board (user_version < 3): the `"references"` column does not
+ * exist yet, and a prepared SELECT naming it throws `no such column:
+ * "references"` at PREPARE time — before any row is read, so a per-row
+ * `?? '[]'` could never fire. View reads go through openForRead, which (by
+ * design) does NOT migrate, so an unmigrated board would otherwise surface a
+ * raw, untyped SQLite failure on a plain list/get. A pre-v3 board has no
+ * edges by definition, so the guard returns an empty map; the migration rung
+ * adds the column on the next write open. Same PRAGMA table_info existence
+ * check schema.ts's migrateSchema uses for its guarded ADD COLUMN.
  */
 function buildReferrerMap(db: DatabaseSync): Map<string, WorkItemReference[]> {
+  const hasReferences = (db.prepare('PRAGMA table_info(items)').all() as { name: string }[]).some(
+    (c) => c.name === 'references',
+  );
+  const referrers = new Map<string, WorkItemReference[]>();
+  if (!hasReferences) return referrers; // legacy pre-v3 board — no edges by definition
   const rows = db
     .prepare('SELECT id, "references" FROM items ORDER BY created_at DESC, id DESC')
     .all() as unknown as { id: string; references: string }[];
-  const referrers = new Map<string, WorkItemReference[]>();
   for (const row of rows) {
     for (const ref of JSON.parse(row.references ?? '[]') as WorkItemReference[]) {
       const list = referrers.get(ref.id);

@@ -171,6 +171,40 @@ describe('create / get / list / update-meta', () => {
     expect(result.status).toBe(1);
     expect(result.stderr).toContain('VERSION_CONFLICT');
   });
+
+  it('update-meta --supersedes sets and retargets the forward edge (wholesale replace)', () => {
+    const root = makeProjectRoot();
+    const targetA = JSON.parse(
+      runCli(['create', '--title', 'target a', '--spec', 's', '--spec-format', 'text/plain', '--human', 'dan'], { cwd: root }),
+    ) as { id: string };
+    const targetB = JSON.parse(
+      runCli(['create', '--title', 'target b', '--spec', 's', '--spec-format', 'text/plain', '--human', 'dan'], { cwd: root }),
+    ) as { id: string };
+    const item = JSON.parse(
+      runCli(['create', '--title', 'the plan', '--spec', 's', '--spec-format', 'text/plain', '--human', 'dan'], { cwd: root }),
+    ) as { id: string; version: number };
+
+    // Set the edge to targetA via update-meta --supersedes.
+    runCli(['update-meta', '--id', item.id, '--expected-version', String(item.version), '--supersedes', targetA.id], { cwd: root });
+    const afterSet = JSON.parse(runCli(['get', '--id', item.id, '--json'], { cwd: root })) as {
+      references: { rel: string; id: string }[];
+      version: number;
+    };
+    expect(afterSet.references).toEqual([{ rel: 'supersedes', id: targetA.id }]);
+
+    // Retarget to targetB — wholesale replace, not append.
+    runCli(['update-meta', '--id', item.id, '--expected-version', String(afterSet.version), '--supersedes', targetB.id], { cwd: root });
+    const afterMove = JSON.parse(runCli(['get', '--id', item.id, '--json'], { cwd: root })) as {
+      references: { rel: string; id: string }[];
+    };
+    expect(afterMove.references).toEqual([{ rel: 'supersedes', id: targetB.id }]);
+
+    // targetB carries the derived backlink.
+    const gotB = JSON.parse(runCli(['get', '--id', targetB.id, '--json'], { cwd: root })) as {
+      referenced_by: { rel: string; id: string }[];
+    };
+    expect(gotB.referenced_by).toEqual([{ rel: 'supersedes', id: item.id }]);
+  });
 });
 
 describe('claim lifecycle: actor flags mirror the engine signatures exactly', () => {
