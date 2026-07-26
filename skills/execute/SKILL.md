@@ -28,6 +28,25 @@ Every board write is fenced by a **claim token**. For each item:
 
 Resolve `actor_human` once from `git config user.name` (fallback `$USER`).
 
+## Human-effort items — `spec_format: "ideate/human-gate"`
+Not every board item is code a worker can build. An item whose `spec_format`
+is `ideate/human-gate` marks work that needs a HUMAN — an approval, an
+outward-facing action (a push, a PR, a publish), a per-project judgment call,
+or a decision. It is claimed and completed like any item (the board fences and
+actor-attributes it), but you do **not** spawn a worker for it.
+
+When a claimed item is a human-gate:
+1. **Surface it, don't dispatch.** Present the item to the user — the human
+   action it needs and why — instead of spawning `ideate:worker`.
+2. **The human acts.** Either pause for the user to complete it out-of-band
+   (then `work_complete(id, token, note)` with the human as actor), or — if it
+   can't be done now — `work_release(id, token, note)` and continue to the
+   next claimable item.
+3. **It blocks dependents by contract.** A code item may `depends_on` a
+   human-gate item; the derived `claimable:false` keeps the downstream
+   frontier blocked until the human completes the gate (GP-27 — the data
+   contract, not an orchestrator, holds it).
+
 ## Step 1 — Locate and read the plan
 - Target directory: argument or cwd. Confirm a board exists (`work_list`); if
   it's empty, direct the user to `/ideate:refine` to decompose work onto the
@@ -54,16 +73,20 @@ the execution mode you'll use (below). Get confirmation before building.
 
 ## Step 4 — Execute each item
 For each claimed item:
-1. **Assemble the worker's context.** The item's `spec` is authoritative; add
+1. **Human-gate?** If the item's `spec_format` is `ideate/human-gate`, do NOT
+   spawn a worker — surface it per the Human-effort section above (present it;
+   the human completes it and you `work_complete` with the human as actor, or
+   you `work_release` and continue). Skip the worker/review steps for it.
+2. **Assemble the worker's context.** The item's `spec` is authoritative; add
    the applicable steering rules and any decisions scoped to this area
    (`record_read`). Pass all of it in the worker prompt — the worker has no
    board/record access of its own.
-2. **Spawn `ideate:worker`** with that context. It implements, verifies (build
+3. **Spawn `ideate:worker`** with that context. It implements, verifies (build
    + tests), and returns a completion report (`complete` or `blocked`, what
    changed, verification output, follow-ups).
-3. **Incremental review.** Spawn `ideate:code-reviewer` on the item's change.
+4. **Incremental review.** Spawn `ideate:code-reviewer` on the item's change.
    For spec-sensitive items, also `ideate:spec-reviewer`. Collect findings.
-4. **Handle findings by severity:**
+5. **Handle findings by severity:**
    - `minor` → fix inline (or spawn a quick worker), no ceremony; note in the
      journal.
    - `significant` → fix this cycle if cheap; otherwise `record_append(
@@ -75,10 +98,10 @@ For each claimed item:
    - Two special cases inherited from v2, treat as `critical`: a **startup/
      smoke-test failure** (the thing doesn't run) and **test-infrastructure
      failure** (can't tell if it works) — both block completion.
-5. **Complete or release.** If the worker reported `complete` and no unresolved
+6. **Complete or release.** If the worker reported `complete` and no unresolved
    critical/significant finding remains, `work_complete(id, token, note)`. If
    blocked or Andon'd, `work_release(id, token, note)`.
-6. Re-read the frontier (`work_list`) — completing an item may unblock
+7. Re-read the frontier (`work_list`) — completing an item may unblock
    dependents. Continue until the frontier is empty or an Andon halts you.
 
 ## Step 5 — Close out

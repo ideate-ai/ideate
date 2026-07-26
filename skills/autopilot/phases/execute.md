@@ -19,12 +19,19 @@ For each claimable item, apply **board claim discipline**:
 1. `work_claim(id, actor_human, lease_ms)` → `claim_token`. Size `lease_ms` to
    the item; `work_renew` if a worker runs long. A lapsed lease is reclaimed by
    the board and a stale-token complete fails `INVALID_CLAIM` — that's the fence.
-2. Assemble context: the item `spec` (authoritative) + applicable steering
+2. **Human-gate?** If the item's `spec_format` is `ideate/human-gate`, it needs
+   a HUMAN, not a worker. Do NOT spawn `ideate:worker` — route it to
+   `ideate:proxy-human` with the item + intent (unattended Andon), record its
+   decision (`record_append(kind="andon")`), and act on it. A code item may
+   `depends_on` a human-gate; the derived `claimable:false` holds the downstream
+   frontier until the gate completes (GP-27). Then `work_complete` or
+   `work_release` the gate item itself and continue to the next claimable item.
+3. Assemble context: the item `spec` (authoritative) + applicable steering
    (`steering_read`) + scoped decisions (`record_read`). Spawn `ideate:worker`
    with all of it.
-3. Incremental review: spawn `ideate:code-reviewer` (and `ideate:spec-reviewer`
+4. Incremental review: spawn `ideate:code-reviewer` (and `ideate:spec-reviewer`
    for spec-sensitive items) on the change.
-4. Findings by severity:
+5. Findings by severity:
    - `minor` → fix inline, note in journal.
    - `significant` → fix if cheap; else `record_append(kind="finding")` and
      `work_create` a follow-up.
@@ -33,10 +40,10 @@ For each claimable item, apply **board claim discipline**:
      claim, and spawn `ideate:proxy-human` with the finding + intent. Record its
      decision (`record_append(kind="andon")`) and act on it — fix as directed,
      defer (leave open, flag for human), or drop.
-5. Complete or release: verified `complete` with no unresolved critical/
+6. Complete or release: verified `complete` with no unresolved critical/
    significant finding → `work_complete(id, token, note)`. Otherwise
    `work_release(id, token, note)`. **Never leave an item claimed.**
-6. Re-read `work_list` — completing items unblocks dependents. Continue until
+7. Re-read `work_list` — completing items unblocks dependents. Continue until
    the frontier is empty or a proxy-human decision halts the cycle.
 
 ## Output of this phase (hold for the controller / cycle record)
