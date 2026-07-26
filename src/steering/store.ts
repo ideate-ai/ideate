@@ -25,16 +25,28 @@
 // SELECTION only — substring/field filters, never scoring or ranking. Ranking
 // over the selected set is the assembler's job, never this store's.
 //
+// Forward-edge persistence (one mental model across all three stores): the
+// `references` frontmatter field stores ONLY the forward typed edge
+// (`supersedes` primary — a CROSS-item replacement naming a DIFFERENT item
+// this one replaces, distinct from the WITHIN-item lifecycle of `status` +
+// `history`). The reverse edge — `superseded_by` — is DERIVED on read by
+// {@link SteeringStore.readViews}, never stored, so the two directions can
+// never drift. Edge ids are validated at the write chokepoint before persist
+// (well-formed steering id → typed SCHEMA; target existence → typed
+// DANGLING_SUPERSEDES), so a typo can never land as a silent dangling edge —
+// the record and work-state stores' exact posture, adapted to this store's
+// caller-chosen stem ids (no ULIDs here).
+//
 // The steering directory is resolved here from a module default rather than a
 // config block; the `steeringPath` constructor option is the seam a config
 // resolver can feed.
 
-import { mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 
 import { scanAndMask } from '../secret-gate/scan.js';
 import type { Clock } from '../record/id.js';
-import type { SteeringItem, SteeringStatus } from './schema.js';
+import type { SteeringItem, SteeringReference, SteeringStatus } from './schema.js';
 import { SteeringSchemaError, isSteeringId, parseSteeringItem, serializeSteeringItem, validateSteeringItem } from './schema.js';
 
 /** Default steering directory, relative to the project root (probe default). */
@@ -53,12 +65,27 @@ export interface SteeringPutInput {
   domain?: string;
   status?: SteeringStatus;
   statement: string;
+  /**
+   * Optional typed FORWARD edges to other steering items (`supersedes`
+   * primary — a cross-item replacement naming the item this one replaces).
+   * ABSENT on amend = carry the prior edge list unchanged (mirrors `status`'s
+   * default-to-prior rule); PRESENT — including `[]`, which clears every edge
+   * — replaces the list wholesale. Every edge id is guarded at write time:
+   * a well-formed steering id (typed SCHEMA) AND an existing item (typed
+   * DANGLING_SUPERSEDES — existence only, deliberately NO cycle check: a
+   * replacement edge is not a DAG, mirroring work-state/dag.ts's
+   * assertSupersedesTargetsExist). The reverse edge is derived on read,
+   * never supplied here.
+   */
+  references?: SteeringReference[];
 }
 
 /** Typed put failure classes. */
 export type PutErrorCode =
-  /** The input is missing a required field or carries a malformed id/status. */
+  /** The input is missing a required field or carries a malformed id/status/edge. */
   | 'SCHEMA'
+  /** A `references` edge targets an item that does not exist. */
+  | 'DANGLING_SUPERSEDES'
   /** The filesystem write (mkdir or file write) failed. */
   | 'WRITE';
 
@@ -88,15 +115,27 @@ export interface SteeringReadOptions {
   kind?: string;
 }
 
+/**
+ * A steering item enriched with its DERIVED reverse edges — `referenced_by[i]`
+ * means "item `id` points at this one with `rel`" (so a `supersedes` forward
+ * edge surfaces here as a `superseded_by`-style backlink on the superseded
+ * item). Derived per read by {@link SteeringStore.readViews}; never persisted —
+ * the store writes ONLY the forward edge, mirroring record/store.ts's
+ * `ProcessRecordView`.
+ */
+export type SteeringItemView = SteeringItem & { referenced_by: SteeringReference[] };
+
 function errorMessage(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
 }
 
 /**
  * The LIGHT steering store. One instance per session/process. The exported
- * API is `put` (create-or-amend, the one mutable verb) + `read` (unranked,
- * selection-only). There is deliberately NO hard delete and NO rank/score —
- * deprecate via status; rank in the assembler, not here.
+ * API is `put` (create-or-amend, the one mutable verb) + `read`/`readViews`
+ * (unranked, selection-only; `readViews` additionally derives the
+ * `referenced_by` backlinks — e.g. `superseded_by` — over every item). There
+ * is deliberately NO hard delete and NO rank/score — deprecate via status;
+ * rank in the assembler, not here.
  */
 export class SteeringStore {
   readonly #steeringDir: string;
@@ -151,10 +190,20 @@ export class SteeringStore {
 
     const history = prior === undefined ? [] : [{ at: prior.updated_at, status: prior.status, statement: prior.statement }, ...prior.history];
     const status = input.status ?? prior?.status ?? 'active';
+    // Forward edges: ABSENT on amend carries the prior item's edges unchanged
+    // (status's exact default-to-prior rule); PRESENT — including `[]` — is
+    // the new full list. Shape-validated by validateSteeringItem FIRST (a
+    // malformed edge list must surface as a typed SCHEMA failure, never a raw
+    // throw — put's contract), gated after validation and before persist like
+    // every other free-text field (rel tokens and stem ids never match a
+    // secret pattern, so gating is a no-op in practice but keeps the invariant
+    // total — the record and work-state stores' exact posture on their own
+    // references fields).
+    const rawReferences: unknown = input.references ?? prior?.references ?? [];
 
     let item: SteeringItem;
     try {
-      item = validateSteeringItem({
+      const validated = validateSteeringItem({
         id: input.id, // already validated as a safe stem
         kind: gate(requireField(input.kind, 'kind')),
         domain: gate(input.domain ?? ''),
@@ -162,9 +211,38 @@ export class SteeringStore {
         updated_at: this.#clock().toISOString(),
         statement: gate(requireField(input.statement, 'statement')),
         history,
+        references: rawReferences,
       });
+      item = { ...validated, references: validated.references.map((ref) => ({ rel: gate(ref.rel), id: gate(ref.id) })) };
     } catch (err) {
       return { ok: false, code: 'SCHEMA', reason: errorMessage(err) };
+    }
+
+    // Reference guards at the write chokepoint (the store is the one write
+    // path — every transport funnels here). Well-formedness FIRST (typed
+    // SCHEMA), then EXISTENCE (typed DANGLING_SUPERSEDES), so the two failure
+    // classes stay distinct — the record and work-state stores' exact split.
+    // Existence only, deliberately no cycle sibling: a replacement edge is not
+    // a sequencing DAG (an item may legitimately be superseded by something
+    // that itself gets superseded).
+    for (const ref of item.references) {
+      if (!isSteeringId(ref.id)) {
+        return {
+          ok: false,
+          code: 'SCHEMA',
+          reason: `steering store: references id must be a filename-safe stem [A-Za-z0-9][A-Za-z0-9._-]*; got ${JSON.stringify(ref.id)}`,
+        };
+      }
+    }
+    const missing = item.references
+      .filter((ref) => !existsSync(join(this.#steeringDir, `${ref.id}${STEERING_EXTENSION}`)))
+      .map((ref) => ref.id);
+    if (missing.length > 0) {
+      return {
+        ok: false,
+        code: 'DANGLING_SUPERSEDES',
+        reason: `steering store: references target nonexistent item(s): ${missing.join(', ')}`,
+      };
     }
 
     try {
@@ -187,28 +265,66 @@ export class SteeringStore {
    * a stray file must not poison every read.
    */
   read(options?: SteeringReadOptions): SteeringItem[] {
-    const domainFilter = options?.domain?.toLowerCase();
-    const out: SteeringItem[] = [];
+    return this.#select(this.#scanItems(), options);
+  }
 
+  /**
+   * Like {@link read}, but each returned item carries its DERIVED reverse
+   * edges in `referenced_by` — so a caller reading a superseded item sees what
+   * replaced it without scanning the steering tree itself. The referrer map is
+   * built from EVERY parseable item — including ones the selection filters
+   * exclude from the result — so a backlink is never missed just because the
+   * referring item didn't match the filter (record/store.ts readViews' exact
+   * completeness posture). Built over the newest-first scan, so each target's
+   * backlink list reads newest-first. Cost is one full scan of a handful of
+   * small files; no index.
+   */
+  readViews(options?: SteeringReadOptions): SteeringItemView[] {
+    const items = this.#scanItems();
+    const referrers = new Map<string, SteeringReference[]>();
+    for (const item of items) {
+      for (const ref of item.references) {
+        const list = referrers.get(ref.id);
+        const back: SteeringReference = { rel: ref.rel, id: item.id };
+        if (list === undefined) referrers.set(ref.id, [back]);
+        else list.push(back);
+      }
+    }
+    return this.#select(items, options).map((item) => ({ ...item, referenced_by: referrers.get(item.id) ?? [] }));
+  }
+
+  /**
+   * All parseable items, newest-first by `updated_at` (id tie-break) — the one
+   * full scan shared by {@link read} and {@link readViews}. Unparseable files
+   * are skipped with a warning so one stray file can't poison the walk (nor
+   * silently drop a backlink source without a trace).
+   */
+  #scanItems(): SteeringItem[] {
+    const out: SteeringItem[] = [];
     for (const file of this.#listFiles()) {
       const filePath = join(this.#steeringDir, file);
-      let item: SteeringItem;
       try {
-        item = parseSteeringItem(readFileSync(filePath, 'utf8'));
+        out.push(parseSteeringItem(readFileSync(filePath, 'utf8')));
       } catch (err) {
         process.emitWarning(`ideate steering: skipping unparseable item file ${filePath} (${errorMessage(err)})`, {
           code: 'IDEATE_STEERING_UNPARSEABLE',
         });
         continue;
       }
-      if (domainFilter !== undefined && !item.domain.toLowerCase().includes(domainFilter)) continue;
-      if (options?.status !== undefined && item.status !== options.status) continue;
-      if (options?.kind !== undefined && item.kind !== options.kind) continue;
-      out.push(item);
     }
-
     out.sort((a, b) => (a.updated_at === b.updated_at ? a.id.localeCompare(b.id) : a.updated_at < b.updated_at ? 1 : -1));
     return out;
+  }
+
+  /** SELECTION only — domain substring, exact status, exact kind. Never ranks. */
+  #select<T extends SteeringItem>(items: T[], options?: SteeringReadOptions): T[] {
+    const domainFilter = options?.domain?.toLowerCase();
+    return items.filter(
+      (item) =>
+        (domainFilter === undefined || item.domain.toLowerCase().includes(domainFilter)) &&
+        (options?.status === undefined || item.status === options.status) &&
+        (options?.kind === undefined || item.kind === options.kind),
+    );
   }
 
   /** `{id}.md` filenames in the steering dir; [] if the dir is absent/unreadable. */

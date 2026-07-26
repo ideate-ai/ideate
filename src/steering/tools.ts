@@ -5,10 +5,15 @@
 //
 //   - `steering_read`  — SELECTION only (by domain / status / kind). Substring
 //     + exact-field filters. No scoring, no ranking — ranking is the
-//     assembler's job over the selected set, never the store's.
+//     assembler's job over the selected set, never the store's. Each item
+//     carries its forward `references` and its DERIVED `referenced_by`
+//     backlinks (e.g. `superseded_by`).
 //   - `steering_put`   — create-or-amend ONE item. On amend, the prior version
 //     is appended to `amendment_history` and status may flip; no hard delete
-//     (deprecate via status). This is the one mutable verb.
+//     (deprecate via status). This is the one mutable verb. A `supersedes`
+//     (or general `references`) argument records a typed FORWARD edge naming a
+//     DIFFERENT item this one replaces — cross-item supersession, additive
+//     with the within-item lifecycle.
 //
 // GP-23 GATE. Nothing that shapes what a model attends to ships live ahead of
 // the eval that measures it, and steering IS attention-shaping. So both verbs
@@ -39,8 +44,8 @@ import { CursorSchema } from '@modelcontextprotocol/sdk/types.js';
 
 import type { ToolRegistrar } from '../server.js';
 import type { Clock } from '../record/id.js';
-import { STEERING_STATUSES } from './schema.js';
-import type { SteeringStatus } from './schema.js';
+import { STEERING_STATUSES, isSteeringId } from './schema.js';
+import type { SteeringReference, SteeringStatus } from './schema.js';
 import { SteeringStore } from './store.js';
 import type { PutResult, SteeringReadOptions } from './store.js';
 
@@ -128,6 +133,59 @@ function normalizeStatus(value: string | undefined): SteeringStatus | undefined 
 }
 
 /**
+ * Assemble the forward-edge list from steering_put's two edge arguments: the
+ * ergonomic `supersedes` (a single steering id → a `supersedes` edge naming
+ * the DIFFERENT item this one replaces) and the general `references` escape
+ * hatch (a JSON array of `{rel, id}` for arbitrary typed edges). The JSON
+ * envelope is parsed here; each edge id is validated as a well-formed steering
+ * id so a typo is rejected with a typed SCHEMA error at the tool layer before
+ * it can persist as a silent dangling edge. (The store re-validates — and
+ * existence-checks — at the write chokepoint, defense in depth for transports
+ * that bypass this function. Mirrors record/tools.ts's referencesFromArgs,
+ * adapted to this store's caller-chosen stem ids.)
+ */
+function referencesFromArgs(
+  supersedes: string | undefined,
+  referencesJson: string | undefined,
+): { refs: SteeringReference[] } | { error: string } {
+  const refs: SteeringReference[] = [];
+  if (supersedes !== undefined && supersedes !== '') {
+    if (!isSteeringId(supersedes)) {
+      return { error: `supersedes: ${JSON.stringify(supersedes)} is not a well-formed steering id` };
+    }
+    refs.push({ rel: 'supersedes', id: supersedes });
+  }
+  if (referencesJson !== undefined && referencesJson !== '') {
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(referencesJson);
+    } catch {
+      return { error: 'references: not valid JSON (expected an array of {rel, id})' };
+    }
+    if (!Array.isArray(parsed)) return { error: 'references: must be a JSON array of {rel, id}' };
+    for (const item of parsed) {
+      const ref = item as SteeringReference;
+      if (typeof ref?.rel !== 'string' || ref.rel.length === 0) {
+        return { error: 'references: rel must be a non-empty string' };
+      }
+      if (typeof ref?.id !== 'string' || !isSteeringId(ref.id)) {
+        return { error: `references: id ${JSON.stringify(ref?.id)} is not a well-formed steering id` };
+      }
+      refs.push({ rel: ref.rel, id: ref.id });
+    }
+  }
+  return { refs };
+}
+
+/** A malformed-`references` arg as a typed SCHEMA tool failure (never persists). */
+function referencesErrorResult(reason: string): CallToolResult {
+  return {
+    content: [{ type: 'text', text: JSON.stringify({ ok: false, code: 'SCHEMA', reason }) }],
+    isError: true,
+  };
+}
+
+/**
  * Build the registrar for the two steering verbs. Matches server.ts's
  * `ToolRegistrar` shape. Calling the registrar registers the tools and does
  * NOTHING else — the store is composed lazily inside the first ENABLED call.
@@ -149,7 +207,9 @@ export function createSteeringToolsRegistrar(options: SteeringToolsOptions = {})
       {
         description:
           'Read steering items (guiding principles + policies): selection-only by domain (substring), status, and kind. ' +
-          'Unranked by contract — no scoring; ranking is the assembler’s job over the selected set. Gated OFF by default (GP-23).',
+          'Unranked by contract — no scoring; ranking is the assembler’s job over the selected set. ' +
+          'Each item carries its forward `references` and its DERIVED `referenced_by` backlinks, so a superseded ' +
+          'item shows what superseded it. Gated OFF by default (GP-23).',
         inputSchema: {
           domain: zString.describe('Case-insensitive substring filter matched against the item domain.').optional(),
           status: zString.describe(`Exact lifecycle status filter: ${STEERING_STATUSES.join(' | ')}.`).optional(),
@@ -165,7 +225,8 @@ export function createSteeringToolsRegistrar(options: SteeringToolsOptions = {})
           ...(status === undefined ? {} : { status }),
           ...(args.kind === undefined ? {} : { kind: args.kind }),
         };
-        const items = getStore(projectRoot).read(read);
+        // readViews attaches derived `referenced_by` backlinks (e.g. superseded_by).
+        const items = getStore(projectRoot).readViews(read);
         return { content: [{ type: 'text', text: JSON.stringify({ ok: true, count: items.length, items }) }] };
       },
     );
@@ -175,25 +236,45 @@ export function createSteeringToolsRegistrar(options: SteeringToolsOptions = {})
       {
         description:
           'Create or amend one steering item (a guiding principle or policy). On amend the prior version is appended to ' +
-          'amendment_history and status may flip; there is no hard delete — deprecate via status. Gated OFF by default (GP-23).',
+          'amendment_history and status may flip; there is no hard delete — deprecate via status. To REPLACE a different ' +
+          'item rather than amend this one in place, pass its id as `supersedes` — readers of the old item see it was ' +
+          'superseded. Gated OFF by default (GP-23).',
         inputSchema: {
           id: zString.describe('Stable item id / filename stem, e.g. GP-23 or POL-auth-1 ([A-Za-z0-9][A-Za-z0-9._-]*).'),
           kind: zString.describe('Steering kind: guiding-principle | policy | …'),
           statement: zString.describe('The steering text itself (the rule / principle, as prose).'),
           domain: zString.describe('Organizing scope tag this item applies to (may be empty).').optional(),
           status: zString.describe(`Lifecycle status: ${STEERING_STATUSES.join(' | ')} (default: prior status, else active).`).optional(),
+          supersedes: zString
+            .describe('Id of a steering item this one replaces. Recorded as a `supersedes` edge; the superseded item surfaces it as a backlink on read.')
+            .optional(),
+          references: zString
+            .describe('Advanced: a JSON array of additional typed edges, e.g. [{"rel":"clarifies","id":"GP-01"}]. `rel` is open vocabulary.')
+            .optional(),
         },
       },
       async (args): Promise<CallToolResult> => {
         const projectRoot = options.projectRoot ?? process.cwd();
         if (!readSteeringEnabledFlag(projectRoot)) return gatedResult();
         const status = normalizeStatus(args.status);
+        const refs = referencesFromArgs(args.supersedes, args.references);
+        if ('error' in refs) return referencesErrorResult(refs.error);
+        // Only pass an edge list when an edge ARG was supplied — otherwise an
+        // absent-args put would materialize as `references: []` and CLEAR a
+        // prior item's edges on amend (absent = carry-prior is the contract).
+        // referencesFromArgs treats '' as absent, so the guard must too: an
+        // empty-string arg (a common LLM serialization of an unset optional)
+        // must NOT count as "supplied" or it would clear edges the same way.
+        const edgeArgsSupplied =
+          (args.supersedes !== undefined && args.supersedes !== '') ||
+          (args.references !== undefined && args.references !== '');
         const result = getStore(projectRoot).put({
           id: args.id,
           kind: args.kind,
           statement: args.statement,
           ...(args.domain === undefined ? {} : { domain: args.domain }),
           ...(status === undefined ? {} : { status }),
+          ...(edgeArgsSupplied ? { references: refs.refs } : {}),
         });
         return putToolResult(result);
       },

@@ -6,13 +6,18 @@
 // a growing amendment_history (mutable, NOT append-only — the key departure
 // from the record store); scope-filtered SELECTION-only reads (domain / status
 // / kind, no ranking); gate-before-persist with a PLANTED SECRET asserted
-// masked in the raw on-disk bytes; typed no-throw failures; and the
+// masked in the raw on-disk bytes; typed no-throw failures;
+// CROSS-item supersession — the forward `references` edge persisted on put,
+// the DERIVED `referenced_by` backlink surfaced by readViews (never stored),
+// the well-formed-id (SCHEMA) and dangling-target (DANGLING_SUPERSEDES) write
+// guards, fan-in and chains, amend carry/replace/clear edge semantics, and the
+// legacy pre-references file parsing as no-edges; and the
 // two-verb / no-hard-delete API surface.
 //
 // All filesystem work happens in mkdtemp dirs — the real .ideate/ is never
 // touched.
 
-import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -71,11 +76,12 @@ describe('round-trip serialization', () => {
       updated_at: FIXED_ISO,
       statement: 'contains: colons, "quotes", and\nan embedded newline\n---\nid: "fake"\n---\ntrailing',
       history: [],
+      references: [],
     };
     expect(parseSteeringItem(serializeSteeringItem(item))).toEqual(item);
   });
 
-  it('parse(serialize(item)) is identity for a policy carrying an amendment history', () => {
+  it('parse(serialize(item)) is identity for a policy carrying an amendment history and forward edges', () => {
     const item: SteeringItem = {
       id: 'POL-auth-1',
       kind: 'policy',
@@ -87,8 +93,34 @@ describe('round-trip serialization', () => {
         { at: '2026-07-15T00:00:00.000Z', status: 'active', statement: 'All tokens must rotate every 72h.' },
         { at: '2026-07-14T00:00:00.000Z', status: 'active', statement: 'Tokens should rotate.' },
       ],
+      references: [
+        { rel: 'supersedes', id: 'POL-auth-0' },
+        { rel: 'clarifies: with "quotes" and\na newline', id: 'GP-21' },
+      ],
     };
     expect(parseSteeringItem(serializeSteeringItem(item))).toEqual(item);
+  });
+
+  it('a pre-references file (no `references` frontmatter line) parses as no-edges, never a throw', () => {
+    // The legacy-file posture: steering has no schema-version mechanism, so a
+    // file written before the forward-edge field existed simply lacks the line
+    // — absence parses to `[]` (the same default `history` already had).
+    const legacy = [
+      '---',
+      'id: "GP-9"',
+      'kind: "guiding-principle"',
+      'domain: ""',
+      'status: "active"',
+      `updated_at: "${FIXED_ISO}"`,
+      'history: []',
+      '---',
+      '',
+      'Legacy statement.',
+      '',
+    ].join('\n');
+    const item = parseSteeringItem(legacy);
+    expect(item.references).toEqual([]);
+    expect(item.statement).toBe('Legacy statement.');
   });
 
   it('items round-trip identically through the store', () => {
@@ -224,6 +256,196 @@ describe('typed failures, no throw', () => {
     const { store } = makeFixture();
     const result = store.put({ id: 'POL-1', kind: 'policy', statement: 'x', status: 'bogus' as never });
     expect(result).toMatchObject({ ok: false, code: 'SCHEMA' });
+  });
+});
+
+describe('cross-item supersession (forward edge + derived backlink)', () => {
+  it('records the forward edge on put; readViews exposes the derived superseded_by backlink on the target', () => {
+    const fx = makeFixture();
+    fx.setNow('2026-07-14T00:00:00.000Z');
+    expect(fx.store.put({ id: 'GP-old', kind: 'guiding-principle', statement: 'Old rule.', domain: 'scope' }).ok).toBe(true);
+    fx.setNow('2026-07-15T00:00:00.000Z');
+    const put = fx.store.put({
+      id: 'GP-new',
+      kind: 'guiding-principle',
+      statement: 'New rule.',
+      domain: 'scope',
+      references: [{ rel: 'supersedes', id: 'GP-old' }],
+    });
+    expect(put.ok).toBe(true);
+    if (!put.ok) return;
+
+    // The forward edge is persisted — in the returned item AND the raw file.
+    expect(put.item.references).toEqual([{ rel: 'supersedes', id: 'GP-old' }]);
+    expect(readFileSync(put.path, 'utf8')).toContain('references: [{"rel":"supersedes","id":"GP-old"}]');
+
+    // The reverse edge is DERIVED on read, newest-first, never stored.
+    const views = fx.store.readViews();
+    const oldView = views.find((v) => v.id === 'GP-old');
+    const newView = views.find((v) => v.id === 'GP-new');
+    expect(oldView?.referenced_by).toEqual([{ rel: 'supersedes', id: 'GP-new' }]);
+    expect(newView?.referenced_by).toEqual([]);
+    // The raw target file carries NO backlink — only the forward direction persists.
+    expect(readFileSync(join(fx.steeringDir, 'GP-old.md'), 'utf8')).toContain('references: []');
+
+    // Plain `read` is untouched: no derived field on its items.
+    for (const item of fx.store.read()) {
+      expect('referenced_by' in item).toBe(false);
+    }
+  });
+
+  it('derives the backlink even when a selection filter excludes the referring item', () => {
+    // Completeness posture (record/store.ts readViews): the referrer map is
+    // built over EVERY item, not just the ones the filter returns.
+    const fx = makeFixture();
+    expect(fx.store.put({ id: 'GP-1', kind: 'guiding-principle', statement: 'x', domain: 'scope' }).ok).toBe(true);
+    expect(
+      fx.store.put({ id: 'POL-1', kind: 'policy', statement: 'y', domain: 'auth', references: [{ rel: 'supersedes', id: 'GP-1' }] }).ok,
+    ).toBe(true);
+    const views = fx.store.readViews({ kind: 'guiding-principle' }); // POL-1 filtered OUT
+    expect(views.map((v) => v.id)).toEqual(['GP-1']);
+    expect(views[0]?.referenced_by).toEqual([{ rel: 'supersedes', id: 'POL-1' }]);
+  });
+
+  it('rejects a dangling (nonexistent) target as a typed DANGLING_SUPERSEDES failure, nothing persisted', () => {
+    const fx = makeFixture();
+    const result = fx.store.put({ id: 'POL-1', kind: 'policy', statement: 'x', references: [{ rel: 'supersedes', id: 'POL-nope' }] });
+    expect(result).toMatchObject({ ok: false, code: 'DANGLING_SUPERSEDES' });
+    if (!result.ok) expect(result.reason).toContain('POL-nope');
+    expect(fx.store.read()).toEqual([]);
+  });
+
+  it('lists every missing target, not just the first', () => {
+    const fx = makeFixture();
+    const result = fx.store.put({
+      id: 'POL-1',
+      kind: 'policy',
+      statement: 'x',
+      references: [
+        { rel: 'supersedes', id: 'POL-a' },
+        { rel: 'supersedes', id: 'POL-b' },
+      ],
+    });
+    expect(result).toMatchObject({ ok: false, code: 'DANGLING_SUPERSEDES' });
+    if (!result.ok) {
+      expect(result.reason).toContain('POL-a');
+      expect(result.reason).toContain('POL-b');
+    }
+  });
+
+  it('rejects a malformed (non-stem) edge id as a typed SCHEMA failure, nothing persisted', () => {
+    const fx = makeFixture();
+    for (const bad of ['../escape', 'has space', '']) {
+      const result = fx.store.put({ id: 'POL-1', kind: 'policy', statement: 'x', references: [{ rel: 'supersedes', id: bad }] });
+      expect(result).toMatchObject({ ok: false, code: 'SCHEMA' });
+    }
+    expect(fx.store.read()).toEqual([]);
+  });
+
+  it('rejects a malformed edge shape as a typed SCHEMA failure', () => {
+    const fx = makeFixture();
+    expect(fx.store.put({ id: 'GP-1', kind: 'guiding-principle', statement: 'x' }).ok).toBe(true);
+    // Empty rel is a malformed edge, not a valid empty value.
+    expect(
+      fx.store.put({ id: 'POL-1', kind: 'policy', statement: 'x', references: [{ rel: '', id: 'GP-1' }] }),
+    ).toMatchObject({ ok: false, code: 'SCHEMA' });
+    // A non-array references value is a schema violation.
+    expect(
+      fx.store.put({ id: 'POL-1', kind: 'policy', statement: 'x', references: 'not-an-array' as never }),
+    ).toMatchObject({ ok: false, code: 'SCHEMA' });
+    expect(fx.store.read().map((i) => i.id)).toEqual(['GP-1']);
+  });
+
+  it('fan-in: two items superseding one both land on the target backlink, newest-first', () => {
+    const fx = makeFixture();
+    fx.setNow('2026-07-14T00:00:00.000Z');
+    expect(fx.store.put({ id: 'POL-x', kind: 'policy', statement: 'v1', domain: 'auth' }).ok).toBe(true);
+    fx.setNow('2026-07-15T00:00:00.000Z');
+    expect(fx.store.put({ id: 'POL-y', kind: 'policy', statement: 'v2', domain: 'auth', references: [{ rel: 'supersedes', id: 'POL-x' }] }).ok).toBe(true);
+    fx.setNow('2026-07-16T00:00:00.000Z');
+    expect(fx.store.put({ id: 'POL-z', kind: 'policy', statement: 'v3', domain: 'auth', references: [{ rel: 'supersedes', id: 'POL-x' }] }).ok).toBe(true);
+    const [view] = fx.store.readViews({ domain: 'auth' }).filter((v) => v.id === 'POL-x');
+    expect(view?.referenced_by).toEqual([
+      { rel: 'supersedes', id: 'POL-z' },
+      { rel: 'supersedes', id: 'POL-y' },
+    ]);
+  });
+
+  it('chains: A <- B <- C gives each item exactly its direct referrer', () => {
+    const fx = makeFixture();
+    expect(fx.store.put({ id: 'A', kind: 'policy', statement: 'a' }).ok).toBe(true);
+    expect(fx.store.put({ id: 'B', kind: 'policy', statement: 'b', references: [{ rel: 'supersedes', id: 'A' }] }).ok).toBe(true);
+    expect(fx.store.put({ id: 'C', kind: 'policy', statement: 'c', references: [{ rel: 'supersedes', id: 'B' }] }).ok).toBe(true);
+    const views = fx.store.readViews();
+    expect(views.find((v) => v.id === 'A')?.referenced_by).toEqual([{ rel: 'supersedes', id: 'B' }]);
+    expect(views.find((v) => v.id === 'B')?.referenced_by).toEqual([{ rel: 'supersedes', id: 'C' }]);
+    expect(views.find((v) => v.id === 'C')?.referenced_by).toEqual([]);
+  });
+
+  it('amend carries prior edges when references is absent, replaces wholesale when present, [] clears', () => {
+    const fx = makeFixture();
+    fx.setNow('2026-07-14T00:00:00.000Z');
+    expect(fx.store.put({ id: 'GP-1', kind: 'guiding-principle', statement: 'x' }).ok).toBe(true);
+    expect(fx.store.put({ id: 'GP-2', kind: 'guiding-principle', statement: 'y' }).ok).toBe(true);
+    expect(fx.store.put({ id: 'POL-1', kind: 'policy', statement: 'v1', references: [{ rel: 'supersedes', id: 'GP-1' }] }).ok).toBe(true);
+
+    // Amend WITHOUT references: the edge list is carried unchanged.
+    fx.setNow('2026-07-15T00:00:00.000Z');
+    const amend = fx.store.put({ id: 'POL-1', kind: 'policy', statement: 'v2' });
+    expect(amend.ok).toBe(true);
+    if (!amend.ok) return;
+    expect(amend.item.references).toEqual([{ rel: 'supersedes', id: 'GP-1' }]);
+
+    // Amend WITH references: wholesale replace.
+    fx.setNow('2026-07-16T00:00:00.000Z');
+    const moved = fx.store.put({ id: 'POL-1', kind: 'policy', statement: 'v3', references: [{ rel: 'supersedes', id: 'GP-2' }] });
+    expect(moved.ok).toBe(true);
+    if (!moved.ok) return;
+    expect(moved.item.references).toEqual([{ rel: 'supersedes', id: 'GP-2' }]);
+
+    // Amend with []: clears every edge.
+    fx.setNow('2026-07-17T00:00:00.000Z');
+    const cleared = fx.store.put({ id: 'POL-1', kind: 'policy', statement: 'v4', references: [] });
+    expect(cleared.ok).toBe(true);
+    if (!cleared.ok) return;
+    expect(cleared.item.references).toEqual([]);
+    expect(fx.store.readViews().find((v) => v.id === 'GP-2')?.referenced_by).toEqual([]);
+
+    // The WITHIN-item amendment trail is intact — still {at, status, statement}
+    // entries only, newest-first, nothing lost, no edge data smuggled in.
+    expect(cleared.item.history).toEqual([
+      { at: '2026-07-16T00:00:00.000Z', status: 'active', statement: 'v3' },
+      { at: '2026-07-15T00:00:00.000Z', status: 'active', statement: 'v2' },
+      { at: '2026-07-14T00:00:00.000Z', status: 'active', statement: 'v1' },
+    ]);
+  });
+
+  it('a legacy pre-references file on disk reads as no-edges through the store, and amending it starts edge-free', () => {
+    const fx = makeFixture();
+    // Hand-write a file in the pre-references on-disk shape (no references line).
+    mkdirSync(fx.steeringDir, { recursive: true });
+    const legacy = [
+      '---',
+      'id: "GP-9"',
+      'kind: "guiding-principle"',
+      'domain: "scope"',
+      'status: "active"',
+      `updated_at: "${FIXED_ISO}"`,
+      'history: []',
+      '---',
+      '',
+      'Legacy statement.',
+      '',
+    ].join('\n');
+    writeFileSync(join(fx.steeringDir, 'GP-9.md'), legacy, 'utf8');
+
+    const [view] = fx.store.readViews();
+    expect(view).toMatchObject({ id: 'GP-9', references: [], referenced_by: [] });
+
+    const amend = fx.store.put({ id: 'GP-9', kind: 'guiding-principle', statement: 'v2', domain: 'scope' });
+    expect(amend.ok).toBe(true);
+    if (!amend.ok) return;
+    expect(amend.item.references).toEqual([]);
   });
 });
 

@@ -6,7 +6,10 @@
 // and policies are FUNDAMENTAL to ideate. It holds guiding
 // principles and policies (the two canonical kinds this store ships), each
 // scoped by an organizing `domain` tag, each carrying a lifecycle `status`
-// (active | deprecated | superseded) and an `amendment_history` trail. It
+// (active | deprecated | superseded), an `amendment_history` trail, and typed
+// FORWARD `references` edges to other items (`supersedes` primary — a
+// cross-item replacement naming the item it replaces; the reverse
+// `superseded_by` backlink is derived on read, never stored). It
 // deliberately does NOT carry the parked v2 KG ontology (curation, decay,
 // promotion, importance scoring, the 16-edge graph, PPR) — that is KG scope
 // under GP-21. This is "ideas as steering text", not a knowledge graph.
@@ -32,6 +35,23 @@
 export type SteeringStatus = 'active' | 'deprecated' | 'superseded';
 
 export const STEERING_STATUSES: readonly SteeringStatus[] = ['active', 'deprecated', 'superseded'];
+
+/**
+ * A typed edge from this steering item to another item it references. `rel` is
+ * an OPEN vocabulary — `supersedes` (the primary case: a replacement naming
+ * the item it replaces), and freely `refutes` | `clarifies` | `relates-to` | …
+ * `id` is the caller-chosen steering id (the filename stem) of the referenced
+ * item. Backlinks — the reverse edge, e.g. `superseded_by` — are DERIVED on
+ * read (store.ts's readViews), never stored: only the forward edge is
+ * persisted, so the two directions can never drift. Defined locally rather
+ * than reusing record/schema.ts's `RecordReference`: the shapes coincide, but
+ * this store's ids are caller-chosen stems, not ULIDs — three stores, three
+ * local types, one mental model.
+ */
+export interface SteeringReference {
+  rel: string;
+  id: string;
+}
 
 /**
  * One superseded prior version of a steering item, recorded on amend. The
@@ -69,6 +89,17 @@ export interface SteeringItem {
   statement: string;
   /** Prior versions, newest-first; empty for a freshly created item. */
   history: SteeringAmendment[];
+  /**
+   * Typed FORWARD edges to other steering items (open `rel` vocabulary,
+   * `supersedes` primary — CROSS-item supersession, distinct from the
+   * WITHIN-item lifecycle carried by `status`/`history`). Always present on a
+   * read (mirrors `history`), `[]` when the item names no other item; absence
+   * on disk (a file written before this field existed) parses to `[]` — the
+   * legacy-file posture: a pre-references file reads as no-edges, never a raw
+   * throw. The reverse edge (`superseded_by`) is DERIVED on read by the store,
+   * never stored.
+   */
+  references: SteeringReference[];
 }
 
 /** Typed schema failure: a required field is absent or malformed. */
@@ -137,6 +168,34 @@ function requireHistory(value: unknown, field: string): SteeringAmendment[] {
 }
 
 /**
+ * Normalize the optional `references` edge list. Absent → `[]` (the common
+ * case, and what an older on-disk item without the field parses to — the
+ * legacy-file posture). When present it must be an array of `{rel, id}`
+ * objects with NON-EMPTY strings — unlike the text fields, an empty `rel` or
+ * `id` is a malformed edge, not a valid empty value. Id WELL-FORMEDNESS (a
+ * filename-safe stem) and target EXISTENCE are the store's write-chokepoint
+ * guards, not this layer's — mirrors record/schema.ts's validateReferences
+ * split.
+ */
+function validateReferences(value: unknown): SteeringReference[] {
+  if (value === undefined) return [];
+  if (!Array.isArray(value)) {
+    throw new SteeringSchemaError('references', 'steering schema: field "references" must be an array of {rel, id} when present');
+  }
+  return value.map((item, i): SteeringReference => {
+    if (item === null || typeof item !== 'object' || Array.isArray(item)) {
+      throw new SteeringSchemaError(`references[${String(i)}]`, `steering schema: references[${String(i)}] must be an object {rel, id}`);
+    }
+    const ref = item as Record<string, unknown>;
+    const rel = requireString(ref['rel'], `references[${String(i)}].rel`);
+    const id = requireString(ref['id'], `references[${String(i)}].id`);
+    if (rel.length === 0) throw new SteeringSchemaError(`references[${String(i)}].rel`, 'steering schema: references[].rel must be non-empty');
+    if (id.length === 0) throw new SteeringSchemaError(`references[${String(i)}].id`, 'steering schema: references[].id must be non-empty');
+    return { rel, id };
+  });
+}
+
+/**
  * Validate a steering-item-shaped object: every field present and well-typed,
  * `status` a known lifecycle value, `id` a valid filename stem, `history` an
  * array of well-formed amendments. Returns the normalized item; throws
@@ -161,6 +220,7 @@ export function validateSteeringItem(input: unknown): SteeringItem {
     updated_at: requireString(raw['updated_at'], 'updated_at'),
     statement: requireString(raw['statement'], 'statement'),
     history: requireHistory(raw['history'] ?? [], 'history'),
+    references: validateReferences(raw['references']),
   };
 }
 
@@ -184,6 +244,7 @@ export function serializeSteeringItem(item: SteeringItem): string {
     jsonLine('status', v.status),
     jsonLine('updated_at', v.updated_at),
     jsonLine('history', v.history),
+    jsonLine('references', v.references),
     FRONTMATTER_FENCE,
   ];
   // Exactly one blank line after the fence, exactly one trailing newline —
