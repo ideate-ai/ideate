@@ -77,6 +77,12 @@ Turn the analyzed idea into items:
   returns item JSON: `ref` handles, self-contained `spec`s, `depends_on` refs,
   and `parent` refs. (For a trivially small idea you may decompose inline
   instead of spawning it.)
+- For work that needs a **human** — an approval, an outward-facing action, a
+  per-project judgment call, a decision — author the item with
+  `spec_format: "ideate/human-gate"` so `execute`/`autopilot` **surface** it
+  instead of dispatching a worker. A code item can `depends_on` a human-gate
+  to hold the frontier until the human acts (see docs/workflow-guide.md
+  "Human-effort items").
 - Create the board, mapping `ref` handles → real ids:
   1. Create parent/container items first (a phase or feature grouping),
      capturing each returned id.

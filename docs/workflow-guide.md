@@ -143,6 +143,21 @@ on `version`), `work_list` (with a derived `claimable` flag per item),
 contract backs a future hosted, multi-person board — nothing in these skills
 assumes a single actor.
 
+### Human-effort items (`spec_format: "ideate/human-gate"`)
+
+Not every board item is code a worker can build. An item whose `spec_format`
+is `ideate/human-gate` marks work that needs a **human** — an approval, an
+outward-facing action (a push, a PR, a publish), a per-project judgment call,
+or a decision. It is claimed and completed like any item (the board fences and
+actor-attributes it), but `execute` and `autopilot` **surface** it instead of
+dispatching a worker: `execute` presents it to you to act on out-of-band;
+`autopilot` routes it to `proxy-human`. A code item can `depends_on` a
+human-gate item — the derived not-claimable status holds the downstream
+frontier until the human completes the gate (GP-27: the data contract, not an
+orchestrator). Author one by setting `spec_format: "ideate/human-gate"` — the
+board stores `spec_format` opaquely, so this is a convention, not new
+machinery.
+
 ### Steering
 
 **Steering is where the project's *rules* live** — the durable guidance that

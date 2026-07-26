@@ -23,6 +23,12 @@ breakdown and the invoking skill calls `work_create` for each item.
      group) this belongs under. Orthogonal to `depends_on`.
 4. Guarantee **full coverage** (every part of the goal maps to some item) and
    **no overlap** (no two items build the same thing).
+5. If an item requires **human effort** — an approval, an outward-facing
+   action, a per-project judgment call, a decision (anything a worker
+   can't/shouldn't build) — author it with `"spec_format": "ideate/human-gate"`
+   so `execute`/`autopilot` **surface** it to a human instead of dispatching a
+   worker. A code item can `depends_on` a human-gate to hold the frontier
+   until the human acts.
 
 ## Output — return exactly this JSON, nothing else
 ```json
