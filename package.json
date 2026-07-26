@@ -3,7 +3,7 @@
   "version": "3.0.0",
   "private": true,
   "license": "AGPL-3.0-only",
-  "description": "ideate v3 public composable surface. Stays \"private\": true until npm publishing is ratified — see README.md status section.",
+  "description": "ideate — a composable process framework for Claude Code: an append-only process record, a dependency-ordered work board, and gated steering, with skills, agents, hooks, and CLIs that drive an autopilot loop from idea to verified work. Stays \"private\": true until npm publishing is ratified — see README.md status section.",
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",

@@ -1,7 +1,7 @@
 {
   "name": "ideate",
   "version": "3.0.0",
-  "description": "Composable process framework primitives: an append-only process record with a mechanical capture and priming floor.",
+  "description": "ideate — a composable process framework for Claude Code: an append-only process record, a dependency-ordered work board, and gated steering, with skills, agents, hooks, and CLIs that drive an autopilot loop from idea to verified work.",
   "author": {
     "name": "Dan Singer",
     "email": "dan@dabosocial.club"

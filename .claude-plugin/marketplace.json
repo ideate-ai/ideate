@@ -4,14 +4,14 @@
     "name": "Dan Singer"
   },
   "metadata": {
-    "description": "ideate plugin marketplace - the composable process record for Claude Code",
+    "description": "ideate plugin marketplace — a composable process framework for Claude Code (process record, work board, steering, skills, agents, hooks, CLIs)",
     "version": "3.0.0"
   },
   "plugins": [
     {
       "name": "ideate",
       "source": "./",
-      "description": "Composable process framework primitives: an append-only process record with a mechanical capture and priming floor.",
+      "description": "ideate — a composable process framework for Claude Code: an append-only process record, a dependency-ordered work board, and gated steering, with skills, agents, hooks, and CLIs that drive an autopilot loop from idea to verified work.",
       "version": "3.0.0"
     }
   ]
