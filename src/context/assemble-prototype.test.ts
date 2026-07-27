@@ -218,6 +218,149 @@ describe('assembleContext prototype', () => {
     expect(manifest.included.some((i) => i.sourceId === 'GP-23')).toBe(true);
   });
 
+  it('surfaces a typed-edge (cross-item) superseded BOARD item — skipped with the replacement named; the seed is never skipped', () => {
+    const { deps, seed, upstreamId } = makeFixture();
+    // A new work item supersedes the seed's upstream dependency via a typed
+    // `references` forward edge. The upstream has no lifecycle status that
+    // maps to supersession — the typed-edge backlink is the ONLY skip path.
+    const replacement = deps.board.create({
+      title: 'Build the steering store v2',
+      spec: 'Ship the light steering store, second generation.',
+      spec_format: 'ideate/work-item',
+      references: [{ rel: 'supersedes', id: upstreamId }],
+      created_by: ACTOR,
+    });
+
+    // Separately, another item supersedes the SEED itself — the seed is the
+    // claimed work item and must still be delivered (a claimed item is by
+    // definition the live frontier; supersession of the seed is out of scope).
+    deps.board.create({
+      title: 'Replace the assembler seed',
+      spec: 'A would-be replacement for the seed.',
+      spec_format: 'ideate/work-item',
+      references: [{ rel: 'supersedes', id: seed }],
+      created_by: ACTOR,
+    });
+
+    const { manifest, briefing } = assembleContext(seed, deps, { tokenBudget: 2000 });
+
+    // The superseded upstream is skipped exactly like a status-superseded
+    // steering item, with the replacement named in the reason — never
+    // presented as live.
+    expect(manifest.included.some((i) => i.sourceId === upstreamId)).toBe(false);
+    const typedSkip = manifest.skipped.find((i) => i.sourceId === upstreamId);
+    expect(typedSkip?.skipReason).toBe('superseded');
+    expect(typedSkip?.source).toBe('board');
+    expect(typedSkip?.inclusionReason).toContain(replacement.id);
+    expect(briefing).not.toContain('Ship the light steering store beside record/');
+
+    // The seed itself is still delivered even though it carries a supersedes
+    // backlink — the seed is the live frontier, never skipped for supersession.
+    expect(manifest.included.some((i) => i.sourceId === seed)).toBe(true);
+    const seedSkip = manifest.skipped.find((i) => i.sourceId === seed && i.skipReason === 'superseded');
+    expect(seedSkip).toBeUndefined();
+  });
+
+  it('names EVERY replacer when a board item is superseded by multiple replacements', () => {
+    const { deps, seed, upstreamId } = makeFixture();
+    // Two distinct replacements both supersede the same upstream via typed
+    // `references` edges. Acceptance criterion 1 says "EACH replacement id
+    // named in the inclusion reason" — exercise the join, not just one replacer.
+    const replA = deps.board.create({
+      title: 'Build the steering store v2 (a)',
+      spec: 'Replacement a.',
+      spec_format: 'ideate/work-item',
+      references: [{ rel: 'supersedes', id: upstreamId }],
+      created_by: ACTOR,
+    });
+    const replB = deps.board.create({
+      title: 'Build the steering store v2 (b)',
+      spec: 'Replacement b.',
+      spec_format: 'ideate/work-item',
+      references: [{ rel: 'supersedes', id: upstreamId }],
+      created_by: ACTOR,
+    });
+
+    const { manifest } = assembleContext(seed, deps, { tokenBudget: 2000 });
+
+    expect(manifest.included.some((i) => i.sourceId === upstreamId)).toBe(false);
+    const typedSkip = manifest.skipped.find((i) => i.sourceId === upstreamId);
+    expect(typedSkip?.skipReason).toBe('superseded');
+    expect(typedSkip?.source).toBe('board');
+    // BOTH replacement ids are named — the "each" in the acceptance criterion.
+    expect(typedSkip?.inclusionReason).toContain(replA.id);
+    expect(typedSkip?.inclusionReason).toContain(replB.id);
+  });
+
+  it('skips a superseded board item on the containment (child) path, not just depends_on', () => {
+    const { deps, seed } = makeFixture();
+    // A CHILD of the seed (parent_id = seed) is gathered via the reverse-edge
+    // containment sweep, not the depends_on path. Acceptance criterion 1 says
+    // "every gathered NON-seed board item" — prove the skip covers children too.
+    const child = deps.board.create({
+      title: 'A child sub-task of the seed',
+      spec: 'Child scope under the seed.',
+      spec_format: 'ideate/work-item',
+      parent_id: seed,
+      created_by: ACTOR,
+    });
+    deps.board.create({
+      title: 'Replacement for the child',
+      spec: 'Replaces the child sub-task.',
+      spec_format: 'ideate/work-item',
+      references: [{ rel: 'supersedes', id: child.id }],
+      created_by: ACTOR,
+    });
+
+    const { manifest } = assembleContext(seed, deps, { tokenBudget: 2000 });
+
+    // The superseded child is skipped on the containment path, not delivered.
+    expect(manifest.included.some((i) => i.sourceId === child.id)).toBe(false);
+    const typedSkip = manifest.skipped.find((i) => i.sourceId === child.id);
+    expect(typedSkip?.skipReason).toBe('superseded');
+    expect(typedSkip?.source).toBe('board');
+    // The child would normally be gathered with a 'contains (child)' reason;
+    // the supersession skip overrides it and names the replacement.
+    expect(typedSkip?.inclusionReason).toMatch(/^superseded by /);
+  });
+
+  it('surfaces a typed-edge (cross-item) superseded RECORD — skipped with the replacement named', () => {
+    const { deps, seed } = makeFixture();
+    // Pick one of the fixture's scope-matched records to supersede. Records are
+    // immutable events with no lifecycle status — the typed-edge backlink is
+    // the ONLY supersession path.
+    const existing = deps.records.read({ scope: seed, limit: 32 });
+    if (existing.length === 0) throw new Error('fixture: no scope-matched record to supersede');
+    const supersededId = existing[0].id;
+
+    const replacement = deps.records.append({
+      kind: 'decision',
+      claim: 'The superseding record replaces an earlier decision.',
+      verification_anchor: 'typed-edge supersession',
+      scope: `auth ${seed} context assembly`,
+      source: { capture_point: 'design', session_id: 's2', task_id: seed },
+      content: 'This record supersedes the earlier decision via a typed references edge.',
+      references: [{ rel: 'supersedes', id: supersededId }],
+    });
+    if (!replacement.ok) throw new Error('fixture: failed to seed superseding record');
+
+    const { manifest, briefing } = assembleContext(seed, deps, { tokenBudget: 2000 });
+
+    // The superseded record is skipped exactly like a superseded steering
+    // item, with the replacement named in the reason — never presented as live.
+    expect(manifest.included.some((i) => i.sourceId === supersededId)).toBe(false);
+    const typedSkip = manifest.skipped.find((i) => i.sourceId === supersededId);
+    expect(typedSkip?.skipReason).toBe('superseded');
+    expect(typedSkip?.source).toBe('record');
+    expect(typedSkip?.inclusionReason).toContain(replacement.record.id);
+    // The superseded record's claim text does not appear in the live briefing.
+    const supersededClaim = existing[0].claim;
+    expect(briefing).not.toContain(supersededClaim);
+
+    // The superseding record itself IS delivered (it is live, scope-matched).
+    expect(manifest.included.some((i) => i.sourceId === replacement.record.id)).toBe(true);
+  });
+
   it('enforces per-source caps — skips capped items rather than truncating', () => {
     const { deps, seed } = makeFixture();
     const { manifest } = assembleContext(seed, deps, { tokenBudget: 4000, perSourceCaps: { record: 1 } });
