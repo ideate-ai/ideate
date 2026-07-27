@@ -315,6 +315,18 @@ describe('cross-item supersession (forward edge + derived backlink)', () => {
     expect(fx.store.read()).toEqual([]);
   });
 
+  it('rejects a supersedes edge to a corrupted (unparseable) target file as a typed DANGLING_SUPERSEDES failure, nothing persisted', () => {
+    const fx = makeFixture();
+    // Plant a target file that EXISTS but does not parse (bad frontmatter) —
+    // a bare existsSync guard would accept it; the parse-check must not.
+    mkdirSync(fx.steeringDir, { recursive: true });
+    writeFileSync(join(fx.steeringDir, 'POL-corrupt.md'), 'this is not valid steering frontmatter [[[', 'utf8');
+    const result = fx.store.put({ id: 'POL-1', kind: 'policy', statement: 'x', references: [{ rel: 'supersedes', id: 'POL-corrupt' }] });
+    expect(result).toMatchObject({ ok: false, code: 'DANGLING_SUPERSEDES' });
+    if (!result.ok) expect(result.reason).toContain('unparseable');
+    expect(fx.store.read()).toEqual([]);
+  });
+
   it('lists every missing target, not just the first', () => {
     const fx = makeFixture();
     const result = fx.store.put({

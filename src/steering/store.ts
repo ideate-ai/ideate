@@ -41,7 +41,7 @@
 // config block; the `steeringPath` constructor option is the seam a config
 // resolver can feed.
 
-import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 
 import { scanAndMask } from '../secret-gate/scan.js';
@@ -235,13 +235,13 @@ export class SteeringStore {
       }
     }
     const missing = item.references
-      .filter((ref) => !existsSync(join(this.#steeringDir, `${ref.id}${STEERING_EXTENSION}`)))
+      .filter((ref) => !this.#targetIsReadable(ref.id))
       .map((ref) => ref.id);
     if (missing.length > 0) {
       return {
         ok: false,
         code: 'DANGLING_SUPERSEDES',
-        reason: `steering store: references target nonexistent item(s): ${missing.join(', ')}`,
+        reason: `steering store: references target nonexistent or unparseable item(s): ${missing.join(', ')}`,
       };
     }
 
@@ -314,6 +314,26 @@ export class SteeringStore {
     }
     out.sort((a, b) => (a.updated_at === b.updated_at ? a.id.localeCompare(b.id) : a.updated_at < b.updated_at ? 1 : -1));
     return out;
+  }
+
+  /**
+   * Existence-AND-readability check for a supersedes target: the file must
+   * exist AND parse as a valid steering item. A bare `existsSync` would accept
+   * a corrupted file (bad frontmatter) that every read then skips with an
+   * IDEATE_STEERING_UNPARSEABLE warning — so a reader would follow a
+   * replacement edge to an item that appears not to exist (the
+   * misleading-reader outcome the dangling guard exists to prevent). Mirrors
+   * work-state's getItem-resolves-only-readable-rows posture. A missing file
+   * and an unparseable file both mean "not a readable target" here.
+   */
+  #targetIsReadable(id: string): boolean {
+    const filePath = join(this.#steeringDir, `${id}${STEERING_EXTENSION}`);
+    try {
+      parseSteeringItem(readFileSync(filePath, 'utf8'));
+      return true;
+    } catch {
+      return false;
+    }
   }
 
   /** SELECTION only — domain substring, exact status, exact kind. Never ranks. */
