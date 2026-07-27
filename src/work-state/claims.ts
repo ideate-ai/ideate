@@ -48,6 +48,18 @@
 // (`json_each`) are compiled into node:sqlite's bundled SQLite by default —
 // verified directly against this runtime, not assumed.
 //
+// Containment gating (a second, orthogonal clause in the same CAS): a parent
+// is a roll-up, not a work unit, so a claim on an item with ANY containment
+// child still pending (`open` or `in_progress`) is rejected by a correlated
+// `NOT EXISTS (SELECT 1 FROM items child WHERE child.parent_id = items.id
+// AND child.status IN ('open', 'in_progress'))` clause. A `done` or
+// `cancelled` child is resolved and does not block — deliberately NOT the
+// depends_on convention (where only `'done'` resolves the edge): a cancelled
+// dependency is an unmet prerequisite, a cancelled child is dropped scope.
+// This clause is what makes verbs.ts's derived `claimable` flag an ENFORCED
+// contract rather than an advisory one — the flag and the CAS now agree, so
+// a direct claim() on a container is rejected exactly as list() reports.
+//
 // Fencing (the Kleppmann delayed-writer test): `complete` and
 // `release`'s WHERE clauses both require `claim_token = ?` in addition to
 // `status = 'in_progress'`. A worker whose lease expired and was reclaimed
@@ -78,8 +90,8 @@ export type ClaimEngineErrorCode =
   /** `claim`/`renew`: the lease_ms override is not a positive integer within
    *  the 30-day ceiling. */
   | 'INVALID_LEASE'
-  /** `claim`: the item is not `open`, or not every `depends_on` item is
-   *  `done`. */
+  /** `claim`: the item is not `open`, not every `depends_on` item is `done`,
+   *  or a containment child is still `open`/`in_progress`. */
   | 'NOT_CLAIMABLE'
   /** `renew`/`complete`/`release`: the item is not `in_progress`, or the
    *  supplied `claim_token` does not match the item's current token — the
@@ -117,6 +129,16 @@ function requireItem(store: WorkStateStore, id: string, verb: string): WorkItem 
   return item;
 }
 
+/** Diagnostic-only helper for claim()'s rejection message (the gate itself
+ *  is the CAS's own WHERE clause, already evaluated atomically — never this):
+ *  true iff the item has at least one containment child still pending
+ *  (status `open` or `in_progress`). Direct children only, a `done` or
+ *  `cancelled` child is resolved — the exact convention of the CAS's
+ *  containment clause and verbs.ts's list() claimable gate. */
+function hasPendingContainmentChild(store: WorkStateStore, id: string): boolean {
+  return store.listItems({ parent_id: id }).some((child) => child.status === 'open' || child.status === 'in_progress');
+}
+
 function toNumber(value: number | bigint): number {
   return typeof value === 'bigint' ? Number(value) : value;
 }
@@ -142,7 +164,9 @@ function validateLeaseMs(leaseMs: number): number {
 
 /**
  * `claim(id, actor)` — the claim rule. Server-side compare-and-set: succeeds
- * iff `status == 'open'` AND every `depends_on` item is `done`. At most one
+ * iff `status == 'open'` AND every `depends_on` item is `done` AND no
+ * containment child is still `open`/`in_progress` (the parent-as-roll-up
+ * gate — see the file header's containment-gating note). At most one
  * active claim per item, ever; `claim_token` is strictly monotonic per item
  * (the `claim_token_counter` column, incremented in the SAME statement as
  * the status transition — see file header).
@@ -179,8 +203,9 @@ export function claim(
     // own SQL text (and its byte-for-byte structural test, claims.test.ts) is
     // UNCHANGED.
     withWriteTransaction(db, (db) => {
-      // The single atomic CAS: status='open' AND the depends_on frontier
-      // check are BOTH conditions of the same WHERE clause; the counter
+      // The single atomic CAS: status='open', the depends_on frontier check,
+      // AND the containment gate (no pending child) are ALL conditions of the
+      // same WHERE clause; the counter
       // increment and the status transition are the same statement.
       const row = db
         .prepare(
@@ -202,6 +227,11 @@ export function claim(
              SELECT 1 FROM json_each(items.depends_on) je
              JOIN items dep ON dep.id = je.value
              WHERE dep.status != 'done'
+           )
+           AND NOT EXISTS (
+             SELECT 1 FROM items child
+             WHERE child.parent_id = items.id
+               AND child.status IN ('open', 'in_progress')
            )
          RETURNING claim_token`,
         )
@@ -228,7 +258,11 @@ export function claim(
     // dead code, removed rather than kept as false defense.
     const current = requireItem(store, itemId, 'claim');
     const reason =
-      current.status !== 'open' ? `status is ${JSON.stringify(current.status)}, not "open"` : 'not every depends_on item is "done"';
+      current.status !== 'open'
+        ? `status is ${JSON.stringify(current.status)}, not "open"`
+        : hasPendingContainmentChild(store, itemId)
+          ? 'a containment child is still open or in_progress (the parent is a roll-up, not a work unit)'
+          : 'not every depends_on item is "done"';
     throw new ClaimEngineError(
       'NOT_CLAIMABLE',
       `work-state claim engine: claim: item ${JSON.stringify(itemId)} is not claimable — ${reason}`,

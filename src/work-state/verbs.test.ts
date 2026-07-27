@@ -456,6 +456,92 @@ describe('parent_id containment', () => {
   });
 });
 
+describe('containment blocking (claimable)', () => {
+  function createChild(verbs: WorkStateVerbs, title: string, parentId: string) {
+    return verbs.create({ title, spec: 's', spec_format: 'text/plain', created_by: actor(), parent_id: parentId });
+  }
+
+  it('a parent with an open child is claimable=false; once all children are done, claimable=true', () => {
+    const { verbs, dbPath } = makeFixture();
+    const parent = createBasic(verbs, 'parent');
+    const childA = createChild(verbs, 'a', parent.id);
+    const childB = createChild(verbs, 'b', parent.id);
+
+    expect(verbs.list().find((i) => i.id === parent.id)?.claimable).toBe(false);
+
+    forceStatus(dbPath, childA.id, 'done');
+    // One child still pending — the parent is still not claimable.
+    expect(verbs.list().find((i) => i.id === parent.id)?.claimable).toBe(false);
+
+    forceStatus(dbPath, childB.id, 'done');
+    expect(verbs.list().find((i) => i.id === parent.id)?.claimable).toBe(true);
+  });
+
+  it("a childless item's claimability is unchanged (depends_on behavior intact)", () => {
+    const { verbs, dbPath } = makeFixture();
+    // A childless item sitting NEXT TO a parent-with-pending-children is
+    // itself unaffected by the containment gate.
+    const parent = createBasic(verbs, 'parent');
+    createChild(verbs, 'child', parent.id);
+    const childless = createBasic(verbs, 'childless');
+    expect(verbs.list().find((i) => i.id === childless.id)?.claimable).toBe(true);
+
+    // And its depends_on gate still works exactly as before.
+    const dep = createBasic(verbs, 'dep');
+    const dependent = createBasic(verbs, 'dependent', [dep.id]);
+    expect(verbs.list().find((i) => i.id === dependent.id)?.claimable).toBe(false);
+    forceStatus(dbPath, dep.id, 'done');
+    expect(verbs.list().find((i) => i.id === dependent.id)?.claimable).toBe(true);
+  });
+
+  it('a cancelled child does NOT block the parent (a cancelled child is resolved, not pending)', () => {
+    const { verbs } = makeFixture();
+    const parent = createBasic(verbs, 'parent');
+    const child = createChild(verbs, 'child', parent.id);
+
+    expect(verbs.list().find((i) => i.id === parent.id)?.claimable).toBe(false);
+
+    verbs.cancel(child.id, actor());
+    expect(verbs.list().find((i) => i.id === parent.id)?.claimable).toBe(true);
+  });
+
+  it('an in_progress child DOES block the parent', () => {
+    const { verbs, dbPath } = makeFixture();
+    const parent = createBasic(verbs, 'parent');
+    const child = createChild(verbs, 'child', parent.id);
+
+    forceStatus(dbPath, child.id, 'in_progress', {
+      holderHuman: 'dan',
+      token: 1,
+      acquiredAt: FIXED_ISO,
+      leaseExpires: '2026-07-11T13:00:00.000Z',
+    });
+    expect(verbs.list().find((i) => i.id === parent.id)?.claimable).toBe(false);
+  });
+
+  it('containment blocking holds under a roots-only filter (the pending child is not in the result set)', () => {
+    const { verbs } = makeFixture();
+    const parent = createBasic(verbs, 'parent');
+    createChild(verbs, 'child', parent.id);
+
+    const roots = verbs.list({ parent_id: null });
+    expect(roots.map((i) => i.id)).toEqual([parent.id]);
+    // The child is filtered OUT of the result, but the parent must still be
+    // non-claimable — the gate scans the whole board, not the filtered view.
+    expect(roots[0]?.claimable).toBe(false);
+  });
+
+  it('a non-open parent reports claimable=false regardless of its children', () => {
+    const { verbs, dbPath } = makeFixture();
+    const parent = createBasic(verbs, 'parent');
+    const child = createChild(verbs, 'child', parent.id);
+    forceStatus(dbPath, child.id, 'done');
+    forceStatus(dbPath, parent.id, 'done');
+
+    expect(verbs.list().find((i) => i.id === parent.id)?.claimable).toBe(false);
+  });
+});
+
 describe('supersedes / typed forward references', () => {
   function createWithReferences(verbs: WorkStateVerbs, title: string, references: { rel: string; id: string }[]) {
     return verbs.create({

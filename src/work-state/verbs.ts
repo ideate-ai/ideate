@@ -107,7 +107,8 @@ export class VerbError extends WorkStateModuleError {
  */
 export interface ListedWorkItem extends WorkItem {
   /** True iff `status === 'open'` AND every id in `depends_on` currently has
-   *  status `'done'`. This is DIRECT-ONLY — checking one level of
+   *  status `'done'` AND the item has no PENDING containment child (see
+   *  below). The depends_on half is DIRECT-ONLY — checking one level of
    *  `depends_on` — deliberately matching `claim()`'s own CAS gate in
    *  claims.ts (`NOT EXISTS (... WHERE dep.status != 'done')`, also
    *  direct-only). It is NOT "transitivity for free": the tempting
@@ -119,8 +120,20 @@ export interface ListedWorkItem extends WorkItem {
    *  list). Both surfaces stay consistent with each other, and with what
    *  `reopen` can do to the graph, by both being direct-only rather than by
    *  one of them papering over the gap with a walk the other doesn't do.
-   *  Items in any other status report `false` — they are simply not in the
-   *  one state where this concept applies. */
+   *
+   *  The CONTAINMENT half is a second, orthogonal gate: a parent is a
+   *  roll-up, not a work unit, so an item with ANY direct child (an item
+   *  whose `parent_id` is this item's id) whose status is `open` or
+   *  `in_progress` is NOT claimable — it becomes claimable once every child
+   *  is resolved. A `done` OR `cancelled` child is resolved and does not
+   *  block. NOTE the deliberate divergence from the depends_on convention,
+   *  where only `'done'` resolves the edge (a cancelled dependency still
+   *  blocks): a cancelled dependency is an unmet prerequisite the item
+   *  cannot proceed without, while a cancelled child is deliberately-dropped
+   *  scope — the roll-up is complete without it. Containment blocking is
+   *  likewise DIRECT-ONLY (children, not descendants) and derived fresh on
+   *  every call, never stored. Items in any other status report `false` —
+   *  they are simply not in the one state where this concept applies. */
   claimable: boolean;
   /** The DERIVED reverse edges: `referenced_by[i]` means "item `id` points
    *  at this one with `rel`" — a `supersedes` forward edge surfaces here as
@@ -411,9 +424,27 @@ export class WorkStateVerbs {
       if (status !== undefined) cache.set(id, status);
       return status;
     };
+    // Containment gate (orthogonal to the depends_on frontier — see
+    // ListedWorkItem.claimable): the set of parent ids with at least one
+    // PENDING child (`open` or `in_progress`). Built from ONE unfiltered
+    // full-board scan — NOT from the filtered result set — so a parent stays
+    // non-claimable even when its pending child is excluded by the filter
+    // (e.g. a roots-only `list({ parent_id: null })`); this is
+    // store.ts's buildReferrerMap completeness posture exactly: one scan of
+    // a small board table, no new index (GP-24). A `done` or `cancelled`
+    // child is resolved and never lands its parent in this set.
+    const parentsWithPendingChildren = new Set<string>();
+    for (const candidate of this.#store.listItems()) {
+      if (candidate.parent_id !== null && (candidate.status === 'open' || candidate.status === 'in_progress')) {
+        parentsWithPendingChildren.add(candidate.parent_id);
+      }
+    }
     return items.map((item) => ({
       ...item,
-      claimable: item.status === 'open' && item.depends_on.every((depId) => resolveStatus(depId) === 'done'),
+      claimable:
+        item.status === 'open' &&
+        item.depends_on.every((depId) => resolveStatus(depId) === 'done') &&
+        !parentsWithPendingChildren.has(item.id),
     }));
   }
 

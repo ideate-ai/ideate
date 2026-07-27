@@ -3,7 +3,8 @@
 //
 // Covers claim semantics. Pins, one per rule:
 // - rule 1: claim() is a compare-and-set (status='open' AND every
-//   depends_on 'done'); at most one active claim ever; claim_token strictly
+//   depends_on 'done' AND no containment child still open/in_progress); at
+//   most one active claim ever; claim_token strictly
 //   monotonic per item; the CAS is proven engine-level (not JS-level) with a
 //   genuine multi-thread race against the real SQLite file.
 // - rule 2 (amended): renew() is itself a CAS (in_progress + token match +
@@ -31,8 +32,9 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { Clock } from '../record/id.js';
 import { TelemetryCounters } from '../telemetry/counters.js';
 import { reportFromDir } from '../telemetry/report.js';
+import { openForWrite } from './schema.js';
 import { WorkStateStore } from './store.js';
-import type { ActorRef } from './types.js';
+import type { ActorRef, WorkItemStatus } from './types.js';
 import { checkExpiry } from './expiry.js';
 import { ClaimEngineError, DEFAULT_LEASE_MS, MAX_LEASE_MS, claim, complete, release, renew } from './claims.js';
 import type { CompletionRecordConfig, CompletionRecordFacts } from './completion-record.js';
@@ -78,6 +80,18 @@ function makeFixture(): Fixture {
 
 function actor(human = 'dan'): ActorRef {
   return { human };
+}
+
+/** Test-only scaffolding: force an item's stored status directly, standing
+ *  in for the cancel verb (verbs.ts's scope, not this file's) — mirrors
+ *  verbs.test.ts's forceStatus. Bypasses the claim engine entirely. */
+function forceStatus(dbPath: string, id: string, status: WorkItemStatus): void {
+  const db = openForWrite(dbPath);
+  try {
+    db.prepare('UPDATE items SET status = ? WHERE id = ?').run(status, id);
+  } finally {
+    db.close();
+  }
 }
 
 describe('claim() — atomic compare-and-set', () => {
@@ -137,6 +151,75 @@ describe('claim() — atomic compare-and-set', () => {
     complete(store, clock, dep.id, claimedDep.claim!.claim_token);
     const claimed = claim(store, clock, item.id, actor());
     expect(claimed.status).toBe('in_progress');
+  });
+
+  it('rejects a direct claim on a parent whose containment child is still open — the enforced roll-up gate', () => {
+    const { store, clock } = makeFixture();
+    const parent = store.insertItem({ title: 'parent', spec: 's', spec_format: 'f', created_by: actor() });
+    store.insertItem({ title: 'child', spec: 's', spec_format: 'f', created_by: actor(), parent_id: parent.id });
+
+    let thrown: unknown;
+    try {
+      claim(store, clock, parent.id, actor());
+    } catch (err) {
+      thrown = err;
+    }
+    expect(thrown).toBeInstanceOf(ClaimEngineError);
+    expect((thrown as ClaimEngineError).code).toBe('NOT_CLAIMABLE');
+    // The diagnostic names the REAL reason — the pending containment
+    // child — not a misleading depends_on reason.
+    expect((thrown as ClaimEngineError).message).toContain('containment child');
+    // The failed CAS left no trace: the parent is still open, unclaimed.
+    const after = store.getItem(parent.id);
+    expect(after?.status).toBe('open');
+    expect(after?.claim).toBeNull();
+  });
+
+  it('rejects a claim on a parent whose containment child is in_progress', () => {
+    const { store, clock } = makeFixture();
+    const parent = store.insertItem({ title: 'parent', spec: 's', spec_format: 'f', created_by: actor() });
+    const child = store.insertItem({ title: 'child', spec: 's', spec_format: 'f', created_by: actor(), parent_id: parent.id });
+    claim(store, clock, child.id, actor()); // the child itself claims fine — now in_progress
+
+    let thrown: unknown;
+    try {
+      claim(store, clock, parent.id, actor());
+    } catch (err) {
+      thrown = err;
+    }
+    expect(thrown).toBeInstanceOf(ClaimEngineError);
+    expect((thrown as ClaimEngineError).code).toBe('NOT_CLAIMABLE');
+    expect((thrown as ClaimEngineError).message).toContain('containment child');
+  });
+
+  it('a parent becomes claimable once every child is done — and a cancelled child does NOT block', () => {
+    const { store, clock } = makeFixture();
+    const parent = store.insertItem({ title: 'parent', spec: 's', spec_format: 'f', created_by: actor() });
+    const childA = store.insertItem({ title: 'a', spec: 's', spec_format: 'f', created_by: actor(), parent_id: parent.id });
+    const childB = store.insertItem({ title: 'b', spec: 's', spec_format: 'f', created_by: actor(), parent_id: parent.id });
+
+    // One child completed through the real verbs, one cancelled (forced,
+    // standing in for verbs.cancel) — both resolved, neither blocks.
+    const claimedA = claim(store, clock, childA.id, actor());
+    complete(store, clock, childA.id, claimedA.claim!.claim_token);
+    forceStatus(store.dbPath, childB.id, 'cancelled');
+
+    const claimed = claim(store, clock, parent.id, actor());
+    expect(claimed.status).toBe('in_progress');
+    expect(claimed.claim?.claim_token).toBe(1);
+  });
+
+  it("a childless item's claim is unchanged by the containment gate", () => {
+    const { store, clock } = makeFixture();
+    // A childless item sitting NEXT TO a parent with a pending child claims
+    // exactly as before the gate existed.
+    const parent = store.insertItem({ title: 'parent', spec: 's', spec_format: 'f', created_by: actor() });
+    store.insertItem({ title: 'child', spec: 's', spec_format: 'f', created_by: actor(), parent_id: parent.id });
+    const childless = store.insertItem({ title: 'childless', spec: 's', spec_format: 'f', created_by: actor() });
+
+    const claimed = claim(store, clock, childless.id, actor());
+    expect(claimed.status).toBe('in_progress');
+    expect(claimed.claim?.claim_token).toBe(1);
   });
 
   it('throws a typed NOT_FOUND error for an id that does not exist', () => {
@@ -204,6 +287,11 @@ describe('claim() — atomic compare-and-set', () => {
              JOIN items dep ON dep.id = je.value
              WHERE dep.status != 'done'
            )
+           AND NOT EXISTS (
+             SELECT 1 FROM items child
+             WHERE child.parent_id = items.id
+               AND child.status IN ('open', 'in_progress')
+           )
          RETURNING claim_token`;
 
     const workerSource = `
@@ -262,6 +350,8 @@ describe('claim() — atomic compare-and-set', () => {
       'NOT EXISTS (',
       'json_each(items.depends_on)',
       "WHERE dep.status != 'done'",
+      'child.parent_id = items.id',
+      "child.status IN ('open', 'in_progress')",
       'RETURNING claim_token',
     ]) {
       expect(claimsSrc).toContain(clause);
