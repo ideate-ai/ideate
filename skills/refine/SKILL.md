@@ -88,7 +88,11 @@ Turn the analyzed idea into items:
      capturing each returned id.
   2. Create children in dependency order (`work_create`), resolving `ref`s to
      real ids for `depends_on` and `parent_id`. Every `spec` must stand alone —
-     a worker builds from it with no other context.
+     a worker builds from it with no other context. Every `spec` MUST end with
+     a concrete `ACCEPTANCE` section (testable conditions, no "handle edge
+     cases") and a `VERIFICATION ANCHOR` (the exact runnable command/path that
+     proves the work) — verify-before-done lives in the requirements, not the
+     board.
 - For a change to **existing open** items, use `work_update_meta` (read the
   current `version`; pass it as `expected_version`; on `VERSION_CONFLICT`
   re-read and retry). Never edit `done` items — supersede them with new work.

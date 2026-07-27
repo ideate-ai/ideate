@@ -40,9 +40,12 @@ For each claimable item, apply **board claim discipline**:
      claim, and spawn `ideate:proxy-human` with the finding + intent. Record its
      decision (`record_append(kind="andon")`) and act on it — fix as directed,
      defer (leave open, flag for human), or drop.
-6. Complete or release: verified `complete` with no unresolved critical/
-   significant finding → `work_complete(id, token, note)`. Otherwise
-   `work_release(id, token, note)`. **Never leave an item claimed.**
+6. Complete or release: complete only on evidence — the worker's report must
+   include the spec's `VERIFICATION ANCHOR` command and its fresh output, and
+   the `work_complete(id, token, note)` note references that evidence. Verified
+   `complete` with no unresolved critical/significant finding → `work_complete`.
+   Otherwise (blocked, Andon'd, or verification not run) → `work_release(id,
+   token, note)` — never complete blind. **Never leave an item claimed.**
 7. Re-read `work_list` — completing items unblocks dependents. Continue until
    the frontier is empty or a proxy-human decision halts the cycle.
 

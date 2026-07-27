@@ -37,7 +37,7 @@ breakdown and the invoking skill calls `work_create` for each item.
     {
       "ref": "a",
       "title": "short imperative title",
-      "spec": "self-contained instructions: what to build, acceptance criteria, files/interfaces involved, patterns to follow",
+      "spec": "self-contained instructions: what to build, files/interfaces involved, patterns to follow — MUST end with an ACCEPTANCE section (concrete, testable conditions; never 'handle edge cases') and a VERIFICATION ANCHOR (the exact runnable command/path that proves the work — verify-before-done lives in the requirements, not the board)",
       "spec_format": "markdown",
       "depends_on": ["<ref of prerequisite items>"],
       "parent": "<ref of containing item, or null>"

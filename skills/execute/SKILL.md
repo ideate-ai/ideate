@@ -98,9 +98,14 @@ For each claimed item:
    - Two special cases inherited from v2, treat as `critical`: a **startup/
      smoke-test failure** (the thing doesn't run) and **test-infrastructure
      failure** (can't tell if it works) — both block completion.
-6. **Complete or release.** If the worker reported `complete` and no unresolved
+6. **Complete or release.** Complete only on evidence: the worker's report must
+   include the spec's `VERIFICATION ANCHOR` command and its fresh output (run
+   this cycle — "if you haven't run the command, you can't claim it passes"),
+   and your `work_complete` note must reference that evidence (it lands as a
+   durable record entry). If the worker reported `complete` and no unresolved
    critical/significant finding remains, `work_complete(id, token, note)`. If
-   blocked or Andon'd, `work_release(id, token, note)`.
+   blocked, Andon'd, or the verification wasn't actually run, `work_release(id,
+   token, note)` — never complete blind.
 7. Re-read the frontier (`work_list`) — completing an item may unblock
    dependents. Continue until the frontier is empty or an Andon halts you.
 
