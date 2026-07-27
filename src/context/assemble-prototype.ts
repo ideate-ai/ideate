@@ -17,8 +17,9 @@
 //     (depends_on upstream, reverse-depends_on downstream, parent/child
 //     containment) are first-class structural sources, read straight off the
 //     authoritative work-state, not a parallel node graph.
-//   - The light STEERING store (steering/store.ts SteeringStore.read) —
-//     SELECTION only, same posture as the record seam.
+//   - The light STEERING store (steering/store.ts SteeringStore.readViews —
+//     read PLUS the derived `referenced_by` backlinks) — SELECTION only, same
+//     posture as the record seam.
 //
 // The KG augment (Seam 3) is out of this prototype's scope — local SQLite-only
 // assembly is the whole surface here (behavioral parity: the prototype
@@ -39,7 +40,19 @@
 //        domain / scope-match) + state-at-time.
 //   8.  EMIT-ONLY confidence signal — never refuses, never blocks.
 //   9.  STATE-AT-TIME awareness — a deprecated/superseded steering item is
-//        never presented as live; it is skipped with reason `superseded`.
+//        never presented as live; it is skipped with reason `superseded`. The
+//        same holds for an item cross-item superseded via a typed `references`
+//        edge (a `supersedes` backlink in `referenced_by`) even when its own
+//        status never flipped — the skip reason names the replacement.
+//        STICKINESS: a typed-edge supersede sticks even if the REPLACEMENT is
+//        later deprecated/superseded — the forward edge persists on the
+//        replacement's file, so the superseded item stays hidden even though
+//        the replacement is itself no longer live. That can leave a domain
+//        with no live item (surfaced by the confidence signal's noPolicy
+//        reason); it is recoverable by amending the replacement to drop the
+//        edge. Deliberately consistent with the sticky status-supersession
+//        model — resurrecting the superseded item when its replacement dies is
+//        a semantic call, deferred, not made here.
 //
 // Budget: estimateTokens = floor(len / 4),
 // explicitly NOT load-bearing for correctness (±30% ASCII, ±50% multi-byte).
@@ -84,8 +97,9 @@ export interface SkippedItem extends InclusionProvenance {
   estimatedTokens: number;
   score: number;
   /** `over-budget` (would not fit the remaining budget), `per-source-cap` (the
-   *  source's cap was already full), or `superseded` (a non-active steering
-   *  item — never presented as live, step 9). */
+   *  source's cap was already full), or `superseded` (a non-live steering item
+   *  — status-superseded, or cross-item superseded via a typed `references`
+   *  edge; never presented as live, step 9). */
   skipReason: 'over-budget' | 'per-source-cap' | 'superseded';
 }
 
@@ -164,7 +178,8 @@ interface Candidate {
    *  provenance framing's own cost. */
   entry: string;
   tokens: number;
-  /** A non-active steering item: gathered for the manifest, never delivered. */
+  /** A non-live steering item (status-superseded, or cross-item superseded via
+   *  a typed `references` edge): gathered for the manifest, never delivered. */
   supersededSkip: boolean;
 }
 
@@ -223,7 +238,7 @@ export function assembleContext(seed: string, deps: AssembleDeps, options: Assem
     runningTokens += cand.tokens;
   }
 
-  // Non-active steering items are never presented as live (step 9).
+  // Non-live steering items are never presented as live (step 9).
   for (const cand of candidates) {
     if (cand.supersededSkip) skipped.push(toSkipped(cand, 'superseded'));
   }
@@ -318,10 +333,21 @@ function gatherSteering(seedItem: WorkItem | null, steering: SteeringStore): Can
   const seedText = seedItem === null ? '' : `${seedItem.title}\n${seedItem.spec}`.toLowerCase();
   const out: Candidate[] = [];
 
-  for (const item of steering.read()) {
+  // readViews (not read): the DERIVED `referenced_by` backlinks are what carry
+  // cross-item supersession — consumed here, never recomputed.
+  for (const item of steering.readViews()) {
     // State-at-time (step 9): a non-active item is never live.
     if (item.status !== 'active') {
-      out.push(makeSupersededCandidate(item));
+      out.push(makeSupersededCandidate(item, `steering ${item.status} — not presented as live`));
+      continue;
+    }
+    // Typed-edge supersession (the three-store `references` model): an item
+    // carrying a `supersedes` BACKLINK was cross-item replaced WITHOUT its own
+    // status flipping — skip it exactly like a status-superseded item, naming
+    // the replacement(s) so the manifest tells the reader what took over.
+    const replacers = item.referenced_by.filter((ref) => ref.rel === 'supersedes').map((ref) => ref.id);
+    if (replacers.length > 0) {
+      out.push(makeSupersededCandidate(item, `superseded by ${replacers.join(', ')} — not presented as live`));
       continue;
     }
     const isGP = item.kind.toLowerCase().includes('principle');
@@ -389,11 +415,11 @@ function makeCandidate(
   return { provenance, score, entry, tokens: estimateTokens(entry), supersededSkip: false };
 }
 
-function makeSupersededCandidate(item: SteeringItem): Candidate {
+function makeSupersededCandidate(item: SteeringItem, reason: string): Candidate {
   const provenance: InclusionProvenance = {
     sourceId: item.id,
     source: 'steering',
-    inclusionReason: `steering ${item.status} — not presented as live`,
+    inclusionReason: reason,
     stateAtTime: item.status,
   };
   const entry = renderEntry(provenance, 0, renderSteering(item));

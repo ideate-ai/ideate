@@ -183,6 +183,41 @@ describe('assembleContext prototype', () => {
     expect(briefing).not.toContain('plaintext');
   });
 
+  it('surfaces a typed-edge (cross-item) superseded steering item — skipped with the replacement named', () => {
+    const { deps, seed } = makeFixture();
+    // POL-auth-2 replaces POL-auth-1 via a typed `references` forward edge.
+    // POL-auth-1's status stays `active` — the supersession lives ONLY on the
+    // derived `referenced_by` backlink.
+    const replacement = deps.steering.put({
+      id: 'POL-auth-2',
+      kind: 'policy',
+      domain: 'auth',
+      statement: 'All auth flows must route token storage through the vault.',
+      references: [{ rel: 'supersedes', id: 'POL-auth-1' }],
+    });
+    if (!replacement.ok) throw new Error('fixture: failed to seed replacement policy');
+
+    const { manifest, briefing } = assembleContext(seed, deps, { tokenBudget: 2000 });
+
+    // The replaced item is skipped exactly like a status-superseded one, with
+    // the replacement named in the reason — never presented as live.
+    expect(manifest.included.some((i) => i.sourceId === 'POL-auth-1')).toBe(false);
+    const typedSkip = manifest.skipped.find((i) => i.sourceId === 'POL-auth-1');
+    expect(typedSkip?.skipReason).toBe('superseded');
+    expect(typedSkip?.inclusionReason).toContain('POL-auth-2');
+    expect(briefing).not.toContain('gate every secret-bearing field');
+
+    // The replacement itself is a live active item and IS delivered.
+    expect(manifest.included.some((i) => i.sourceId === 'POL-auth-2')).toBe(true);
+
+    // The status-superseded item is still handled as before, and an unaffected
+    // item (GP-23) is still included.
+    const legacySkip = manifest.skipped.find((i) => i.sourceId === 'POL-auth-legacy');
+    expect(legacySkip?.skipReason).toBe('superseded');
+    expect(legacySkip?.inclusionReason).toContain('deprecated');
+    expect(manifest.included.some((i) => i.sourceId === 'GP-23')).toBe(true);
+  });
+
   it('enforces per-source caps — skips capped items rather than truncating', () => {
     const { deps, seed } = makeFixture();
     const { manifest } = assembleContext(seed, deps, { tokenBudget: 4000, perSourceCaps: { record: 1 } });
