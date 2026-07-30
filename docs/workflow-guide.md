@@ -135,8 +135,15 @@ tasks call `work_renew` to extend the lease.
 **Lifecycle verbs:** `work_create`, `work_claim`, `work_renew`,
 `work_release` (back to open, with a handoff note), `work_complete` (→ done),
 `work_cancel`, `work_reopen`, `work_update_meta` (edit title/spec/deps via CAS
-on `version`), `work_list` (with a derived `claimable` flag per item),
-`work_get`, `work_events` (the immutable transition history of one item).
+on `version`), `work_list` (with a derived `claimable` flag per item —
+summary rows without the opaque `spec` body, `limit`/`cursor`-paged, so a
+board read stays bounded however large the board gets — a page can also come
+back shorter than `limit` to stay inside a payload size budget, so follow
+`next_cursor` rather than assuming a short page means the end), `work_get` (the
+full-spec fetch for one item), `work_events` (the immutable transition history
+of one item). The CLI `ideate-work list --json` returns the same
+`{items, next_cursor}` envelope under the same payload budget (resume with
+`--cursor`); the human-readable listing is unpaged.
 
 **Solo today, multi-IC later.** The board's coordination semantics
 (claim/lease/fence) are present but degenerate for a single person. The same

@@ -15,7 +15,11 @@ Whatever the invoker gives you plus what you can read:
 - `${CLAUDE_PLUGIN_ROOT}/bin/ideate-record read --scope <cycle-or-project> --json`
   for the decisions and findings recorded this cycle.
 - `${CLAUDE_PLUGIN_ROOT}/bin/ideate-work list --json` and `git log --oneline`
-  for what actually shipped.
+  for what actually shipped. That prints `{"items": [...], "next_cursor": ...}`
+  — one bounded page, not the whole board, and rows carry `spec_length` rather
+  than the `spec` body. Before you report on board state, page it out: re-run
+  with `--cursor <next_cursor>` until `next_cursor` is `null`. A page shorter
+  than you expected is **not** the end.
 
 ## What you return — a journal entry, recall-shaped
 Tight prose (not a form dump), covering:

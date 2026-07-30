@@ -23,7 +23,12 @@ Collect findings; dedupe; drop the unsubstantiated. Record survivors with
 ## Convergence verdict (this phase's job)
 Decide, from the board and the findings, one of:
 - **`converged`** — no unresolved `critical` or `significant` findings this
-  cycle **and** `work_list` shows no open/claimable items. The work is done.
+  cycle **and** the board has no claimable work. `work_list(status:"open")`
+  coming back empty on the first page settles it — there are none. Otherwise
+  you must show that **no** open item is `claimable`, and claimability is
+  derived per item, so that only holds after paging the board to exhaustion:
+  follow `next_cursor` until it is `null` — a page shorter than `limit` is
+  **not** the end. Then the work is done.
 - **`needs-refinement`** — unresolved `critical`/`significant` findings, or open
   board work remains. The controller will run `phases/refine.md`.
 - **`unknown`** — the reviewers genuinely couldn't determine adherence (e.g.

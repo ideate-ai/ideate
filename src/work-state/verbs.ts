@@ -9,6 +9,14 @@
 //
 // Built on top of the store.ts storage primitives: insertItem, getItem,
 // listItems, updateMeta (metadata only — status/claim untouched), appendEvent.
+//
+// TWO shapes of the SAME `list` verb (one selection, one claimability rule):
+// `list(filter)` returns every matching item at full fidelity (spec bodies
+// included) and is what internal TypeScript callers use; `listSummaries(filter,
+// page)` returns the projected, keyset-paged view the agent-facing transports
+// call. Neither is a different SELECTION and neither ranks anything (GP-27) —
+// and both compute `claimable` through the one gate below, so a page boundary
+// can never change an item's claimability.
 // Two things store.ts deliberately does NOT provide, which this file supplies
 // itself:
 //
@@ -50,7 +58,14 @@
 import type { Clock } from '../record/id.js';
 import { openForWrite } from './schema.js';
 import { appendEventRowOn } from './store.js';
-import type { ListItemsFilter, WorkItemView, WorkStateStore } from './store.js';
+import type {
+  ListItemsFilter,
+  ListItemsPage,
+  ListPageOptions,
+  WorkItemSummaryView,
+  WorkItemView,
+  WorkStateStore,
+} from './store.js';
 import { withWriteTransaction } from './tx.js';
 import { WorkStateError, WorkStateModuleError } from './types.js';
 import type { ActorRef, UpdateMetaInput, WorkItem, WorkItemReference, WorkItemStatus, WorkStateEvent } from './types.js';
@@ -139,6 +154,22 @@ export interface ListedWorkItem extends WorkItem {
    *  at this one with `rel`" — a `supersedes` forward edge surfaces here as
    *  the backlink announcing this item's replacement. */
   referenced_by: WorkItemReference[];
+}
+
+/**
+ * The SUMMARY twin of {@link ListedWorkItem}: the same two derived views
+ * (`claimable`, `referenced_by`) attached to a projected row — every current
+ * item field EXCEPT the opaque `spec` body, plus `spec_length` (store.ts).
+ * `spec` reappears only when the caller opts in.
+ *
+ * `claimable` here is IDENTICAL to the value the unpaginated
+ * {@link WorkStateVerbs.list} would report for the same item, by construction:
+ * both go through this file's ONE claimability gate, which consults the FULL
+ * board — not the page — for both halves. A page boundary is a selection
+ * window, never a semantic one.
+ */
+export interface ListedWorkItemSummary extends WorkItemSummaryView {
+  claimable: boolean;
 }
 
 /** A synthetic id that can never collide with a real ULID (ULIDs are 26
@@ -413,39 +444,91 @@ export class WorkStateVerbs {
    * layer's scope — noted here rather than silently assumed. The opportunistic
    * session-boundary sweep is the mechanism that keeps a read-mostly board
    * from drifting stale.
+   *
+   * FULL FIDELITY, ALWAYS: every matching item, each with its opaque `spec`
+   * body, no page limit. This is the read internal TypeScript callers use
+   * (context/assemble-prototype.ts sweeps it for reverse edges and RENDERS the
+   * specs it finds), so it must never quietly become a page — see
+   * {@link listSummaries} for the projected, paged transport read.
    */
   list(filter?: ListItemsFilter): ListedWorkItem[] {
     const items = this.#store.listItemViews(filter);
-    const cache = new Map<string, WorkItemStatus>(items.map((item) => [item.id, item.status] as const));
-    const resolveStatus = (id: string): WorkItemStatus | undefined => {
-      const cached = cache.get(id);
-      if (cached !== undefined) return cached;
-      const status = this.#store.getItem(id)?.status;
-      if (status !== undefined) cache.set(id, status);
-      return status;
+    const isClaimable = this.#claimabilityGate();
+    return items.map((item) => ({ ...item, claimable: isClaimable(item) }));
+  }
+
+  /**
+   * The SUMMARY, keyset-paged twin of {@link list} — the read the agent-facing
+   * transports (work-state/tools.ts's `work_list`, cli/ideate-work.ts's
+   * `list --json`) actually call. Same selection, same order, same two derived
+   * views; what changes is the PAYLOAD (no opaque `spec` body unless
+   * `page.include_spec` asks for it — `spec_length` instead) and the
+   * ROW COUNT (one page at a time when `page.limit` is given, with an opaque
+   * `next_cursor` to resume from).
+   *
+   * `list` is NOT reimplemented in terms of this method, and this method does
+   * not impose a default page size: an internal caller that needs the whole
+   * board with spec bodies (context/assemble-prototype.ts's reverse-edge
+   * sweep) keeps calling {@link list} and keeps getting every item. Truncation
+   * is only ever something a transport asks for explicitly.
+   *
+   * Like {@link list}, this does not run the lazy-expiry seam per item (see
+   * that method's own note).
+   */
+  listSummaries(filter?: ListItemsFilter, page?: ListPageOptions): ListItemsPage<ListedWorkItemSummary> {
+    const result = this.#store.listItemSummaryViews(filter, page);
+    const isClaimable = this.#claimabilityGate();
+    return {
+      items: result.items.map((item) => ({ ...item, claimable: isClaimable(item) })),
+      next_cursor: result.next_cursor,
     };
-    // Containment gate (orthogonal to the depends_on frontier — see
-    // ListedWorkItem.claimable): the set of parent ids with at least one
-    // PENDING child (`open` or `in_progress`). Built from ONE unfiltered
-    // full-board scan — NOT from the filtered result set — so a parent stays
-    // non-claimable even when its pending child is excluded by the filter
-    // (e.g. a roots-only `list({ parent_id: null })`); this is
-    // store.ts's buildReferrerMap completeness posture exactly: one scan of
-    // a small board table, no new index (GP-24). A `done` or `cancelled`
-    // child is resolved and never lands its parent in this set.
+  }
+
+  /**
+   * Build the derived-claimability predicate shared by {@link list} and
+   * {@link listSummaries} — ONE definition of `claimable`, so the paged read
+   * and the full read can never drift (and neither can drift from
+   * `ListedWorkItem.claimable`'s documented contract).
+   *
+   * Both halves of the gate consult the FULL board, never just the rows being
+   * returned — that is what makes the answer independent of the filter AND of
+   * where a page boundary happens to fall. BOTH are answered from ONE
+   * unfiltered, SPEC-FREE full-board scan (store.ts's `listContainmentRows`,
+   * which reads `(id, parent_id, status)` and nothing else):
+   *
+   *   - depends_on frontier: an item is gated until every direct dependency is
+   *     `done`. The status of EVERY id on the board is in the map that scan
+   *     produces, so a dependency excluded by the filter or sitting on another
+   *     page resolves from the SAME scan — no per-id read. That matters under
+   *     paging: seeding the map from the returned page instead would turn a
+   *     cross-page dependency into a per-dependency `getItem`, i.e. an N+1 of
+   *     open/close cycles EACH loading a full row including the opaque `spec`
+   *     body — the exact payload the projected read exists to avoid. An id
+   *     that is absent from the map is an id that is not on the board: its
+   *     status is `undefined`, which is not `done`, so the dependent stays
+   *     non-claimable (identical to the per-id read's answer for a missing
+   *     item).
+   *   - containment: the set of parent ids with at least one PENDING child
+   *     (`open` or `in_progress`), so a parent stays non-claimable even when
+   *     its pending child is excluded by the filter (e.g. a roots-only
+   *     `list({ parent_id: null })`) or simply landed on a later page. This is
+   *     store.ts's buildReferrerMap completeness posture exactly: one scan of
+   *     a small board table, no new index (GP-24). A `done` or `cancelled`
+   *     child is resolved and never lands its parent in this set.
+   */
+  #claimabilityGate(): (item: { id: string; status: WorkItemStatus; depends_on: readonly string[] }) => boolean {
+    const statuses = new Map<string, WorkItemStatus>();
     const parentsWithPendingChildren = new Set<string>();
-    for (const candidate of this.#store.listItems()) {
+    for (const candidate of this.#store.listContainmentRows()) {
+      statuses.set(candidate.id, candidate.status);
       if (candidate.parent_id !== null && (candidate.status === 'open' || candidate.status === 'in_progress')) {
         parentsWithPendingChildren.add(candidate.parent_id);
       }
     }
-    return items.map((item) => ({
-      ...item,
-      claimable:
-        item.status === 'open' &&
-        item.depends_on.every((depId) => resolveStatus(depId) === 'done') &&
-        !parentsWithPendingChildren.has(item.id),
-    }));
+    return (item) =>
+      item.status === 'open' &&
+      item.depends_on.every((depId) => statuses.get(depId) === 'done') &&
+      !parentsWithPendingChildren.has(item.id);
   }
 
   /**

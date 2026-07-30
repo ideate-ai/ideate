@@ -7,7 +7,9 @@ the next cycle's board work — and detect when the loop is failing to converge.
 
 ## Turn findings into work
 Read this cycle's findings (`record_read(scope="finding")` / the verdict output)
-and the current board (`work_list`):
+and the current board (`work_list`, paged to exhaustion — follow `next_cursor`
+until it is `null`; a short page is not the end — since the guard below counts
+the whole board):
 - For each unresolved `critical`/`significant` finding, either update an
   existing open item (`work_update_meta`, using its current `version` as
   `expected_version`) or `work_create` a new item that fixes it. Wire

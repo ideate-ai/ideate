@@ -48,9 +48,11 @@ shapes the output:
 Assemble what the decomposition must respect:
 - **Steering** (`steering_read`) — the principles, constraints, and policies
   the new work must honour.
-- **Board** (`work_list`, plus `work_events`/`work_get` where history matters)
-  — existing open/in-progress/done items, so new work wires to them and doesn't
-  duplicate them.
+- **Board** (`work_list` paged to exhaustion — follow `next_cursor` until it is
+  `null`; a short page is not the end — plus `work_events`/`work_get` where
+  history or an item's `spec` matters, since list rows carry `spec_length`, not
+  the body) — existing open/in-progress/done items, so new work wires to them
+  and doesn't duplicate them.
 - **Record** (`record_read`) — the `init` architecture survey and prior
   decisions; findings if this is a correction.
 
@@ -97,8 +99,9 @@ Turn the analyzed idea into items:
   current `version`; pass it as `expected_version`; on `VERSION_CONFLICT`
   re-read and retry). Never edit `done` items — supersede them with new work.
 - Amend steering (`steering_put`, reusing ids) where the idea changes a rule.
-- Verify with `work_list`: the frontier should have at least one `claimable`
-  item and no orphaned refs.
+- Verify with `work_list`, paged to exhaustion as in Step 3 (claimability is
+  per item, so one page can hide the claimable frontier): there should be at
+  least one `claimable` item and no orphaned refs.
 
 ## Step 7 — Close out
 - `record_append(kind="journal")` — what was decomposed and why; the items

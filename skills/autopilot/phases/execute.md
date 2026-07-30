@@ -10,7 +10,9 @@ cycle's build phase and run it.
   loaded.
 
 ## Loop over the claimable frontier
-Read `work_list`; take its derived `claimable` items. First, sweep for stale
+Read the whole board — `work_list`, following `next_cursor` until it is `null`
+(a short page is not the end) — and take its derived `claimable` items. Rows
+carry no `spec`; the body arrives with the claim. First, sweep for stale
 state: any `in_progress` item from a prior interrupted cycle — check
 `work_events`, and `work_release` it (with a note) if its claim is dead so it
 becomes claimable again.
@@ -26,9 +28,9 @@ For each claimable item, apply **board claim discipline**:
    `depends_on` a human-gate; the derived `claimable:false` holds the downstream
    frontier until the gate completes (GP-27). Then `work_complete` or
    `work_release` the gate item itself and continue to the next claimable item.
-3. Assemble context: the item `spec` (authoritative) + applicable steering
-   (`steering_read`) + scoped decisions (`record_read`). Spawn `ideate:worker`
-   with all of it.
+3. Assemble context: the item `spec` (authoritative — `work_claim` returned it)
+   + applicable steering (`steering_read`) + scoped decisions (`record_read`).
+   Spawn `ideate:worker` with all of it.
 4. Incremental review: spawn `ideate:code-reviewer` (and `ideate:spec-reviewer`
    for spec-sensitive items) on the change.
 5. Findings by severity:
@@ -46,8 +48,9 @@ For each claimable item, apply **board claim discipline**:
    `complete` with no unresolved critical/significant finding → `work_complete`.
    Otherwise (blocked, Andon'd, or verification not run) → `work_release(id,
    token, note)` — never complete blind. **Never leave an item claimed.**
-7. Re-read `work_list` — completing items unblocks dependents. Continue until
-   the frontier is empty or a proxy-human decision halts the cycle.
+7. Re-read `work_list` (the same full walk) — completing items unblocks
+   dependents. Continue until the frontier is empty or a proxy-human decision
+   halts the cycle.
 
 ## Output of this phase (hold for the controller / cycle record)
 - Items completed this cycle (ids).

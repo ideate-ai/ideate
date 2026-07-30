@@ -8,11 +8,21 @@
 // events table anywhere in this package — plus a behavioral accumulate-and-
 // never-mutate test); version increments on the metadata-update primitive;
 // ULID ids minted via the shared record/id.ts generator; the secret gate
-// masks `title` and an event's `note` before persist.
+// masks `title` and an event's `note` before persist; the summary read
+// projects `spec` away in favour of a SQL-computed `spec_length` (counted in
+// CODE POINTS, pinned on non-BMP text), pages by KEYSET (never OFFSET —
+// including across a created_at TIE), clamps its page size, and refuses a
+// malformed cursor loudly — while absent page options stay byte-identical to
+// the unpaginated read the internal callers use. The projection's column list
+// is held against the LIVE DDL (`PRAGMA table_info`), so a column added to
+// schema.ts and forgotten in the projection fails the build rather than
+// vanishing from every summary row; both legacy shapes (v2 without
+// `"references"`, pre-v2 without `parent_id` either) are read, not thrown on.
 //
 // All filesystem work happens in mkdtemp dirs — the real .ideate-work/ is
 // never touched.
 
+import { Buffer } from 'node:buffer';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -31,7 +41,18 @@ import { isUlid } from '../record/id.js';
 import type { Clock } from '../record/id.js';
 import { openForWrite } from './schema.js';
 import { DEFAULT_TENANT_ID, WorkStateError } from './types.js';
-import { WorkStateStore } from './store.js';
+import {
+  LIST_PAYLOAD_BUDGET_CHARS,
+  MAX_LIST_LIMIT,
+  WorkStateStore,
+  applyListPayloadBudget,
+  clampListLimit,
+  decodeListCursor,
+  encodeListCursor,
+  measureCompactItemChars,
+  measurePrettyItemChars,
+  summaryColumns,
+} from './store.js';
 
 const FIXED_ISO = '2026-07-11T12:00:00.000Z';
 
@@ -50,6 +71,34 @@ CREATE TABLE items (
   status                TEXT NOT NULL,
   depends_on            TEXT NOT NULL,
   parent_id             TEXT,
+  created_by_human      TEXT NOT NULL,
+  created_by_agent      TEXT,
+  created_at            TEXT NOT NULL,
+  updated_at            TEXT NOT NULL,
+  version               INTEGER NOT NULL,
+  claim_token_counter   INTEGER NOT NULL DEFAULT 0,
+  claim_holder_human    TEXT,
+  claim_holder_agent    TEXT,
+  claim_token           INTEGER,
+  claim_acquired_at     TEXT,
+  claim_lease_expires   TEXT
+)`;
+
+// A pre-v2 items table — WITHOUT `parent_id` AND without `"references"`.
+// A different branch of both column guards than LEGACY_V2_ITEMS_DDL above
+// exercises: the projected read and the containment read each name
+// `parent_id` explicitly, so on this board an unguarded statement throws
+// `no such column: parent_id` at PREPARE time — a board the old `SELECT *`
+// path read without complaint (P-41).
+const LEGACY_V1_ITEMS_DDL = `
+CREATE TABLE items (
+  id                    TEXT PRIMARY KEY,
+  tenant_id             TEXT NOT NULL,
+  title                 TEXT NOT NULL,
+  spec                  TEXT NOT NULL,
+  spec_format           TEXT NOT NULL,
+  status                TEXT NOT NULL,
+  depends_on            TEXT NOT NULL,
   created_by_human      TEXT NOT NULL,
   created_by_agent      TEXT,
   created_at            TEXT NOT NULL,
@@ -805,6 +854,440 @@ describe('parent_id containment', () => {
     const redep = store.updateMeta(reparented.id, reparented.version, { depends_on: [] });
     expect(redep.depends_on).toEqual([]);
     expect(redep.parent_id).toBe(parent.id);
+  });
+});
+
+describe('summary projection + keyset paging (the store half)', () => {
+  /** Seed `count` items one minute apart, newest last. Returns the ids
+   *  NEWEST-FIRST — the order every list read emits. The instant is derived by
+   *  ARITHMETIC on the base epoch rather than by formatting the index into the
+   *  minute field, which would silently cap a board at 59 items. */
+  function seedBoard(fx: Fixture, count: number, spec = 'spec body'): string[] {
+    const base = Date.parse(FIXED_ISO);
+    const ids: string[] = [];
+    for (let i = 0; i < count; i += 1) {
+      fx.setNow(new Date(base + i * 60_000).toISOString());
+      ids.push(fx.store.insertItem({ title: `item ${String(i)}`, spec, spec_format: 'f', created_by: actor() }).id);
+    }
+    return ids.reverse();
+  }
+
+  /** Walk the projected read from the first page to a null cursor. */
+  function walkAll(fx: Fixture, limit: number): string[] {
+    const walked: string[] = [];
+    let cursor: string | null = null;
+    do {
+      const page = fx.store.listItemSummaryViews(undefined, { limit, ...(cursor === null ? {} : { cursor }) });
+      // A page that promises more must have moved the walk forward, or this
+      // loop would not terminate.
+      expect(page.items.length).toBeGreaterThan(0);
+      walked.push(...page.items.map((item) => item.id));
+      cursor = page.next_cursor;
+    } while (cursor !== null);
+    return walked;
+  }
+
+  it('absent page options behave exactly like the unpaginated read — every matching item, no cursor', () => {
+    const fx = makeFixture();
+    const ids = seedBoard(fx, 5);
+    const page = fx.store.listItemSummaryViews();
+    // This is the property context/assemble-prototype.ts's full-board sweep
+    // depends on: this layer imposes NO default page size.
+    expect(page.items.map((i) => i.id)).toEqual(ids);
+    expect(page.next_cursor).toBeNull();
+  });
+
+  it('projects spec away and reports SQLite LENGTH(spec) as spec_length; include_spec puts the body back', () => {
+    const fx = makeFixture();
+    const spec = 'x'.repeat(2048);
+    fx.store.insertItem({ title: 'x', spec, spec_format: 'f', created_by: actor() });
+
+    const summary = fx.store.listItemSummaryViews().items[0];
+    expect(summary).not.toHaveProperty('spec');
+    expect(summary?.spec_length).toBe(2048);
+    // Every other current field survives the projection untouched.
+    expect(Object.keys(summary ?? {}).sort()).toEqual(
+      [
+        'id',
+        'tenant_id',
+        'title',
+        'spec_length',
+        'spec_format',
+        'status',
+        'claim',
+        'depends_on',
+        'parent_id',
+        'references',
+        'referenced_by',
+        'created_by',
+        'created_at',
+        'updated_at',
+        'version',
+      ].sort(),
+    );
+
+    const withSpec = fx.store.listItemSummaryViews(undefined, { include_spec: true }).items[0];
+    expect(withSpec?.spec).toBe(spec);
+    expect(withSpec?.spec_length).toBe(2048);
+  });
+
+  it('clampListLimit clamps out-of-range sizes and rejects a non-integer with a typed SCHEMA error', () => {
+    expect(clampListLimit(0)).toBe(1);
+    expect(clampListLimit(-5)).toBe(1);
+    expect(clampListLimit(1)).toBe(1);
+    expect(clampListLimit(9999)).toBe(MAX_LIST_LIMIT);
+    expect(clampListLimit(MAX_LIST_LIMIT)).toBe(MAX_LIST_LIMIT);
+    for (const bad of [1.5, Number.NaN, Number.POSITIVE_INFINITY]) {
+      expect(() => clampListLimit(bad)).toThrow(WorkStateError);
+      expect(() => clampListLimit(bad)).toThrow(/must be an integer/);
+    }
+  });
+
+  it('never returns more than MAX_LIST_LIMIT rows, whatever the caller asks for', () => {
+    const fx = makeFixture();
+    // Seeded through one write connection: this test needs MAX+1 rows, and
+    // the store's per-call open/close would make that needlessly slow. The
+    // rows are read back through the real store.
+    const db = openForWrite(fx.dbPath);
+    try {
+      const insert = db.prepare(
+        `INSERT INTO items (id, tenant_id, title, spec, spec_format, status, depends_on, parent_id, "references",
+          created_by_human, created_by_agent, created_at, updated_at, version, claim_token_counter)
+         VALUES (?, 'local', 't', 's', 'f', 'open', '[]', NULL, '[]', 'dan', NULL, ?, ?, 1, 0)`,
+      );
+      for (let i = 0; i <= MAX_LIST_LIMIT; i += 1) {
+        const at = `2026-07-11T12:00:00.${String(i).padStart(3, '0')}Z`;
+        insert.run(`seed-${String(i).padStart(4, '0')}`, at, at);
+      }
+    } finally {
+      db.close();
+    }
+
+    const page = fx.store.listItemSummaryViews(undefined, { limit: 9999 });
+    expect(page.items).toHaveLength(MAX_LIST_LIMIT);
+    expect(page.next_cursor).toBeTypeOf('string');
+  });
+
+  it('encodes/decodes a page cursor as canonical base64url of [created_at, id]', () => {
+    const cursor = encodeListCursor('2026-07-11T12:00:00.000Z', '01JZM8Z0000000000000000000');
+    // Opaque to callers, but it must be URL-safe base64 with no padding.
+    expect(cursor).toMatch(/^[A-Za-z0-9_-]+$/);
+    expect(decodeListCursor(cursor)).toEqual({ created_at: '2026-07-11T12:00:00.000Z', id: '01JZM8Z0000000000000000000' });
+  });
+
+  it('rejects every shape of malformed cursor with a typed SCHEMA error (guarding the guard)', () => {
+    const cases: [string, string][] = [
+      ['not-a-cursor!!', 'non-base64url characters'],
+      ['e30=', 'padded, non-canonical base64url'],
+      ['', 'empty'],
+      [Buffer.from('not json', 'utf8').toString('base64url'), 'valid base64url, not JSON'],
+      [Buffer.from('{}', 'utf8').toString('base64url'), 'JSON, but not the [created_at, id] pair'],
+      [Buffer.from('["only-one"]', 'utf8').toString('base64url'), 'a one-element array'],
+      [Buffer.from('["ts", 7]', 'utf8').toString('base64url'), 'a non-string id'],
+    ];
+    for (const [cursor, why] of cases) {
+      expect(() => decodeListCursor(cursor), why).toThrow(WorkStateError);
+      expect(() => decodeListCursor(cursor), why).toThrow(/not a valid page cursor/);
+    }
+  });
+
+  it('a malformed cursor throws even on a board that does not exist yet — never a silent empty page', () => {
+    const fx = makeFixture();
+    // Nothing has ever been written: the read path returns null from
+    // openForRead, and that must NOT swallow the bad cursor.
+    expect(existsSync(fx.dbPath)).toBe(false);
+    expect(() => fx.store.listItemSummaryViews(undefined, { cursor: 'not-a-cursor!!' })).toThrow(WorkStateError);
+    // A well-formed cursor on an empty board is simply an empty page.
+    expect(fx.store.listItemSummaryViews(undefined, { cursor: encodeListCursor('2026-01-01T00:00:00.000Z', 'x') })).toEqual({
+      items: [],
+      next_cursor: null,
+    });
+  });
+
+  it('validates a cursor\'s ENCODING, not its CONTENTS: a well-formed cursor naming a boundary no row ever had is simply an empty page', () => {
+    const fx = makeFixture();
+    seedBoard(fx, 3);
+    // The exact non-guarantee decodeListCursor's doc comment now states, kept
+    // honest here rather than in prose alone. Cursors are opaque and echoed
+    // back verbatim, so this is unreachable without hand-building one — and
+    // the same "no rows after this boundary" answer is the CORRECT one at true
+    // exhaustion, so there is nothing to distinguish it from.
+    const bogus = encodeListCursor('', '');
+    expect(decodeListCursor(bogus)).toEqual({ created_at: '', id: '' });
+    expect(fx.store.listItemSummaryViews(undefined, { limit: 10, cursor: bogus })).toEqual({ items: [], next_cursor: null });
+  });
+
+  it('the containment read carries no spec bodies and covers the whole board', () => {
+    const fx = makeFixture();
+    const parent = fx.store.insertItem({ title: 'p', spec: 'x'.repeat(5000), spec_format: 'f', created_by: actor() });
+    const child = fx.store.insertItem({ title: 'c', spec: 'x'.repeat(5000), spec_format: 'f', created_by: actor(), parent_id: parent.id });
+    const rows = fx.store.listContainmentRows();
+    expect(rows).toHaveLength(2);
+    expect([...rows].sort((a, b) => a.id.localeCompare(b.id))).toEqual(
+      [
+        { id: parent.id, parent_id: null, status: 'open' },
+        { id: child.id, parent_id: parent.id, status: 'open' },
+      ].sort((a, b) => a.id.localeCompare(b.id)),
+    );
+    // Grep-falsifiable: no spec field on the row shape at all.
+    for (const row of rows) expect(Object.keys(row).sort()).toEqual(['id', 'parent_id', 'status']);
+  });
+
+  it('a legacy pre-v3 board (no "references" column) reads summaries as no-edges, never a raw no-such-column throw', () => {
+    const root = makeTempDir();
+    const dbPath = join(root, 'work-state', 'board.db');
+    mkdirSync(join(root, 'work-state'), { recursive: true });
+    const sqlite = process.getBuiltinModule('node:sqlite') as typeof import('node:sqlite');
+    const seedDb = new sqlite.DatabaseSync(dbPath);
+    seedDb.exec(LEGACY_V2_ITEMS_DDL);
+    seedDb
+      .prepare(
+        `INSERT INTO items (id, tenant_id, title, spec, spec_format, status, depends_on, parent_id, created_by_human, created_by_agent, created_at, updated_at, version) VALUES ('legacy', 't', 'L', 'spec', 'f', 'open', '[]', NULL, 'dan', NULL, 'now', 'now', 1)`,
+      )
+      .run();
+    seedDb.exec('PRAGMA user_version = 2');
+    seedDb.close();
+
+    const store = new WorkStateStore(dbPath, () => new Date(FIXED_ISO));
+    // The projected SELECT names the migration-added columns EXPLICITLY, so
+    // the column-presence guard is what keeps this from throwing `no such
+    // column: "references"` at prepare time.
+    const page = store.listItemSummaryViews(undefined, { limit: 10 });
+    expect(page.items.map((i) => i.id)).toEqual(['legacy']);
+    expect(page.items[0]?.references).toEqual([]);
+    expect(page.items[0]?.referenced_by).toEqual([]);
+    expect(page.items[0]?.spec_length).toBe(4);
+    expect(store.listContainmentRows()).toEqual([{ id: 'legacy', parent_id: null, status: 'open' }]);
+  });
+
+  it('a summary row carries exactly the full view row keys, minus spec, plus spec_length — derived from the live objects', () => {
+    const fx = makeFixture();
+    fx.store.insertItem({ title: 't', spec: 'spec body', spec_format: 'f', created_by: actor() });
+    const full = fx.store.listItemViews()[0];
+    const summary = fx.store.listItemSummaryViews().items[0];
+    const expected = new Set(Object.keys(full ?? {}));
+    expected.delete('spec');
+    expected.add('spec_length');
+    // Contract point 1, asserted against the two objects the code actually
+    // produces rather than against a copied literal.
+    expect(new Set(Object.keys(summary ?? {}))).toEqual(expected);
+  });
+
+  it('the projection names EVERY items column except spec — held against the live DDL, so a new column cannot silently vanish (P-52)', () => {
+    const fx = makeFixture();
+    fx.store.insertItem({ title: 't', spec: 'spec body', spec_format: 'f', created_by: actor() });
+    const db = openForWrite(fx.dbPath);
+    try {
+      const ddlColumns = (db.prepare('PRAGMA table_info(items)').all() as { name: string }[]).map((c) => c.name);
+      // EXACTLY two documented exclusions, both named in summaryColumns's own
+      // doc comment: `spec` (the point of the projection — replaced by
+      // spec_length) and `claim_token_counter` (the internal fencing-token
+      // source, which is not a WorkItem field and is absent from the full
+      // read's ItemRow too). Everything else the DDL grows must appear here,
+      // or this fails — which is the mechanical check the hand-written column
+      // list otherwise lacks.
+      expect(ddlColumns).toContain('spec');
+      expect(ddlColumns).toContain('claim_token_counter');
+      const expected = [...ddlColumns.filter((name) => name !== 'spec' && name !== 'claim_token_counter'), 'spec_length'];
+
+      const projected = db.prepare(`SELECT ${summaryColumns(db, false).join(', ')} FROM items LIMIT 1`).get() as Record<string, unknown>;
+      expect(Object.keys(projected).sort()).toEqual([...expected].sort());
+      // …and include_spec adds back exactly one column, never more.
+      const withSpec = db.prepare(`SELECT ${summaryColumns(db, true).join(', ')} FROM items LIMIT 1`).get() as Record<string, unknown>;
+      expect(Object.keys(withSpec).sort()).toEqual([...expected, 'spec'].sort());
+    } finally {
+      db.close();
+    }
+  });
+
+  it('walks a created_at TIE without duplicating or skipping a row — the case the (created_at = ? AND id < ?) arm exists for', () => {
+    const fx = makeFixture();
+    // The board mints a ULID and a millisecond stamp together, so a batch
+    // create landing several items inside ONE millisecond is ordinary, not
+    // exotic — and every other fixture in this file uses distinct stamps, so
+    // nothing else exercises the equality arm of the keyset predicate.
+    fx.setNow('2026-07-11T12:00:00.000Z');
+    const ids: string[] = [];
+    for (let i = 0; i < 6; i += 1) {
+      ids.push(fx.store.insertItem({ title: `tie ${String(i)}`, spec: 's', spec_format: 'f', created_by: actor() }).id);
+    }
+    const unpaged = fx.store.listItemViews();
+    expect(new Set(unpaged.map((item) => item.created_at))).toEqual(new Set(['2026-07-11T12:00:00.000Z']));
+
+    // Paged at a size that lands boundaries INSIDE the tie, twice.
+    expect(walkAll(fx, 2)).toEqual(unpaged.map((item) => item.id));
+    expect(walkAll(fx, 1)).toEqual(unpaged.map((item) => item.id));
+    expect(new Set(walkAll(fx, 2)).size).toBe(ids.length);
+  });
+
+  it('spec_length counts CODE POINTS, not UTF-16 units — the SQL LENGTH() semantics this module promises (file header)', () => {
+    const fx = makeFixture();
+    // Astral-plane text: 10 characters, 20 UTF-16 code units. This is the one
+    // input on which SQLite's LENGTH() and String.prototype.length disagree,
+    // and the header claims the SQL answer is what ships.
+    const spec = '\u{1F600}'.repeat(10);
+    expect(spec.length).toBe(20);
+    fx.store.insertItem({ title: 't', spec, spec_format: 'f', created_by: actor() });
+
+    const summary = fx.store.listItemSummaryViews().items[0];
+    expect(summary?.spec_length).toBe(10);
+    expect(summary?.spec_length).not.toBe(spec.length);
+    // …and the opted-in body is still the exact string that went in: only the
+    // COUNT is measured in code points, never the payload.
+    expect(fx.store.listItemSummaryViews(undefined, { include_spec: true }).items[0]?.spec).toBe(spec);
+  });
+
+  it('a pre-v2 board (no parent_id column either) reads summaries and containment rows as roots, never a prepare-time no-such-column throw', () => {
+    const root = makeTempDir();
+    const dbPath = join(root, 'work-state', 'board.db');
+    mkdirSync(join(root, 'work-state'), { recursive: true });
+    const sqlite = process.getBuiltinModule('node:sqlite') as typeof import('node:sqlite');
+    const seedDb = new sqlite.DatabaseSync(dbPath);
+    seedDb.exec(LEGACY_V1_ITEMS_DDL);
+    seedDb
+      .prepare(
+        `INSERT INTO items (id, tenant_id, title, spec, spec_format, status, depends_on, created_by_human, created_by_agent, created_at, updated_at, version) VALUES ('legacy-v1', 't', 'L', 'spec', 'f', 'open', '[]', 'dan', NULL, 'now', 'now', 1)`,
+      )
+      .run();
+    seedDb.exec('PRAGMA user_version = 1');
+    // The guard is load-bearing, not decorative: naming the column outright on
+    // this board fails at PREPARE time, before any row is read — so a per-row
+    // `?? null` could never have covered it.
+    expect(() => seedDb.prepare('SELECT id, parent_id, status FROM items')).toThrow(/no such column/);
+    seedDb.close();
+
+    const store = new WorkStateStore(dbPath, () => new Date(FIXED_ISO));
+    const page = store.listItemSummaryViews(undefined, { limit: 10 });
+    expect(page.items.map((i) => i.id)).toEqual(['legacy-v1']);
+    // Both migration-added columns fall back to their documented defaults.
+    expect(page.items[0]?.parent_id).toBeNull();
+    expect(page.items[0]?.references).toEqual([]);
+    expect(page.items[0]?.referenced_by).toEqual([]);
+    expect(page.items[0]?.spec_length).toBe(4);
+    expect(store.listContainmentRows()).toEqual([{ id: 'legacy-v1', parent_id: null, status: 'open' }]);
+  });
+
+  it('derives referenced_by from the WHOLE board even when the referring item is on another page', () => {
+    const fx = makeFixture();
+    fx.setNow('2026-05-01T00:00:00.000Z');
+    const target = fx.store.insertItem({ title: 'target', spec: 's', spec_format: 'f', created_by: actor() });
+    fx.setNow('2026-06-01T00:00:00.000Z');
+    const replacement = fx.store.insertItem({
+      title: 'replacement',
+      spec: 's',
+      spec_format: 'f',
+      created_by: actor(),
+      references: [{ rel: 'supersedes', id: target.id }],
+    });
+
+    // Page 2 holds the target alone; its referrer sits on page 1.
+    const first = fx.store.listItemSummaryViews(undefined, { limit: 1 });
+    expect(first.items.map((i) => i.id)).toEqual([replacement.id]);
+    const second = fx.store.listItemSummaryViews(undefined, { limit: 1, cursor: first.next_cursor as string });
+    expect(second.items.map((i) => i.id)).toEqual([target.id]);
+    expect(second.items[0]?.referenced_by).toEqual([{ rel: 'supersedes', id: replacement.id }]);
+    expect(second.next_cursor).toBeNull();
+  });
+});
+
+describe('list payload budget — ONE budget and ONE implementation, shared by both transports', () => {
+  /** A summary-shaped row: only `id`/`created_at` are load-bearing for the
+   *  budget helper, the rest is realistic bulk. */
+  function row(n: number, spec: string): { id: string; created_at: string; title: string; status: string; spec: string } {
+    return { id: `id-${String(n)}`, created_at: `2026-07-11T12:00:${String(n).padStart(2, '0')}.000Z`, title: `item ${String(n)}`, status: 'open', spec };
+  }
+
+  it('measurePrettyItemChars measures what the CLI actually WRITES (the indented envelope), not the compact form the MCP path writes', () => {
+    const items = [row(1, 'x'.repeat(50)), row(2, 'y'.repeat(80)), row(3, 'z')];
+    // Exactly what cli/ideate-work.ts's `list --json` emits, and the same
+    // envelope with NO rows — the difference between the two is the items
+    // region the measure is supposed to be counting.
+    const emitted = JSON.stringify({ items, next_cursor: 'CURSOR' }, null, 2);
+    const framing = JSON.stringify({ items: [], next_cursor: 'CURSOR' }, null, 2);
+    const region = emitted.length - framing.length;
+
+    const pretty = items.reduce((total, item) => total + measurePrettyItemChars(item), 0);
+    const compact = items.reduce((total, item) => total + measureCompactItemChars(item), 0);
+
+    // The pretty measure never UNDER-counts the region (that is what makes it
+    // a bound on real output) and over-counts by only a few characters per
+    // page — the last row's separator, which it charges but never pays, and
+    // the array's own two line breaks.
+    expect(pretty).toBeLessThanOrEqual(region);
+    expect(pretty).toBeGreaterThanOrEqual(region - 6);
+    // …whereas the compact measure — correct for the MCP transport, whose SDK
+    // writes `JSON.stringify(body)` with no indent — under-counts this stream
+    // badly. Budgeting the compact form here would let the CLI write far more
+    // than the budget allows, which is the whole reason the measure is
+    // injected rather than hard-coded.
+    expect(compact).toBeLessThan(pretty * 0.8);
+  });
+
+  it('the budget is a bound on real output: a walk of budget-closed pages covers every row exactly once, and an oversized row still ships ALONE', () => {
+    // Each row is ~1/8 of the budget under the pretty measure, so a page
+    // closes well before the 12 rows are exhausted.
+    const fat = Array.from({ length: 12 }, (_, i) => row(i, 'x'.repeat(4_000)));
+    const seen: string[] = [];
+    let remaining = fat;
+    for (;;) {
+      const page = applyListPayloadBudget({ items: remaining, next_cursor: remaining.length > 0 ? 'raw' : null }, measurePrettyItemChars);
+      expect(page.items.length).toBeGreaterThan(0);
+      expect(page.items.reduce((t, i) => t + measurePrettyItemChars(i), 0)).toBeLessThanOrEqual(LIST_PAYLOAD_BUDGET_CHARS);
+      seen.push(...page.items.map((i) => i.id));
+      remaining = remaining.slice(page.items.length);
+      if (remaining.length === 0) break;
+      expect(page.next_cursor).toBeTypeOf('string');
+    }
+    expect(seen).toEqual(fat.map((i) => i.id));
+    expect(new Set(seen).size).toBe(fat.length);
+
+    // LIVENESS: a row larger than the WHOLE budget is returned alone with a
+    // cursor — never dropped, never an empty page that stalls the walk.
+    const oversized = applyListPayloadBudget(
+      { items: [row(99, 'x'.repeat(LIST_PAYLOAD_BUDGET_CHARS * 2)), row(100, 'small')], next_cursor: null },
+      measurePrettyItemChars,
+    );
+    expect(oversized.items.map((i) => i.id)).toEqual(['id-99']);
+    expect(oversized.next_cursor).toBeTypeOf('string');
+  });
+
+  it('neither transport defines its own budget or its own implementation — both import this module (mechanical, so they cannot desynchronize)', () => {
+    const srcRoot = fileURLToPath(new URL('..', import.meta.url));
+    const storeModule = join(srcRoot, 'work-state', 'store.ts');
+    const transports = [join(srcRoot, 'work-state', 'tools.ts'), join(srcRoot, 'cli', 'ideate-work.ts')];
+
+    // Every file that DEFINES the constant or the helper, package-wide.
+    const constantDefiners: string[] = [];
+    const helperDefiners: string[] = [];
+    const walk = (dir: string): void => {
+      for (const entry of readdirSync(dir, { withFileTypes: true })) {
+        const full = join(dir, entry.name);
+        if (entry.isDirectory()) {
+          if (entry.name === 'node_modules' || entry.name === 'dist') continue;
+          walk(full);
+          continue;
+        }
+        if (!entry.isFile() || !full.endsWith('.ts') || full.endsWith('.test.ts')) continue;
+        const source = readFileSync(full, 'utf8');
+        if (/^export const LIST_PAYLOAD_BUDGET_CHARS\s*=/m.test(source)) constantDefiners.push(full);
+        if (/^export function applyListPayloadBudget\b/m.test(source)) helperDefiners.push(full);
+      }
+    };
+    walk(srcRoot);
+    expect(constantDefiners).toEqual([storeModule]);
+    expect(helperDefiners).toEqual([storeModule]);
+
+    // …and both transports reach for THAT one, from this module. `[^}]*`
+    // cannot cross a closing brace, so each match is one import statement.
+    for (const transport of transports) {
+      const source = readFileSync(transport, 'utf8');
+      expect(source).toMatch(/import\s*\{[^}]*\bapplyListPayloadBudget\b[^}]*\}\s*from\s*'[^']*store\.js'/);
+    }
+    // The one thing the two doors deliberately DO NOT share: the per-item
+    // measure, because they do not write the same bytes (compact tool result
+    // vs 2-space-indented stdout).
+    expect(readFileSync(transports[0] as string, 'utf8')).toContain('measureCompactItemChars');
+    expect(readFileSync(transports[1] as string, 'utf8')).toContain('measurePrettyItemChars');
   });
 });
 

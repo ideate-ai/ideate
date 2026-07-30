@@ -40,8 +40,15 @@ import { createRealCompletionRecordWriter } from '../work-state/completion-recor
 import type { CompletionRecordWriter } from '../work-state/completion-record.js';
 import { checkExpiry, sweepBoard } from '../work-state/expiry.js';
 import { primeOnClaim } from '../work-state/priming-hook.js';
-import { WorkStateStore } from '../work-state/store.js';
-import type { ListItemsFilter } from '../work-state/store.js';
+import {
+  DEFAULT_LIST_LIMIT,
+  LIST_PAYLOAD_BUDGET_CHARS,
+  MAX_LIST_LIMIT,
+  WorkStateStore,
+  applyListPayloadBudget,
+  measurePrettyItemChars,
+} from '../work-state/store.js';
+import type { ListItemsFilter, ListPageOptions } from '../work-state/store.js';
 import { WorkStateModuleError } from '../work-state/types.js';
 import type { ActorRef, UpdateMetaInput, WorkItem, WorkItemStatus, WorkStateEvent } from '../work-state/types.js';
 import type { ExpiryCheck } from '../work-state/verbs.js';
@@ -62,7 +69,30 @@ Subcommands (mirror the eleven MCP work-state verbs):
   get --id <id> [--json]
       Fetch one work item by id (or null). Runs the lazy-expiry seam first.
   list [--tenant <t>] [--status <open|in_progress|done|cancelled>] [--json]
+       [--include-spec] [--limit <n>] [--cursor <c>]
       List work items with the derived claimability view attached.
+      Rows are SUMMARIES: every field except the opaque spec body, plus
+      spec_length. \`--include-spec\` requires --json (the human listing never
+      prints spec bodies, so reading them would be a silent no-op); fetch a
+      single item's spec with \`get --id\` instead when you can.
+      \`--json\` prints {"items": [...], "next_cursor": ...} and pages at
+      ${String(DEFAULT_LIST_LIMIT)} items by default; the human-readable
+      listing is UNPAGED unless you pass --limit or --cursor, and prints a
+      resume hint when more items remain. --limit is clamped into
+      1..${String(MAX_LIST_LIMIT)}. --cursor takes the next_cursor of a previous page
+      verbatim: it is opaque (a malformed one is an error, never an empty
+      page), it is invalidated by changing --tenant/--status (so walk one
+      filter to exhaustion before changing it), and it implies the default
+      page size when no --limit is given.
+      A --json page may come back SHORTER than --limit: it also stays within
+      the same ~${String(LIST_PAYLOAD_BUDGET_CHARS)}-character payload budget the MCP work_list
+      tool applies (this listing is an agent-facing path too — see
+      agents/journal-keeper.md), measured on the INDENTED bytes this stream
+      actually writes, not on a compact form it does not. So never infer
+      exhaustion from a short page: follow next_cursor, which is non-null
+      whenever items remain for ANY reason and null ONLY at true exhaustion.
+      A single item larger than the whole budget is still returned, alone.
+      The human-readable listing is NOT budgeted.
   update-meta --id <id> --expected-version <n> [--title <t>] [--spec <s>]
          [--spec-format <f>] [--depends-on <id1,id2,...>] [--supersedes <id>]
       Update metadata via optimistic CAS on version.
@@ -316,9 +346,25 @@ function runGet(argv: readonly string[], stdout: NodeJS.WritableStream, stderr: 
 }
 
 function runList(argv: readonly string[], stdout: NodeJS.WritableStream, stderr: NodeJS.WritableStream): number {
-  const parsed = parseArgs(argv, { '--tenant': 'value', '--status': 'value', '--json': 'switch' });
+  const parsed = parseArgs(argv, {
+    '--tenant': 'value',
+    '--status': 'value',
+    '--json': 'switch',
+    '--include-spec': 'switch',
+    '--limit': 'value',
+    '--cursor': 'value',
+  });
   if (parsed.errors.length > 0) {
     for (const err of parsed.errors) stderr.write(`ideate-work: list: ${err}\n`);
+    return 1;
+  }
+  // --include-spec is a --json-ONLY flag, and it is rejected loudly rather
+  // than ignored: the human listing prints `id [status] title` and has nowhere
+  // to put a spec body, so honouring the flag there would read every opaque
+  // spec out of SQLite and print none of it — a silent no-op with a real cost.
+  // Rejected before the store is opened, so the misuse costs nothing.
+  if (parsed.switches.has('--include-spec') && !parsed.switches.has('--json')) {
+    stderr.write('ideate-work: list: --include-spec requires --json (the human-readable listing never prints spec bodies)\n');
     return 1;
   }
   const ctx = buildContext(process.cwd());
@@ -329,14 +375,57 @@ function runList(argv: readonly string[], stdout: NodeJS.WritableStream, stderr:
       ...(tenantId === undefined ? {} : { tenant_id: tenantId }),
       ...(status === undefined ? {} : { status }),
     };
-    const items = ctx.verbs.list(filter);
-    if (parsed.switches.has('--json')) {
-      stdout.write(`${JSON.stringify(items, null, 2)}\n`);
-    } else if (items.length === 0) {
+    const asJson = parsed.switches.has('--json');
+    const limitRaw = parsed.values.get('--limit');
+    const cursor = parsed.values.get('--cursor');
+    // The default page size applies to --json only: that is the
+    // machine-consumed path (and the payload-bounding one, mirroring the MCP
+    // work_list tool). The human listing is one short line per item and has
+    // always shown the whole board — silently truncating it would be a
+    // behavior change, so it stays UNPAGED unless the operator asks for a page.
+    // Clamping ([1, MAX_LIST_LIMIT]) and cursor decoding both live in the
+    // store, so this transport cannot drift from the MCP one.
+    //
+    // …and --cursor IS asking for a page: resuming from a boundary with no
+    // LIMIT clause would emit every remaining row and then report
+    // `next_cursor: null` — a page that is not a page, reporting exhaustion it
+    // did not verify. So a --cursor without an explicit --limit takes the
+    // default page size on BOTH paths, which also makes the human path's
+    // "resume with --cursor …" hint lead somewhere coherent.
+    const limit =
+      limitRaw === undefined ? (asJson || cursor !== undefined ? DEFAULT_LIST_LIMIT : undefined) : parseIntArg(limitRaw, '--limit');
+    const page: ListPageOptions = {
+      ...(limit === undefined ? {} : { limit }),
+      ...(cursor === undefined ? {} : { cursor }),
+      ...(parsed.switches.has('--include-spec') ? { include_spec: true } : {}),
+    };
+    const result = ctx.verbs.listSummaries(filter, page);
+    if (asJson) {
+      // The payload BUDGET, on top of the count limit — the SAME budget and
+      // the SAME implementation the MCP work_list tool applies (store.ts's
+      // applyListPayloadBudget), because this is an agent-facing path too:
+      // agents/journal-keeper.md has an agent run `ideate-work list --json`,
+      // so this stdout lands in a context window as a tool result, under the
+      // same kind of cap the MCP result was (measured at 66,324 characters on
+      // a real 125-item board — larger than the failure the budget exists to
+      // prevent). A page shortened here still carries an honest next_cursor,
+      // rebuilt from its last INCLUDED row.
+      //
+      // The PRETTY measure, not the compact one: this path writes
+      // `JSON.stringify(…, null, 2)`, ~35% larger than the compact form for
+      // identical rows, and a budget must bound what is actually written.
+      const bounded = applyListPayloadBudget(result, measurePrettyItemChars);
+      stdout.write(`${JSON.stringify({ items: bounded.items, next_cursor: bounded.next_cursor }, null, 2)}\n`);
+    } else if (result.items.length === 0) {
       stdout.write('(no items)\n');
     } else {
-      for (const item of items) {
+      for (const item of result.items) {
         stdout.write(`${item.id} [${item.status}]${item.claimable ? ' claimable' : ''} ${item.title}\n`);
+      }
+      // Only reachable when --limit or --cursor was passed (see above), so the
+      // no-flags human listing is byte-for-byte what it always was.
+      if (result.next_cursor !== null) {
+        stdout.write(`(more items — resume with --cursor ${result.next_cursor})\n`);
       }
     }
     return 0;

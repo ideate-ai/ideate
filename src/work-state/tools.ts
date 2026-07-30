@@ -13,6 +13,24 @@
 // No business logic lives here: every verb's validation, CAS, cycle
 // guard, and audit-event append already lives one layer down.
 //
+// Payload discipline (work_list): this transport — not the logic layer — is
+// where the board read becomes BOUNDED. `work_list` calls verbs.ts's
+// `listSummaries`, so it returns SUMMARY rows (no opaque `spec` body; a
+// SQL-computed `spec_length` instead) and at most `DEFAULT_LIST_LIMIT` items
+// per call unless the caller asks otherwise, with an opaque `next_cursor` to
+// resume from — AND at most `LIST_PAYLOAD_BUDGET_CHARS` characters of
+// serialized items (store.ts's `applyListPayloadBudget`, the ONE budget the
+// CLI's `list --json` enforces too — this file only supplies the compact
+// per-item measure matching what the SDK actually writes), because a count of
+// items is not a bound on bytes (100
+// summary rows, or a handful of `include_spec: true` ones, can each exceed the
+// payload that blew the client's token cap in the first place).
+// `work_get` remains the full-spec fetch, and `include_spec: true`
+// opts back in here. The default lives HERE deliberately: `verbs.list()` still
+// returns every matching item with its spec, because an in-repo consumer
+// (context/assemble-prototype.ts) sweeps the whole board and renders those
+// specs — a default imposed one layer down would silently truncate it.
+//
 // Actor derivation: tool inputs carry an explicit `actor_human`/`actor_agent`
 // pair (the wire-level flattening of the contract's `ActorRef`) for `create`,
 // `cancel`, `reopen`, and `claim` — the four verbs whose engine-level
@@ -76,7 +94,7 @@ import { join } from 'node:path';
 
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
-import { CursorSchema, ProgressSchema } from '@modelcontextprotocol/sdk/types.js';
+import { CursorSchema, ProgressSchema, ToolAnnotationsSchema } from '@modelcontextprotocol/sdk/types.js';
 
 import { loadConfig, workStatePath } from '../config/ideate-config.js';
 import type { Clock } from '../record/id.js';
@@ -88,8 +106,15 @@ import { createRealCompletionRecordWriter } from './completion-record.js';
 import type { CompletionRecordWriter } from './completion-record.js';
 import { checkExpiry } from './expiry.js';
 import { primeOnClaim } from './priming-hook.js';
-import { WorkStateStore } from './store.js';
-import type { ListItemsFilter } from './store.js';
+import {
+  DEFAULT_LIST_LIMIT,
+  LIST_PAYLOAD_BUDGET_CHARS,
+  MAX_LIST_LIMIT,
+  WorkStateStore,
+  applyListPayloadBudget,
+  measureCompactItemChars,
+} from './store.js';
+import type { ListItemsFilter, ListPageOptions } from './store.js';
 import { WorkStateError, WorkStateModuleError } from './types.js';
 import type { ActorRef, UpdateMetaInput, WorkItemReference, WorkItemStatus } from './types.js';
 import type { ExpiryCheck } from './verbs.js';
@@ -114,6 +139,10 @@ export const WORK_STATE_TOOL_NAMES = [
  *  (see the file header's zero-runtime-dependency note). */
 const zString = CursorSchema; // a plain z.string()
 const zNumber = ProgressSchema.shape.progress; // a plain z.number()
+// `.unwrap()` peels the SDK's own `.optional()` off, leaving a plain
+// z.boolean() this file can re-decorate — the same borrow-don't-depend trick
+// as the two above (see the file header's zero-runtime-dependency note).
+const zBoolean = ToolAnnotationsSchema.shape.readOnlyHint.unwrap();
 
 const STATUS_VALUES: readonly WorkItemStatus[] = ['open', 'in_progress', 'done', 'cancelled'];
 
@@ -357,16 +386,41 @@ export function createWorkStateToolsRegistrar(options: WorkStateToolsOptions = {
       {
         description:
           'List work items, with the derived claimability view attached to each (an open item every direct ' +
-          'depends_on entry of which is done). Selection only — never ranking. The parent_id filter is tri-state: ' +
+          'depends_on entry of which is done). Selection only — never ranking. SUMMARY ROWS BY DEFAULT: each item ' +
+          'carries every field EXCEPT the opaque spec body, plus spec_length (its character count) — fetch the ' +
+          'spec of an item you actually intend to work on with work_get, or set include_spec: true to get every ' +
+          'spec back here. PAGED: at most `limit` items per call (default ' +
+          `${String(DEFAULT_LIST_LIMIT)}, clamped into 1..${String(MAX_LIST_LIMIT)}` +
+          '), newest-created first; the result carries next_cursor — a string when more matching items exist, ' +
+          'null on the last page. A page may also be SHORTENED to fewer than `limit` items to stay within a ' +
+          'payload size budget (roughly ' +
+          `${String(LIST_PAYLOAD_BUDGET_CHARS)}` +
+          ' characters of items, which include_spec reaches quickly) — so never assume a full page means more ' +
+          'and a short page means done: follow next_cursor, which is non-null whenever items remain for any ' +
+          'reason, and null ONLY at true exhaustion. Pass it back as `cursor` to get the next page. The cursor is OPAQUE (never ' +
+          'construct or parse one; a malformed cursor is a typed SCHEMA error, never an empty page) and it is ' +
+          'tied to the filter it was issued for — changing tenant_id/status/parent_id between pages invalidates ' +
+          'it, so walk one filter to exhaustion before changing it. The parent_id filter is tri-state: ' +
           'omit for no containment filter, a string for the direct children of that parent, or null for roots-only ' +
           '(top-level items). Each item also carries its DERIVED referenced_by backlinks, so a superseded item ' +
-          'shows what replaced it.',
+          'shows what replaced it. claimable is computed against the WHOLE board, so it never depends on which ' +
+          'page an item landed on.',
         inputSchema: {
           tenant_id: zString.describe('Filter to one tenant.').optional(),
           status: zString.describe('Filter to one status: open | in_progress | done | cancelled.').optional(),
           parent_id: zString
             .describe('CONTAINMENT filter (tri-state): omit = no filter; a string = direct children of that parent; null = roots-only (top-level items).')
             .nullable()
+            .optional(),
+          include_spec: zBoolean
+            .describe('Include the full opaque spec body on every returned item (default false — summary rows). spec_length is present either way, and paging applies regardless.')
+            .optional(),
+          limit: zNumber
+            .int()
+            .describe(`Maximum items in this page. Default ${String(DEFAULT_LIST_LIMIT)}; clamped into 1..${String(MAX_LIST_LIMIT)}.`)
+            .optional(),
+          cursor: zString
+            .describe('Opaque resumption point: the next_cursor from the previous page. Invalidated by changing any filter.')
             .optional(),
         },
       },
@@ -382,8 +436,25 @@ export function createWorkStateToolsRegistrar(options: WorkStateToolsOptions = {
             // absent arg leaves the filter free of any containment clause.
             ...(args.parent_id === undefined ? {} : { parent_id: args.parent_id }),
           };
-          const items = ctx.verbs.list(filter);
-          return ok({ items });
+          // The DEFAULT page size is applied HERE, at the transport boundary —
+          // never in verbs.ts/store.ts, whose absent-limit behavior stays
+          // "every matching row" for internal callers (context/
+          // assemble-prototype.ts). Clamping and cursor decoding stay in the
+          // store, so this transport and the CLI cannot drift on either.
+          const page: ListPageOptions = {
+            limit: args.limit ?? DEFAULT_LIST_LIMIT,
+            ...(args.cursor === undefined ? {} : { cursor: args.cursor }),
+            ...(args.include_spec === true ? { include_spec: true } : {}),
+          };
+          // …and the payload BUDGET is applied on top of it: `limit` bounds
+          // the item COUNT, this bounds the characters those items serialize
+          // to (see store.ts's LIST_PAYLOAD_BUDGET_CHARS — ONE budget and ONE
+          // implementation, shared with the CLI's `list --json`). A page
+          // shortened here still carries an honest next_cursor, built from its
+          // last included row. The COMPACT measure is the right one here: the
+          // SDK writes this result as `JSON.stringify(body)` with no indent.
+          const result = applyListPayloadBudget(ctx.verbs.listSummaries(filter, page), measureCompactItemChars);
+          return ok({ items: result.items, next_cursor: result.next_cursor });
         } catch (err) {
           return toolError(err);
         }

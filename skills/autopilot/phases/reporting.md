@@ -19,7 +19,8 @@ Autopilot state lives in records, not memory — rebuild from ground truth:
 - `record_read(scope="autopilot")` — every `autopilot-cycle` record: per-cycle
   items completed, findings, verdicts, head commits.
 - `work_list` — final board state (done / open / cancelled counts, remaining
-  claimable frontier).
+  claimable frontier). These counts are whole-board: page with `next_cursor`
+  until it is `null`; a page shorter than `limit` is not the end.
 - `record_read(scope="andon")` — every proxy-human decision, especially those
   flagged `human: true`.
 - `git log --oneline <first-cycle-head>..HEAD` — what actually shipped.

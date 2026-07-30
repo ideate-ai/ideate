@@ -21,7 +21,8 @@ records and reconstruct it on resume:
   with: cycle number, items completed this cycle, findings by severity,
   convergence verdict, and the head commit (`git rev-parse HEAD`).
 - On (re)start, `record_read(scope="autopilot")` to find the last cycle record;
-  the board (`work_list`) and `git log` are the ground truth for what's done.
+  the board (`work_list`, paged out via `next_cursor`) and `git log` are the
+  ground truth for what's done.
   Resume from `last_cycle + 1`; a fresh project starts at cycle 1.
 
 Resolve `actor_human` once: `git config user.name` (fallback `$USER`).
@@ -42,8 +43,9 @@ Resolve `actor_human` once: `git config user.name` (fallback `$USER`).
    - a. **Execute** — read and run `phases/execute.md`.
    - b. **Review** — read and run `phases/review.md`. It returns a convergence
         verdict: `converged` / `needs-refinement` / `unknown`.
-   - c. **Converged?** If `converged` **and** the board has no open/claimable
-        items → exit the loop to reporting (project complete). If `unknown`
+   - c. **Converged?** If `converged` → exit the loop to reporting (project
+        complete; that verdict already carries the exhaustive board test —
+        don't re-derive it from a single `work_list` page). If `unknown`
         (review couldn't decide) → route to proxy-human as an Andon; act on its
         decision.
    - d. **Refine** — if not converged, read and run `phases/refine.md` to turn

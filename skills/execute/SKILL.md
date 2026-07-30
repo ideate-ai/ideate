@@ -52,8 +52,12 @@ When a claimed item is a human-gate:
   it's empty, direct the user to `/ideate:refine` to decompose work onto the
   board (or `/ideate:init` first if the project isn't set up yet).
 - Read the board: `work_list` for the full picture and the derived `claimable`
-  frontier. Note `in_progress` items — an interrupted prior run may have left
-  claims; check `work_events` and either resume or release stale ones.
+  frontier — page it to exhaustion (follow `next_cursor` until it is `null`; a
+  page shorter than `limit` is **not** the end, so never read completion off a
+  short page). Rows are summaries with no `spec` body (just `spec_length`) —
+  fetch the body per item with `work_get` when you need it. Note `in_progress`
+  items — an interrupted prior run may have left claims; check `work_events`
+  and either resume or release stale ones.
 - Read steering (`steering_read`) and recent decisions (`record_read`) — this
   is the context workers need to match the project's rules.
 
@@ -77,10 +81,10 @@ For each claimed item:
    spawn a worker — surface it per the Human-effort section above (present it;
    the human completes it and you `work_complete` with the human as actor, or
    you `work_release` and continue). Skip the worker/review steps for it.
-2. **Assemble the worker's context.** The item's `spec` is authoritative; add
-   the applicable steering rules and any decisions scoped to this area
-   (`record_read`). Pass all of it in the worker prompt — the worker has no
-   board/record access of its own.
+2. **Assemble the worker's context.** The item's `spec` (returned by
+   `work_claim`, or `work_get`) is authoritative; add the applicable steering
+   rules and any decisions scoped to this area (`record_read`). Pass all of it
+   in the worker prompt — the worker has no board/record access of its own.
 3. **Spawn `ideate:worker`** with that context. It implements, verifies (build
    + tests), and returns a completion report (`complete` or `blocked`, what
    changed, verification output, follow-ups).
@@ -106,8 +110,9 @@ For each claimed item:
    critical/significant finding remains, `work_complete(id, token, note)`. If
    blocked, Andon'd, or the verification wasn't actually run, `work_release(id,
    token, note)` — never complete blind.
-7. Re-read the frontier (`work_list`) — completing an item may unblock
-   dependents. Continue until the frontier is empty or an Andon halts you.
+7. Re-read the frontier (`work_list`, the same full walk) — completing an item
+   may unblock dependents. Continue until the frontier is empty or an Andon
+   halts you.
 
 ## Step 5 — Close out
 - Journal the run: `record_append(kind="journal")` — items completed, findings

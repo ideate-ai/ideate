@@ -39,12 +39,43 @@
 // payload, so supplying them is a silent no-op rather than a stored field.
 // Only `rank` gets the explicit, named rejection.
 //
+// Projection + keyset paging (the summary read): alongside the full-fidelity
+// reads (`listItems`/`listItemViews`, which every INTERNAL TypeScript caller
+// keeps using unchanged), this module offers ONE projected read —
+// {@link WorkStateStore.listItemSummaryViews} — that leaves the opaque `spec`
+// body in the database and returns `LENGTH(spec) AS spec_length` instead, and
+// that can walk the board a page at a time by KEYSET (a `(created_at, id)`
+// boundary), never OFFSET. Two properties are load-bearing:
+//   - Absent options = today's behavior. No limit means no `LIMIT` clause and
+//     `next_cursor: null` — the DEFAULT page size is a TRANSPORT decision
+//     (work-state/tools.ts, cli/ideate-work.ts), never imposed here, so an
+//     in-repo consumer that needs the whole board (context/assemble-prototype.ts)
+//     can never be silently truncated by this layer.
+//   - `spec_length` is computed in SQL, exactly once, by SQLite's own
+//     `LENGTH()`, which on TEXT counts unicode CODE POINTS. It is deliberately
+//     NOT recomputed in JS: `String.prototype.length` counts UTF-16 code
+//     units, so on non-BMP text the two disagree by a factor of two per
+//     astral character (10 emoji: `spec_length` 10, `spec.length` 20 — pinned
+//     behaviorally in store.test.ts, "counts code points, not UTF-16 units"),
+//     and one source of truth beats two almost-agreeing ones. `spec_length` is
+//     therefore a triage hint about SIZE, not a JS string index.
+//
+// Shared transport policy (applied by the transports, never by this module):
+// alongside `DEFAULT_LIST_LIMIT`/`MAX_LIST_LIMIT` this file owns the ONE
+// payload budget both list transports enforce — `LIST_PAYLOAD_BUDGET_CHARS`
+// and `applyListPayloadBudget`. It lives here rather than in either transport
+// because both must agree on it and this is the only home the CLI can import
+// without pulling in the MCP SDK; the two differ only in the per-item measure
+// they pass (compact for MCP, pretty-printed for the CLI's `list --json`), so
+// the budget itself cannot drift between the two doors.
+//
 // Events table discipline: this file contains NO `UPDATE events` and NO
 // `DELETE FROM events` statement — the only SQL touching `events` is the
 // single INSERT in `insertEventRow` and the single SELECT in `events()`.
 // That absence is what makes the events table append-only BY CONSTRUCTION,
 // mechanically grep-falsifiable.
 
+import { Buffer } from 'node:buffer';
 import type { DatabaseSync } from 'node:sqlite';
 
 import { scanAndMask } from '../secret-gate/scan.js';
@@ -87,6 +118,305 @@ export interface ListItemsFilter {
   tenant_id?: string;
   status?: WorkItemStatus;
   parent_id?: string | null;
+}
+
+/**
+ * The largest page {@link WorkStateStore.listItemSummaryViews} will ever
+ * return, whatever a caller asks for. A page size above this is CLAMPED down
+ * (not rejected) — an over-eager caller gets a bounded answer plus a
+ * `next_cursor`, which is strictly more useful than a typed failure.
+ */
+export const MAX_LIST_LIMIT = 500;
+
+/**
+ * The default page size the TRANSPORTS apply (work-state/tools.ts's
+ * `work_list`, cli/ideate-work.ts's `list --json`). It lives here so the tool
+ * description, the CLI usage text and the code all read one constant — but it
+ * is deliberately NOT applied by this module: an absent `limit` on
+ * {@link ListPageOptions} means "no LIMIT clause at all" (see the file header).
+ */
+export const DEFAULT_LIST_LIMIT = 100;
+
+/**
+ * Projection + paging options for {@link WorkStateStore.listItemSummaryViews}.
+ * Every field is optional and every default is "behave like the unpaginated,
+ * summary read": no `spec`, no `LIMIT`, no cursor.
+ */
+export interface ListPageOptions {
+  /** Page size. ABSENT = no limit (the whole filtered board, `next_cursor:
+   *  null`). Present = clamped into `[1, MAX_LIST_LIMIT]` (see
+   *  {@link clampListLimit}); a non-integer is a typed SCHEMA error. */
+  limit?: number;
+  /** The opaque boundary returned as a previous page's `next_cursor`. A
+   *  malformed value is a typed SCHEMA error, NEVER a silent empty page. */
+  cursor?: string;
+  /** Opt back in to the full opaque `spec` body on every returned item.
+   *  `spec_length` is present either way. Default false. */
+  include_spec?: boolean;
+}
+
+/** One page of a keyset read: the rows, plus the boundary to resume from
+ *  (`null` when this page is the last one). */
+export interface ListItemsPage<T> {
+  items: T[];
+  /** Opaque — encode/decode is this module's business alone (see
+   *  {@link encodeListCursor}). */
+  next_cursor: string | null;
+}
+
+/**
+ * A work item WITHOUT its opaque `spec` body: every other current `WorkItem`
+ * field, plus `spec_length` (the SQL-computed character count of the spec
+ * that was left in the database). `spec_format` deliberately stays — it is a
+ * short triage hint, not a payload. `spec` itself reappears ONLY when the
+ * caller opts in via {@link ListPageOptions.include_spec}; the key is absent
+ * entirely otherwise, so a consumer can never mistake a projected row for a
+ * full one.
+ */
+export interface WorkItemSummary extends Omit<WorkItem, 'spec'> {
+  spec_length: number;
+  spec?: string;
+}
+
+/** The summary twin of {@link WorkItemView}: a projected row plus the same
+ *  DERIVED reverse edges, built by the same full-board {@link buildReferrerMap}
+ *  scan — a page boundary never changes an item's backlinks. */
+export type WorkItemSummaryView = WorkItemSummary & { referenced_by: WorkItemReference[] };
+
+/** The decoded form of a page cursor: the `(created_at, id)` boundary of the
+ *  last row of the previous page, in the board's one stable order. */
+export interface ListCursor {
+  created_at: string;
+  id: string;
+}
+
+/** One SPEC-FREE containment row — the whole board's `(id, parent_id, status)`
+ *  triples, and nothing else. Backs verbs.ts's containment gate, which must
+ *  consult every item on the board but has no business loading a single spec
+ *  body to do it. */
+export interface ContainmentRow {
+  id: string;
+  parent_id: string | null;
+  status: WorkItemStatus;
+}
+
+/**
+ * Encode a page boundary as `base64url(JSON.stringify([created_at, id]))`.
+ * The encoder is `node:buffer`'s own base64url (C-13: no hand-rolled
+ * serialization — no delimiter concatenation, no manual escaping), so a
+ * timestamp containing a delimiter-shaped character can never split a cursor.
+ * The RESULT is opaque at the contract level: callers pass it back verbatim
+ * and never construct or parse one.
+ */
+export function encodeListCursor(createdAt: string, id: string): string {
+  return Buffer.from(JSON.stringify([createdAt, id]), 'utf8').toString('base64url');
+}
+
+/**
+ * Decode a page cursor, or throw `WorkStateError('SCHEMA', …)`.
+ *
+ * WHAT IS GUARANTEED — the ENCODING and the SHAPE. Three independent ways to
+ * be malformed are each rejected LOUDLY, so a cursor that is not one of this
+ * module's own cursors cannot degrade into an empty page (which a caller would
+ * read as "the board ended"):
+ *   1. not canonical base64url (re-encoding the decoded bytes must reproduce
+ *      the input exactly — `Buffer.from(…, 'base64url')` is otherwise lenient
+ *      and silently drops characters it does not recognize);
+ *   2. not JSON;
+ *   3. JSON, but not the `[created_at, id]` pair this module encodes.
+ *
+ * WHAT IS NOT GUARANTEED — the CONTENTS. A well-formed cursor naming a
+ * boundary that no row ever had (`encodeListCursor('', '')`, or a position on
+ * a different board) decodes cleanly and simply selects nothing, which the
+ * caller sees as an empty page. That is deliberate, not an oversight: the same
+ * "no rows after this boundary" answer is the CORRECT one at true exhaustion
+ * and after a filter change, so there is nothing to distinguish it from. The
+ * guard against misreading it is that cursors are OPAQUE — a caller echoes
+ * back a value this module minted and never constructs one — and validating
+ * contents (a boundary that once existed can legitimately be deleted) would
+ * cost a query to buy no reachable safety.
+ *
+ * The offending value is deliberately NOT echoed into the message: this text
+ * flows out through the MCP/CLI error surfaces, which do not gate free text.
+ */
+export function decodeListCursor(cursor: string): ListCursor {
+  const bytes = Buffer.from(cursor, 'base64url');
+  if (bytes.toString('base64url') !== cursor) {
+    throw new WorkStateError(
+      'SCHEMA',
+      'work-state store: "cursor" is not a valid page cursor (expected the opaque next_cursor from a previous list page)',
+    );
+  }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(bytes.toString('utf8'));
+  } catch {
+    throw new WorkStateError(
+      'SCHEMA',
+      'work-state store: "cursor" is not a valid page cursor (undecodable payload) — pass back the next_cursor from a previous list page',
+    );
+  }
+  if (!Array.isArray(parsed) || parsed.length !== 2 || typeof parsed[0] !== 'string' || typeof parsed[1] !== 'string') {
+    throw new WorkStateError(
+      'SCHEMA',
+      'work-state store: "cursor" is not a valid page cursor (expected an encoded [created_at, id] boundary)',
+    );
+  }
+  return { created_at: parsed[0], id: parsed[1] };
+}
+
+/**
+ * Clamp a caller-supplied page size into `[1, MAX_LIST_LIMIT]`. Clamping, not
+ * rejecting, is the deliberate choice for an out-of-range size (0, a negative,
+ * or 9999 all yield a usable page); a NON-INTEGER limit is a different failure
+ * class — a caller bug about the SHAPE of the argument, not its magnitude —
+ * and stays a typed SCHEMA error.
+ */
+export function clampListLimit(limit: number): number {
+  if (!Number.isInteger(limit)) {
+    // String(), not JSON.stringify(): NaN/Infinity both serialize to `null`
+    // as JSON, which would name the wrong problem back to the caller.
+    throw new WorkStateError('SCHEMA', `work-state store: "limit" must be an integer, got ${String(limit)}`);
+  }
+  if (limit < 1) return 1;
+  return Math.min(limit, MAX_LIST_LIMIT);
+}
+
+/**
+ * The maximum number of characters of SERIALIZED ITEMS one list page may
+ * carry, whatever `limit` (or the page default) would otherwise return. Shared
+ * by BOTH transports — the MCP `work_list` tool (work-state/tools.ts) and the
+ * CLI's `list --json` (cli/ideate-work.ts).
+ *
+ * WHY a second bound at all: `limit` counts ITEMS, and an item is not a fixed
+ * size. Measured over the MCP transport, a default page of 100 summary rows
+ * with realistic titles serializes to ~42k characters, and
+ * `{ limit: 500, include_spec: true }` on a 120-item board with 500-character
+ * specs serializes to ~103k — LARGER than the ~66k payload that blew a
+ * client's per-tool-result token cap and prompted the projection in the first
+ * place. An item-count bound alone therefore does not bound the payload; this
+ * one does, and it applies to EVERY path — summary rows and `include_spec`
+ * alike — because `include_spec` is exactly the parameter that makes rows big.
+ *
+ * WHY the CLI is bounded too, despite writing to a byte stream with no token
+ * cap: `bin/ideate-work list --json` is an AGENT-facing path (agents/
+ * journal-keeper.md instructs an agent to run exactly that command), so its
+ * stdout lands in a context window as a tool result under the same kind of cap
+ * the MCP result was — measured at 66,324 characters on a real 125-item board,
+ * larger than the failure this budget exists to prevent. One transport bounded
+ * and the other not would just move the failure to the other door.
+ *
+ * WHY 40,000: at the usual ~4 characters per token that is ~10k tokens of
+ * items, which leaves a wide margin under a typical 25k-token per-tool-result
+ * cap for the result envelope and for the conversation the caller is actually
+ * having. It is deliberately a round, memorable number rather than a tuned
+ * one: the guarantee callers depend on is "a page is bounded and `next_cursor`
+ * tells you whether to come back", not any particular size.
+ *
+ * WHY this constant lives HERE rather than in either transport: it is TRANSPORT
+ * policy (exactly like {@link DEFAULT_LIST_LIMIT}) that BOTH transports must
+ * agree on, and this module is the only home both can import without dragging
+ * in the MCP SDK. It is deliberately NOT applied by this module: the store's
+ * absent-options behavior stays "every matching row, no truncation" for the
+ * in-repo consumer that sweeps the whole board (context/assemble-prototype.ts).
+ */
+export const LIST_PAYLOAD_BUDGET_CHARS = 40_000;
+
+/**
+ * How many characters ONE item costs on the wire — the per-transport half of
+ * {@link applyListPayloadBudget}, injected because the two transports do not
+ * write the same bytes. Bounding a payload is only meaningful against the
+ * serialization that is ACTUALLY emitted, so each transport passes the measure
+ * matching its own writer: {@link measureCompactItemChars} for MCP (the SDK
+ * serializes a tool result compactly) and {@link measurePrettyItemChars} for
+ * the CLI (which pretty-prints at 2-space indent, ~35% larger for the same
+ * rows). Passing the wrong one would silently under- or over-count.
+ */
+export type ListItemMeasure<T> = (item: T) => number;
+
+/**
+ * The MCP transport's measure: an item as compact JSON, which is exactly what
+ * the SDK writes into a tool result (`JSON.stringify(body)`, no indent).
+ */
+export function measureCompactItemChars(item: unknown): number {
+  return JSON.stringify(item).length;
+}
+
+/** Items sit two levels deep in the CLI's envelope (`{ "items": [ … ] }`), so
+ *  every line of an item carries four extra spaces on the wire. */
+const PRETTY_ITEM_INDENT_CHARS = 4;
+/** …and every row but the last pays a `,\n` separator; charging it to all of
+ *  them keeps the measure conservative by exactly one character per page. */
+const PRETTY_ITEM_SEPARATOR_CHARS = 2;
+
+/**
+ * The CLI transport's measure: an item as it is actually WRITTEN by
+ * `list --json` — pretty-printed at 2-space indent, nested inside the
+ * `{ "items": [ … ], "next_cursor": … }` envelope, plus its separator.
+ *
+ * WHY not just reuse {@link measureCompactItemChars} there: the CLI serializes
+ * with `JSON.stringify(x, null, 2)`, so its on-the-wire size is roughly 35%
+ * larger than the compact form for identical rows. Budgeting the compact form
+ * would let the CLI emit ~54k characters against a 40k budget — bounding
+ * something it does not write. The point of the budget is bounding REAL output.
+ *
+ * What is (and is not) covered: this counts the ITEMS REGION, mirroring the MCP
+ * path, where the budget likewise bounds the items and not the `{ok:true, …}`
+ * result envelope around them. The CLI's own framing — the object braces, the
+ * two keys and the cursor string, on the order of a hundred characters — sits
+ * outside the budget, because the cursor is not known until the page's rows are
+ * chosen.
+ */
+export function measurePrettyItemChars(item: unknown): number {
+  const rendered = JSON.stringify(item, null, 2);
+  const lines = rendered.split('\n').length;
+  return rendered.length + PRETTY_ITEM_INDENT_CHARS * lines + PRETTY_ITEM_SEPARATOR_CHARS;
+}
+
+/**
+ * Close a page early when its serialized items would exceed
+ * {@link LIST_PAYLOAD_BUDGET_CHARS}, re-deriving `next_cursor` from the LAST
+ * INCLUDED row so the caller resumes exactly where the shortened page stopped.
+ * Keyset paging is what makes this trivial: the cursor is a position in the
+ * board's stable creation order ({@link encodeListCursor}), so any row can end
+ * a page.
+ *
+ * ONE implementation, both transports (see {@link ListItemMeasure}): MCP and
+ * CLI differ only in the `measureItem` they pass, so the budget, the liveness
+ * rule and the cursor rebuild cannot drift between the two doors.
+ *
+ * LIVENESS — the property to not get wrong: if the page had ANY row, this
+ * returns AT LEAST ONE row. A single item larger than the entire budget is
+ * returned ALONE, with a valid `next_cursor`, rather than as an empty page —
+ * an empty page with a cursor would stall the walk forever (the caller would
+ * loop, or read the empty page as "the board ended" and stop early). The
+ * budget is therefore a bound on how much a page carries BEYOND its first row,
+ * never a filter that can drop a row entirely.
+ *
+ * Honesty of `next_cursor` is preserved in both directions: shortening a page
+ * always yields a non-null cursor (rows remain, by construction), and a page
+ * that fits is returned untouched — including its `null` cursor at true
+ * exhaustion.
+ */
+export function applyListPayloadBudget<T extends { id: string; created_at: string }>(
+  page: ListItemsPage<T>,
+  measureItem: ListItemMeasure<T>,
+): ListItemsPage<T> {
+  const kept: T[] = [];
+  let used = 0;
+  for (const item of page.items) {
+    const size = measureItem(item);
+    // The `kept.length > 0` guard IS the liveness guarantee above.
+    if (kept.length > 0 && used + size > LIST_PAYLOAD_BUDGET_CHARS) break;
+    kept.push(item);
+    used += size;
+  }
+  const last = kept.at(-1);
+  // Nothing was dropped (`kept.length === page.items.length`, the common
+  // case), or there was nothing to drop (an empty page — `last` undefined):
+  // either way the page, INCLUDING its cursor, is already correct.
+  if (last === undefined || kept.length === page.items.length) return page;
+  return { items: kept, next_cursor: encodeListCursor(last.created_at, last.id) };
 }
 
 /**
@@ -345,7 +675,25 @@ function toNumber(value: number | bigint): number {
   return typeof value === 'bigint' ? Number(value) : value;
 }
 
-function rowToWorkItem(row: ItemRow): WorkItem {
+/**
+ * Row shape as returned by the PROJECTED items SELECT
+ * ({@link selectItemSummaryRows}): every {@link ItemRow} column EXCEPT `spec`,
+ * plus SQLite's own `LENGTH(spec)`. `spec` is present only when the caller
+ * opted in.
+ */
+interface ItemSummaryRow extends Omit<ItemRow, 'spec'> {
+  spec_length: number | bigint;
+  spec?: string;
+}
+
+/**
+ * Map every WorkItem field EXCEPT `spec` off a row. Shared by
+ * {@link rowToWorkItem} (which adds the stored spec) and
+ * {@link rowToWorkItemSummary} (which adds `spec_length` instead) so the two
+ * reads can never drift on claim assembly, edge parsing or the legacy-column
+ * defaults.
+ */
+function rowToItemFields(row: Omit<ItemRow, 'spec'>): Omit<WorkItem, 'spec'> {
   const claim: Claim | null =
     row.claim_token === null
       ? null
@@ -362,7 +710,6 @@ function rowToWorkItem(row: ItemRow): WorkItem {
     id: row.id,
     tenant_id: row.tenant_id,
     title: row.title,
-    spec: row.spec,
     spec_format: row.spec_format,
     status: row.status as WorkItemStatus,
     claim,
@@ -380,6 +727,26 @@ function rowToWorkItem(row: ItemRow): WorkItem {
     created_at: row.created_at,
     updated_at: row.updated_at,
     version: toNumber(row.version),
+  };
+}
+
+/** The full-fidelity mapping: every field plus the opaque `spec` body,
+ *  exactly as stored. */
+function rowToWorkItem(row: ItemRow): WorkItem {
+  return { ...rowToItemFields(row), spec: row.spec };
+}
+
+/**
+ * The projected mapping: every field EXCEPT `spec`, plus SQLite's own
+ * `LENGTH(spec)` as `spec_length` — and `spec` itself ONLY when the projected
+ * SELECT was asked to carry it. The key is omitted (not set to `undefined`),
+ * so `JSON.stringify` of a default row has no `spec` key at all.
+ */
+function rowToWorkItemSummary(row: ItemSummaryRow): WorkItemSummary {
+  return {
+    ...rowToItemFields(row),
+    spec_length: toNumber(row.spec_length),
+    ...(row.spec === undefined ? {} : { spec: row.spec }),
   };
 }
 
@@ -410,6 +777,21 @@ function getItemRow(db: DatabaseSync, id: string): ItemRow | undefined {
 }
 
 /**
+ * The set of column names the `items` table CURRENTLY has. Every
+ * migration-added column (`parent_id`, `"references"`) is optional in practice:
+ * view reads go through openForRead, which by design does NOT migrate, so a
+ * below-current board can be read before any write brings it forward. A
+ * prepared SELECT naming an absent column throws `no such column` at PREPARE
+ * time — before any row is read, so a per-row `?? null` could never fire — and
+ * that is why every statement that names those columns EXPLICITLY (rather than
+ * `SELECT *`) asks here first. Same `PRAGMA table_info` check schema.ts's
+ * migrateSchema uses for its guarded ADD COLUMN.
+ */
+function itemColumns(db: DatabaseSync): Set<string> {
+  return new Set((db.prepare('PRAGMA table_info(items)').all() as { name: string }[]).map((c) => c.name));
+}
+
+/**
  * Build the reverse-edge map over EVERY item on the board: target id -> the
  * `{rel, id: referrer-id}` backlinks pointing at it. Scanned newest-created
  * first (the same order `listItems` emits), so each target's backlink list
@@ -432,11 +814,8 @@ function getItemRow(db: DatabaseSync, id: string): ItemRow | undefined {
  * check schema.ts's migrateSchema uses for its guarded ADD COLUMN.
  */
 function buildReferrerMap(db: DatabaseSync): Map<string, WorkItemReference[]> {
-  const hasReferences = (db.prepare('PRAGMA table_info(items)').all() as { name: string }[]).some(
-    (c) => c.name === 'references',
-  );
   const referrers = new Map<string, WorkItemReference[]>();
-  if (!hasReferences) return referrers; // legacy pre-v3 board — no edges by definition
+  if (!itemColumns(db).has('references')) return referrers; // legacy pre-v3 board — no edges by definition
   const rows = db
     .prepare('SELECT id, "references" FROM items ORDER BY created_at DESC, id DESC')
     .all() as unknown as { id: string; references: string }[];
@@ -452,17 +831,17 @@ function buildReferrerMap(db: DatabaseSync): Map<string, WorkItemReference[]> {
 }
 
 /**
- * The one filtered-items SELECT, shared by `listItems` and `listItemViews`:
- * newest-created-first, optional tenant/status filters, and the tri-state
- * containment filter (see {@link ListItemsFilter}). `= NULL` cannot be
- * expressed via a bound param, so the roots-only case emits the literal
- * `parent_id IS NULL` clause with no param; the children-of case binds the
- * parent id. A `parent_id` key that is absent (or present-but-undefined)
- * applies no containment filter at all.
+ * The one WHERE-clause builder every filtered-items SELECT shares (the full
+ * read `selectItemRows` and the projected read `selectItemSummaryRows`): the
+ * optional tenant/status filters plus the tri-state containment filter (see
+ * {@link ListItemsFilter}). `= NULL` cannot be expressed via a bound param, so
+ * the roots-only case emits the literal `parent_id IS NULL` clause with no
+ * param; the children-of case binds the parent id. A `parent_id` key that is
+ * absent (or present-but-undefined) applies no containment filter at all.
  */
-function selectItemRows(db: DatabaseSync, filter?: ListItemsFilter): ItemRow[] {
+function buildFilterClauses(filter?: ListItemsFilter): { clauses: string[]; params: (string | number)[] } {
   const clauses: string[] = [];
-  const params: string[] = [];
+  const params: (string | number)[] = [];
   if (filter?.tenant_id !== undefined) {
     clauses.push('tenant_id = ?');
     params.push(filter.tenant_id);
@@ -480,8 +859,113 @@ function selectItemRows(db: DatabaseSync, filter?: ListItemsFilter): ItemRow[] {
       params.push(parentFilter);
     }
   }
+  return { clauses, params };
+}
+
+/** The board's ONE stable list order — creation order, newest first, with the
+ *  id as the tie-break that makes it total. Selection, never ranking (GP-27):
+ *  a cursor over this order is a resumption point, not a priority. */
+const LIST_ORDER_BY = 'ORDER BY created_at DESC, id DESC';
+
+/**
+ * The one FULL-FIDELITY filtered-items SELECT, shared by `listItems` and
+ * `listItemViews`: every column including the opaque `spec` body, newest-
+ * created-first, no limit. Internal TypeScript callers (context/
+ * assemble-prototype.ts's reverse-edge sweep) depend on both properties.
+ */
+function selectItemRows(db: DatabaseSync, filter?: ListItemsFilter): ItemRow[] {
+  const { clauses, params } = buildFilterClauses(filter);
   const where = clauses.length > 0 ? ` WHERE ${clauses.join(' AND ')}` : '';
-  return db.prepare(`SELECT * FROM items${where} ORDER BY created_at DESC, id DESC`).all(...params) as unknown as ItemRow[];
+  return db.prepare(`SELECT * FROM items${where} ${LIST_ORDER_BY}`).all(...params) as unknown as ItemRow[];
+}
+
+/** Resolved (already validated/clamped) projection + keyset arguments for
+ *  {@link selectItemSummaryRows}. */
+interface SummarySelect {
+  includeSpec: boolean;
+  limit?: number;
+  cursor?: ListCursor;
+}
+
+/**
+ * The column list of the PROJECTED read. `spec` is named only when the caller
+ * opted in; `LENGTH(spec)` is always computed IN SQL (the one source of truth
+ * for `spec_length` — see the file header). The two migration-added columns
+ * are substituted with their documented defaults when a below-current board
+ * has not got them yet (see {@link itemColumns}), which keeps this read as
+ * legacy-tolerant as the `SELECT *` path it sits beside.
+ *
+ * This is an explicit ALLOW-LIST, not a `SELECT *` minus `spec`: naming the
+ * columns is what makes "this read never touches the spec body" true by
+ * construction and grep-falsifiable. The cost of an allow-list is drift — a
+ * column added to schema.ts's DDL and forgotten here would silently vanish
+ * from every summary row — so it is EXPORTED purely so store.test.ts can hold
+ * it against `PRAGMA table_info(items)` mechanically: the projection names
+ * EVERY items column except exactly two — `spec` (replaced by `spec_length`)
+ * and `claim_token_counter` (the internal monotonic fencing-token source,
+ * which is not a `WorkItem` field and is absent from the full read's
+ * {@link ItemRow} too). That test turns DDL drift into a failing build rather
+ * than a silently missing field. Nothing outside this module calls this at
+ * runtime.
+ */
+export function summaryColumns(db: DatabaseSync, includeSpec: boolean): string[] {
+  const present = itemColumns(db);
+  return [
+    'id',
+    'tenant_id',
+    'title',
+    'spec_format',
+    'status',
+    'depends_on',
+    present.has('parent_id') ? 'parent_id' : 'NULL AS parent_id',
+    present.has('references') ? '"references"' : `'[]' AS "references"`,
+    'created_by_human',
+    'created_by_agent',
+    'created_at',
+    'updated_at',
+    'version',
+    'claim_holder_human',
+    'claim_holder_agent',
+    'claim_token',
+    'claim_acquired_at',
+    'claim_lease_expires',
+    'LENGTH(spec) AS spec_length',
+    ...(includeSpec ? ['spec'] : []),
+  ];
+}
+
+/**
+ * The PROJECTED, keyset-paged filtered-items SELECT.
+ *
+ * KEYSET, not OFFSET: the page boundary is the last row's `(created_at, id)`
+ * pair, so a row inserted (or removed) between two page fetches cannot shift
+ * the window and make an unseen row skip past it — the property an OFFSET
+ * page loses the moment the board is written to concurrently, and the reason
+ * this shape is also the one expressible on a future remote backend. The
+ * predicate is written out as an explicit OR rather than an SQL row-value
+ * comparison for exactly that portability.
+ *
+ * Returns up to `limit + 1` rows on purpose: the extra PROBE row is how the
+ * caller learns whether a next page exists without a second COUNT query. It is
+ * never returned to a caller — {@link WorkStateStore.listItemSummaryViews}
+ * slices it off.
+ */
+function selectItemSummaryRows(db: DatabaseSync, filter: ListItemsFilter | undefined, select: SummarySelect): ItemSummaryRow[] {
+  const { clauses, params } = buildFilterClauses(filter);
+  if (select.cursor !== undefined) {
+    clauses.push('(created_at < ? OR (created_at = ? AND id < ?))');
+    params.push(select.cursor.created_at, select.cursor.created_at, select.cursor.id);
+  }
+  const where = clauses.length > 0 ? ` WHERE ${clauses.join(' AND ')}` : '';
+  let limitClause = '';
+  if (select.limit !== undefined) {
+    limitClause = ' LIMIT ?';
+    params.push(select.limit + 1);
+  }
+  const columns = summaryColumns(db, select.includeSpec).join(', ');
+  return db
+    .prepare(`SELECT ${columns} FROM items${where} ${LIST_ORDER_BY}${limitClause}`)
+    .all(...params) as unknown as ItemSummaryRow[];
 }
 
 /** The single INSERT this module ever issues against `events`. A standalone
@@ -681,6 +1165,87 @@ export class WorkStateStore {
       const rows = selectItemRows(db, filter);
       const referrers = buildReferrerMap(db);
       return rows.map((row) => ({ ...rowToWorkItem(row), referenced_by: referrers.get(row.id) ?? [] }));
+    } finally {
+      db.close();
+    }
+  }
+
+  /**
+   * The PROJECTED, keyset-paged twin of {@link listItemViews}: the same
+   * filtered, newest-created-first selection and the same DERIVED
+   * `referenced_by` backlinks, but WITHOUT the opaque `spec` body — each item
+   * carries `spec_length` instead (computed in SQL; see the file header), and
+   * `spec` returns only when `page.include_spec` is set.
+   *
+   * Absent page options mean "behave like the unpaginated read": no `LIMIT`
+   * clause, `next_cursor: null`. A present `limit` is clamped into
+   * `[1, MAX_LIST_LIMIT]` ({@link clampListLimit}); a present `cursor` resumes
+   * after that boundary. BOTH are validated BEFORE the database is opened, so
+   * a malformed cursor is a typed SCHEMA error even on a board that does not
+   * exist yet — never a silent empty page a caller would read as "the board
+   * ended".
+   *
+   * NO server-side cursor state exists: a cursor encodes only a position in
+   * the board's stable creation order, so changing `filter` between pages
+   * INVALIDATES it (the same position is now a position in a different
+   * selection). Walk one filter to exhaustion, then start the next.
+   *
+   * Never creates the database file.
+   */
+  listItemSummaryViews(filter?: ListItemsFilter, page?: ListPageOptions): ListItemsPage<WorkItemSummaryView> {
+    // Validate first, open second (see the doc comment): an empty board must
+    // not swallow a malformed cursor.
+    const limit = page?.limit === undefined ? undefined : clampListLimit(page.limit);
+    const cursor = page?.cursor === undefined ? undefined : decodeListCursor(page.cursor);
+    const db = openForRead(this.#dbPath);
+    if (db === null) return { items: [], next_cursor: null };
+    try {
+      const rows = selectItemSummaryRows(db, filter, {
+        includeSpec: page?.include_spec === true,
+        ...(limit === undefined ? {} : { limit }),
+        ...(cursor === undefined ? {} : { cursor }),
+      });
+      // The probe row (limit + 1) is proof that a next page exists; it is
+      // sliced off rather than returned.
+      const hasMore = limit !== undefined && rows.length > limit;
+      const pageRows = hasMore ? rows.slice(0, limit) : rows;
+      // Built over EVERY item on the board, exactly as the unpaginated view
+      // read does — so an item's backlinks never depend on which page it
+      // landed on.
+      const referrers = buildReferrerMap(db);
+      const last = pageRows[pageRows.length - 1];
+      return {
+        items: pageRows.map((row) => ({ ...rowToWorkItemSummary(row), referenced_by: referrers.get(row.id) ?? [] })),
+        next_cursor: hasMore && last !== undefined ? encodeListCursor(last.created_at, last.id) : null,
+      };
+    } finally {
+      db.close();
+    }
+  }
+
+  /**
+   * Every item's `(id, parent_id, status)` triple — the whole board, no
+   * filter, and deliberately NO `spec`. This is the read verbs.ts's
+   * containment gate needs: that gate must consult every item (a parent stays
+   * non-claimable even when its pending child is excluded by a filter or falls
+   * on a different page), and loading 100+ opaque spec bodies to answer a
+   * question about three columns is exactly the payload blowup the projected
+   * read exists to avoid. Never creates the database file.
+   */
+  listContainmentRows(): ContainmentRow[] {
+    const db = openForRead(this.#dbPath);
+    if (db === null) return [];
+    try {
+      // `parent_id` is named explicitly, so a below-current board that predates
+      // the column gets the documented default rather than a prepare-time
+      // `no such column` throw (see {@link itemColumns}).
+      const parentColumn = itemColumns(db).has('parent_id') ? 'parent_id' : 'NULL AS parent_id';
+      const rows = db.prepare(`SELECT id, ${parentColumn}, status FROM items`).all() as unknown as {
+        id: string;
+        parent_id: string | null;
+        status: string;
+      }[];
+      return rows.map((row) => ({ id: row.id, parent_id: row.parent_id ?? null, status: row.status as WorkItemStatus }));
     } finally {
       db.close();
     }

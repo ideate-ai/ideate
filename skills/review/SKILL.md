@@ -22,7 +22,9 @@ a work cycle and feeds `refine`.
 ## Step 1 — Parse mode and scope
 - **cycle** (default) — review the work completed since the last review. Derive
   the scope from `git diff` against the last cycle-summary's commit (or recent
-  `done` board items via `work_list` + `work_events`).
+  `done` board items via `work_list` + `work_events` — its pages run
+  newest-created first, so follow `next_cursor` if the cycle touched older
+  items).
 - **`--full`** — audit the whole project, not just the last cycle.
 - **`--domain <name>`** — review one domain/area against its steering.
 - **natural-language arg** — ad-hoc: review exactly the scope described.

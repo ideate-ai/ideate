@@ -542,6 +542,110 @@ describe('containment blocking (claimable)', () => {
   });
 });
 
+describe('listSummaries — the projected, keyset-paged twin of list', () => {
+  it('returns the same selection and the same claimable as list(), page by page, with spec projected away', () => {
+    const fx = makeFixture();
+    // A board that exercises BOTH claimability gates across page boundaries:
+    // a parent whose pending child lands on a different page, and a dependent
+    // whose unfinished dependency does too.
+    fx.setNow('2026-07-11T12:00:00.000Z');
+    const parent = createBasic(fx.verbs, 'parent');
+    fx.setNow('2026-07-11T12:01:00.000Z');
+    const dep = createBasic(fx.verbs, 'dep');
+    fx.setNow('2026-07-11T12:02:00.000Z');
+    const dependent = createBasic(fx.verbs, 'dependent', [dep.id]);
+    fx.setNow('2026-07-11T12:03:00.000Z');
+    const child = fx.verbs.create({
+      title: 'child',
+      spec: 'plain prompt',
+      spec_format: 'text/plain',
+      created_by: actor(),
+      parent_id: parent.id,
+    });
+
+    const full = fx.verbs.list();
+    expect(full.map((i) => i.id)).toEqual([child.id, dependent.id, dep.id, parent.id]);
+
+    // Walk the same board one row at a time.
+    const walked: { id: string; claimable: boolean }[] = [];
+    let cursor: string | null = null;
+    do {
+      const page = fx.verbs.listSummaries(undefined, { limit: 1, ...(cursor === null ? {} : { cursor }) });
+      for (const item of page.items) {
+        expect(item).not.toHaveProperty('spec');
+        expect(item.spec_length).toBe('plain prompt'.length);
+        walked.push({ id: item.id, claimable: item.claimable });
+      }
+      cursor = page.next_cursor;
+    } while (cursor !== null);
+
+    // Same order, same ids, same claimability — a page boundary is a
+    // selection window, never a semantic one.
+    expect(walked).toEqual(full.map((i) => ({ id: i.id, claimable: i.claimable })));
+    // …and the gates were actually engaged, so the parity above is meaningful.
+    expect(walked.find((i) => i.id === parent.id)?.claimable).toBe(false); // pending child, other page
+    expect(walked.find((i) => i.id === dependent.id)?.claimable).toBe(false); // unfinished dep, other page
+    expect(walked.find((i) => i.id === child.id)?.claimable).toBe(true);
+  });
+
+  it('resolves a cross-page dependency status from the shared full-board scan — no per-item read, so no spec body is loaded to compute claimable', () => {
+    // Counting subclass: `getItem` is the read that returns a FULL row,
+    // opaque spec body included. Under paging, seeding the dependency-status
+    // map from the returned page instead of from the spec-free full-board
+    // scan turns every off-page dependency into one of these — an N+1 of
+    // open/close cycles, each loading a spec to answer a question about
+    // `status`. This test is the pin against that regression.
+    class CountingStore extends WorkStateStore {
+      getItemCalls = 0;
+      override getItem(id: string): ReturnType<WorkStateStore['getItem']> {
+        this.getItemCalls += 1;
+        return super.getItem(id);
+      }
+    }
+    const root = makeTempDir();
+    const dbPath = join(root, 'work-state', 'board.db');
+    let nowIso = FIXED_ISO;
+    const clock: Clock = () => new Date(nowIso);
+    const store = new CountingStore(dbPath, clock);
+    const verbs = new WorkStateVerbs(store, clock);
+
+    // Oldest -> newest, so a one-row page holds the dependent while its
+    // dependency sits two pages away.
+    nowIso = '2026-07-11T12:00:00.000Z';
+    const dep = createBasic(verbs, 'dep');
+    nowIso = '2026-07-11T12:01:00.000Z';
+    createBasic(verbs, 'filler');
+    nowIso = '2026-07-11T12:02:00.000Z';
+    const dependent = createBasic(verbs, 'dependent', [dep.id]);
+
+    store.getItemCalls = 0; // creation itself reads items; measure the READ only
+    const page = verbs.listSummaries(undefined, { limit: 1 });
+    expect(page.items.map((i) => i.id)).toEqual([dependent.id]);
+    // The value is right…
+    expect(page.items[0]?.claimable).toBe(false);
+    // …and it cost ZERO full-row reads.
+    expect(store.getItemCalls).toBe(0);
+
+    // Same for the unpaginated read, which shares the one gate.
+    store.getItemCalls = 0;
+    expect(verbs.list().find((i) => i.id === dependent.id)?.claimable).toBe(false);
+    expect(store.getItemCalls).toBe(0);
+  });
+
+  it('list() is untouched by the paging options — it still returns every item WITH its spec', () => {
+    const fx = makeFixture();
+    for (let i = 0; i < 5; i += 1) {
+      fx.setNow(`2026-07-11T12:0${String(i)}:00.000Z`);
+      createBasic(fx.verbs, `item ${String(i)}`);
+    }
+    // The guarantee context/assemble-prototype.ts's full-board reverse-edge
+    // sweep rests on: no default page size, and spec bodies present.
+    const items = fx.verbs.list();
+    expect(items).toHaveLength(5);
+    for (const item of items) expect(item.spec).toBe('plain prompt');
+  });
+});
+
 describe('supersedes / typed forward references', () => {
   function createWithReferences(verbs: WorkStateVerbs, title: string, references: { rel: string; id: string }[]) {
     return verbs.create({
