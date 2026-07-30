@@ -102,10 +102,45 @@ export function assertDependenciesExist(dependsOn: readonly string[], lookup: De
  * `itemId`-equal to any real node — see verbs.ts) genuine defense-in-depth:
  * a pre-existing cycle reachable from the given `depends_on` list, however
  * it arose, is still caught and named.
+ *
+ * COMPLEXITY — why there are TWO sets, and why that is not one set:
+ *
+ * `onStack` and `fullyExplored` answer DIFFERENT questions and must never be
+ * conflated (conflating them is the classic bug in this optimisation, and it
+ * silently DISABLES cycle detection):
+ *
+ *   - `onStack` = "this id is on the CURRENT path" — so an edge back to it is
+ *     a back-edge, i.e. a cycle. Added before recursing, removed after.
+ *   - `fullyExplored` = "this id's ENTIRE subtree has already been walked
+ *     during THIS invocation and was proven clean". Added only AFTER its
+ *     recursive walk returned without throwing.
+ *
+ * Without the second set the walk re-explores every node once per distinct
+ * path that reaches it. On a lattice — the natural shape of incrementally
+ * planned work, where each new item depends on the previous two — the number
+ * of distinct paths is Fibonacci, so both the recursion and the `lookup()`
+ * row reads grow as ~1.62^n: a single write-time check crosses a minute at
+ * ~26 items and keeps multiplying, presenting as an unexplained hang rather
+ * than an error.
+ *
+ * Skipping a fully-explored node cannot miss a cycle: if any cycle were
+ * reachable THROUGH that node, it would have been reachable during that
+ * node's own exploration, when every node of that cycle lay on the path below
+ * it — so the back-edge would have thrown then and the node would never have
+ * been marked explored at all. A node is marked only on the non-throwing
+ * return path, so "explored" always means "proven acyclic below". Standard
+ * white/grey/black DFS colouring; the walk becomes O(V+E) in both node visits
+ * and `lookup()` calls. Note `itemId` itself is NEVER marked explored — it
+ * stays on the stack for the whole walk, which is exactly what makes an edge
+ * back to it a cycle.
+ *
+ * The memo is strictly PER-INVOCATION: the graph mutates between calls, so
+ * nothing here is cached across them.
  */
 export function assertNoCycle(itemId: string, proposedDependsOn: readonly string[], lookup: DependsOnLookup): void {
   const path: string[] = [itemId];
   const onStack = new Set<string>([itemId]);
+  const fullyExplored = new Set<string>();
 
   function walk(dependsOn: readonly string[]): void {
     for (const depId of dependsOn) {
@@ -115,6 +150,10 @@ export function assertNoCycle(itemId: string, proposedDependsOn: readonly string
           `work-state dag: depends_on would introduce a cycle: ${[...path, depId].join(' → ')}`,
         );
       }
+      // Already proven clean on an earlier branch of this same walk — re-walking
+      // it could only re-derive the same "no cycle" answer, at exponential cost.
+      // Checked BEFORE `lookup()` so the row reads collapse to O(E) too.
+      if (fullyExplored.has(depId)) continue;
       const nextDependsOn = lookup(depId);
       // A dangling reference is `assertDependenciesExist`'s job, not this
       // function's — treat an unresolvable id as a dead end for cycle
@@ -125,6 +164,10 @@ export function assertNoCycle(itemId: string, proposedDependsOn: readonly string
       walk(nextDependsOn);
       path.pop();
       onStack.delete(depId);
+      // Reached ONLY when the recursive walk returned without throwing, so the
+      // whole subtree below `depId` is proven acyclic. Marking here (and not
+      // when pushing) is what keeps the memo sound.
+      fullyExplored.add(depId);
     }
   }
 
