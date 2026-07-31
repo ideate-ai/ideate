@@ -43,6 +43,7 @@ import { encodeListCursor } from '../transport/keyset-page.js';
 import { openForWrite } from './schema.js';
 import { DEFAULT_TENANT_ID, WorkStateError } from './types.js';
 import {
+  DEFAULT_LIST_LIMIT,
   MAX_LIST_LIMIT,
   WorkStateStore,
   clampListLimit,
@@ -891,6 +892,24 @@ describe('summary projection + keyset paging (the store half)', () => {
     // depends on: this layer imposes NO default page size.
     expect(page.items.map((i) => i.id)).toEqual(ids);
     expect(page.next_cursor).toBeNull();
+  });
+
+  it('an ABSENT limit is UNBOUNDED at this layer — every item, past any page default a transport applies', () => {
+    const fx = makeFixture();
+    // MORE than DEFAULT_LIST_LIMIT, deliberately: the test above seeds 5, so
+    // it can only catch a leaked default below 5 — never the one anyone would
+    // actually write, which is the transport's own page size. Both unbounded
+    // reads are checked, because both are what an in-repo consumer sweeping
+    // the whole board (context/assemble-prototype.ts) rests on; a default
+    // parked in this layer would truncate it silently.
+    const ids = seedBoard(fx, DEFAULT_LIST_LIMIT + 5);
+    expect(fx.store.listItemViews().map((item) => item.id)).toEqual(ids);
+    const page = fx.store.listItemSummaryViews();
+    expect(page.items.map((item) => item.id)).toEqual(ids);
+    expect(page.next_cursor).toBeNull();
+    // …while the same read WITH a page size is bounded, so the contrast is
+    // real rather than an artefact of a too-small fixture.
+    expect(fx.store.listItemSummaryViews(undefined, { limit: DEFAULT_LIST_LIMIT }).items).toHaveLength(DEFAULT_LIST_LIMIT);
   });
 
   it('projects spec away and reports SQLite LENGTH(spec) as spec_length; include_spec puts the body back', () => {

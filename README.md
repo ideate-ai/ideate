@@ -101,9 +101,12 @@ through the marketplace resolver:
    }
    ```
 
-   This registers the three record MCP verbs (`record_append`, `record_read`,
-   `record_decision`) described below, alongside the board verbs in [The
-   work-state board](#the-work-state-board-local-backend).
+   This registers all eighteen MCP verbs: the three record verbs
+   (`record_append`, `record_read`, `record_decision`) described below, the
+   eleven board verbs in [The work-state
+   board](#the-work-state-board-local-backend), and the two steering verbs
+   plus the two usage verbs in [Steering and usage
+   verbs](#steering-and-usage-verbs).
 3. Wire the mechanical capture hooks by pointing the consuming project's
    host at this plugin's `hooks/hooks.json`. That file declares the actual
    hook shape this plugin provides — `SessionStart` (priming via
@@ -221,9 +224,52 @@ proves identity, and the audit event carries the claim's actual holder.
 
 **`ideate-work` CLI** (`bin/ideate-work`): the same eleven verbs as
 subcommands plus a CLI-only `sweep` (the session-boundary expiry pass the
-`SessionStart`/`SessionEnd` hooks trigger opportunistically). `--json` on
-the read verbs. Board location: `work_state.path` in `.ideate.json`
-(default `.ideate-work/`).
+`SessionStart`/`SessionEnd` hooks trigger opportunistically). Board location:
+`work_state.path` in `.ideate.json` (default `.ideate-work/`). Every
+subcommand except `sweep` exits 1 on failure; `sweep` is a hook path and
+always exits 0, printing nothing to stdout.
+
+- `ideate-work create --title <t> --spec <s> --spec-format <f> --human <h> [--agent <a>] [--depends-on <id1,id2,...>] [--supersedes <id>] [--tenant <t>]`
+  — create one item; prints it as JSON. `--supersedes <id>` records a
+  supersedes edge to the item this one replaces, and the superseded item
+  surfaces the replacement as a derived `referenced_by` backlink.
+- `ideate-work get --id <id> [--json]` — fetch one item, running the
+  lazy-expiry seam first; a miss prints `(not found)`, or `null` under
+  `--json`. This is the way to read one item's full `spec`.
+- `ideate-work list [--tenant <t>] [--status <open|in_progress|done|cancelled>] [--json] [--include-spec] [--limit <n>] [--cursor <c>]`
+  — list items with the derived claimability view attached. Rows are
+  **summaries** — every field except the opaque `spec` body, plus a derived
+  `spec_length`; `--include-spec` puts the bodies back and requires `--json`
+  (the human listing has nowhere to print them). **`--json` returns a PAGE,
+  not the board:** `{"items": [...], "next_cursor": ...}`, at most `--limit`
+  items (default 100, clamped into 1..500) and at most ~40,000 characters of
+  rows — the same payload budget the MCP `work_list` tool applies — so a page
+  can come back shorter than `--limit` while items remain, and only a `null`
+  `next_cursor` means exhaustion. Pass a page's `next_cursor` back as
+  `--cursor` (opaque; tied to the `--tenant`/`--status` filter it was issued
+  for). The human-readable listing is one line per item, unpaged and
+  unbudgeted unless you pass `--limit` or `--cursor`, in which case it prints
+  a resume hint while items remain.
+- `ideate-work update-meta --id <id> --expected-version <n> [--title <t>] [--spec <s>] [--spec-format <f>] [--depends-on <id1,id2,...>] [--supersedes <id>]`
+  — update metadata via optimistic compare-and-set on `version`.
+- `ideate-work claim --id <id> --human <h> [--agent <a>] [--lease-ms <n>]` —
+  claim an open, claimable item; mints the fencing token the next three
+  subcommands require.
+- `ideate-work renew --id <id> --token <n> [--lease-ms <n>]` — extend an
+  active claim's lease. No actor flags — the token proves identity.
+- `ideate-work release --id <id> --token <n> [--note <n>]` — hand an active
+  claim back to `open`. No actor flags.
+- `ideate-work complete --id <id> --token <n> [--note <n>]` — complete an
+  active claim. No actor flags; the note becomes a process record (below).
+- `ideate-work cancel --id <id> --human <h> [--agent <a>]` — cancel an item
+  from `open` or `in_progress`; voids any active claim.
+- `ideate-work reopen --id <id> --human <h> [--agent <a>]` — move an item from
+  `done` back to `open`.
+- `ideate-work events --id <id> [--json]` — every event for one item, oldest
+  first.
+- `ideate-work sweep [--tenant <t>]` — CLI-only (never an MCP tool): the
+  opportunistic board-wide expiry pass. Hook path: always exits 0, stdout
+  stays silent, diagnostics go to stderr.
 
 **Board operations.** The board is one SQLite file, `board.db`, under
 `work_state.path` (`workStatePath()`, default `.ideate-work/`) — nothing
@@ -263,9 +309,9 @@ $ ideate-work complete --id 01KXBQDD7P… --token 1 \
 {"status":"done","claim":null,…}
 
 $ ideate-work events --id 01KXBQDD7P…
-2026-07-12T17:53:45.206Z create   actor=dan
-2026-07-12T17:53:58.767Z claim    actor=dan token=1
-2026-07-12T17:55:58.126Z complete actor=dan token=1 note="NUL delimiters…"
+2026-07-12T17:53:45.206Z create actor=dan
+2026-07-12T17:53:58.767Z claim actor=dan token=1
+2026-07-12T17:55:58.126Z complete actor=dan token=1 note="Exponential backoff added…"
 ```
 
 Completing with a note is also a capture point: the note becomes an
@@ -275,23 +321,76 @@ like any other record:
 
 ```sh
 $ ideate-record read --scope <item-id> --json
-[{"kind":"work-completion",
+{"records":[{"kind":"work-completion",
   "verification_anchor":"board:01KXBQDD7P…#complete@2026-07-12T17:55:58.126Z",
-  "claim":"Add retry backoff to the fetch client — Exponential backoff added…",…}]
+  "claim":"Add retry backoff to the fetch client — Exponential backoff added…",…}],
+ "next_cursor":null}
 ```
+
+That `--json` output is a PAGE, and the real one is indented — the transcript
+above is trimmed for width. Read `next_cursor`, not the row count: a `null`
+is the only statement that the selection is exhausted.
+
+## Steering and usage verbs
+
+Two smaller seams ride the same MCP server (`dist/server.js`). Each keeps its
+own store, separate from the record and the board, and neither has a CLI —
+these four verbs exist over MCP only.
+
+**Two steering verbs — `steering_read` and `steering_put` — GATED OFF by
+default.** Steering items are a project's guiding principles and policies, one
+file per item under `.ideate/steering/`. `steering_put` creates or amends ONE
+item: on amend the prior version is appended to the item's amendment history
+and the status may flip, and there is no hard delete — you deprecate via
+`status` (`active | deprecated | superseded`), or name a DIFFERENT item as
+`supersedes` to replace it. `steering_read` is selection only — by `id`
+(exact), `domain` (substring), `status` and `kind` — unranked by contract, and
+bounded the same way the reads above are: the amendment `history` is projected
+away unless you pass `include_history` (a `history_length` is always present),
+and the result `{ok, items, next_cursor}` is a page of at most `limit` items
+(default 100, clamped into 1..500) within the same ~40,000-character payload
+budget, resumed with an opaque `cursor`.
+
+**Both steering verbs are gated behind `steering.enabled` in `.ideate.json` —
+absent by default, which means off, with no environment override.** While the
+gate is off — the only state this package ships in — each verb returns
+`{"ok":false,"code":"GATED",...}` as a tool error and writes NOTHING: the
+gate is checked before arguments are validated, so a gated project cannot
+even create the steering directory by calling with bad arguments. Steering
+shapes what a model attends to, and nothing that shapes attention ships live
+here ahead of the evaluation that measures it.
+
+**Two usage verbs — `usage_capture` and `usage_query`.** Append-only
+instrumentation for retrieval effectiveness, stored under `.ideate/usage/`.
+`usage_capture` is mechanical: given captured worker `text` and the
+authoritative `delivered` set of item ids, it string-matches (no relevance
+inference, no judgement) and appends one usage signal per cited id — its
+intended caller is a mechanical capture point such as an eval or replay
+harness, never an agent deciding what to "cite". `usage_query` reads those
+signals back, exact-match filtered by seed/task/manifest/session/kind/item,
+and returns `{ok, used_item_ids, signals, next_cursor}` — the distinct used
+items of THAT PAGE plus the signals themselves, oldest first, paged and
+payload-budgeted exactly like the reads above. Like the record, this store is
+append-only: there is no update verb and no delete verb.
 
 ## Honest status
 
 - **Available now:** the append-only process record, the five mechanical
   capture points (`SessionEnd`, `PreCompact`, `SubagentStop`,
   `TaskCompleted`, `PostToolUse` on `git commit`), session/subagent priming,
-  the capture-time secret-scanning gate, native telemetry counters, and the
+  the capture-time secret-scanning gate, native telemetry counters, the
   work-state board's **local** backend (the eleven verbs above, with a
-  contention suite racing real OS processes as its correctness evidence).
+  contention suite racing real OS processes as its correctness evidence), and
+  the two usage verbs.
 - **Not yet built:** the *hosted* delegation board (cross-machine,
   multi-person coordination). Its ratified trigger is a concrete second
   contributor; the local board implements the identical contract, so that
   move is configuration, not a rewrite.
+- **Present but gated off:** the two steering verbs. They are registered by
+  the shipped server and answer every call with
+  `{"ok":false,"code":"GATED",...}` until `steering.enabled` is set to true in
+  `.ideate.json` — see [Steering and usage
+  verbs](#steering-and-usage-verbs).
 - **Present but off:** claim-time priming — the hook point exists in the
   claim path and a `work_claims` telemetry counter records the denominator,
   but priming itself is mechanically disabled (`work_state.claim_priming`

@@ -18,7 +18,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import type { Clock } from '../record/id.js';
 import { DagError } from './dag.js';
 import { openForWrite } from './schema.js';
-import { WorkStateStore } from './store.js';
+import { DEFAULT_LIST_LIMIT, WorkStateStore } from './store.js';
 import { WorkStateError } from './types.js';
 import type { ActorRef, WorkItemStatus } from './types.js';
 import { VerbError, WorkStateVerbs, noopExpiryCheck } from './verbs.js';
@@ -643,6 +643,33 @@ describe('listSummaries — the projected, keyset-paged twin of list', () => {
     const items = fx.verbs.list();
     expect(items).toHaveLength(5);
     for (const item of items) expect(item.spec).toBe('plain prompt');
+  });
+
+  it('an ABSENT limit means EVERY item, past any page default a transport applies — the contract context/assemble-prototype.ts sweeps on', () => {
+    const fx = makeFixture();
+    // Deliberately MORE than DEFAULT_LIST_LIMIT. The test above seeds 5, which
+    // can only catch a leaked default below 5 — not the one anyone would
+    // actually write, which is the transport's own page size. A default
+    // imposed one layer down here would silently truncate the assembler's
+    // full-board sweep and its steering-supersession inputs, and every caller
+    // would keep reading a shortened board as the whole board.
+    const base = Date.parse(FIXED_ISO);
+    const ids: string[] = [];
+    for (let i = 0; i < DEFAULT_LIST_LIMIT + 5; i += 1) {
+      fx.setNow(new Date(base + i * 60_000).toISOString());
+      ids.push(createBasic(fx.verbs, `item ${String(i)}`).id);
+    }
+
+    const items = fx.verbs.list();
+    expect(items).toHaveLength(DEFAULT_LIST_LIMIT + 5);
+    // Every seeded id, not just the right COUNT — newest first, the order
+    // every board read emits.
+    expect(items.map((i) => i.id)).toEqual([...ids].reverse());
+    // …and the same under a filter, which is the form the sweep actually calls.
+    expect(fx.verbs.list({ status: 'open' })).toHaveLength(DEFAULT_LIST_LIMIT + 5);
+    // …while the transport-facing twin, asked for a page, IS bounded — so the
+    // difference between the two reads is real and not an accident of seeding.
+    expect(fx.verbs.listSummaries(undefined, { limit: DEFAULT_LIST_LIMIT }).items).toHaveLength(DEFAULT_LIST_LIMIT);
   });
 });
 

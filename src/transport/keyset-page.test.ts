@@ -15,7 +15,9 @@
 // `decodeSteeringCursor`, the record's) is a shape check plus its own typed
 // error over this parser, so the four lenient shapes cannot be closed in one
 // door and left open in another (GP-24: a grep-falsifiable promise about code
-// shape).
+// shape). That check keys on the base64url CODEC — the thing no restatement of
+// the property can avoid calling — rather than on the punctuation of one
+// comparison, which a copy escapes by swapping its operands.
 
 import { readFileSync, readdirSync } from 'node:fs';
 import { Buffer } from 'node:buffer';
@@ -78,10 +80,30 @@ describe('cursor encoding and the one mechanical parser', () => {
   it('the canonical round-trip guard is written exactly ONCE package-wide (every seam decodes through it)', () => {
     const srcRoot = fileURLToPath(new URL('..', import.meta.url));
     const parserModule = join(srcRoot, 'transport', 'keyset-page.ts');
-    // The guard IS this comparison: decode, re-encode, demand the input back.
-    const ROUND_TRIP_GUARD = /toString\('base64url'\)\s*!==/;
 
-    const guards: string[] = [];
+    // KEYED ON THE CODEC, not on the shape of one comparison. The property is
+    // "decode a cursor, re-encode it, demand the input back", and NOTHING can
+    // restate it — in either comparison direction, with either quote style,
+    // under any variable names — without invoking node's base64url codec. So
+    // the scan is for the codec CALL itself: every base64url decode and every
+    // base64url re-encode in the package, which must all be in this one module.
+    // A matcher shaped like `toString('base64url') !==` is escaped by writing
+    // the operands the other way round, or by using double quotes; this one is
+    // not, and it also catches a second DECODER that carries no guard at all —
+    // the strictly worse copy.
+    const BASE64URL_CODEC = /Buffer\.from\s*\([^)]*,\s*(['"])base64url\1\s*\)|\.toString\s*\(\s*(['"])base64url\2\s*\)/;
+    // The guard itself, in EITHER direction and with either quote style, so
+    // that deleting it from the one module is red too — the scan above proves
+    // uniqueness, this proves existence.
+    const ROUND_TRIP_COMPARISON =
+      /\.toString\s*\(\s*(['"])base64url\1\s*\)\s*[!=]==|[!=]==\s*[\w$.]*\.toString\s*\(\s*(['"])base64url\2\s*\)/;
+    // A comment can quote the codec while executing nothing (several seams'
+    // headers explain the leniency this guard closes, and record/read-page.ts
+    // and work-state/store.ts both spell `Buffer.from(…, 'base64url')` in
+    // prose). Skip comment lines so the scan sees CODE.
+    const isComment = (line: string): boolean => /^\s*(?:\/\/|\/?\*)/.test(line);
+
+    const codecUsers: string[] = [];
     const walk = (dir: string): void => {
       for (const entry of readdirSync(dir, { withFileTypes: true })) {
         const full = join(dir, entry.name);
@@ -91,12 +113,14 @@ describe('cursor encoding and the one mechanical parser', () => {
           continue;
         }
         if (!entry.isFile() || !full.endsWith('.ts') || full.endsWith('.test.ts')) continue;
-        if (ROUND_TRIP_GUARD.test(readFileSync(full, 'utf8'))) guards.push(full);
+        const code = readFileSync(full, 'utf8').split('\n').filter((line) => !isComment(line));
+        if (code.some((line) => BASE64URL_CODEC.test(line))) codecUsers.push(full);
       }
     };
     walk(srcRoot);
 
     // STRICT: a second copy anywhere is a door that can drift open.
-    expect(guards).toEqual([parserModule]);
+    expect(codecUsers).toEqual([parserModule]);
+    expect(readFileSync(parserModule, 'utf8')).toMatch(ROUND_TRIP_COMPARISON);
   });
 });

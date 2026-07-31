@@ -11,7 +11,9 @@
 //   - walking `next_cursor` to exhaustion yields every matching record exactly
 //     once, id-descending, with a null cursor on the last page only;
 //   - the payload budget can close a page EARLY — shorter than `limit`, cursor
-//     still non-null — and an oversized record still ships ALONE (liveness);
+//     still non-null — and an oversized record at the HEAD of a page still
+//     ships ALONE (liveness, exercised in the one placement a "nothing was
+//     dropped" short-circuit cannot satisfy by accident);
 //   - every malformed cursor shape raises the RECORD's own typed error, never
 //     an empty page, and never the board's `WorkStateError`.
 //
@@ -266,10 +268,23 @@ describe('the shared payload budget: a page may be SHORTER than limit, and liven
     expect(seen).toEqual([...ids].reverse());
   });
 
-  it('LIVENESS: one record larger than the WHOLE budget comes back alone, with a cursor — never an empty page', () => {
+  it('LIVENESS: a record larger than the WHOLE budget ships ALONE when it is the FIRST row of a page — never dropped, never an empty page', () => {
     const store = makeStore();
-    // A single oversized record, then a normal one behind it.
-    const first = store.append({
+    // Ordering matters, and is the whole point of the fixture. The record
+    // reads NEWEST first, so the ordinary record is seeded FIRST and the
+    // oversized one after it — putting the oversized row at the HEAD of the
+    // page, with a second row behind it.
+    //
+    // WHY that placement rather than an oversized record alone: a
+    // single-row page is returned untouched by `boundRecordPage`'s
+    // `last === undefined` / "nothing dropped" short-circuit, so it comes back
+    // whole EVEN IF the liveness rule (`fitToListPayloadBudget`'s
+    // `kept.length > 0`) has been deleted. Only an oversized row that must be
+    // kept while a later row is dropped can tell the two apart: with liveness,
+    // one row and a cursor; without it, nothing fits, the short-circuit fires
+    // and BOTH rows come back.
+    const older = seed(store, 1)[0];
+    const oversized = store.append({
       kind: 'finding',
       claim: 'oversized',
       verification_anchor: '',
@@ -277,22 +292,29 @@ describe('the shared payload budget: a page may be SHORTER than limit, and liven
       source: { capture_point: 'test', session_id: 'sess-page' },
       content: 'y'.repeat(OVERSIZED_CONTENT_CHARS),
     });
-    if (!first.ok) throw new Error('seed failed');
-    seed(store, 1);
+    if (!oversized.ok) throw new Error('seed failed');
 
     const page = readRecordPage(store, { limit: 10 });
     const rows = page.records.map((view) => projectRecordRow(view, true));
-    // Newest first: the small record, then the oversized one — so shorten at
-    // the oversized row and prove the NEXT page returns it alone.
-    const bounded = boundRecordPage({ records: rows, next_cursor: page.next_cursor }, measureCompactItemChars);
-    expect(bounded.records.map((r) => r.id)).toEqual([rows[0]?.id]);
-    expect(bounded.next_cursor).toBeTypeOf('string');
+    // The fixture really is "oversized row FIRST, another row behind it"…
+    expect(rows.map((r) => r.id)).toEqual([oversized.record.id, older]);
+    // …and that first row alone really does exceed the whole budget, so the
+    // budget has to make its liveness decision with nothing yet kept.
+    expect(measureCompactItemChars(rows[0])).toBeGreaterThan(LIST_PAYLOAD_BUDGET_CHARS);
 
+    const bounded = boundRecordPage({ records: rows, next_cursor: page.next_cursor }, measureCompactItemChars);
+    // ALONE: kept, with the row behind it deferred to the next page.
+    expect(bounded.records.map((r) => r.id)).toEqual([oversized.record.id]);
+    expect(bounded.records[0]?.content_length).toBe(OVERSIZED_CONTENT_CHARS);
+    // …and the walk is told to come back, at exactly the row it stopped on.
+    expect(bounded.next_cursor).toBe(encodeIdCursor(oversized.record.id));
+
+    // The deferred row is not lost: it is the whole of the next page.
     const next = readRecordPage(store, { limit: 10, cursor: bounded.next_cursor as string });
     const nextRows = next.records.map((view) => projectRecordRow(view, true));
     const nextBounded = boundRecordPage({ records: nextRows, next_cursor: next.next_cursor }, measureCompactItemChars);
-    expect(nextBounded.records.map((r) => r.id)).toEqual([first.record.id]);
-    expect(nextBounded.records[0]?.content_length).toBe(OVERSIZED_CONTENT_CHARS);
+    expect(nextBounded.records.map((r) => r.id)).toEqual([older]);
+    expect(nextBounded.next_cursor).toBeNull();
   });
 });
 

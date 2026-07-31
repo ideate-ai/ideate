@@ -11,7 +11,10 @@
 // wiring (capture_fired / capture_write_failed, and every
 // redaction routed to the dedicated counter); typed no-throw failure on
 // an unwritable directory; newest-first scope-filtered limited reads with no
-// index; and the append-only API surface (no update/delete/rank anywhere).
+// index — including the store CONTRACT an absent limit carries, "every
+// matching record", held against a fixture larger than the transport's default
+// page so a default leaking down into this layer fails loudly; and the
+// append-only API surface (no update/delete/rank anywhere).
 //
 // All filesystem work happens in mkdtemp dirs — the real .ideate/ is never
 // touched.
@@ -26,6 +29,7 @@ import type { IdeateConfigV3 } from '../config/ideate-config.js';
 import { TelemetryCounters } from '../telemetry/counters.js';
 import { reportFromDir } from '../telemetry/report.js';
 import type { Clock } from './id.js';
+import { DEFAULT_RECORD_READ_LIMIT } from './read-page.js';
 import { parseRecord, serializeRecord } from './schema.js';
 import type { ProcessRecord } from './schema.js';
 import { RecordStore } from './store.js';
@@ -486,6 +490,35 @@ describe('read: straight off the files, newest first, selection only', () => {
   it('reads an empty or absent record tree as an empty list', () => {
     const { store } = makeFixture();
     expect(store.read()).toEqual([]);
+  });
+
+  it('an ABSENT limit means EVERY matching record, past any page default a transport applies', () => {
+    const fx = makeFixture();
+    // MORE than the transport's default page (record/read-page.ts's
+    // DEFAULT_RECORD_READ_LIMIT), which is the default anyone would actually
+    // leak into this layer — a three-record fixture could only catch one
+    // below 3. `read`/`readViews` with no limit are what in-repo consumers
+    // sweep the store on (context/assemble-prototype.ts self-bounds with its
+    // own `{scope, limit}`), so a default parked HERE would silently truncate
+    // them and every caller would keep reading a shortened store as the whole
+    // store. The default lives at the transport boundary, and this is the test
+    // that says so.
+    const count = DEFAULT_RECORD_READ_LIMIT + 5;
+    const ids: string[] = [];
+    for (let i = 0; i < count; i += 1) {
+      fx.setNow(new Date(Date.parse(FIXED_ISO) + i * 1_000).toISOString());
+      const appended = fx.store.append(input({ scope: i % 2 === 0 ? 'even shard' : 'odd shard' }));
+      if (!appended.ok) throw new Error('seed failed');
+      ids.push(appended.record.id);
+    }
+
+    // Every record, newest first — the count AND the identities.
+    expect(fx.store.readViews({}).map((r) => r.id)).toEqual([...ids].reverse());
+    expect(fx.store.read()).toHaveLength(count);
+    // …and under a selection filter, which is the form a sweep actually calls.
+    expect(fx.store.readViews({ scope: 'even shard' })).toHaveLength(Math.ceil(count / 2));
+    // …while an EXPLICIT limit still bounds it, so the contrast is real.
+    expect(fx.store.readViews({ limit: 10 })).toHaveLength(10);
   });
 });
 

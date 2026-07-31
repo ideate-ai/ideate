@@ -11,12 +11,19 @@
 // coupling the seams exist to prevent; parking a copy in each transport is
 // how two doors quietly start disagreeing about what "bounded" means.
 //
-// SINGLE DEFINITION, mechanically: `LIST_PAYLOAD_BUDGET_CHARS` and
-// `applyListPayloadBudget` are defined HERE and nowhere else in the package,
-// and the only files that import them are the transports listed in
-// payload-budget.test.ts's drift test. That test walks the whole source tree
-// and fails if a second definition appears anywhere or if an unlisted file
-// reaches for one (GP-24: a grep-falsifiable promise about code shape).
+// SINGLE DEFINITION, mechanically: payload-budget.test.ts's drift test walks
+// the whole source tree and fails on any of three drifts (GP-24: a
+// grep-falsifiable promise about code shape) —
+//   1. a second DEFINITION of `LIST_PAYLOAD_BUDGET_CHARS`,
+//      `fitToListPayloadBudget` or `applyListPayloadBudget` anywhere;
+//   2. a second BUDGET-CLASS NUMBER anywhere — any declaration binding a
+//      literal of 10,000 or more, whatever it is named, because a fork picks
+//      its own spelling but cannot avoid writing down a number this size;
+//   3. a file IMPORTING this module that is not on the test's list (the test
+//      keys on the import PATH, so reaching in through any export — including
+//      the `ListItemMeasure` type alone — is visible to it).
+// What that test does NOT claim is that a copy is impossible: it claims a copy
+// cannot be silent.
 //
 // This module applies nothing on its own and knows nothing about any store:
 // it takes a page a store already produced and hands back a page that fits.
