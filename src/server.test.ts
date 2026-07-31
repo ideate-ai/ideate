@@ -46,7 +46,7 @@ describe('ideate MCP server boot', () => {
 
   it('exposes the ideate identity', () => {
     expect(SERVER_NAME).toBe('ideate');
-    expect(SERVER_VERSION).toBe('3.0.0');
+    expect(SERVER_VERSION).toBe('3.0.1');
   });
 
   it('accepts a mock tool through the registration extension point, alongside the default surface', () => {
