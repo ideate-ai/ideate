@@ -3,8 +3,19 @@
 //
 // One Markdown file per record, ULID filename stems, date-sharded
 // `record.path/YYYY/MM/{id}.md`. Reads go straight to the sharded files — NO
-// index ships, no cache. Both capture transports — the MCP `record_append`
-// handler and the hook-invoked CLI — write through this one implementation.
+// PERSISTED index ships: the files on disk are always the sole source of
+// truth, nothing derived is ever written to disk, and the shard/file layout
+// this module documents is unchanged by any of what follows (see
+// `readViews`'s WalkCache note below for the one EPHEMERAL exception: an
+// in-process, per-instance memo of record FILES already read and parsed by
+// THIS instance. It is never a memo of a DIRECTORY LISTING — the listing is
+// re-taken fresh on every call — so a write, from this instance or from
+// another process sharing the same on-disk store, is visible on the very
+// next call; only the (immutable, append-only) file contents are ever
+// reused. It never touches anything OTHER than this instance's own memory
+// and never survives a process boundary). Both capture transports — the MCP
+// `record_append` handler and the hook-invoked CLI — write through this one
+// implementation.
 //
 // The three-property guard, enforced here BY API ABSENCE:
 // - Project-local: the store resolves exactly one project's record path (via
@@ -148,6 +159,80 @@ function errorMessage(err: unknown): string {
 }
 
 /**
+ * Per-instance memo of record FILES `readViews` has already read and parsed
+ * for its `id`-unset (scope/`before_id`) path — the one that must read every
+ * record above a page's boundary to keep backlinks complete (see
+ * `readViews`'s docstring). WHY this exists: measured against this
+ * project's own record (1,598 entries), a full exhaustive `record_read` walk
+ * (`limit: 100`) took 1,598/100 ≈ 16 page calls, and each one — with no
+ * memo — re-opened and re-parsed every file above its own boundary, so the
+ * walk's total cost was quadratic in the record count (O(n²/limit) file
+ * reads).
+ *
+ * The memo is split deliberately into two costs that behave very
+ * differently, and only one of them is ever cached:
+ * - The DIRECTORY LISTING (which shard dirs and filenames currently exist)
+ *   is NEVER cached — `readViews` re-lists the whole tree, fresh, on EVERY
+ *   call (see `#idsNewestFirst`). Listing directories is cheap relative to
+ *   reading files (a handful of `readdirSync` calls vs. one `readFileSync` +
+ *   parse per record) — but cheap PER RECORD, not free: `#listDir`/`#listFiles`
+ *   filter, map and sort each shard's entries, so one call costs O(total record
+ *   count) and a page-to-exhaustion walk repeats it once per page. That residual
+ *   is real and measured: per-doubling cost ratios climb 2.10x / 2.26x / 2.53x
+ *   at N=400..3200, where true O(n) would sit flat at 2.0x. So this split buys a
+ *   large CONSTANT-FACTOR win on the dominant term (file reads), NOT an
+ *   asymptotic one — do not read "cheap" here as O(1). Removing the remaining
+ *   superlinear term needs a cross-process index, which is a ratified-decision
+ *   question rather than a local change. And re-listing is what makes a record written by
+ *   ANOTHER process — the hook-invoked CLI writing while an MCP session's
+ *   long-lived store instance is warm, the case this store's two transports
+ *   exist to support — visible on this instance's very next call. A prior
+ *   design cached the listing itself (a paused generator over a snapshot
+ *   taken once); that made a foreign write silently invisible for the rest
+ *   of the process's life, which is the regression this split fixes.
+ * - The FILE CONTENTS (`parsedById`) and the derived forward-edge index
+ *   (`referrers`) built from them ARE cached, permanently, because a record
+ *   file is immutable once written (append-only, exclusive `wx` create — see
+ *   `append`): a file this instance has already opened and parsed never
+ *   needs opening again, cross-process write or not. There is no generation
+ *   counter and nothing here is ever invalidated wholesale — `parsedById`
+ *   only ever grows, and each entry's referrer contribution is added exactly
+ *   once, at the moment that id is first parsed (a reference always points
+ *   at an OLDER, i.e. already-scanned-by-then, record — see
+ *   `RecordReference` — so the contribution is complete the instant it is
+ *   made and never changes again).
+ *
+ * NOT a cursor cache: nothing here is keyed by, or looked up via, an opaque
+ * `next_cursor` token — a caller that presents a cursor this instance has
+ * never seen (a fresh process, a different store) gets exactly the same
+ * correct answer, just without the file-read speedup, because the cache is
+ * consulted purely as an optimization over this instance's OWN prior file
+ * reads, never as a requirement for decoding what the cursor means.
+ */
+interface WalkCache {
+  /** Every record this instance has read and parsed, keyed by id. Permanent:
+   *  a file's contents never change once written, so an entry never goes
+   *  stale and is never evicted. */
+  parsedById: Map<string, ProcessRecord>;
+  /** Full-store forward-edge index, contributed by each record exactly once,
+   *  at the moment `parsedById` first gains its entry. */
+  referrers: Map<string, RecordReference[]>;
+}
+
+/** Add `record`'s forward references to `referrers` as reverse (backlink)
+ *  entries — the one piece of bookkeeping every parse of a record performs,
+ *  wherever that parse happens (a fresh `readViews` file read, or an
+ *  `append` warming the memo with the record it just wrote). */
+function addReferrerContribution(referrers: Map<string, RecordReference[]>, record: ProcessRecord): void {
+  for (const ref of record.references) {
+    const list = referrers.get(ref.id);
+    const back: RecordReference = { rel: ref.rel, id: record.id };
+    if (list === undefined) referrers.set(ref.id, [back]);
+    else list.push(back);
+  }
+}
+
+/**
  * The process-record store. One instance per session/process; its ULID
  * generator carries the per-session entropy.
  *
@@ -160,6 +245,9 @@ export class RecordStore {
   readonly #telemetry: TelemetryCounters;
   readonly #clock: Clock;
   readonly #nextId: UlidGenerator;
+  /** The current memo, or `undefined` before the first `readViews({..})` call
+   *  that needs one; see {@link WalkCache} — never invalidated, only extended. */
+  #walkCache: WalkCache | undefined;
 
   constructor(config: IdeateConfigV3, projectRoot: string, telemetry: TelemetryCounters, clock: Clock) {
     this.#config = config;
@@ -265,11 +353,7 @@ export class RecordStore {
     };
 
     // Shard from the ULID's embedded timestamp: `record.path/YYYY/MM/{id}.md`.
-    const minted = parseUlidTimestamp(masked.id);
-    const year = String(minted.getUTCFullYear()).padStart(4, '0');
-    const month = String(minted.getUTCMonth() + 1).padStart(2, '0');
-    const shardDir = join(this.recordDir, year, month);
-    const filePath = join(shardDir, `${masked.id}${RECORD_EXTENSION}`);
+    const { shardDir, filePath } = this.#shardDirAndPath(masked.id);
 
     try {
       mkdirSync(shardDir, { recursive: true });
@@ -283,7 +367,31 @@ export class RecordStore {
     }
 
     this.#telemetry.captureFired(point, sessionId);
+    // Warm the memo (see WalkCache) with the record just written, if one
+    // exists: we already hold the exact bytes now on disk, so there is no
+    // reason to make the next `readViews` call re-open the file it re-lists.
+    // Nothing is invalidated — the memo is never stale, only ever extended —
+    // and this is purely an optimization: skipping this warm entirely would
+    // still be correct, just one file read short of free, because `readViews`
+    // re-lists the directory tree (never a cached listing) on every call.
+    if (this.#walkCache !== undefined && !this.#walkCache.parsedById.has(masked.id)) {
+      this.#walkCache.parsedById.set(masked.id, masked);
+      addReferrerContribution(this.#walkCache.referrers, masked);
+    }
     return { ok: true, record: masked, path: filePath, redactions };
+  }
+
+  /** The `record.path/YYYY/MM/{id}.md` shard directory and file path for
+   *  `id` — a pure function of the id alone (see the file-export contract in
+   *  the file header), shared by {@link append} (which creates it) and
+   *  {@link #getParsed} (which reads it, never re-deriving it from a
+   *  directory listing it already has the id from). */
+  #shardDirAndPath(id: string): { shardDir: string; filePath: string } {
+    const minted = parseUlidTimestamp(id);
+    const year = String(minted.getUTCFullYear()).padStart(4, '0');
+    const month = String(minted.getUTCMonth() + 1).padStart(2, '0');
+    const shardDir = join(this.recordDir, year, month);
+    return { shardDir, filePath: join(shardDir, `${id}${RECORD_EXTENSION}`) };
   }
 
   /**
@@ -329,15 +437,15 @@ export class RecordStore {
    * edges in `referenced_by` — so a caller reading a superseded record sees it
    * was superseded without having to scan forward itself.
    *
-   * Cost is a single newest-first walk, no index: a reference target is always
-   * OLDER than its referrer (you can only reference an id that already exists),
-   * so walking newest-first guarantees every referrer of a returned record has
-   * already been seen by the time that record is emitted. The referrer map is
-   * built from EVERY scanned record — including ones the scope filter excludes
-   * from the result — so a backlink is never missed just because the referring
-   * record didn't match the filter. Completeness is therefore bounded only by
-   * `limit`: records past the cap aren't returned, and their referrers (newer)
-   * were already scanned, so no returned record loses a backlink.
+   * A reference target is always OLDER than its referrer (you can only
+   * reference an id that already exists), so walking newest-first guarantees
+   * every referrer of a returned record has already been seen by the time
+   * that record is emitted. The referrer map is built from EVERY scanned
+   * record — including ones the scope filter excludes from the result — so a
+   * backlink is never missed just because the referring record didn't match
+   * the filter. Completeness is therefore bounded only by `limit`: records
+   * past the cap aren't returned, and their referrers (newer) were already
+   * scanned, so no returned record loses a backlink.
    *
    * THE SAME ARGUMENT IS WHAT MAKES PAGING SAFE, and it is also what this
    * method may NOT optimize away. Under `before_id` every emitted record is
@@ -348,35 +456,109 @@ export class RecordStore {
    * same `referenced_by` the unpaged read would have. Filename-level skipping
    * (which {@link read} uses for both selectors) is admissible here ONLY for
    * the `id` selector, and only DOWNWARD: a record older than the requested one
-   * can neither be it nor reference it, so those files are never opened.
+   * can neither be it nor reference it, so those files are never opened. Kept
+   * as its own branch below, entirely separate from the WalkCache path, since
+   * it is already bounded and touching it would only add risk.
+   *
+   * The `id`-unset (scope/`before_id`) path is the one an exhaustive page-to-
+   * exhaustion walk actually drives, and it is the one {@link WalkCache} memo-
+   * izes: "read everything above the boundary" is unavoidable (weakening it
+   * is the backlink-completeness violation this store exists to prevent — see
+   * the paragraph above), but redoing every FILE READ from scratch on every
+   * one of a walk's pages is not. This instance remembers every record it has
+   * already opened and parsed and never re-reads a file it already has, so a
+   * walk's total file-read cost across ALL its pages becomes proportional to
+   * the record count once, not once per page.
+   *
+   * The DIRECTORY LISTING, in contrast, is deliberately NOT memoized — every
+   * call re-lists the whole shard tree fresh (see `#idsNewestFirst`), so a
+   * record written between two calls, by this instance's own `append` or by
+   * another process sharing the same on-disk store, is picked up on the very
+   * next call rather than silently staying invisible for the rest of this
+   * instance's life. See {@link WalkCache} for why splitting the memo this
+   * way — cache the (expensive) file reads, never the (cheap) listing —
+   * keeps both properties at once.
    */
   readViews(options?: ReadOptions): ProcessRecordView[] {
     const scopeFilter = this.#scopeFilter(options);
     const limit = this.#limit(options);
     const selectId = options?.id;
     const beforeId = options?.before_id;
-    const out: ProcessRecordView[] = [];
-    if (limit === 0) return out;
-    // A file may be skipped UNREAD only when it can be neither a result nor a
-    // referrer of one (see the paragraph above) — never on `before_id`.
-    const mustRead = (id: string): boolean => selectId === undefined || id >= selectId;
-    const referrers = new Map<string, RecordReference[]>();
-    for (const record of this.#recordsNewestFirst(mustRead)) {
-      for (const ref of record.references) {
-        const list = referrers.get(ref.id);
-        const back: RecordReference = { rel: ref.rel, id: record.id };
-        if (list === undefined) referrers.set(ref.id, [back]);
-        else list.push(back);
+    if (limit === 0) return [];
+
+    if (selectId !== undefined) {
+      const mustRead = (id: string): boolean => id >= selectId;
+      const referrers = new Map<string, RecordReference[]>();
+      for (const record of this.#recordsNewestFirst(mustRead)) {
+        addReferrerContribution(referrers, record);
+        if (record.id !== selectId) continue;
+        // An id is unique: this is the only record that can ever match, so
+        // this is the walk's last useful iteration either way. Mirror
+        // `read`'s AND of every selector (scope, id, before_id) before
+        // answering — the id-fastpath above must narrow the result, never
+        // widen it past what the unindexed `read` sibling would return for
+        // the identical options.
+        if (beforeId !== undefined && !(record.id < beforeId)) return [];
+        if (scopeFilter !== undefined && !matchesScope(record, scopeFilter)) return [];
+        return [{ ...record, referenced_by: referrers.get(record.id) ?? [] }];
       }
-      if (selectId !== undefined && record.id !== selectId) continue;
+      return [];
+    }
+
+    const cache = this.#walkCache ?? (this.#walkCache = { parsedById: new Map(), referrers: new Map() });
+    const out: ProcessRecordView[] = [];
+    for (const id of this.#idsNewestFirst()) {
+      const record = this.#getParsed(cache, id);
+      if (record === undefined) continue; // unparseable file — skipped, already warned
       if (beforeId !== undefined && !(record.id < beforeId)) continue;
       if (scopeFilter !== undefined && !matchesScope(record, scopeFilter)) continue;
-      out.push({ ...record, referenced_by: referrers.get(record.id) ?? [] });
-      // An id is unique: the one match (with its complete backlinks, every
-      // referrer being newer and therefore already scanned) ends the walk.
-      if (out.length >= limit || selectId !== undefined) return out;
+      out.push({ ...record, referenced_by: cache.referrers.get(record.id) ?? [] });
+      if (out.length >= limit) return out;
     }
     return out;
+  }
+
+  /** Return `id`'s parsed record from the memo, reading and parsing the file
+   *  only on a cache miss — the file-read half of {@link WalkCache}. Adds the
+   *  record's forward-reference contribution to `cache.referrers` at the
+   *  same moment it is first parsed (never again — see WalkCache). `undefined`
+   *  on an unparseable file, warned exactly as {@link #recordsNewestFirst}
+   *  does, so a stray file cannot poison this walk either. */
+  #getParsed(cache: WalkCache, id: string): ProcessRecord | undefined {
+    const cached = cache.parsedById.get(id);
+    if (cached !== undefined) return cached;
+    const { filePath } = this.#shardDirAndPath(id);
+    let record: ProcessRecord;
+    try {
+      record = parseRecord(readFileSync(filePath, 'utf8'));
+    } catch (err) {
+      process.emitWarning(
+        `ideate record: skipping unparseable record file ${filePath} (${errorMessage(err)})`,
+        { code: 'IDEATE_RECORD_UNPARSEABLE' },
+      );
+      return undefined;
+    }
+    cache.parsedById.set(id, record);
+    addReferrerContribution(cache.referrers, record);
+    return record;
+  }
+
+  /**
+   * Every record id across the whole store, newest-first — a pure directory
+   * LISTING (`readdirSync` on the year dirs, the month dirs, and each shard's
+   * filenames), never a file open. This is the operation {@link readViews}
+   * re-runs on every call so a foreign write is never missed (see
+   * {@link WalkCache}); it is cheap relative to a file read precisely because
+   * it never touches file contents.
+   */
+  *#idsNewestFirst(): Generator<string> {
+    for (const year of this.#listDir(this.recordDir, YEAR_DIR)) {
+      for (const month of this.#listDir(join(this.recordDir, year), MONTH_DIR)) {
+        for (const file of this.#listFiles(join(this.recordDir, year, month))) {
+          yield file.slice(0, -RECORD_EXTENSION.length);
+        }
+      }
+    }
   }
 
   /** Normalized, validated lower-cased scope filter (undefined = no filter). */

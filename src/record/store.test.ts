@@ -730,6 +730,138 @@ describe('id + before_id: exact selection and the keyset boundary (paging is sel
     // The by-id fetch of the same record is equally complete.
     expect(fx.store.readViews({ id: target.record.id })[0]?.referenced_by).toEqual(targetView?.referenced_by);
   });
+
+  it('a write BETWEEN two readViews calls is not lost behind a stale per-instance memo', () => {
+    // readViews now reuses a memo of its own prior walk across calls on the
+    // SAME instance (record/store.ts's WalkCache — the O(n²)-per-page fix).
+    // That memo must be thrown away, not silently reused, the instant a new
+    // record lands: otherwise a walk started before an append would report
+    // backlinks as they stood BEFORE the write, even though nothing about the
+    // read contract promises a snapshot — every other read in this file
+    // observes appends immediately, and paging must not become the exception.
+    const fx = makeFixture();
+    fx.setNow('2026-05-01T00:00:00.000Z');
+    const target = fx.store.append(input({ claim: 'the original' }));
+    if (!target.ok) throw new Error('seed failed');
+    fx.setNow('2026-06-01T00:00:00.000Z');
+    const filler = fx.store.append(input({ claim: 'filler' }));
+    if (!filler.ok) throw new Error('seed failed');
+
+    // First call builds (and retains) a memo that ends at `filler` — it has
+    // no idea a referrer is coming.
+    const before = fx.store.readViews({ limit: 1 });
+    expect(before.map((v) => v.id)).toEqual([filler.record.id]);
+
+    // A NEW record supersedes the target, landing after the memo was built.
+    fx.setNow('2026-07-01T00:00:00.000Z');
+    const referrer = fx.store.append(
+      input({ claim: 'the replacement', references: [{ rel: 'supersedes', id: target.record.id }] }),
+    );
+    if (!referrer.ok) throw new Error('seed failed');
+
+    // A full re-read on the SAME instance sees the new record AND the
+    // now-complete backlink on the target — the stale memo was discarded,
+    // not extended in place with half the picture.
+    const after = fx.store.readViews();
+    expect(after.map((v) => v.id)).toEqual([referrer.record.id, filler.record.id, target.record.id]);
+    expect(after.find((v) => v.id === target.record.id)?.referenced_by).toEqual([
+      { rel: 'supersedes', id: referrer.record.id },
+    ]);
+  });
+
+  it('DIFFERENTIAL: readViews agrees with read (the independent oracle) on id/scope/before_id, including the two combinations that once diverged', () => {
+    // read() applies id, before_id, and scope as an AND on every record (see
+    // its `wanted` predicate) and was never touched by the perf change —
+    // readViews's id-select fast path must answer identically for the same
+    // options, or it is narrowing/widening the result the unindexed sibling
+    // would give for no reason other than which branch happened to run.
+    const fx = makeFixture();
+    const ids = seedFive(fx);
+    const target = ids[2] as string;
+    const targetRecord = fx.store.read({ id: target })[0];
+    if (targetRecord === undefined) throw new Error('seed missing target');
+    const idsOf = (rows: readonly { id: string }[]): string[] => rows.map((r) => r.id);
+
+    // id alone.
+    expect(idsOf(fx.store.readViews({ id: target }))).toEqual(idsOf(fx.store.read({ id: target })));
+
+    // id + scope MATCHING the target's own scope: both sides return it.
+    expect(idsOf(fx.store.readViews({ id: target, scope: targetRecord.scope }))).toEqual(
+      idsOf(fx.store.read({ id: target, scope: targetRecord.scope })),
+    );
+    expect(idsOf(fx.store.readViews({ id: target, scope: targetRecord.scope }))).toEqual([target]);
+
+    // id + scope MISMATCHING — the scope-leak regression: readViews once
+    // returned the record anyway, ignoring scope entirely once id matched.
+    expect(idsOf(fx.store.readViews({ id: target, scope: 'nonexistent-vocabulary' }))).toEqual(
+      idsOf(fx.store.read({ id: target, scope: 'nonexistent-vocabulary' })),
+    );
+    expect(fx.store.readViews({ id: target, scope: 'nonexistent-vocabulary' })).toEqual([]);
+
+    // id + before_id on the INCLUDED side of the boundary (target strictly
+    // older than a newer id — still on the page).
+    const newerThanTarget = ids[3] as string;
+    expect(idsOf(fx.store.readViews({ id: target, before_id: newerThanTarget }))).toEqual(
+      idsOf(fx.store.read({ id: target, before_id: newerThanTarget })),
+    );
+    expect(idsOf(fx.store.readViews({ id: target, before_id: newerThanTarget }))).toEqual([target]);
+
+    // id + before_id EXACTLY AT the boundary (the boundary is exclusive —
+    // `record.id < before_id` — so naming the target itself excludes it) and
+    // PAST the boundary (an older before_id excludes it too) — the exactly-
+    // once-walk regression: readViews once re-emitted a record at or after
+    // the page boundary it had already been paged past.
+    const olderThanTarget = ids[1] as string;
+    for (const beforeId of [target, olderThanTarget]) {
+      expect(idsOf(fx.store.readViews({ id: target, before_id: beforeId }))).toEqual(
+        idsOf(fx.store.read({ id: target, before_id: beforeId })),
+      );
+      expect(fx.store.readViews({ id: target, before_id: beforeId })).toEqual([]);
+    }
+  });
+});
+
+describe('cross-process freshness: two RecordStore instances sharing one on-disk store', () => {
+  it("a write from a SECOND instance between two readViews calls on the FIRST is visible on the very next call — no stale cross-instance cache", () => {
+    // Mirrors the real deployment shape: an MCP session memoizes ONE
+    // RecordStore for its whole life (record/tools.ts), while the
+    // hook-invoked CLI transport constructs its OWN short-lived instance per
+    // invocation — both writing through this one on-disk store. A stale
+    // per-instance memo would make the warm MCP session silently stop seeing
+    // hook-written records: not a throw, an INCOMPLETE page, which is the
+    // critical regression this test pins.
+    const projectRoot = makeTempDir('ideate-record-store-test-');
+    const telemetryDir = makeTempDir('ideate-record-telemetry-test-');
+    const config: IdeateConfigV3 = {
+      schema_version: V3_SCHEMA_VERSION,
+      record: { path: DEFAULT_RECORD_PATH },
+      backend: 'local',
+    };
+    let nowIso = '2026-05-01T00:00:00.000Z';
+    const clock: Clock = () => new Date(nowIso);
+    const telemetry = new TelemetryCounters(telemetryDir, clock);
+    const instanceA = new RecordStore(config, projectRoot, telemetry, clock);
+    const instanceB = new RecordStore(config, projectRoot, telemetry, clock);
+
+    // A appends, then does a FULL readViews walk — warming A's own
+    // per-instance memo (record/store.ts's WalkCache).
+    const first = instanceA.append(input({ claim: 'seen by A' }));
+    if (!first.ok) throw new Error('seed failed');
+    expect(instanceA.readViews().map((r) => r.id)).toEqual([first.record.id]);
+
+    // A SECOND instance — never sharing any in-memory state with A — appends
+    // to the SAME on-disk directory.
+    nowIso = '2026-06-01T00:00:00.000Z';
+    const second = instanceB.append(input({ claim: 'written by the other instance' }));
+    if (!second.ok) throw new Error('seed failed');
+
+    // A's memo was warmed BEFORE B's write. A's very next call must still
+    // report both records, in the correct order, with B's write visible.
+    expect(instanceA.readViews().map((r) => r.id)).toEqual([second.record.id, first.record.id]);
+    // The unindexed sibling was never in question, but confirms the fixture
+    // itself: both records really are on disk, agreeing with readViews.
+    expect(instanceA.read().map((r) => r.id)).toEqual([second.record.id, first.record.id]);
+  });
 });
 
 describe('append: reference-id ULID validation at the write chokepoint', () => {
