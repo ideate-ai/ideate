@@ -73,6 +73,8 @@ import { checkExpiry, DEFAULT_LEASE_MS } from './expiry.js';
 import type { Clock } from '../record/id.js';
 import { runCompletionRecordHook } from './completion-record.js';
 import type { CompletionRecordConfig } from './completion-record.js';
+import { runUsageCaptureHook } from './completion-usage-hook.js';
+import type { UsageCaptureConfig } from './completion-usage-hook.js';
 import { appendEventRowOn } from './store.js';
 import type { WorkStateStore } from './store.js';
 import { withWriteTransaction } from './tx.js';
@@ -377,6 +379,15 @@ export function renew(
  * `completionRecord` (most of this module's own unit tests, and any other
  * direct caller with no transport context to inject), no record is
  * attempted — there is no project root to resolve one from.
+ *
+ * `usageCapture` (optional): when a transport supplies it, a SECOND
+ * post-commit hook (completion-usage-hook.ts's `runUsageCaptureHook`) fires
+ * immediately after the completion-record hook above, over the SAME
+ * post-commit item and note — mechanically detecting whether `note` cites
+ * this item's own `depends_on`/`parent_id`/`references` ids (see that
+ * module's header for the full delivered-vs-used analysis). Same
+ * never-throws, never-un-completes contract as the completion-record hook;
+ * absent `usageCapture`, nothing is attempted.
  */
 export function complete(
   store: WorkStateStore,
@@ -385,6 +396,7 @@ export function complete(
   claimToken: number,
   note?: string,
   completionRecord?: CompletionRecordConfig,
+  usageCapture?: UsageCaptureConfig,
 ): WorkItem {
   checkExpiry(store, clock, itemId); // lazy check, evaluated FIRST
   requireItem(store, itemId, 'complete');
@@ -474,6 +486,23 @@ export function complete(
         sessionId: completionRecord.sessionId,
       },
       completionRecord,
+      clock,
+    );
+  }
+
+  // The usage-capture post-commit hook — same ordering guarantee as the
+  // completion-record hook above (strictly after commit), independently
+  // gated: a transport may supply either, both, or neither. See
+  // completion-usage-hook.ts's file header for the delivered-vs-used
+  // analysis behind this integration point.
+  if (usageCapture !== undefined) {
+    runUsageCaptureHook(
+      {
+        item: completedItem,
+        note,
+        sessionId: usageCapture.sessionId,
+      },
+      usageCapture,
       clock,
     );
   }

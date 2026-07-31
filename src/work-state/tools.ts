@@ -110,6 +110,8 @@ import type { ToolRegistrar } from '../server.js';
 import { claim, complete, release, renew } from './claims.js';
 import { createRealCompletionRecordWriter } from './completion-record.js';
 import type { CompletionRecordWriter } from './completion-record.js';
+import { createGatedUsageCaptureWriter } from './completion-usage-hook.js';
+import type { UsageCaptureWriter } from './completion-usage-hook.js';
 import { checkExpiry } from './expiry.js';
 import { primeOnClaim } from './priming-hook.js';
 import {
@@ -248,6 +250,10 @@ interface ToolContext {
   /** Built once per context (not per completion) — see this
    *  factory's own composition edge below. */
   completionRecordWriter: CompletionRecordWriter;
+  /** Built once per context, mirroring `completionRecordWriter` — see
+   *  completion-usage-hook.ts's file header for what this writer captures
+   *  and why. */
+  usageCaptureWriter: UsageCaptureWriter;
 }
 
 /** Build the real `ExpiryCheck` (criterion 2) for one context — the lazy
@@ -309,7 +315,11 @@ export function createWorkStateToolsRegistrar(options: WorkStateToolsOptions = {
       // project root/telemetry/clock this context already resolved, so
       // `.ideate.json` is not re-read on every `work_complete` call.
       const completionRecordWriter = createRealCompletionRecordWriter(projectRoot, telemetry, clock);
-      context = { store, verbs, clock, telemetry, sessionId, projectRoot, completionRecordWriter };
+      // The usage-capture writer, built ONCE from the same project root/
+      // clock this context already resolved (mirrors completionRecordWriter
+      // immediately above) — see completion-usage-hook.ts's file header.
+      const usageCaptureWriter = createGatedUsageCaptureWriter(projectRoot, undefined, clock);
+      context = { store, verbs, clock, telemetry, sessionId, projectRoot, completionRecordWriter, usageCaptureWriter };
     }
     return context;
   };
@@ -613,15 +623,29 @@ export function createWorkStateToolsRegistrar(options: WorkStateToolsOptions = {
       async (args): Promise<CallToolResult> => {
         const ctx = getContext();
         try {
-          // Completion-record post-commit hook — same call site as
+          // Completion-record post-commit hook, PLUS the usage-capture
+          // post-commit hook (completion-usage-hook.ts) — same call site as
           // every other verb's dependencies, reusing this context's own
-          // project root/telemetry/session id/writer.
-          const item = complete(ctx.store, ctx.clock, args.id, args.claim_token, args.note, {
-            projectRoot: ctx.projectRoot,
-            telemetry: ctx.telemetry,
-            sessionId: ctx.sessionId,
-            recordWriter: ctx.completionRecordWriter,
-          });
+          // project root/telemetry/session id/writers.
+          const item = complete(
+            ctx.store,
+            ctx.clock,
+            args.id,
+            args.claim_token,
+            args.note,
+            {
+              projectRoot: ctx.projectRoot,
+              telemetry: ctx.telemetry,
+              sessionId: ctx.sessionId,
+              recordWriter: ctx.completionRecordWriter,
+            },
+            {
+              projectRoot: ctx.projectRoot,
+              telemetry: ctx.telemetry,
+              sessionId: ctx.sessionId,
+              usageWriter: ctx.usageCaptureWriter,
+            },
+          );
           return ok({ item });
         } catch (err) {
           return toolError(err);

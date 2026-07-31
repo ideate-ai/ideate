@@ -365,13 +365,35 @@ instrumentation for retrieval effectiveness, stored under `.ideate/usage/`.
 `usage_capture` is mechanical: given captured worker `text` and the
 authoritative `delivered` set of item ids, it string-matches (no relevance
 inference, no judgement) and appends one usage signal per cited id — its
-intended caller is a mechanical capture point such as an eval or replay
-harness, never an agent deciding what to "cite". `usage_query` reads those
-signals back, exact-match filtered by seed/task/manifest/session/kind/item,
-and returns `{ok, used_item_ids, signals, next_cursor}` — the distinct used
-items of THAT PAGE plus the signals themselves, oldest first, paged and
-payload-budgeted exactly like the reads above. Like the record, this store is
-append-only: there is no update verb and no delete verb.
+callers are mechanical capture points, never an agent deciding what to
+"cite". `usage_query` reads those signals back, exact-match filtered by
+seed/task/manifest/session/kind/item, and returns
+`{ok, used_item_ids, signals, next_cursor}` — the distinct used items of THAT
+PAGE plus the signals themselves, oldest first, paged and payload-budgeted
+exactly like the reads above. Like the record, this store is append-only:
+there is no update verb and no delete verb.
+
+`usage_capture` has **no enabled caller today, deliberately** — the store is
+empty and `citations.ndjson` does not exist. A `work_complete` post-commit
+hook is fully built, tested and wired through both transports
+(`completion-usage-hook.ts`), but it ships **gated off**
+(`USAGE_CAPTURE_ENABLED = false`), and a test pins that both transports
+inject the gated writer and that no row is written through either.
+
+The reason is worth stating, because the plumbing looks ready: that hook
+would detect whether the completion **note** cites the completed item's
+structural neighbours — but in every shipped orchestration path the note is
+written by the **coordinator**, never by the agent that did the work, and the
+coordinator has held those ids verbatim since before the work began. Citing
+them costs no retrieval and evidences no reuse. Enabling it would fill the
+store with orchestrator narration that reads as evidence of context reuse. An
+empty store is visibly empty; a misleading one is not — and this is the
+instrument that gates downstream retrieval work, so a false-healthy signal is
+worse than no signal.
+
+Flip the gate when an integration point that observes genuine **use** exists.
+The claim-time context assembler is the obvious candidate and is itself
+unshipped and gated off.
 
 ## Honest status
 
