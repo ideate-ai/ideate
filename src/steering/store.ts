@@ -272,6 +272,34 @@ export class SteeringStore {
       };
     }
 
+    // EMPTY-STATEMENT GUARD (P-41, 2026-07-30): a steering item that PERSISTS
+    // with no operative text is strictly worse than one that never shipped —
+    // it reads to every downstream agent as "this rule was written and
+    // checked" while carrying zero content (exactly what emptied 21 of 63
+    // active rules in this project for 8 days via a migrator whose
+    // `[a, b].filter(Boolean).join(': ')` silently degrades to `''` when
+    // neither source field is present). This is the mechanical check GP-24
+    // calls for: reject the property (no operative text) at the one write
+    // chokepoint, rather than trust every caller to infer it.
+    //
+    // Deliberately at `put()`, NOT in schema.ts's `requireString` — that
+    // validator also PARSES every existing on-disk file (including items
+    // already degraded before this guard existed), and an already-blank item
+    // must still be READABLE (so it can be found and restored) even though it
+    // can no longer be WRITTEN. The empty check runs on the RAW input, before
+    // gating: masking a secret never turns non-empty text into empty text, so
+    // pre- and post-gate emptiness agree, but checking the raw value keeps
+    // this guard legible without depending on the gate's behavior.
+    if (typeof input?.statement !== 'string' || input.statement.trim().length === 0) {
+      return {
+        ok: false,
+        code: 'SCHEMA',
+        reason:
+          'steering store: "statement" must be non-empty prose — an empty or whitespace-only statement would ship a rule/principle with no operative text; ' +
+          `got ${input?.statement === undefined ? 'absent' : JSON.stringify(input.statement)}`,
+      };
+    }
+
     const filePath = join(this.#steeringDir, `${input.id}${STEERING_EXTENSION}`);
 
     // Load the prior version, if any, to build the amendment trail.

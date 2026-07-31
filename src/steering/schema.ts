@@ -85,7 +85,13 @@ export interface SteeringItem {
   status: SteeringStatus;
   /** ISO-8601 timestamp of the last write (from the injected clock). */
   updated_at: string;
-  /** The current steering text (the prose body). May be empty. */
+  /**
+   * The current steering text (the prose body). This schema layer PARSES
+   * empty statements (a pre-existing on-disk item written before the write
+   * chokepoint's empty-statement guard must still be readable — see
+   * store.ts's `put`, P-41 2026-07-30), but no NEW empty statement can be
+   * written: that guard lives at `put()`, not here.
+   */
   statement: string;
   /** Prior versions, newest-first; empty for a freshly created item. */
   history: SteeringAmendment[];

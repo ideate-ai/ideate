@@ -262,6 +262,57 @@ describe('typed failures, no throw', () => {
   });
 });
 
+describe('empty-statement guard (P-41, 2026-07-30)', () => {
+  // Falsification fixtures (P-41 amendment): the induced violation below is
+  // built from the PROPERTY the guard actually claims — "no operative text
+  // survived" — reproduced via the real defective transformation the v2->v3
+  // migrator used (`[a, b].filter(Boolean).join(': ')` over two absent
+  // fields), not by typing the literal string the guard's own `.trim() ===
+  // ''` check happens to match. A fixture that only ever wrote `statement:
+  // ''` by hand would prove the guard recognizes its own spelling; this one
+  // proves it recognizes the actual failure shape that emptied 21 rules.
+  it('fires on the exact join-of-two-absent-fields transform that emptied 21 rules — an induced violation, not a hand-typed empty string', () => {
+    const { store } = makeFixture();
+    // Mirrors migrate.mjs's pre-fix principle transform verbatim, applied to
+    // a v2 object using the NEWER field names (title/body) the old code never
+    // read: both lookups miss, so the join degrades to ''.
+    const v2Principle: { name?: string; description?: string } = { /* title/body-shaped source; name/description both absent */ };
+    const inducedStatement = [v2Principle.name, v2Principle.description].filter(Boolean).join(': ');
+    expect(inducedStatement).toBe(''); // confirms the fixture actually reproduces the defect's shape
+    const result = store.put({ id: 'GP-induced', kind: 'guiding-principle', statement: inducedStatement, domain: '' });
+    expect(result).toMatchObject({ ok: false, code: 'SCHEMA' });
+    expect(result.ok === false && result.reason).toMatch(/non-empty/);
+  });
+
+  it('fires on a whitespace-only statement — the property is "no operative text", not literal length zero', () => {
+    const { store } = makeFixture();
+    const result = store.put({ id: 'GP-ws', kind: 'guiding-principle', statement: '   \n\t  ', domain: '' });
+    expect(result).toMatchObject({ ok: false, code: 'SCHEMA' });
+  });
+
+  it('nothing is persisted when the guard fires', () => {
+    const { store, steeringDir } = makeFixture();
+    store.put({ id: 'GP-induced', kind: 'guiding-principle', statement: '', domain: '' });
+    expect(existsSync(steeringDir)).toBe(false);
+  });
+
+  it('stays quiet on agreement: a genuinely non-empty statement — including one that is short, or that starts/ends with whitespace around real prose — still writes', () => {
+    const { store } = makeFixture();
+    expect(store.put({ id: 'GP-1', kind: 'guiding-principle', statement: 'x', domain: '' }).ok).toBe(true);
+    expect(store.put({ id: 'GP-2', kind: 'guiding-principle', statement: '  Guards must be guarded: falsification fixtures required.  ', domain: '' }).ok).toBe(true);
+  });
+
+  it('rejects an empty statement on amend too, leaving the prior version on disk untouched', () => {
+    const fx = makeFixture();
+    expect(fx.store.put({ id: 'POL-1', kind: 'policy', statement: 'Original rule text.', domain: 'auth' }).ok).toBe(true);
+    const result = fx.store.put({ id: 'POL-1', kind: 'policy', statement: '', domain: 'auth' });
+    expect(result).toMatchObject({ ok: false, code: 'SCHEMA' });
+    const [read] = fx.store.read();
+    expect(read.statement).toBe('Original rule text.');
+    expect(read.history).toEqual([]);
+  });
+});
+
 describe('cross-item supersession (forward edge + derived backlink)', () => {
   it('records the forward edge on put; readViews exposes the derived superseded_by backlink on the target', () => {
     const fx = makeFixture();

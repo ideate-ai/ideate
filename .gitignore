@@ -6,7 +6,22 @@ dist/
 
 # Dependencies
 node_modules/
-scripts/migrate-v2/
+
+# scripts/migrate-v2 — the v2->v3 migration tool. The blanket
+# `scripts/migrate-v2/` ignore was removed 2026-07-31: it sat here under
+# "Dependencies", so it reads as a sweep aimed at the tool's own node_modules
+# (already covered above) that took the SOURCE with it. Untracked, the tool
+# that silently emptied 21 steering rules for 8 days had exactly one copy on
+# one machine, and its fix could not be reviewed — the same argument that put
+# the steering store back under version control. A committed test also
+# exercises migrate.mjs, so ignoring it made a fresh clone fail.
+# Still ignored, deliberately: the tool's scratch stores, and the per-project
+# restore DATA — that file carries the steering text of six OTHER projects,
+# and this repo is the public-facing one (P-39: nothing enters public history
+# by accident).
+scripts/migrate-v2/.ideate/
+scripts/migrate-v2/.ideate-telemetry/
+scripts/migrate-v2/restore-data-*.json
 
 # Local process-record store — not shipped
 .ideate/

@@ -1,0 +1,10 @@
+{
+  "name": "ideate-migrate-v2",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Ephemeral one-shot migrator: ideate v2 .ideate/ YAML store -> v3 record/board/steering.",
+  "dependencies": {
+    "js-yaml": "^4.1.0"
+  }
+}
