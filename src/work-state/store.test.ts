@@ -39,18 +39,14 @@ import {
 import type { IdeateConfigV3 } from '../config/ideate-config.js';
 import { isUlid } from '../record/id.js';
 import type { Clock } from '../record/id.js';
+import { encodeListCursor } from '../transport/keyset-page.js';
 import { openForWrite } from './schema.js';
 import { DEFAULT_TENANT_ID, WorkStateError } from './types.js';
 import {
-  LIST_PAYLOAD_BUDGET_CHARS,
   MAX_LIST_LIMIT,
   WorkStateStore,
-  applyListPayloadBudget,
   clampListLimit,
   decodeListCursor,
-  encodeListCursor,
-  measureCompactItemChars,
-  measurePrettyItemChars,
   summaryColumns,
 } from './store.js';
 
@@ -1187,107 +1183,6 @@ describe('summary projection + keyset paging (the store half)', () => {
     expect(second.items.map((i) => i.id)).toEqual([target.id]);
     expect(second.items[0]?.referenced_by).toEqual([{ rel: 'supersedes', id: replacement.id }]);
     expect(second.next_cursor).toBeNull();
-  });
-});
-
-describe('list payload budget — ONE budget and ONE implementation, shared by both transports', () => {
-  /** A summary-shaped row: only `id`/`created_at` are load-bearing for the
-   *  budget helper, the rest is realistic bulk. */
-  function row(n: number, spec: string): { id: string; created_at: string; title: string; status: string; spec: string } {
-    return { id: `id-${String(n)}`, created_at: `2026-07-11T12:00:${String(n).padStart(2, '0')}.000Z`, title: `item ${String(n)}`, status: 'open', spec };
-  }
-
-  it('measurePrettyItemChars measures what the CLI actually WRITES (the indented envelope), not the compact form the MCP path writes', () => {
-    const items = [row(1, 'x'.repeat(50)), row(2, 'y'.repeat(80)), row(3, 'z')];
-    // Exactly what cli/ideate-work.ts's `list --json` emits, and the same
-    // envelope with NO rows — the difference between the two is the items
-    // region the measure is supposed to be counting.
-    const emitted = JSON.stringify({ items, next_cursor: 'CURSOR' }, null, 2);
-    const framing = JSON.stringify({ items: [], next_cursor: 'CURSOR' }, null, 2);
-    const region = emitted.length - framing.length;
-
-    const pretty = items.reduce((total, item) => total + measurePrettyItemChars(item), 0);
-    const compact = items.reduce((total, item) => total + measureCompactItemChars(item), 0);
-
-    // The pretty measure never UNDER-counts the region (that is what makes it
-    // a bound on real output) and over-counts by only a few characters per
-    // page — the last row's separator, which it charges but never pays, and
-    // the array's own two line breaks.
-    expect(pretty).toBeLessThanOrEqual(region);
-    expect(pretty).toBeGreaterThanOrEqual(region - 6);
-    // …whereas the compact measure — correct for the MCP transport, whose SDK
-    // writes `JSON.stringify(body)` with no indent — under-counts this stream
-    // badly. Budgeting the compact form here would let the CLI write far more
-    // than the budget allows, which is the whole reason the measure is
-    // injected rather than hard-coded.
-    expect(compact).toBeLessThan(pretty * 0.8);
-  });
-
-  it('the budget is a bound on real output: a walk of budget-closed pages covers every row exactly once, and an oversized row still ships ALONE', () => {
-    // Each row is ~1/8 of the budget under the pretty measure, so a page
-    // closes well before the 12 rows are exhausted.
-    const fat = Array.from({ length: 12 }, (_, i) => row(i, 'x'.repeat(4_000)));
-    const seen: string[] = [];
-    let remaining = fat;
-    for (;;) {
-      const page = applyListPayloadBudget({ items: remaining, next_cursor: remaining.length > 0 ? 'raw' : null }, measurePrettyItemChars);
-      expect(page.items.length).toBeGreaterThan(0);
-      expect(page.items.reduce((t, i) => t + measurePrettyItemChars(i), 0)).toBeLessThanOrEqual(LIST_PAYLOAD_BUDGET_CHARS);
-      seen.push(...page.items.map((i) => i.id));
-      remaining = remaining.slice(page.items.length);
-      if (remaining.length === 0) break;
-      expect(page.next_cursor).toBeTypeOf('string');
-    }
-    expect(seen).toEqual(fat.map((i) => i.id));
-    expect(new Set(seen).size).toBe(fat.length);
-
-    // LIVENESS: a row larger than the WHOLE budget is returned alone with a
-    // cursor — never dropped, never an empty page that stalls the walk.
-    const oversized = applyListPayloadBudget(
-      { items: [row(99, 'x'.repeat(LIST_PAYLOAD_BUDGET_CHARS * 2)), row(100, 'small')], next_cursor: null },
-      measurePrettyItemChars,
-    );
-    expect(oversized.items.map((i) => i.id)).toEqual(['id-99']);
-    expect(oversized.next_cursor).toBeTypeOf('string');
-  });
-
-  it('neither transport defines its own budget or its own implementation — both import this module (mechanical, so they cannot desynchronize)', () => {
-    const srcRoot = fileURLToPath(new URL('..', import.meta.url));
-    const storeModule = join(srcRoot, 'work-state', 'store.ts');
-    const transports = [join(srcRoot, 'work-state', 'tools.ts'), join(srcRoot, 'cli', 'ideate-work.ts')];
-
-    // Every file that DEFINES the constant or the helper, package-wide.
-    const constantDefiners: string[] = [];
-    const helperDefiners: string[] = [];
-    const walk = (dir: string): void => {
-      for (const entry of readdirSync(dir, { withFileTypes: true })) {
-        const full = join(dir, entry.name);
-        if (entry.isDirectory()) {
-          if (entry.name === 'node_modules' || entry.name === 'dist') continue;
-          walk(full);
-          continue;
-        }
-        if (!entry.isFile() || !full.endsWith('.ts') || full.endsWith('.test.ts')) continue;
-        const source = readFileSync(full, 'utf8');
-        if (/^export const LIST_PAYLOAD_BUDGET_CHARS\s*=/m.test(source)) constantDefiners.push(full);
-        if (/^export function applyListPayloadBudget\b/m.test(source)) helperDefiners.push(full);
-      }
-    };
-    walk(srcRoot);
-    expect(constantDefiners).toEqual([storeModule]);
-    expect(helperDefiners).toEqual([storeModule]);
-
-    // …and both transports reach for THAT one, from this module. `[^}]*`
-    // cannot cross a closing brace, so each match is one import statement.
-    for (const transport of transports) {
-      const source = readFileSync(transport, 'utf8');
-      expect(source).toMatch(/import\s*\{[^}]*\bapplyListPayloadBudget\b[^}]*\}\s*from\s*'[^']*store\.js'/);
-    }
-    // The one thing the two doors deliberately DO NOT share: the per-item
-    // measure, because they do not write the same bytes (compact tool result
-    // vs 2-space-indented stdout).
-    expect(readFileSync(transports[0] as string, 'utf8')).toContain('measureCompactItemChars');
-    expect(readFileSync(transports[1] as string, 'utf8')).toContain('measurePrettyItemChars');
   });
 });
 

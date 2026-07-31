@@ -32,6 +32,24 @@
 // advertises the `tools` capability as soon as a tool registers; that is
 // protocol state on the in-memory server object, not a side effect.)
 //
+// Payload discipline (record_read): this transport — not the store — is where
+// the record read becomes BOUNDED. The record is APPEND-ONLY, so an unbounded
+// read grows monotonically forever; measured on this project's own record it
+// is already ~3.08M characters (~770k tokens), ~45x the payload that once blew
+// a client's per-tool-result cap. `record_read` therefore returns SUMMARY rows
+// (every field except the prose body, plus a derived `content_length`), at
+// most `limit` of them per call with an opaque `next_cursor` to resume from,
+// AND at most `LIST_PAYLOAD_BUDGET_CHARS` characters of serialized rows
+// (transport/payload-budget.ts — the ONE budget the CLI's `read --json`
+// enforces too; this file only supplies the compact per-item measure matching
+// what the SDK actually writes). All three are needed: projection alone still
+// leaves `scope="finding"` at ~70k characters, and a count of rows is not a
+// bound on bytes. `include_content: true` opts the body back in, and
+// `record_read(id, include_content: true)` is the by-id retrieval path — a
+// SELECTION filter, not a fourth verb: the ratified surface stays exactly
+// record_append / record_read / record_decision. The paging machinery itself
+// is record/read-page.ts, shared with the CLI so the two doors cannot drift.
+//
 // Parameter schemas: the repo ships zero runtime dependencies beyond the MCP
 // SDK, and `zod` is the SDK's own dependency, not the plugin's. Rather than
 // add a dependency, the parameter schemas are derived from real zod instances
@@ -45,14 +63,23 @@ import { join } from 'node:path';
 
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
-import { CursorSchema, ProgressSchema } from '@modelcontextprotocol/sdk/types.js';
+import { CursorSchema, ProgressSchema, ToolAnnotationsSchema } from '@modelcontextprotocol/sdk/types.js';
 
 import { loadConfig } from '../config/ideate-config.js';
 import type { ToolRegistrar } from '../server.js';
 import { TelemetryCounters } from '../telemetry/counters.js';
+import { LIST_PAYLOAD_BUDGET_CHARS, measureCompactItemChars } from '../transport/payload-budget.js';
 import type { Clock } from './id.js';
 import { createUlidGenerator, isUlid } from './id.js';
+import {
+  DEFAULT_RECORD_READ_LIMIT,
+  MAX_RECORD_READ_LIMIT,
+  boundRecordPage,
+  projectRecordRow,
+  readRecordPage,
+} from './read-page.js';
 import type { RecordReference } from './schema.js';
+import { RecordSchemaError } from './schema.js';
 import { RecordStore } from './store.js';
 import type { AppendResult } from './store.js';
 
@@ -62,6 +89,10 @@ export const RECORD_TOOL_NAMES = ['record_append', 'record_read', 'record_decisi
 /** Real zod building blocks, borrowed from the SDK's own exported schemas. */
 const zString = CursorSchema; // a plain z.string()
 const zNumber = ProgressSchema.shape.progress; // a plain z.number()
+// `.unwrap()` peels the SDK's own `.optional()` off, leaving a plain
+// z.boolean() this file can re-decorate — the same borrow-don't-depend trick
+// as the two above.
+const zBoolean = ToolAnnotationsSchema.shape.readOnlyHint.unwrap();
 
 /** Options for the registrar factory — all defaulted at the composition edge. */
 export interface RecordToolsOptions {
@@ -168,8 +199,10 @@ function writeRecord(ctx: ToolContext, params: WriteParams): AppendResult {
   });
 }
 
-/** A malformed-`references` arg as a typed SCHEMA tool failure (never persists). */
-function referencesErrorResult(reason: string): CallToolResult {
+/** A malformed argument as a typed SCHEMA tool failure — the one error shape
+ *  every verb here uses (a bad `references` arg on the write verbs, which
+ *  never persists; a bad `cursor`/`limit` on the read verb). */
+function schemaErrorResult(reason: string): CallToolResult {
   return {
     content: [{ type: 'text', text: JSON.stringify({ ok: false, code: 'SCHEMA', reason }) }],
     isError: true,
@@ -256,7 +289,7 @@ export function createRecordToolsRegistrar(options: RecordToolsOptions = {}): To
       async (args): Promise<CallToolResult> => {
         const ctx = getContext();
         const refs = referencesFromArgs(args.supersedes, args.references);
-        if ('error' in refs) return referencesErrorResult(refs.error);
+        if ('error' in refs) return schemaErrorResult(refs.error);
         // Tier A capture write — unconditional; no parameter gates it.
         const result = writeRecord(ctx, {
           kind: args.kind,
@@ -275,27 +308,79 @@ export function createRecordToolsRegistrar(options: RecordToolsOptions = {}): To
       'record_read',
       {
         description:
-          'Read process records: newest first, optionally scope-filtered (plain substring selection over ' +
-          'scope/kind/source fields), optionally limited. Unranked by contract — selection only, no scoring. ' +
-          'Each record carries its forward `references` and its DERIVED `referenced_by` backlinks, so a superseded ' +
-          'record shows what superseded it.',
+          'Read process records: newest first, optionally filtered by scope (plain substring selection over ' +
+          'scope/kind/source fields) or by exact id. Unranked by contract — selection only, no scoring. ' +
+          'SUMMARY ROWS BY DEFAULT: each row carries every field EXCEPT the prose body — id, kind, claim, scope, ' +
+          'verification_anchor, source, references, referenced_by — plus content_length, the body length in ' +
+          'characters. To read a body, pass include_content: true; to read ONE record in full, pass its id with ' +
+          'include_content: true (that pair IS the by-id fetch — there is no separate get verb). ' +
+          `PAGED: at most \`limit\` rows per call (default ${String(DEFAULT_RECORD_READ_LIMIT)}, clamped into ` +
+          `1..${String(MAX_RECORD_READ_LIMIT)}); the result carries next_cursor — a string when more matching ` +
+          'records exist, null on the last page. A page may also come back SHORTER than `limit` to stay within a ' +
+          `payload budget (roughly ${String(LIST_PAYLOAD_BUDGET_CHARS)} characters of rows, which include_content ` +
+          'reaches quickly), so never read a short page as exhaustion: follow next_cursor, which is non-null ' +
+          'whenever records remain for ANY reason and null ONLY at true exhaustion. Pass it back as `cursor` to ' +
+          'get the next page. The cursor is OPAQUE (never construct or parse one; a malformed cursor is a typed ' +
+          'SCHEMA error, never an empty page) and is tied to the filter it was issued for — walk one filter to ' +
+          'exhaustion before changing it. THERE IS NO "RETURN EVERYTHING": absence of `limit` means the default ' +
+          'page, and the record FILES on disk are the durable export surface for a consumer that genuinely needs ' +
+          'the whole store. Each row also carries its DERIVED referenced_by backlinks — computed over the WHOLE ' +
+          'record, so a backlink from a record on another page still appears, and a superseded record still shows ' +
+          'what replaced it.',
         inputSchema: {
           scope: zString
             .describe('Case-insensitive substring filter matched against scope, kind, and source fields.')
             .optional(),
-          limit: zNumber.int().min(0).describe('Maximum number of records returned (newest first).').optional(),
+          id: zString
+            .describe('EXACT record id (ULID). Selects that one record; combine with include_content for the by-id fetch.')
+            .optional(),
+          include_content: zBoolean
+            .describe('Return the prose body on every row (default false — summary rows). content_length is present either way, and paging applies regardless.')
+            .optional(),
+          limit: zNumber
+            .int()
+            .describe(`Maximum rows in this page. Default ${String(DEFAULT_RECORD_READ_LIMIT)}; clamped into 1..${String(MAX_RECORD_READ_LIMIT)}.`)
+            .optional(),
+          cursor: zString
+            .describe('Opaque resumption point: the next_cursor from the previous page. Invalidated by changing any filter.')
+            .optional(),
         },
       },
       async (args): Promise<CallToolResult> => {
         const ctx = getContext();
-        // readViews attaches derived `referenced_by` backlinks (e.g. superseded_by).
-        const records = ctx.store.readViews({
-          ...(args.scope === undefined ? {} : { scope: args.scope }),
-          ...(args.limit === undefined ? {} : { limit: args.limit }),
-        });
-        return {
-          content: [{ type: 'text', text: JSON.stringify({ ok: true, count: records.length, records }) }],
-        };
+        try {
+          // The DEFAULT page size, the clamp and the cursor contract all live
+          // in read-page.ts, shared with the CLI — never in the store, whose
+          // absent-limit behavior stays "every matching record" for internal
+          // callers (context/assemble-prototype.ts). readViews attaches the
+          // derived `referenced_by` backlinks (e.g. superseded_by).
+          const page = readRecordPage(ctx.store, {
+            ...(args.scope === undefined ? {} : { scope: args.scope }),
+            ...(args.id === undefined ? {} : { id: args.id }),
+            ...(args.limit === undefined ? {} : { limit: args.limit }),
+            ...(args.cursor === undefined ? {} : { cursor: args.cursor }),
+          });
+          const rows = page.records.map((view) => projectRecordRow(view, args.include_content === true));
+          // …and the payload BUDGET on top of the count limit: `limit` bounds
+          // the row COUNT, this bounds the characters those rows serialize to.
+          // The COMPACT measure is the right one here — the SDK writes this
+          // result as `JSON.stringify(body)` with no indent.
+          const bounded = boundRecordPage({ records: rows, next_cursor: page.next_cursor }, measureCompactItemChars);
+          return {
+            content: [
+              {
+                type: 'text',
+                text: JSON.stringify({ ok: true, records: bounded.records, next_cursor: bounded.next_cursor }),
+              },
+            ],
+          };
+        } catch (err) {
+          // A malformed cursor or limit is THIS seam's typed error (never the
+          // board's WorkStateError — GP-26). Anything else is genuinely
+          // unexpected and re-thrown to the SDK's own error handling.
+          if (err instanceof RecordSchemaError) return schemaErrorResult(err.message);
+          throw err;
+        }
       },
     );
 
@@ -322,7 +407,7 @@ export function createRecordToolsRegistrar(options: RecordToolsOptions = {}): To
       async (args): Promise<CallToolResult> => {
         const ctx = getContext();
         const refs = referencesFromArgs(args.supersedes, args.references);
-        if ('error' in refs) return referencesErrorResult(refs.error);
+        if ('error' in refs) return schemaErrorResult(refs.error);
         // Capture write — the SAME code path as record_append
         // (the write is the capture), unconditional.
         const result = writeRecord(ctx, {

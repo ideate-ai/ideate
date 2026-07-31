@@ -13,10 +13,10 @@
 // All filesystem work happens in mkdtemp dirs — the real .ideate/ is never
 // touched.
 
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { DEFAULT_RECORD_PATH, V3_SCHEMA_VERSION, recordPath } from '../config/ideate-config.js';
 import type { IdeateConfigV3 } from '../config/ideate-config.js';
@@ -40,6 +40,7 @@ function makeTempDir(prefix: string): string {
 }
 
 afterEach(() => {
+  vi.restoreAllMocks();
   while (permRestores.length > 0) {
     const dir = permRestores.pop();
     if (dir !== undefined) chmodSync(dir, 0o755);
@@ -497,6 +498,120 @@ describe('readViews: derived backlinks, never stored (append-only reverse edges)
     expect(viewB?.referenced_by).toEqual([{ rel: 'supersedes', id: c.record.id }]);
     // C is the newest link — no backlinks of its own.
     expect(viewC?.referenced_by).toEqual([]);
+  });
+});
+
+describe('id + before_id: exact selection and the keyset boundary (paging is selection, not ranking)', () => {
+  /** Five records across two month shards, oldest → newest. */
+  function seedFive(fx: Fixture): string[] {
+    const ids: string[] = [];
+    for (const [i, iso] of [
+      '2026-05-01T00:00:00.000Z',
+      '2026-05-02T00:00:00.000Z',
+      '2026-06-01T00:00:00.000Z',
+      '2026-06-02T00:00:00.000Z',
+      '2026-07-01T00:00:00.000Z',
+    ].entries()) {
+      fx.setNow(iso);
+      const result = fx.store.append(input({ claim: `record ${String(i)}` }));
+      if (!result.ok) throw new Error('seed failed');
+      ids.push(result.record.id);
+    }
+    return ids;
+  }
+
+  it('the ULID id alone is a total order: the newest-first walk is exactly id-descending', () => {
+    const fx = makeFixture();
+    const ids = seedFive(fx);
+    const walked = fx.store.read().map((r) => r.id);
+    expect(walked).toEqual([...ids].reverse());
+    // …and that order is the same one a plain lexicographic sort produces, which
+    // is WHY a single id is a complete page boundary.
+    expect(walked).toEqual([...walked].sort().reverse());
+  });
+
+  it('id selects exactly that one record — an exact match, never a substring one', () => {
+    const fx = makeFixture();
+    const ids = seedFive(fx);
+    const target = ids[2] as string;
+    expect(fx.store.read({ id: target }).map((r) => r.id)).toEqual([target]);
+    // A truncated id is not a prefix match: it selects nothing.
+    expect(fx.store.read({ id: target.slice(0, 20) })).toEqual([]);
+    // …and neither does the scope filter treat an id as a haystack.
+    expect(fx.store.read({ scope: target })).toEqual([]);
+  });
+
+  it('before_id selects strictly older records, so a walk covers every record exactly once', () => {
+    const fx = makeFixture();
+    const ids = seedFive(fx);
+    const newestFirst = [...ids].reverse();
+    const seen: string[] = [];
+    let cursor: string | undefined;
+    for (;;) {
+      const page = fx.store.read({ limit: 2, ...(cursor === undefined ? {} : { before_id: cursor }) });
+      if (page.length === 0) break;
+      // The boundary is STRICT: the cursor record itself never repeats.
+      if (cursor !== undefined) expect(page.map((r) => r.id)).not.toContain(cursor);
+      seen.push(...page.map((r) => r.id));
+      cursor = page.at(-1)?.id;
+    }
+    expect(seen).toEqual(newestFirst);
+    expect(new Set(seen).size).toBe(ids.length);
+  });
+
+  it('the id selector answers from the FILENAME: a file that is not the target is never opened', () => {
+    const fx = makeFixture();
+    const ids = seedFive(fx);
+    // Corrupt the OLDEST record's file in place. Reading it would emit the
+    // unparseable-file warning, which is what makes "was it opened?" observable.
+    const corrupt = join(fx.recordDir, '2026', '05', `${ids[0] as string}.md`);
+    writeFileSync(corrupt, 'not a record at all', 'utf8');
+    const warn = vi.spyOn(process, 'emitWarning').mockImplementation(() => undefined);
+
+    // Asking for the NEWEST record by id: every older file is below the target
+    // in the walk and can neither be it nor reference it, so none is read.
+    expect(fx.store.read({ id: ids[4] as string }).map((r) => r.id)).toEqual([ids[4]]);
+    expect(fx.store.readViews({ id: ids[4] as string }).map((r) => r.id)).toEqual([ids[4]]);
+    expect(warn).not.toHaveBeenCalled();
+
+    // The same store, walked unfiltered, DOES open it — proving the file was in
+    // the walk's path all along and the silence above was the skip, not luck.
+    fx.store.read();
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('skipping unparseable record file'), expect.anything());
+  });
+
+  it('readViews keeps backlinks COMPLETE across a page boundary (a referrer on an earlier page still shows up)', () => {
+    const fx = makeFixture();
+    // A cross-page edge, built synthetically because no record in the live
+    // store carries a typed edge: the OLDEST record is superseded by the
+    // NEWEST one, so any page size > 1 puts the two on different pages.
+    fx.setNow('2026-05-01T00:00:00.000Z');
+    const target = fx.store.append(input({ claim: 'the original' }));
+    if (!target.ok) throw new Error('seed failed');
+    for (const iso of ['2026-05-02T00:00:00.000Z', '2026-06-01T00:00:00.000Z']) {
+      fx.setNow(iso);
+      fx.store.append(input({ claim: 'filler' }));
+    }
+    fx.setNow('2026-07-01T00:00:00.000Z');
+    const referrer = fx.store.append(
+      input({ claim: 'the replacement', references: [{ rel: 'supersedes', id: target.record.id }] }),
+    );
+    if (!referrer.ok) throw new Error('seed failed');
+
+    // Page 1 carries the referrer; the target lands on page 2, whose read
+    // starts BELOW the referrer's id — and still sees the backlink, because the
+    // referrer map is built from every record above the boundary.
+    const page1 = fx.store.readViews({ limit: 2 });
+    expect(page1.map((v) => v.id)).toEqual([referrer.record.id, page1[1]?.id]);
+    const page2 = fx.store.readViews({ limit: 2, before_id: page1.at(-1)?.id as string });
+    const targetView = page2.find((v) => v.id === target.record.id);
+    expect(targetView?.referenced_by).toEqual([{ rel: 'supersedes', id: referrer.record.id }]);
+    // …identical to what the unpaged read reports, which is the whole claim.
+    expect(fx.store.readViews().find((v) => v.id === target.record.id)?.referenced_by).toEqual(
+      targetView?.referenced_by,
+    );
+    // The by-id fetch of the same record is equally complete.
+    expect(fx.store.readViews({ id: target.record.id })[0]?.referenced_by).toEqual(targetView?.referenced_by);
   });
 });
 

@@ -3,11 +3,13 @@
 // Design goal: minimal read/write verbs. Keep the surface tiny, with lean,
 // strict contracts:
 //
-//   - `steering_read`  — SELECTION only (by domain / status / kind). Substring
-//     + exact-field filters. No scoring, no ranking — ranking is the
+//   - `steering_read`  — SELECTION only (by id / domain / status / kind).
+//     Substring + exact-field filters. No scoring, no ranking — ranking is the
 //     assembler's job over the selected set, never the store's. Each item
 //     carries its forward `references` and its DERIVED `referenced_by`
-//     backlinks (e.g. `superseded_by`).
+//     backlinks (e.g. `superseded_by`). BOUNDED: projected (no `history` by
+//     default), keyset-paged over `(updated_at, id)`, and capped by the shared
+//     payload budget — see below.
 //   - `steering_put`   — create-or-amend ONE item. On amend, the prior version
 //     is appended to `amendment_history` and status may flip; no hard delete
 //     (deprecate via status). This is the one mutable verb. A `supersedes`
@@ -34,26 +36,60 @@
 // Parameter schemas reuse the SDK's own exported zod instances (CursorSchema =
 // z.string(), ProgressSchema.shape.progress = z.number()), exactly as
 // record/tools.ts does, so no zod dependency is added to the plugin.
+//
+// BOUNDING `steering_read` — three bounds, all at THIS door. Unbounded, the
+// verb returned every item with its full amendment trail in one result: 55,997
+// characters over this project's own 103-item store, already past the 40,000
+// character payload budget the board adopted, and the skills call it with NO
+// arguments at all (skills/refine, skills/init), so "just require a filter" was
+// never an option. The three bounds are (1) a PROJECTION — `history` omitted,
+// `history_length` kept, `include_history` to opt back in; (2) KEYSET PAGING
+// over `(updated_at, id)` with a default `limit` applied HERE, never in the
+// store (see DEFAULT_STEERING_READ_LIMIT — the store's unbounded read is what
+// context/assemble-prototype.ts's supersession sweep depends on); and (3) the
+// SHARED payload budget (transport/payload-budget.ts), which can close a page
+// short of `limit`. The `statement` is deliberately NOT projectable: it is
+// two-thirds of the payload, but the statement IS the rule, so paging and the
+// budget — not projection — are what actually bound this read.
 
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
-import { CursorSchema } from '@modelcontextprotocol/sdk/types.js';
+import { CursorSchema, ProgressSchema, ToolAnnotationsSchema } from '@modelcontextprotocol/sdk/types.js';
 
 import type { ToolRegistrar } from '../server.js';
 import type { Clock } from '../record/id.js';
-import { STEERING_STATUSES, isSteeringId } from './schema.js';
-import type { SteeringReference, SteeringStatus } from './schema.js';
-import { SteeringStore } from './store.js';
-import type { PutResult, SteeringReadOptions } from './store.js';
+import { LIST_PAYLOAD_BUDGET_CHARS, applyListPayloadBudget, measureCompactItemChars } from '../transport/payload-budget.js';
+import { STEERING_STATUSES, SteeringSchemaError, isSteeringId } from './schema.js';
+import type { SteeringAmendment, SteeringReference, SteeringStatus } from './schema.js';
+import { MAX_STEERING_READ_LIMIT, SteeringStore } from './store.js';
+import type { PutResult, SteeringItemView, SteeringPageOptions, SteeringReadOptions } from './store.js';
 
 /** The complete steering tool surface — two verbs, one mutable, no hard delete. */
 export const STEERING_TOOL_NAMES = ['steering_read', 'steering_put'] as const;
 
 /** Real zod string, borrowed from the SDK's own exported schema. */
 const zString = CursorSchema; // a plain z.string()
+/** …and a real zod number/boolean, from the SDK's own exported schemas
+ *  (record/tools.ts and work-state/tools.ts borrow the same two), so the plugin
+ *  still adds no zod dependency of its own. */
+const zNumber = ProgressSchema.shape.progress; // a plain z.number()
+const zBoolean = ToolAnnotationsSchema.shape.readOnlyHint.unwrap(); // a plain z.boolean()
+
+/**
+ * The DEFAULT page size for `steering_read`, applied HERE at the transport and
+ * NOWHERE else. This is the single most load-bearing placement decision in the
+ * bounded read: `SteeringStore.readViews()` with no page options still returns
+ * EVERY item, which is exactly what context/assemble-prototype.ts's steering
+ * sweep needs — it derives `supersedes` backlinks across the whole set and
+ * emits superseded-candidate entries, so a default parked in the store would
+ * silently truncate that sweep and destroy supersession detection with no
+ * error anywhere. The MCP verb is the only door that needs bounding (there is
+ * no steering CLI), so the default lives at that door.
+ */
+export const DEFAULT_STEERING_READ_LIMIT = 100;
 
 /** Options for the registrar factory — all defaulted at the composition edge. */
 export interface SteeringToolsOptions {
@@ -177,12 +213,52 @@ function referencesFromArgs(
   return { refs };
 }
 
-/** A malformed-`references` arg as a typed SCHEMA tool failure (never persists). */
-function referencesErrorResult(reason: string): CallToolResult {
+/**
+ * A malformed ARGUMENT as a typed SCHEMA tool failure — a bad `references`
+ * payload on put (which never persists), or a bad `limit`/`cursor` on read.
+ * One shape for both verbs so a caller sees one failure taxonomy.
+ */
+function schemaErrorResult(reason: string): CallToolResult {
   return {
     content: [{ type: 'text', text: JSON.stringify({ ok: false, code: 'SCHEMA', reason }) }],
     isError: true,
   };
+}
+
+/**
+ * One row of `steering_read`'s PROJECTED page: the full item view minus the
+ * amendment trail, plus `history_length`, with `history` restored only when
+ * the caller opted in.
+ */
+export type SteeringReadRow = Omit<SteeringItemView, 'history'> & { history_length: number; history?: SteeringAmendment[] };
+
+/**
+ * Project one item for the wire: DROP `history` unless asked for, and always
+ * report `history_length`.
+ *
+ * WHY drop it by default. `history` is the only term of a steering item that
+ * grows without bound — every `put` pushes the prior `{at, status, statement}`
+ * (store.ts), and a statement averages a few hundred characters, so a store
+ * whose rules have each been amended a handful of times carries several times
+ * its own live text in superseded text. Measured on this project's 103-item
+ * store the trail is only 686 characters TODAY (exactly one amendment exists),
+ * which is precisely why the guard is cheap to take now: there is almost no
+ * amendment trail to migrate around. The statement itself is NOT projectable —
+ * the statement IS the rule — so paging plus the payload budget is what
+ * actually bounds this read; dropping `history` is the forward guard, not the
+ * fix.
+ *
+ * WHY `history_length` is present in BOTH modes rather than only when history
+ * is omitted: it is the board's `spec_length` precedent exactly — a projected
+ * read must still let a reader tell an AMENDED rule from a virgin one (and
+ * decide whether the trail is worth a second call), and a field that appears
+ * and disappears with a flag is a field callers write conditionals around. It
+ * costs ~18 characters per row, under 5% of a full page, against a `history`
+ * key that is unbounded.
+ */
+function projectSteeringView(item: SteeringItemView, includeHistory: boolean): SteeringReadRow {
+  const { history, ...rest } = item;
+  return { ...rest, history_length: history.length, ...(includeHistory ? { history } : {}) };
 }
 
 /**
@@ -206,28 +282,94 @@ export function createSteeringToolsRegistrar(options: SteeringToolsOptions = {})
       'steering_read',
       {
         description:
-          'Read steering items (guiding principles + policies): selection-only by domain (substring), status, and kind. ' +
+          'Read steering items (guiding principles + policies): selection-only by id (exact), domain (substring), status, and kind. ' +
           'Unranked by contract — no scoring; ranking is the assembler’s job over the selected set. ' +
           'Each item carries its forward `references` and its DERIVED `referenced_by` backlinks, so a superseded ' +
-          'item shows what superseded it. Gated OFF by default (GP-23).',
+          'item shows what superseded it. PROJECTED BY DEFAULT: the `history` amendment trail is OMITTED and every item ' +
+          'instead carries history_length (how many prior versions exist, 0 for a never-amended item) — set ' +
+          'include_history: true to get the trail back. To retrieve ONE item in full, pass its id (exact match) with ' +
+          'include_history: true. PAGED: at most `limit` items per call (default ' +
+          `${String(DEFAULT_STEERING_READ_LIMIT)}, clamped into 1..${String(MAX_STEERING_READ_LIMIT)}` +
+          '), newest-updated first (updated_at descending, id ascending as the tie-break); the result is ' +
+          '{ok, items, next_cursor} — next_cursor is a string when more matching items remain and null ONLY at true ' +
+          'exhaustion, so exhausting a selection means following next_cursor, passing it back as `cursor`, until it is ' +
+          'null. A page may also be SHORTER than `limit` to stay within a payload size budget (roughly ' +
+          `${String(LIST_PAYLOAD_BUDGET_CHARS)}` +
+          ' characters of items — a page of steering statements reaches it well before 100 items), so never read a ' +
+          'short page as "done". The cursor is OPAQUE (never construct or parse one; a malformed cursor is a typed ' +
+          'SCHEMA error, never an empty page) and is tied to the filters it was issued for — changing id/domain/status/kind ' +
+          'between pages invalidates it. CAVEAT (P-52): steering items are MUTABLE and every steering_put restamps ' +
+          'updated_at, which is the field this order and cursor are keyed on — amending an item part-way through a ' +
+          'walk moves it to the front of the order, so a not-yet-reached item can be pushed past your cursor and ' +
+          'missed by that walk. Re-run a walk that must not miss an amendment. Gated OFF by default (GP-23).',
         inputSchema: {
+          id: zString.describe('Exact item id (e.g. GP-21) — the by-id retrieval path; pair with include_history for the full item.').optional(),
           domain: zString.describe('Case-insensitive substring filter matched against the item domain.').optional(),
           status: zString.describe(`Exact lifecycle status filter: ${STEERING_STATUSES.join(' | ')}.`).optional(),
           kind: zString.describe('Exact kind filter: guiding-principle | policy | …').optional(),
+          include_history: zBoolean
+            .describe('Include the full `history` amendment trail on every returned item (default false — history_length is present either way, and paging applies regardless).')
+            .optional(),
+          limit: zNumber
+            .int()
+            .describe(`Maximum items in this page. Default ${String(DEFAULT_STEERING_READ_LIMIT)}; clamped into 1..${String(MAX_STEERING_READ_LIMIT)}.`)
+            .optional(),
+          cursor: zString
+            .describe('Opaque resumption point: the next_cursor from the previous page. Invalidated by changing any filter.')
+            .optional(),
         },
       },
       async (args): Promise<CallToolResult> => {
         const projectRoot = options.projectRoot ?? process.cwd();
+        // THE GATE STAYS FIRST — ahead of argument validation, cursor decoding
+        // and any store touch. A gated project must not be able to learn
+        // anything from an error message (not even that its cursor was
+        // malformed), and must never cause the steering directory to be
+        // created just by calling with bad arguments.
         if (!readSteeringEnabledFlag(projectRoot)) return gatedResult();
         const status = normalizeStatus(args.status);
         const read: SteeringReadOptions = {
+          ...(args.id === undefined ? {} : { id: args.id }),
           ...(args.domain === undefined ? {} : { domain: args.domain }),
           ...(status === undefined ? {} : { status }),
           ...(args.kind === undefined ? {} : { kind: args.kind }),
         };
-        // readViews attaches derived `referenced_by` backlinks (e.g. superseded_by).
-        const items = getStore(projectRoot).readViews(read);
-        return { content: [{ type: 'text', text: JSON.stringify({ ok: true, count: items.length, items }) }] };
+        // The DEFAULT page size is applied HERE, at the transport boundary —
+        // never in the store, whose absent-limit behavior stays "every matching
+        // item" for the in-repo sweep (context/assemble-prototype.ts, which
+        // needs every item to derive supersession). Clamping and cursor
+        // decoding stay in the store, beside the order they are predicates on.
+        const page: SteeringPageOptions = {
+          limit: args.limit ?? DEFAULT_STEERING_READ_LIMIT,
+          ...(args.cursor === undefined ? {} : { cursor: args.cursor }),
+        };
+        try {
+          // readViewsPage attaches derived `referenced_by` backlinks (e.g.
+          // superseded_by) from the WHOLE store, then takes one keyset page.
+          const raw = getStore(projectRoot).readViewsPage(read, page);
+          // PROJECT before BUDGETING: the budget must measure the bytes this
+          // transport actually writes, and the projection is what decides them.
+          const projected = raw.items.map((item) => projectSteeringView(item, args.include_history === true));
+          // …and the payload BUDGET on top: `limit` bounds the item COUNT, this
+          // bounds the characters those items serialize to (transport/
+          // payload-budget.ts — ONE budget, ONE implementation, shared with the
+          // board's doors). A page shortened here still carries an honest
+          // next_cursor, rebuilt from its last included row — over `updated_at`,
+          // this store's sort key, which is why the key is passed explicitly.
+          // The COMPACT measure is the right one: the SDK writes this result as
+          // `JSON.stringify(body)` with no indent.
+          const result = applyListPayloadBudget({ items: projected, next_cursor: raw.next_cursor }, measureCompactItemChars, (item) => item.updated_at);
+          // NO `count`: under paging it would read as "how many there are" but
+          // could only mean "how many on this page" — items.length already says
+          // that, and next_cursor is the only honest answer to "is there more".
+          return { content: [{ type: 'text', text: JSON.stringify({ ok: true, items: result.items, next_cursor: result.next_cursor }) }] };
+        } catch (err) {
+          // A malformed limit/cursor is THIS seam's typed error
+          // (SteeringSchemaError, never the board's WorkStateError — GP-26),
+          // surfaced as a typed SCHEMA failure rather than a silent empty page.
+          if (err instanceof SteeringSchemaError) return schemaErrorResult(err.message);
+          throw err;
+        }
       },
     );
 
@@ -258,7 +400,7 @@ export function createSteeringToolsRegistrar(options: SteeringToolsOptions = {})
         if (!readSteeringEnabledFlag(projectRoot)) return gatedResult();
         const status = normalizeStatus(args.status);
         const refs = referencesFromArgs(args.supersedes, args.references);
-        if ('error' in refs) return referencesErrorResult(refs.error);
+        if ('error' in refs) return schemaErrorResult(refs.error);
         // Only pass an edge list when an edge ARG was supplied — otherwise an
         // absent-args put would materialize as `references: []` and CLEAR a
         // prior item's edges on amend (absent = carry-prior is the contract).

@@ -19,9 +19,10 @@
 // SQL-computed `spec_length` instead) and at most `DEFAULT_LIST_LIMIT` items
 // per call unless the caller asks otherwise, with an opaque `next_cursor` to
 // resume from — AND at most `LIST_PAYLOAD_BUDGET_CHARS` characters of
-// serialized items (store.ts's `applyListPayloadBudget`, the ONE budget the
-// CLI's `list --json` enforces too — this file only supplies the compact
-// per-item measure matching what the SDK actually writes), because a count of
+// serialized items (transport/payload-budget.ts's `applyListPayloadBudget`,
+// the ONE budget the CLI's `list --json` enforces too — this file only
+// supplies the compact per-item measure matching what the SDK actually
+// writes), because a count of
 // items is not a bound on bytes (100
 // summary rows, or a handful of `include_spec: true` ones, can each exceed the
 // payload that blew the client's token cap in the first place).
@@ -100,6 +101,11 @@ import { loadConfig, workStatePath } from '../config/ideate-config.js';
 import type { Clock } from '../record/id.js';
 import { createUlidGenerator, isUlid } from '../record/id.js';
 import { TelemetryCounters } from '../telemetry/counters.js';
+import {
+  LIST_PAYLOAD_BUDGET_CHARS,
+  applyListPayloadBudget,
+  measureCompactItemChars,
+} from '../transport/payload-budget.js';
 import type { ToolRegistrar } from '../server.js';
 import { claim, complete, release, renew } from './claims.js';
 import { createRealCompletionRecordWriter } from './completion-record.js';
@@ -108,11 +114,8 @@ import { checkExpiry } from './expiry.js';
 import { primeOnClaim } from './priming-hook.js';
 import {
   DEFAULT_LIST_LIMIT,
-  LIST_PAYLOAD_BUDGET_CHARS,
   MAX_LIST_LIMIT,
   WorkStateStore,
-  applyListPayloadBudget,
-  measureCompactItemChars,
 } from './store.js';
 import type { ListItemsFilter, ListPageOptions } from './store.js';
 import { WorkStateError, WorkStateModuleError } from './types.js';
@@ -448,7 +451,7 @@ export function createWorkStateToolsRegistrar(options: WorkStateToolsOptions = {
           };
           // …and the payload BUDGET is applied on top of it: `limit` bounds
           // the item COUNT, this bounds the characters those items serialize
-          // to (see store.ts's LIST_PAYLOAD_BUDGET_CHARS — ONE budget and ONE
+          // to (see transport/payload-budget.ts — ONE budget and ONE
           // implementation, shared with the CLI's `list --json`). A page
           // shortened here still carries an honest next_cursor, built from its
           // last included row. The COMPACT measure is the right one here: the

@@ -23,6 +23,8 @@ import { DEFAULT_RECORD_PATH } from '../config/ideate-config.js';
 import { isUlid } from '../record/id.js';
 import { parseRecord } from '../record/schema.js';
 import type { ProcessRecord } from '../record/schema.js';
+import { DEFAULT_RECORD_READ_LIMIT } from '../record/read-page.js';
+import { LIST_PAYLOAD_BUDGET_CHARS } from '../transport/payload-budget.js';
 import { DEFAULT_PRIME_BUDGET, DIGEST_FRAME_CLOSE, DIGEST_FRAME_OPEN, MAX_PRIME_BUDGET } from './ideate-record.js';
 
 const PLUGIN_DIR = fileURLToPath(new URL('../..', import.meta.url));
@@ -230,28 +232,130 @@ describe('append (direct-use path)', () => {
 });
 
 describe('read (direct-use path)', () => {
+  /** One `--json` page, as the CLI writes it. */
+  interface JsonPage {
+    records: Array<{
+      id: string;
+      claim: string;
+      content?: string;
+      content_length: number;
+      references: { rel: string; id: string }[];
+      referenced_by: { rel: string; id: string }[];
+    }>;
+    next_cursor: string | null;
+  }
+
+  function readJson(root: string, args: string[] = []): JsonPage {
+    return JSON.parse(runCli(['read', '--json', ...args], { cwd: root })) as JsonPage;
+  }
+
   it('round-trips appended records, newest first, honoring --limit and --scope', () => {
     const root = makeProjectRoot();
     appendRecord(root, 'First claim about the backend.', ['--scope', 'backend']);
     appendRecord(root, 'Second claim about the frontend.', ['--scope', 'frontend']);
 
-    const all = JSON.parse(runCli(['read', '--json'], { cwd: root })) as ProcessRecord[];
-    expect(all).toHaveLength(2);
-    expect(all[0]?.claim).toBe('Second claim about the frontend.'); // newest first
-    expect(all[1]?.claim).toBe('First claim about the backend.');
-    expect(all[0]?.content).toBe('Prose body for: Second claim about the frontend.');
+    const all = readJson(root);
+    expect(all.records).toHaveLength(2);
+    expect(all.records[0]?.claim).toBe('Second claim about the frontend.'); // newest first
+    expect(all.records[1]?.claim).toBe('First claim about the backend.');
+    // SUMMARY rows: no body, but its length is always reported.
+    expect(all.records[0]?.content).toBeUndefined();
+    expect(all.records[0]?.content_length).toBe('Prose body for: Second claim about the frontend.'.length);
+    // Everything fits, so the walk is over.
+    expect(all.next_cursor).toBeNull();
 
-    const limited = JSON.parse(runCli(['read', '--json', '--limit', '1'], { cwd: root })) as ProcessRecord[];
-    expect(limited).toHaveLength(1);
-    expect(limited[0]?.claim).toBe('Second claim about the frontend.');
+    const limited = readJson(root, ['--limit', '1']);
+    expect(limited.records).toHaveLength(1);
+    expect(limited.records[0]?.claim).toBe('Second claim about the frontend.');
+    expect(limited.next_cursor).toBeTypeOf('string');
 
-    const scoped = JSON.parse(runCli(['read', '--json', '--scope', 'backend'], { cwd: root })) as ProcessRecord[];
-    expect(scoped).toHaveLength(1);
-    expect(scoped[0]?.claim).toBe('First claim about the backend.');
+    const scoped = readJson(root, ['--scope', 'backend']);
+    expect(scoped.records).toHaveLength(1);
+    expect(scoped.records[0]?.claim).toBe('First claim about the backend.');
 
     const text = runCli(['read'], { cwd: root });
     expect(text).toContain('claim:  Second claim about the frontend.');
     expect(text).toContain('anchor: vitest.config.ts');
+  });
+
+  it('--include-content restores the bodies, and requires --json', () => {
+    const root = makeProjectRoot();
+    appendRecord(root, 'A claim with a body.');
+    const withBody = readJson(root, ['--include-content']);
+    expect(withBody.records[0]?.content).toBe('Prose body for: A claim with a body.');
+    expect(withBody.records[0]?.content_length).toBe('Prose body for: A claim with a body.'.length);
+
+    // Without --json it is a loud error, not a silent no-op (the human listing
+    // already prints every body).
+    const result = runCliRaw(['read', '--include-content'], { cwd: root });
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain('--include-content requires --json');
+  });
+
+  it('--id is the by-id fetch: exactly that record, its body behind --include-content', () => {
+    const root = makeProjectRoot();
+    const first = appendRecord(root, 'First claim.');
+    appendRecord(root, 'Second claim.');
+
+    const page = readJson(root, ['--id', first, '--include-content']);
+    expect(page.records).toHaveLength(1);
+    expect(page.records[0]?.id).toBe(first);
+    expect(page.records[0]?.content).toBe('Prose body for: First claim.');
+    expect(page.next_cursor).toBeNull();
+
+    // The human listing takes --id too, and stays unpaged.
+    const text = runCli(['read', '--id', first], { cwd: root });
+    expect(text).toContain('claim:  First claim.');
+    expect(text).not.toContain('Second claim.');
+  });
+
+  it('the human-readable listing is UNPAGED and full-bodied with no paging flags — `read | less` is unchanged', () => {
+    const root = makeProjectRoot();
+    // More records than the default page would carry.
+    for (let i = 0; i < DEFAULT_RECORD_READ_LIMIT + 5; i += 1) appendRecord(root, `Claim ${String(i)}.`);
+
+    const text = runCli(['read'], { cwd: root });
+    // Every record is present, bodies included, and nothing invites resumption.
+    expect(text).toContain('claim:  Claim 0.');
+    expect(text).toContain(`claim:  Claim ${String(DEFAULT_RECORD_READ_LIMIT + 4)}.`);
+    expect(text).toContain('Prose body for: Claim 0.');
+    expect(text).not.toContain('--cursor');
+
+    // …whereas --json is a PAGE, bounded by default — at most the default
+    // count, and in practice SHORTER, because the pretty-printed payload
+    // budget closes it first. Either way it is not the whole record, and the
+    // cursor says so.
+    const page = readJson(root);
+    expect(page.records.length).toBeLessThanOrEqual(DEFAULT_RECORD_READ_LIMIT);
+    expect(page.records.length).toBeGreaterThan(0);
+    expect(page.next_cursor).toBeTypeOf('string');
+    // The bound that matters is on the bytes this stream actually writes.
+    const json = runCli(['read', '--json'], { cwd: root });
+    expect(json.length).toBeLessThan(LIST_PAYLOAD_BUDGET_CHARS * 1.05);
+
+    // …and asking the human listing for a page prints the resume hint.
+    const paged = runCli(['read', '--limit', '2'], { cwd: root });
+    expect(paged).toContain('(more records — resume with --cursor ');
+  });
+
+  it('walking --cursor to exhaustion covers every record exactly once', () => {
+    const root = makeProjectRoot();
+    const ids: string[] = [];
+    for (let i = 0; i < 12; i += 1) ids.push(appendRecord(root, `Claim ${String(i)}.`));
+
+    const seen: string[] = [];
+    let cursor: string | null = null;
+    let pages = 0;
+    do {
+      const page: JsonPage = readJson(root, ['--limit', '5', ...(cursor === null ? [] : ['--cursor', cursor])]);
+      pages += 1;
+      seen.push(...page.records.map((r) => r.id));
+      cursor = page.next_cursor;
+      expect(pages).toBeLessThan(10);
+    } while (cursor !== null);
+
+    expect(seen).toEqual([...ids].reverse());
+    expect(new Set(seen).size).toBe(ids.length);
   });
 
   it('exits 1 on a malformed --limit', () => {
@@ -259,6 +363,17 @@ describe('read (direct-use path)', () => {
     const result = runCliRaw(['read', '--limit', 'ten'], { cwd: root });
     expect(result.status).toBe(1);
     expect(result.stderr).toContain('--limit must be a non-negative integer');
+  });
+
+  it('exits 1 on a malformed --cursor — never a silent empty page', () => {
+    const root = makeProjectRoot();
+    appendRecord(root, 'A claim.');
+    for (const cursor of ['not-a-cursor!!', 'e30=']) {
+      const result = runCliRaw(['read', '--json', '--cursor', cursor], { cwd: root });
+      expect(result.status).toBe(1);
+      expect(result.stderr).toContain('not a valid page cursor');
+      expect(result.stdout).toBe('');
+    }
   });
 
   it('renders forward edges and derived backlinks (supersedes / superseded-by)', () => {
@@ -270,11 +385,7 @@ describe('read (direct-use path)', () => {
     expect(text).toContain(`→ supersedes: ${oldId}`); // forward edge on the new record
     expect(text).toContain(`⚠ superseded by: ${newId}`); // derived backlink on the old record
 
-    const json = JSON.parse(runCli(['read', '--json'], { cwd: root })) as Array<{
-      id: string;
-      references: { rel: string; id: string }[];
-      referenced_by: { rel: string; id: string }[];
-    }>;
+    const json = readJson(root).records;
     const oldRec = json.find((r) => r.id === oldId);
     const newRec = json.find((r) => r.id === newId);
     // The backlink is DERIVED at read time — never written back to the old record's file.
@@ -282,6 +393,14 @@ describe('read (direct-use path)', () => {
     expect(oldRec?.references).toEqual([]);
     expect(newRec?.references).toEqual([{ rel: 'supersedes', id: oldId }]);
     expect(newRec?.referenced_by).toEqual([]);
+
+    // …and it survives a PAGE BOUNDARY: the referrer is on page 1, the
+    // superseded record on page 2, and the backlink still resolves.
+    const page1 = readJson(root, ['--limit', '1']);
+    expect(page1.records.map((r) => r.id)).toEqual([newId]);
+    const page2 = readJson(root, ['--limit', '1', '--cursor', page1.next_cursor as string]);
+    expect(page2.records.map((r) => r.id)).toEqual([oldId]);
+    expect(page2.records[0]?.referenced_by).toEqual([{ rel: 'supersedes', id: newId }]);
   });
 });
 

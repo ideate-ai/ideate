@@ -22,7 +22,8 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterEach, beforeAll, describe, expect, it } from 'vitest';
 
-import { DEFAULT_LIST_LIMIT, LIST_PAYLOAD_BUDGET_CHARS, MAX_LIST_LIMIT } from '../work-state/store.js';
+import { LIST_PAYLOAD_BUDGET_CHARS } from '../transport/payload-budget.js';
+import { DEFAULT_LIST_LIMIT, MAX_LIST_LIMIT } from '../work-state/store.js';
 
 const PLUGIN_DIR = fileURLToPath(new URL('../..', import.meta.url));
 const BIN_PATH = join(PLUGIN_DIR, 'bin', 'ideate-work');

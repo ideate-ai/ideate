@@ -13,7 +13,14 @@
 // Subcommands:
 //   append       — build one record and append it through the gated core;
 //                  prints the new record id.
-//   read         — unranked, scope-filtered, newest-first read passthrough.
+//   read         — unranked, filtered, newest-first read. `--json` is the
+//                  AGENT-facing door and is therefore BOUNDED exactly like the
+//                  MCP record_read tool: summary rows (no prose body, plus
+//                  content_length), a default page size, an opaque cursor, and
+//                  the shared payload budget — measured on the INDENTED bytes
+//                  this stream actually writes. The human-readable listing is
+//                  what a person pipes into a pager, so it stays UNPAGED and
+//                  full-bodied unless --limit/--cursor asks for a page.
 //   session-end  — session-outcome capture point: reads the SessionEnd hook
 //                  payload from STDIN (session_id, transcript_path, cwd,
 //                  hook_event_name, reason) and appends a recall-shaped
@@ -50,10 +57,19 @@ import { dirname, isAbsolute, join, relative } from 'node:path';
 import { loadConfig } from '../config/ideate-config.js';
 import type { Clock } from '../record/id.js';
 import { createUlidGenerator } from '../record/id.js';
+import {
+  DEFAULT_RECORD_READ_LIMIT,
+  MAX_RECORD_READ_LIMIT,
+  boundRecordPage,
+  projectRecordRow,
+  readRecordPage,
+} from '../record/read-page.js';
 import type { RecordReference } from '../record/schema.js';
+import { RecordSchemaError } from '../record/schema.js';
 import { RecordStore } from '../record/store.js';
 import type { ProcessRecordView } from '../record/store.js';
 import { TelemetryCounters } from '../telemetry/counters.js';
+import { LIST_PAYLOAD_BUDGET_CHARS, measurePrettyItemChars } from '../transport/payload-budget.js';
 
 /**
  * Default prime budget — a COUNT CAP (number of records), not a token
@@ -85,10 +101,34 @@ Subcommands:
       store); prints the new record id. \`--content -\` reads the prose body
       from stdin. \`--supersedes <id>\` records a supersedes edge to the record
       this one replaces (surfaced as a backlink when the old record is read).
-  read [--scope <substring>] [--limit <n>] [--json]
+  read [--scope <substring>] [--id <ulid>] [--limit <n>] [--cursor <c>]
+       [--include-content] [--json]
       Print records, newest first. Scope is plain substring SELECTION over
-      scope/kind/source fields — unranked by contract. Each record shows its
-      forward edges and its DERIVED backlinks (e.g. superseded-by).
+      scope/kind/source fields; --id selects ONE record by exact id —
+      unranked by contract either way. Each record shows its forward edges and
+      its DERIVED backlinks (e.g. superseded-by), complete even on a later
+      page.
+      \`--json\` prints {"records": [...], "next_cursor": ...} and pages at
+      ${String(DEFAULT_RECORD_READ_LIMIT)} rows by default; its rows are
+      SUMMARIES — every field except the prose body, plus content_length (the
+      body's character count). \`--include-content\` puts the bodies back and
+      requires --json (the human listing always prints them, so the flag would
+      be a costly no-op there). The human-readable listing is UNPAGED and
+      full-bodied unless you pass --limit or --cursor, and then prints a resume
+      hint when more records remain. --limit is clamped into
+      1..${String(MAX_RECORD_READ_LIMIT)}. --cursor takes the next_cursor of a previous page
+      verbatim: it is opaque (a malformed one is an error, never an empty
+      page) and is invalidated by changing --scope/--id, so walk one filter to
+      exhaustion before changing it.
+      A --json page may come back SHORTER than --limit: it also stays within
+      the same ~${String(LIST_PAYLOAD_BUDGET_CHARS)}-character payload budget the MCP record_read
+      tool applies (this listing is an agent-facing path too), measured on the
+      INDENTED bytes this stream actually writes. So never infer exhaustion
+      from a short page: follow next_cursor, which is non-null whenever records
+      remain for ANY reason and null ONLY at true exhaustion. A single record
+      larger than the whole budget is still returned, alone. There is no
+      "print everything" flag — the record FILES under the configured record
+      path are the durable export surface for that.
   session-end
       Hook edge (SessionEnd): reads the hook payload JSON from stdin and
       appends a recall-shaped session-outcome record (prose composed from
@@ -282,10 +322,26 @@ function formatRecord(record: ProcessRecordView): string {
 }
 
 function runRead(argv: readonly string[], stdout: NodeJS.WritableStream, stderr: NodeJS.WritableStream): number {
-  const parsed = parseArgs(argv, { '--scope': 'value', '--limit': 'value', '--json': 'switch' });
+  const parsed = parseArgs(argv, {
+    '--scope': 'value',
+    '--id': 'value',
+    '--limit': 'value',
+    '--cursor': 'value',
+    '--include-content': 'switch',
+    '--json': 'switch',
+  });
   if (parsed.errors.length > 0) {
     for (const err of parsed.errors) stderr.write(`ideate-record: read: ${err}\n`);
     stderr.write(USAGE);
+    return 1;
+  }
+  const asJson = parsed.switches.has('--json');
+  // --include-content is a --json-ONLY flag, rejected loudly rather than
+  // ignored: the human listing ALREADY prints every body, so honouring the
+  // flag there would be a no-op, and rejecting it here means a caller who
+  // passed it is never left thinking it did something.
+  if (parsed.switches.has('--include-content') && !asJson) {
+    stderr.write('ideate-record: read: --include-content requires --json (the human-readable listing always prints record bodies)\n');
     return 1;
   }
   let limit: number | undefined;
@@ -300,17 +356,63 @@ function runRead(argv: readonly string[], stdout: NodeJS.WritableStream, stderr:
 
   const ctx = buildContext(process.cwd());
   const scope = parsed.values.get('--scope');
-  const records = ctx.store.readViews({
+  const id = parsed.values.get('--id');
+  const cursor = parsed.values.get('--cursor');
+  const selection = {
     ...(scope === undefined ? {} : { scope }),
-    ...(limit === undefined ? {} : { limit }),
-  });
-  if (parsed.switches.has('--json')) {
-    stdout.write(`${JSON.stringify(records, null, 2)}\n`);
-  } else {
-    stdout.write(records.map(formatRecord).join('\n\n'));
-    stdout.write(records.length > 0 ? '\n' : '(no records)\n');
+    ...(id === undefined ? {} : { id }),
+  };
+  try {
+    // Paging applies to --json ALWAYS (the machine-consumed, payload-bounded
+    // door, mirroring the MCP tool) and to the human listing only when asked.
+    // The human listing prints one full record per entry and has always shown
+    // the whole selection — silently truncating `ideate-record read | less`
+    // would be a behavior change — so it stays unpaged by default. But
+    // --cursor IS asking for a page: resuming from a boundary with no limit
+    // would print every remaining record and then claim exhaustion it never
+    // verified, so a --cursor without --limit takes the default page size on
+    // both paths. The default, the clamp and the cursor contract all live in
+    // record/read-page.ts, shared with the MCP tool so the doors cannot drift.
+    if (!asJson && limit === undefined && cursor === undefined) {
+      const records = ctx.store.readViews(selection);
+      stdout.write(records.map(formatRecord).join('\n\n'));
+      stdout.write(records.length > 0 ? '\n' : '(no records)\n');
+      return 0;
+    }
+    const page = readRecordPage(ctx.store, {
+      ...selection,
+      ...(limit === undefined ? {} : { limit }),
+      ...(cursor === undefined ? {} : { cursor }),
+    });
+    if (asJson) {
+      const rows = page.records.map((view) => projectRecordRow(view, parsed.switches.has('--include-content')));
+      // The payload BUDGET on top of the count limit — the SAME budget and the
+      // SAME implementation the MCP record_read tool applies
+      // (transport/payload-budget.ts), because this is an agent-facing path
+      // too. The PRETTY measure, not the compact one: this path writes
+      // `JSON.stringify(…, null, 2)`, ~35% larger for identical rows, and a
+      // budget must bound what is actually written.
+      const bounded = boundRecordPage({ records: rows, next_cursor: page.next_cursor }, measurePrettyItemChars);
+      stdout.write(`${JSON.stringify({ records: bounded.records, next_cursor: bounded.next_cursor }, null, 2)}\n`);
+      return 0;
+    }
+    stdout.write(page.records.map(formatRecord).join('\n\n'));
+    stdout.write(page.records.length > 0 ? '\n' : '(no records)\n');
+    // Only reachable when --limit or --cursor was passed (see above), so the
+    // no-flags human listing is byte-for-byte what it always was.
+    if (page.next_cursor !== null) {
+      stdout.write(`(more records — resume with --cursor ${page.next_cursor})\n`);
+    }
+    return 0;
+  } catch (err) {
+    // A malformed cursor/limit is the record's own typed error; report it as a
+    // read failure (direct-use path → exit 1), never as an empty page.
+    if (err instanceof RecordSchemaError) {
+      stderr.write(`ideate-record: read: ${err.message}\n`);
+      return 1;
+    }
+    throw err;
   }
-  return 0;
 }
 
 // ---------------------------------------------------------------------------

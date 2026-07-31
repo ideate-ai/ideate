@@ -25,8 +25,11 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { CursorSchema, ProgressSchema } from '@modelcontextprotocol/sdk/types.js';
 
-import { CONFIG_FILENAME } from '../config/ideate-config.js';
+import { CONFIG_FILENAME, loadConfig } from '../config/ideate-config.js';
+import { TelemetryCounters } from '../telemetry/counters.js';
+import { LIST_PAYLOAD_BUDGET_CHARS } from '../transport/payload-budget.js';
 import type { Clock } from './id.js';
+import { DEFAULT_RECORD_READ_LIMIT } from './read-page.js';
 import { parseRecord } from './schema.js';
 import { RecordStore } from './store.js';
 import { RECORD_TOOL_NAMES, createRecordToolsRegistrar } from './tools.js';
@@ -130,12 +133,14 @@ describe('SDK zod primitive shape-pin: the zString/zNumber derivation base', () 
   });
 
   it('the derived chains tools.ts mints keep their validation semantics', () => {
-    // record_read's limit: zNumber.int().min(0).optional()
-    const limit = zNumber.int().min(0).describe('limit').optional();
+    // record_read's limit: zNumber.int().describe(...).optional() — no .min(),
+    // because an out-of-range magnitude CLAMPS at the transport ([1, 500])
+    // rather than failing a read, while a non-integer stays a schema failure.
+    const limit = zNumber.int().describe('limit').optional();
     expect(limit.safeParse(3).success).toBe(true);
     expect(limit.safeParse(undefined).success).toBe(true); // optional
     expect(limit.safeParse(2.5).success).toBe(false); // .int()
-    expect(limit.safeParse(-1).success).toBe(false); // .min(0)
+    expect(limit.safeParse(-1).success).toBe(true); // clamped, not rejected
     // Every optional string arg: zString.describe(...).optional()
     const optionalText = zString.describe('scope').optional();
     expect(optionalText.safeParse('auth flow').success).toBe(true);
@@ -400,7 +405,7 @@ describe('supersedes/references: typed-edge validation at the MCP layer', () => 
   });
 });
 
-describe('record_read: standalone priming — unranked, scope-filtered, limited', () => {
+describe('record_read: standalone priming — unranked, filtered, PROJECTED and PAGED', () => {
   async function seedThree(fx: Fixture, client: Client): Promise<{ first: string; second: string; third: string }> {
     fx.setNow('2026-05-01T00:00:00.000Z');
     const first = await callAppend(client, { ...minimalAppend, kind: 'decision', scope: 'auth flow' });
@@ -417,30 +422,76 @@ describe('record_read: standalone priming — unranked, scope-filtered, limited'
     claim: string;
     scope: string;
     source: { session_id: string };
-    content: string;
+    content?: string;
+    content_length: number;
+  }
+
+  /** The whole envelope, as it goes over the wire. */
+  async function readPage(
+    client: Client,
+    args: Record<string, unknown>,
+  ): Promise<{ records: ReadRecord[]; next_cursor: string | null; chars: number }> {
+    const result = payload(await client.callTool({ name: 'record_read', arguments: args }));
+    expect(result['ok']).toBe(true);
+    return {
+      records: result['records'] as ReadRecord[],
+      next_cursor: result['next_cursor'] as string | null,
+      // What the SDK actually writes for the items region — the thing the
+      // payload budget bounds.
+      chars: JSON.stringify(result['records']).length,
+    };
   }
 
   async function read(client: Client, args: Record<string, unknown>): Promise<ReadRecord[]> {
-    const result = payload(await client.callTool({ name: 'record_read', arguments: args }));
-    expect(result['ok']).toBe(true);
-    return result['records'] as ReadRecord[];
+    return (await readPage(client, args)).records;
   }
 
-  it('returns newest-first records carrying frontmatter fields + content', async () => {
+  it('returns newest-first SUMMARY rows: frontmatter fields, content_length, and NO body', async () => {
     const fx = makeFixture();
     const client = await fx.connect();
     const ids = await seedThree(fx, client);
 
-    const records = await read(client, {});
-    expect(records.map((r) => r.id)).toEqual([ids.third, ids.second, ids.first]);
-    // Full record shape: frontmatter fields and the prose body.
-    expect(records[0]).toMatchObject({
+    const page = await readPage(client, {});
+    expect(page.records.map((r) => r.id)).toEqual([ids.third, ids.second, ids.first]);
+    expect(page.records[0]).toMatchObject({
       kind: 'task-completion',
       claim: minimalAppend.claim,
       scope: 'auth flow hardening',
-      content: minimalAppend.content,
+      content_length: minimalAppend.content.length,
       source: { session_id: SESSION_ID },
     });
+    // The body is ABSENT by default — the projection, over the real transport.
+    for (const record of page.records) expect(record.content).toBeUndefined();
+    // Everything fits on one page, so the walk is over.
+    expect(page.next_cursor).toBeNull();
+    // …and `count` is gone: under paging it could only have meant "on this
+    // page", which `records.length` already says.
+    const raw = payload(await client.callTool({ name: 'record_read', arguments: {} }));
+    expect('count' in raw).toBe(false);
+  });
+
+  it('include_content restores the body on every row, content_length still present', async () => {
+    const fx = makeFixture();
+    const client = await fx.connect();
+    await seedThree(fx, client);
+    const records = await read(client, { include_content: true });
+    expect(records).toHaveLength(3);
+    for (const record of records) {
+      expect(record.content).toBe(minimalAppend.content);
+      expect(record.content_length).toBe(minimalAppend.content.length);
+    }
+  });
+
+  it('id + include_content IS the by-id fetch: exactly that record, with its body', async () => {
+    const fx = makeFixture();
+    const client = await fx.connect();
+    const ids = await seedThree(fx, client);
+    const records = await read(client, { id: ids.second, include_content: true });
+    expect(records.map((r) => r.id)).toEqual([ids.second]);
+    expect(records[0]?.content).toBe(minimalAppend.content);
+    expect(records[0]?.kind).toBe('finding');
+    // An id nobody has is an empty page, not an error.
+    expect(await read(client, { id: '01JZM8Z0000000000000000000' })).toEqual([]);
   });
 
   it('applies the scope filter as substring selection, still newest-first', async () => {
@@ -468,5 +519,106 @@ describe('record_read: standalone priming — unranked, scope-filtered, limited'
     // A read is a first call too: onboarding fired.
     expect(existsSync(join(fx.projectRoot, CONFIG_FILENAME))).toBe(true);
     expect(existsSync(join(fx.projectRoot, '.ideate', 'record'))).toBe(true);
+  });
+
+  // -------------------------------------------------------------------------
+  // Real-scale behavior: the reason the verb is bounded at all. These drive
+  // the SAME in-process MCP session against a store seeded past the default
+  // page, so the default, the budget and the cursor are exercised over the
+  // wire rather than asserted about the implementation.
+  // -------------------------------------------------------------------------
+
+  /** Seed `count` records straight through the store the tools use (far faster
+   *  than `count` MCP round trips, same files, same gate). */
+  function seedStore(fx: Fixture, count: number, bodyChars: number): string[] {
+    const config = loadConfig(fx.projectRoot);
+    const clock: Clock = () => new Date(FIXED_ISO);
+    const store = new RecordStore(config, fx.projectRoot, new TelemetryCounters(join(fx.projectRoot, '.t'), clock), clock);
+    const ids: string[] = [];
+    for (let i = 0; i < count; i += 1) {
+      const result = store.append({
+        kind: 'finding',
+        claim: `Seeded claim ${String(i)} about the bounded read.`,
+        verification_anchor: 'src/record/read-page.ts',
+        scope: 'record read payload',
+        source: { capture_point: 'test:bulk', session_id: SESSION_ID },
+        content: `body ${String(i)} `.padEnd(bodyChars, 'z'),
+      });
+      if (!result.ok) throw new Error(`seed failed: ${result.reason}`);
+      ids.push(result.record.id);
+    }
+    return ids;
+  }
+
+  it('on a real-scale record the DEFAULT read is one bounded page — projected, within budget, with a cursor', async () => {
+    const fx = makeFixture();
+    const client = await fx.connect();
+    // Past the default page size, with realistically-sized bodies: unbounded,
+    // this would be ~450k characters.
+    const ids = seedStore(fx, DEFAULT_RECORD_READ_LIMIT + 60, 2_000);
+
+    const page = await readPage(client, {});
+    expect(page.records.length).toBeLessThanOrEqual(DEFAULT_RECORD_READ_LIMIT);
+    expect(page.records.length).toBeGreaterThan(0);
+    expect(page.records[0]?.id).toBe(ids.at(-1)); // newest first
+    for (const record of page.records) {
+      expect(record.content).toBeUndefined();
+      expect(record.content_length).toBe(2_000);
+    }
+    // The bound that actually protects the caller's tool-result cap.
+    expect(page.chars).toBeLessThanOrEqual(LIST_PAYLOAD_BUDGET_CHARS);
+    // Records remain, so the cursor says so.
+    expect(page.next_cursor).toBeTypeOf('string');
+  });
+
+  it('a page can be SHORTER than `limit` because of the budget, and still reports records remaining', async () => {
+    const fx = makeFixture();
+    const client = await fx.connect();
+    seedStore(fx, 40, 3_000);
+    // Ask for all 40 WITH bodies: 120k characters of content against a 40k
+    // budget, so the page must close early — and say so.
+    const page = await readPage(client, { limit: 40, include_content: true });
+    expect(page.records.length).toBeLessThan(40);
+    expect(page.chars).toBeLessThanOrEqual(LIST_PAYLOAD_BUDGET_CHARS);
+    expect(page.next_cursor).toBeTypeOf('string');
+  });
+
+  it('walking next_cursor to exhaustion yields every record exactly once, id-descending, null only at the end', async () => {
+    const fx = makeFixture();
+    const client = await fx.connect();
+    const ids = seedStore(fx, 130, 500);
+
+    const seen: string[] = [];
+    let cursor: string | null = null;
+    let pages = 0;
+    do {
+      const page: { records: ReadRecord[]; next_cursor: string | null; chars: number } = await readPage(client, {
+        ...(cursor === null ? {} : { cursor }),
+      });
+      pages += 1;
+      expect(page.chars).toBeLessThanOrEqual(LIST_PAYLOAD_BUDGET_CHARS);
+      seen.push(...page.records.map((r) => r.id));
+      cursor = page.next_cursor;
+      expect(pages).toBeLessThan(30); // the walk must terminate
+    } while (cursor !== null);
+
+    expect(seen).toEqual([...ids].reverse());
+    expect(new Set(seen).size).toBe(ids.length);
+  });
+
+  it('a malformed cursor is a typed SCHEMA error — never a silent empty page', async () => {
+    const fx = makeFixture();
+    const client = await fx.connect();
+    seedStore(fx, 3, 100);
+    for (const cursor of ['not-a-cursor!!', 'e30=', Buffer.from('["a","b"]', 'utf8').toString('base64url')]) {
+      const result = await client.callTool({ name: 'record_read', arguments: { cursor } });
+      const body = payload(result);
+      expect(body['ok']).toBe(false);
+      expect(body['code']).toBe('SCHEMA');
+      expect(body['reason']).toMatch(/not a valid page cursor/);
+      // The failure is LOUD at the protocol level too, and it carries no rows.
+      expect((result as CallToolResult).isError).toBe(true);
+      expect(body['records']).toBeUndefined();
+    }
   });
 });

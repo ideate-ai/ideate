@@ -45,12 +45,25 @@ import { mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 
 import { scanAndMask } from '../secret-gate/scan.js';
+import { encodeListCursor, parseListCursorPayload } from '../transport/keyset-page.js';
+import type { ListItemsPage } from '../transport/keyset-page.js';
 import type { Clock } from '../record/id.js';
 import type { SteeringItem, SteeringReference, SteeringStatus } from './schema.js';
 import { SteeringSchemaError, isSteeringId, parseSteeringItem, serializeSteeringItem, validateSteeringItem } from './schema.js';
 
 /** Default steering directory, relative to the project root (probe default). */
 export const DEFAULT_STEERING_PATH = '.ideate/steering/';
+
+/**
+ * The largest page {@link SteeringStore.readViewsPage} will ever return,
+ * whatever a caller asks for. The DEFAULT page size deliberately does NOT live
+ * here — it is a transport decision (steering/tools.ts), because an absent
+ * `limit` must keep meaning "every matching item" for the in-repo sweep in
+ * context/assemble-prototype.ts, which needs the WHOLE set to derive
+ * `supersedes` backlinks. A default parked in this store would silently
+ * truncate that sweep and destroy supersession detection.
+ */
+export const MAX_STEERING_READ_LIMIT = 500;
 
 const STEERING_EXTENSION = '.md';
 
@@ -107,12 +120,101 @@ export type PutResult =
 
 /** Selection options for {@link SteeringStore.read} — selection, not ranking. */
 export interface SteeringReadOptions {
+  /**
+   * Exact id filter — the by-id RETRIEVAL path, expressed as one more
+   * SELECTION filter rather than a second verb (the steering surface stays at
+   * two verbs). Matches at most one item, since the id is the filename stem.
+   */
+  id?: string;
   /** Case-insensitive substring matched against `domain`. */
   domain?: string;
   /** Exact status filter. */
   status?: SteeringStatus;
   /** Exact kind filter. */
   kind?: string;
+}
+
+/**
+ * Keyset paging arguments for {@link SteeringStore.readViewsPage}.
+ *
+ * ABSENT `limit` = no bound at all: every selected item, `next_cursor: null`.
+ * That is the contract the in-repo sweep (context/assemble-prototype.ts, via
+ * {@link SteeringStore.readViews}) depends on; the DEFAULT page size is
+ * applied at the transport, never here.
+ */
+export interface SteeringPageOptions {
+  /** Page size. ABSENT = unbounded; present = clamped into `[1, MAX_STEERING_READ_LIMIT]`. */
+  limit?: number;
+  /** The opaque boundary returned as a previous page's `next_cursor`. */
+  cursor?: string;
+}
+
+/** The decoded form of a steering page cursor: the `(updated_at, id)` boundary
+ *  of the last row of the previous page, in this store's one stable order. */
+export interface SteeringCursor {
+  updated_at: string;
+  id: string;
+}
+
+/**
+ * Decode a steering page cursor, or throw `SteeringSchemaError` — THIS seam's
+ * own typed error. The board's `WorkStateError` is deliberately unreachable
+ * from here: steering does not import work-state (GP-26 narrow seams), so a
+ * steering caller can never be handed another store's failure type.
+ *
+ * The mechanical half — canonical base64url + JSON — is the shared, neutral
+ * {@link parseListCursorPayload} (transport/keyset-page.ts), which returns
+ * rather than throws precisely so each seam can raise its own error. The
+ * canonical round-trip check inside it is what stops a padded / wrong-alphabet
+ * / short-group / non-canonical-tail string from decoding to a plausible
+ * boundary and degrading into an empty page a caller reads as "no more items".
+ *
+ * The SHAPE check is this seam's own, because the tuple is: steering pages
+ * over `(updated_at, id)` — its items are MUTABLE and every `put` restamps
+ * `updated_at` — where the board and the record page over `created_at`.
+ *
+ * WHAT IS NOT GUARANTEED — the CONTENTS. A well-formed cursor naming a
+ * boundary no item ever had decodes cleanly and simply selects nothing. That
+ * is deliberate: the same "nothing after this boundary" answer is the correct
+ * one at true exhaustion, so there is nothing to distinguish it from. Cursors
+ * are OPAQUE — callers echo back a value this store minted.
+ *
+ * The offending value is NEVER echoed into the message (P-24): this text flows
+ * out through the MCP error surface, which does not gate free text.
+ */
+export function decodeSteeringCursor(cursor: string): SteeringCursor {
+  const parsed = parseListCursorPayload(cursor);
+  if (!parsed.ok) {
+    throw new SteeringSchemaError(
+      'cursor',
+      parsed.problem === 'not-canonical-base64url'
+        ? 'steering store: "cursor" is not a valid page cursor (expected the opaque next_cursor from a previous steering_read page)'
+        : 'steering store: "cursor" is not a valid page cursor (undecodable payload) — pass back the next_cursor from a previous steering_read page',
+    );
+  }
+  const value = parsed.value;
+  if (!Array.isArray(value) || value.length !== 2 || typeof value[0] !== 'string' || typeof value[1] !== 'string') {
+    throw new SteeringSchemaError('cursor', 'steering store: "cursor" is not a valid page cursor (expected an encoded [updated_at, id] boundary)');
+  }
+  return { updated_at: value[0], id: value[1] };
+}
+
+/**
+ * Clamp a caller-supplied page size into `[1, MAX_STEERING_READ_LIMIT]`.
+ * Clamping, not rejecting, is deliberate for an out-of-range size (0, a
+ * negative, or 9999 all yield a usable page); a NON-INTEGER limit is a
+ * different failure class — a caller bug about the SHAPE of the argument, not
+ * its magnitude — and stays a typed schema error. Mirrors the board's
+ * `clampListLimit` in posture, not by import (GP-26).
+ */
+export function clampSteeringReadLimit(limit: number): number {
+  if (!Number.isInteger(limit)) {
+    // String(), not JSON.stringify(): NaN/Infinity both serialize to `null` as
+    // JSON, which would name the wrong problem back to the caller.
+    throw new SteeringSchemaError('limit', `steering store: "limit" must be an integer, got ${String(limit)}`);
+  }
+  if (limit < 1) return 1;
+  return Math.min(limit, MAX_STEERING_READ_LIMIT);
 }
 
 /**
@@ -294,6 +396,59 @@ export class SteeringStore {
   }
 
   /**
+   * One KEYSET PAGE of {@link readViews} — the same selection, the same derived
+   * backlinks, bounded to `page.limit` items and resumable from an opaque
+   * `next_cursor` over `(updated_at, id)`. An ABSENT `limit` means every
+   * selected item and `next_cursor: null`, so the unbounded in-repo sweep is
+   * still expressible here; the default page size belongs to the transport.
+   *
+   * BACKLINKS ARE PAGE-INDEPENDENT: `readViews` builds the referrer map from
+   * EVERY parseable item before this method takes a slice, so an item's
+   * `referenced_by` never depends on which page it landed on (the board's
+   * "claimable is computed against the WHOLE board" posture).
+   *
+   * KEYSET, not OFFSET, and the predicate has MIXED DIRECTIONS because the
+   * order does: `updated_at` DESC with `id` ASC as the tiebreak (see
+   * {@link #scanItems}). Resuming after `cur` therefore means
+   * `updated_at < cur.updated_at OR (updated_at == cur.updated_at AND id >
+   * cur.id)` — the id arm points the OPPOSITE way from the timestamp arm, and
+   * getting it backwards would silently skip or repeat every tied item. The
+   * comparisons use exactly the comparator `#scanItems` sorts with
+   * (`localeCompare` for ids), so the predicate and the order cannot disagree.
+   *
+   * THE CAVEAT, stated honestly: `updated_at` is MUTABLE — every `put`
+   * restamps it — so unlike a `created_at` keyset this walk is NOT immune to
+   * concurrent writes. Amending an item mid-walk moves it to the front of the
+   * order, and an item that had not been reached yet can be pushed past the
+   * cursor and missed by that walk. This is accepted deliberately: steering is
+   * human-curated at roughly one edit per session, exhaustive walks are rare,
+   * and keying on `id` instead would abandon the newest-first presentation the
+   * skills and the context assembler rely on. A walk that must not miss an
+   * amendment should be re-run.
+   */
+  readViewsPage(options?: SteeringReadOptions, page?: SteeringPageOptions): ListItemsPage<SteeringItemView> {
+    // Argument validation FIRST, so a malformed limit/cursor is a typed
+    // failure even on a steering tree that selects nothing — a bad argument
+    // must not be swallowed by an empty result.
+    const limit = page?.limit === undefined ? undefined : clampSteeringReadLimit(page.limit);
+    const cursor = page?.cursor === undefined ? undefined : decodeSteeringCursor(page.cursor);
+
+    const selected = this.readViews(options);
+    const after =
+      cursor === undefined
+        ? selected
+        : selected.filter(
+            (item) => item.updated_at < cursor.updated_at || (item.updated_at === cursor.updated_at && item.id.localeCompare(cursor.id) > 0),
+          );
+    if (limit === undefined) return { items: after, next_cursor: null };
+    const rows = after.slice(0, limit);
+    const last = rows.at(-1);
+    // `after.length > limit` is the "a next page exists" probe — the in-memory
+    // twin of the board's `LIMIT n+1` extra row.
+    return { items: rows, next_cursor: after.length > limit && last !== undefined ? encodeListCursor(last.updated_at, last.id) : null };
+  }
+
+  /**
    * All parseable items, newest-first by `updated_at` (id tie-break) — the one
    * full scan shared by {@link read} and {@link readViews}. Unparseable files
    * are skipped with a warning so one stray file can't poison the walk (nor
@@ -336,11 +491,13 @@ export class SteeringStore {
     }
   }
 
-  /** SELECTION only — domain substring, exact status, exact kind. Never ranks. */
+  /** SELECTION only — exact id, domain substring, exact status, exact kind.
+   *  Never ranks. */
   #select<T extends SteeringItem>(items: T[], options?: SteeringReadOptions): T[] {
     const domainFilter = options?.domain?.toLowerCase();
     return items.filter(
       (item) =>
+        (options?.id === undefined || item.id === options.id) &&
         (domainFilter === undefined || item.domain.toLowerCase().includes(domainFilter)) &&
         (options?.status === undefined || item.status === options.status) &&
         (options?.kind === undefined || item.kind === options.kind),

@@ -16,8 +16,11 @@
 //   extraordinary-redaction exception is a documented MANUAL procedure —
 //   deliberately, this store exposes no verb for it.
 // - Never curated or ranked: `read` performs SELECTION only (substring
-//   match, newest-first file order, a limit cap). No scoring, no decay, no
-//   promotion — no rank/score function exists anywhere in this API.
+//   match, exact id, a keyset boundary in the id's own total order,
+//   newest-first file order, a limit cap). No scoring, no decay, no
+//   promotion — no rank/score function exists anywhere in this API. Paging is
+//   selection too: walking a stable order is not ordering by relevance
+//   (GP-27).
 //
 // Gate-before-persist: EVERY text field (frontmatter values and prose body)
 // passes through the secret gate's scanAndMask BEFORE any filesystem write.
@@ -114,6 +117,24 @@ export interface ReadOptions {
    * record is selected when ANY of them matches. No scoring of any kind.
    */
   scope?: string;
+  /**
+   * EXACT-match id selector — the by-id fetch. Deliberately NOT folded into
+   * `scope`'s substring haystack: an id is either the record you asked for or
+   * it is not, and a substring match over ids would make a truncated or
+   * mistyped id silently return a different record. At most one record can
+   * match, since the id is the filename stem.
+   */
+  id?: string;
+  /**
+   * KEYSET boundary: select only records STRICTLY OLDER than this id
+   * (`record.id < before_id`). The ULID id is a total order over the store —
+   * it embeds its own mint time, and the shard directory is derived from that
+   * same embedded time (see {@link RecordStore.append}) — so "older" is exactly
+   * "lexicographically smaller", and one id is a complete page boundary.
+   * Callers hand this in ALREADY DECODED: the opaque cursor and its typed
+   * errors belong to the transports (record/read-page.ts), not the store.
+   */
+  before_id?: string;
   /** Maximum number of records returned (newest first). */
   limit?: number;
 }
@@ -272,19 +293,33 @@ export class RecordStore {
    * month dirs descending, filenames descending.
    *
    * `scope` is a SELECTION filter (simple substring match against scope /
-   * kind / source fields), never a ranking; `limit` caps the count. Files
-   * that fail to parse are skipped with a warning — a stray file must not
-   * poison every read.
+   * kind / source fields), never a ranking; `id`/`before_id` select by exact
+   * id and by keyset boundary; `limit` caps the count. Files that fail to
+   * parse are skipped with a warning — a stray file must not poison every read.
+   *
+   * `id` and `before_id` are answered from the FILENAME, before any file is
+   * opened: the filename stem IS the record id, so a read that names one id
+   * costs a directory listing plus ONE file read rather than a full parse of
+   * the store. (The parsed record's own `id` is re-checked below, so a
+   * hand-edited file whose frontmatter disagrees with its name cannot answer
+   * as some other record.)
    */
   read(options?: ReadOptions): ProcessRecord[] {
     const scopeFilter = this.#scopeFilter(options);
     const limit = this.#limit(options);
+    const selectId = options?.id;
+    const beforeId = options?.before_id;
     const out: ProcessRecord[] = [];
     if (limit === 0) return out;
-    for (const record of this.#recordsNewestFirst()) {
+    const wanted = (id: string): boolean =>
+      (selectId === undefined || id === selectId) && (beforeId === undefined || id < beforeId);
+    for (const record of this.#recordsNewestFirst(wanted)) {
+      if (!wanted(record.id)) continue;
       if (scopeFilter !== undefined && !matchesScope(record, scopeFilter)) continue;
       out.push(record);
-      if (out.length >= limit) return out;
+      // An id is unique, so the one match ends the walk — no point listing the
+      // rest of the store to find a second record that cannot exist.
+      if (out.length >= limit || selectId !== undefined) return out;
     }
     return out;
   }
@@ -303,23 +338,43 @@ export class RecordStore {
    * record didn't match the filter. Completeness is therefore bounded only by
    * `limit`: records past the cap aren't returned, and their referrers (newer)
    * were already scanned, so no returned record loses a backlink.
+   *
+   * THE SAME ARGUMENT IS WHAT MAKES PAGING SAFE, and it is also what this
+   * method may NOT optimize away. Under `before_id` every emitted record is
+   * OLDER than the boundary while its referrers are NEWER — i.e. on an EARLIER
+   * page — so the walk still starts at the newest record and reads everything
+   * above the boundary purely to build the referrer map. A backlink from a
+   * record on another page therefore still appears; page 4 of a walk shows the
+   * same `referenced_by` the unpaged read would have. Filename-level skipping
+   * (which {@link read} uses for both selectors) is admissible here ONLY for
+   * the `id` selector, and only DOWNWARD: a record older than the requested one
+   * can neither be it nor reference it, so those files are never opened.
    */
   readViews(options?: ReadOptions): ProcessRecordView[] {
     const scopeFilter = this.#scopeFilter(options);
     const limit = this.#limit(options);
+    const selectId = options?.id;
+    const beforeId = options?.before_id;
     const out: ProcessRecordView[] = [];
     if (limit === 0) return out;
+    // A file may be skipped UNREAD only when it can be neither a result nor a
+    // referrer of one (see the paragraph above) — never on `before_id`.
+    const mustRead = (id: string): boolean => selectId === undefined || id >= selectId;
     const referrers = new Map<string, RecordReference[]>();
-    for (const record of this.#recordsNewestFirst()) {
+    for (const record of this.#recordsNewestFirst(mustRead)) {
       for (const ref of record.references) {
         const list = referrers.get(ref.id);
         const back: RecordReference = { rel: ref.rel, id: record.id };
         if (list === undefined) referrers.set(ref.id, [back]);
         else list.push(back);
       }
+      if (selectId !== undefined && record.id !== selectId) continue;
+      if (beforeId !== undefined && !(record.id < beforeId)) continue;
       if (scopeFilter !== undefined && !matchesScope(record, scopeFilter)) continue;
       out.push({ ...record, referenced_by: referrers.get(record.id) ?? [] });
-      if (out.length >= limit) return out;
+      // An id is unique: the one match (with its complete backlinks, every
+      // referrer being newer and therefore already scanned) ends the walk.
+      if (out.length >= limit || selectId !== undefined) return out;
     }
     return out;
   }
@@ -343,12 +398,19 @@ export class RecordStore {
    * descending, ULID filenames descending give reverse-chronological order for
    * free. Unparseable files are skipped with a warning so one stray file can't
    * poison the walk. Shared by {@link read} and {@link readViews}.
+   *
+   * `mustRead` is an optional FILENAME-level predicate over the record id
+   * (the filename stem): a file it rejects is never opened. It is a cost
+   * optimization only — every caller re-checks its selectors against the
+   * PARSED record — so passing nothing yields the whole store, and passing an
+   * over-eager predicate can only cost reads, never correctness.
    */
-  *#recordsNewestFirst(): Generator<ProcessRecord> {
+  *#recordsNewestFirst(mustRead?: (id: string) => boolean): Generator<ProcessRecord> {
     for (const year of this.#listDir(this.recordDir, YEAR_DIR)) {
       for (const month of this.#listDir(join(this.recordDir, year), MONTH_DIR)) {
         const shardDir = join(this.recordDir, year, month);
         for (const file of this.#listFiles(shardDir)) {
+          if (mustRead !== undefined && !mustRead(file.slice(0, -RECORD_EXTENSION.length))) continue;
           const filePath = join(shardDir, file);
           try {
             yield parseRecord(readFileSync(filePath, 'utf8'));

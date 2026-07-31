@@ -37,7 +37,8 @@ import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 
 import type { Clock } from '../record/id.js';
 import { reportFromDir } from '../telemetry/report.js';
-import { DEFAULT_LIST_LIMIT, LIST_PAYLOAD_BUDGET_CHARS, MAX_LIST_LIMIT } from './store.js';
+import { LIST_PAYLOAD_BUDGET_CHARS } from '../transport/payload-budget.js';
+import { DEFAULT_LIST_LIMIT, MAX_LIST_LIMIT } from './store.js';
 import { WORK_STATE_TOOL_NAMES, createWorkStateToolsRegistrar } from './tools.js';
 
 const FIXED_ISO = '2026-07-11T12:00:00.000Z';

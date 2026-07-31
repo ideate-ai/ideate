@@ -35,6 +35,11 @@ import { loadConfig, workStatePath } from '../config/ideate-config.js';
 import type { Clock } from '../record/id.js';
 import { createUlidGenerator } from '../record/id.js';
 import { TelemetryCounters } from '../telemetry/counters.js';
+import {
+  LIST_PAYLOAD_BUDGET_CHARS,
+  applyListPayloadBudget,
+  measurePrettyItemChars,
+} from '../transport/payload-budget.js';
 import { claim, complete, release, renew } from '../work-state/claims.js';
 import { createRealCompletionRecordWriter } from '../work-state/completion-record.js';
 import type { CompletionRecordWriter } from '../work-state/completion-record.js';
@@ -42,11 +47,8 @@ import { checkExpiry, sweepBoard } from '../work-state/expiry.js';
 import { primeOnClaim } from '../work-state/priming-hook.js';
 import {
   DEFAULT_LIST_LIMIT,
-  LIST_PAYLOAD_BUDGET_CHARS,
   MAX_LIST_LIMIT,
   WorkStateStore,
-  applyListPayloadBudget,
-  measurePrettyItemChars,
 } from '../work-state/store.js';
 import type { ListItemsFilter, ListPageOptions } from '../work-state/store.js';
 import { WorkStateModuleError } from '../work-state/types.js';
@@ -402,8 +404,8 @@ function runList(argv: readonly string[], stdout: NodeJS.WritableStream, stderr:
     const result = ctx.verbs.listSummaries(filter, page);
     if (asJson) {
       // The payload BUDGET, on top of the count limit — the SAME budget and
-      // the SAME implementation the MCP work_list tool applies (store.ts's
-      // applyListPayloadBudget), because this is an agent-facing path too:
+      // the SAME implementation the MCP work_list tool applies
+      // (transport/payload-budget.ts), because this is an agent-facing path too:
       // agents/journal-keeper.md has an agent run `ideate-work list --json`,
       // so this stdout lands in a context window as a tool result, under the
       // same kind of cap the MCP result was (measured at 66,324 characters on

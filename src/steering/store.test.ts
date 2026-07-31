@@ -17,15 +17,18 @@
 // All filesystem work happens in mkdtemp dirs — the real .ideate/ is never
 // touched.
 
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { Buffer } from 'node:buffer';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { afterEach, describe, expect, it } from 'vitest';
 
 import type { Clock } from '../record/id.js';
-import { parseSteeringItem, serializeSteeringItem } from './schema.js';
+import { encodeListCursor } from '../transport/keyset-page.js';
+import { SteeringSchemaError, parseSteeringItem, serializeSteeringItem } from './schema.js';
 import type { SteeringItem } from './schema.js';
-import { SteeringStore } from './store.js';
+import { MAX_STEERING_READ_LIMIT, SteeringStore, clampSteeringReadLimit, decodeSteeringCursor } from './store.js';
 
 const FIXED_ISO = '2026-07-16T12:00:00.000Z';
 
@@ -478,5 +481,188 @@ describe('two-verb API surface, no hard delete', () => {
     }
     expect(methods).toContain('put');
     expect(methods).toContain('read');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The bounded read, at the level the predicate actually lives.
+// ---------------------------------------------------------------------------
+
+/** Put `n` items, each one minute OLDER than the last, so the expected
+ *  newest-first order is exactly the seed order. */
+function seedDescending(fx: Fixture, n: number): string[] {
+  const newest = Date.UTC(2026, 6, 16, 12, 0, 0);
+  const created: string[] = [];
+  for (let i = 0; i < n; i += 1) {
+    const id = `GP-${String(i).padStart(3, '0')}`;
+    fx.setNow(new Date(newest - i * 60_000).toISOString());
+    expect(fx.store.put({ id, kind: 'guiding-principle', statement: `rule ${id}` }).ok).toBe(true);
+    created.push(id);
+  }
+  return created;
+}
+
+describe('keyset paging (readViewsPage)', () => {
+  it('an ABSENT limit is UNBOUNDED — the contract context/assemble-prototype.ts sweeps on, and the reason no default lives in this store', () => {
+    const fx = makeFixture();
+    const ids = seedDescending(fx, 150);
+    // Well past any page default a transport might apply: readViews and the
+    // page method with no limit BOTH return every item. A default parked here
+    // would silently truncate the assembler's supersession sweep.
+    expect(fx.store.readViews().map((i) => i.id)).toEqual(ids);
+    const all = fx.store.readViewsPage(undefined, {});
+    expect(all.items.map((i) => i.id)).toEqual(ids);
+    expect(all.next_cursor).toBeNull();
+  });
+
+  it('pages in (updated_at DESC, id ASC) order and a walk covers every item exactly once, ending with a null cursor', () => {
+    const fx = makeFixture();
+    const ids = seedDescending(fx, 25);
+    const seen: string[] = [];
+    let cursor: string | null = null;
+    let pages = 0;
+    for (;;) {
+      const page = fx.store.readViewsPage(undefined, { limit: 4, ...(cursor === null ? {} : { cursor }) });
+      pages += 1;
+      seen.push(...page.items.map((i) => i.id));
+      cursor = page.next_cursor;
+      if (cursor === null) break;
+      expect(pages).toBeLessThan(100);
+    }
+    expect(seen).toEqual(ids);
+    expect(pages).toBe(7);
+  });
+
+  it('exercises the MIXED-DIRECTION tie-break arm: on an identical updated_at the id arm points ASCENDING while the timestamp arm descends', () => {
+    const fx = makeFixture();
+    const tied = '2026-07-16T12:00:00.000Z';
+    fx.setNow('2026-07-16T13:00:00.000Z');
+    fx.store.put({ id: 'GP-newer', kind: 'guiding-principle', statement: 'x' });
+    fx.setNow(tied);
+    for (const id of ['POL-c', 'POL-a', 'POL-d', 'POL-b']) fx.store.put({ id, kind: 'policy', statement: 'x' });
+    fx.setNow('2026-07-16T11:00:00.000Z');
+    fx.store.put({ id: 'GP-older', kind: 'guiding-principle', statement: 'x' });
+
+    const unpaged = fx.store.readViewsPage(undefined, {}).items.map((i) => i.id);
+    expect(unpaged).toEqual(['GP-newer', 'POL-a', 'POL-b', 'POL-c', 'POL-d', 'GP-older']);
+
+    // Every page boundary lands INSIDE the tie. A predicate whose id arm ran
+    // the same direction as the timestamp arm would repeat POL-a forever or
+    // skip the rest of the tie outright.
+    const seen: string[] = [];
+    let cursor: string | null = null;
+    for (let i = 0; i < 10; i += 1) {
+      const page: ReturnType<SteeringStore['readViewsPage']> = fx.store.readViewsPage(undefined, {
+        limit: 1,
+        ...(cursor === null ? {} : { cursor }),
+      });
+      seen.push(...page.items.map((item) => item.id));
+      cursor = page.next_cursor;
+      if (cursor === null) break;
+    }
+    expect(seen).toEqual(unpaged);
+  });
+
+  it('backlinks are PAGE-INDEPENDENT: a superseded item carries its referenced_by wherever it lands', () => {
+    const fx = makeFixture();
+    fx.setNow('2026-07-16T11:00:00.000Z');
+    fx.store.put({ id: 'GP-old', kind: 'guiding-principle', statement: 'old' });
+    fx.setNow('2026-07-16T12:00:00.000Z');
+    fx.store.put({ id: 'GP-new', kind: 'guiding-principle', statement: 'new', references: [{ rel: 'supersedes', id: 'GP-old' }] });
+
+    // GP-old lands on the SECOND page, and still knows what replaced it.
+    const first = fx.store.readViewsPage(undefined, { limit: 1 });
+    expect(first.items.map((i) => i.id)).toEqual(['GP-new']);
+    const second = fx.store.readViewsPage(undefined, { limit: 1, cursor: first.next_cursor ?? '' });
+    expect(second.items[0]?.id).toBe('GP-old');
+    expect(second.items[0]?.referenced_by).toEqual([{ rel: 'supersedes', id: 'GP-new' }]);
+  });
+
+  it('the exact id filter is the by-id retrieval path — one selection filter, not a second verb', () => {
+    const fx = makeFixture();
+    seedDescending(fx, 5);
+    expect(fx.store.read({ id: 'GP-003' }).map((i) => i.id)).toEqual(['GP-003']);
+    expect(fx.store.readViews({ id: 'GP-003' }).map((i) => i.id)).toEqual(['GP-003']);
+    expect(fx.store.readViewsPage({ id: 'GP-003' }, {}).items.map((i) => i.id)).toEqual(['GP-003']);
+    // Exact, never a prefix or a substring.
+    expect(fx.store.read({ id: 'GP-00' })).toEqual([]);
+    expect(fx.store.read({ id: 'gp-003' })).toEqual([]);
+  });
+});
+
+describe('page-argument guards (typed, this seam’s own)', () => {
+  it('clamps an out-of-range limit into [1, MAX] and rejects a NON-INTEGER limit as a typed schema failure', () => {
+    expect(clampSteeringReadLimit(0)).toBe(1);
+    expect(clampSteeringReadLimit(-5)).toBe(1);
+    expect(clampSteeringReadLimit(7)).toBe(7);
+    expect(clampSteeringReadLimit(9999)).toBe(MAX_STEERING_READ_LIMIT);
+    // A non-integer is a different failure class — the SHAPE of the argument,
+    // not its magnitude — so it is raised, not clamped.
+    for (const bad of [1.5, Number.NaN, Number.POSITIVE_INFINITY]) {
+      expect(() => clampSteeringReadLimit(bad)).toThrow(SteeringSchemaError);
+      expect(() => clampSteeringReadLimit(bad)).toThrow(/"limit" must be an integer/);
+    }
+    // …and NaN/Infinity are NAMED, not reported as `null` (which is what
+    // JSON.stringify would have produced).
+    expect(() => clampSteeringReadLimit(Number.NaN)).toThrow(/NaN/);
+  });
+
+  it('decodes a cursor this store minted, and rejects every malformed shape as SteeringSchemaError — never another seam’s error, never a silent empty page', () => {
+    expect(decodeSteeringCursor(encodeListCursor('2026-07-16T12:00:00.000Z', 'GP-21'))).toEqual({
+      updated_at: '2026-07-16T12:00:00.000Z',
+      id: 'GP-21',
+    });
+
+    const malformed: Array<[string, string]> = [
+      ['wrong alphabet', 'not a cursor!!'],
+      ['padded', `${encodeListCursor('2026-07-16T12:00:00.000Z', 'GP-21')}=`],
+      ['short final group', 'AAAAA'],
+      ['non-canonical tail', 'QR'],
+      ['decodes but is not JSON', Buffer.from('nonsense bytes', 'utf8').toString('base64url')],
+      ['a one-element (record-shaped) cursor', Buffer.from(JSON.stringify(['GP-21']), 'utf8').toString('base64url')],
+      ['a three-element cursor', Buffer.from(JSON.stringify(['a', 'b', 'c']), 'utf8').toString('base64url')],
+      ['elements that are not strings', Buffer.from(JSON.stringify([1, 2]), 'utf8').toString('base64url')],
+    ];
+    for (const [why, cursor] of malformed) {
+      expect(() => decodeSteeringCursor(cursor), why).toThrow(SteeringSchemaError);
+      expect(() => decodeSteeringCursor(cursor), why).toThrow(/steering store: "cursor" is not a valid page cursor/);
+      // P-24: the offending value is never echoed back into the message.
+      try {
+        decodeSteeringCursor(cursor);
+      } catch (err) {
+        expect((err as Error).message, why).not.toContain(cursor);
+        expect((err as Error).name, why).toBe('SteeringSchemaError');
+      }
+    }
+  });
+
+  it('a malformed page argument is raised even when the selection would have matched nothing (never swallowed by an empty result)', () => {
+    const { store } = makeFixture();
+    expect(store.readViewsPage(undefined, {}).items).toEqual([]);
+    expect(() => store.readViewsPage(undefined, { cursor: 'not a cursor!!' })).toThrow(SteeringSchemaError);
+    expect(() => store.readViewsPage(undefined, { limit: 1.5 })).toThrow(SteeringSchemaError);
+  });
+
+  it('a WELL-FORMED cursor naming a boundary no item ever had selects nothing — deliberately indistinguishable from exhaustion', () => {
+    const fx = makeFixture();
+    seedDescending(fx, 3);
+    const page = fx.store.readViewsPage(undefined, { cursor: encodeListCursor('1999-01-01T00:00:00.000Z', 'GP-000'), limit: 10 });
+    expect(page.items).toEqual([]);
+    expect(page.next_cursor).toBeNull();
+  });
+});
+
+describe('GP-26 narrow seams', () => {
+  it('no steering source file imports from work-state/ — the board’s error type is unreachable from here', () => {
+    const steeringDirPath = fileURLToPath(new URL('.', import.meta.url));
+    for (const entry of readdirSync(steeringDirPath, { withFileTypes: true })) {
+      if (!entry.isFile() || !entry.name.endsWith('.ts') || entry.name.endsWith('.test.ts')) continue;
+      const source = readFileSync(join(steeringDirPath, entry.name), 'utf8');
+      // No import of the board's module, and no construction of its error type
+      // (naming it in PROSE is fine — steering/store.ts's cursor decoder
+      // explains why it raises its own error instead).
+      expect(source, entry.name).not.toMatch(/from '[^']*work-state\//);
+      expect(source, entry.name).not.toMatch(/new WorkStateError\(/);
+    }
   });
 });

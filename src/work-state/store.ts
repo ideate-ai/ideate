@@ -61,13 +61,14 @@
 //     therefore a triage hint about SIZE, not a JS string index.
 //
 // Shared transport policy (applied by the transports, never by this module):
-// alongside `DEFAULT_LIST_LIMIT`/`MAX_LIST_LIMIT` this file owns the ONE
-// payload budget both list transports enforce — `LIST_PAYLOAD_BUDGET_CHARS`
-// and `applyListPayloadBudget`. It lives here rather than in either transport
-// because both must agree on it and this is the only home the CLI can import
-// without pulling in the MCP SDK; the two differ only in the per-item measure
-// they pass (compact for MCP, pretty-printed for the CLI's `list --json`), so
-// the budget itself cannot drift between the two doors.
+// this file owns the board's page SIZES — `DEFAULT_LIST_LIMIT`/
+// `MAX_LIST_LIMIT` — but NOT the per-page payload budget. That budget is
+// store-agnostic policy the process record and steering will enforce
+// identically, so it lives in the neutral transport/payload-budget.ts (with
+// the page envelope and cursor encoder in transport/keyset-page.ts) where
+// every seam can import it without importing another seam's storage layer
+// (GP-26: narrow seams). This module still applies none of it: the board's
+// absent-options read stays "every matching row, no truncation".
 //
 // Events table discipline: this file contains NO `UPDATE events` and NO
 // `DELETE FROM events` statement — the only SQL touching `events` is the
@@ -75,12 +76,13 @@
 // That absence is what makes the events table append-only BY CONSTRUCTION,
 // mechanically grep-falsifiable.
 
-import { Buffer } from 'node:buffer';
 import type { DatabaseSync } from 'node:sqlite';
 
 import { scanAndMask } from '../secret-gate/scan.js';
 import type { Clock, UlidGenerator } from '../record/id.js';
 import { createUlidGenerator, isUlid } from '../record/id.js';
+import { encodeListCursor, parseListCursorPayload } from '../transport/keyset-page.js';
+import type { ListItemsPage } from '../transport/keyset-page.js';
 import { openForRead, openForWrite } from './schema.js';
 import { withBusyWrap, withWriteTransaction } from './tx.js';
 import {
@@ -155,14 +157,11 @@ export interface ListPageOptions {
   include_spec?: boolean;
 }
 
-/** One page of a keyset read: the rows, plus the boundary to resume from
- *  (`null` when this page is the last one). */
-export interface ListItemsPage<T> {
-  items: T[];
-  /** Opaque — encode/decode is this module's business alone (see
-   *  {@link encodeListCursor}). */
-  next_cursor: string | null;
-}
+/** One page of a keyset read — the rows plus the boundary to resume from.
+ *  DEFINED in the neutral transport/keyset-page.ts (every seam pages the same
+ *  way); surfaced from here so the board's own callers need not know where the
+ *  envelope type is declared. */
+export type { ListItemsPage };
 
 /**
  * A work item WITHOUT its opaque `spec` body: every other current `WorkItem`
@@ -201,19 +200,20 @@ export interface ContainmentRow {
 }
 
 /**
- * Encode a page boundary as `base64url(JSON.stringify([created_at, id]))`.
- * The encoder is `node:buffer`'s own base64url (C-13: no hand-rolled
- * serialization — no delimiter concatenation, no manual escaping), so a
- * timestamp containing a delimiter-shaped character can never split a cursor.
- * The RESULT is opaque at the contract level: callers pass it back verbatim
- * and never construct or parse one.
- */
-export function encodeListCursor(createdAt: string, id: string): string {
-  return Buffer.from(JSON.stringify([createdAt, id]), 'utf8').toString('base64url');
-}
-
-/**
  * Decode a page cursor, or throw `WorkStateError('SCHEMA', …)`.
+ *
+ * The ENCODING half lives in transport/keyset-page.ts (`encodeListCursor`),
+ * because minting a boundary is store-agnostic and the bounded-page helper
+ * has to re-mint one when it shortens a page. So does the MECHANICAL half of
+ * decoding (`parseListCursorPayload`, which RETURNS a problem tag and never
+ * throws): the canonical-base64url round trip is identical for every seam and
+ * subtle enough that a hand-copied second implementation is a drift defect
+ * waiting to happen. What stays HERE is the part that is this seam's own
+ * contract — the board's `[created_at, id]` SHAPE, and the failure, which must
+ * be a `WorkStateError` (a neutral module has no business raising one seam's
+ * typed error). The halves are held together behaviorally by store.test.ts's
+ * encode/decode round-trip and malformed-cursor tests, so the split cannot
+ * drift.
  *
  * WHAT IS GUARANTEED — the ENCODING and the SHAPE. Three independent ways to
  * be malformed are each rejected LOUDLY, so a cursor that is not one of this
@@ -240,22 +240,16 @@ export function encodeListCursor(createdAt: string, id: string): string {
  * flows out through the MCP/CLI error surfaces, which do not gate free text.
  */
 export function decodeListCursor(cursor: string): ListCursor {
-  const bytes = Buffer.from(cursor, 'base64url');
-  if (bytes.toString('base64url') !== cursor) {
+  const decoded = parseListCursorPayload(cursor);
+  if (!decoded.ok) {
     throw new WorkStateError(
       'SCHEMA',
-      'work-state store: "cursor" is not a valid page cursor (expected the opaque next_cursor from a previous list page)',
+      decoded.problem === 'not-canonical-base64url'
+        ? 'work-state store: "cursor" is not a valid page cursor (expected the opaque next_cursor from a previous list page)'
+        : 'work-state store: "cursor" is not a valid page cursor (undecodable payload) — pass back the next_cursor from a previous list page',
     );
   }
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(bytes.toString('utf8'));
-  } catch {
-    throw new WorkStateError(
-      'SCHEMA',
-      'work-state store: "cursor" is not a valid page cursor (undecodable payload) — pass back the next_cursor from a previous list page',
-    );
-  }
+  const parsed = decoded.value;
   if (!Array.isArray(parsed) || parsed.length !== 2 || typeof parsed[0] !== 'string' || typeof parsed[1] !== 'string') {
     throw new WorkStateError(
       'SCHEMA',
@@ -280,143 +274,6 @@ export function clampListLimit(limit: number): number {
   }
   if (limit < 1) return 1;
   return Math.min(limit, MAX_LIST_LIMIT);
-}
-
-/**
- * The maximum number of characters of SERIALIZED ITEMS one list page may
- * carry, whatever `limit` (or the page default) would otherwise return. Shared
- * by BOTH transports — the MCP `work_list` tool (work-state/tools.ts) and the
- * CLI's `list --json` (cli/ideate-work.ts).
- *
- * WHY a second bound at all: `limit` counts ITEMS, and an item is not a fixed
- * size. Measured over the MCP transport, a default page of 100 summary rows
- * with realistic titles serializes to ~42k characters, and
- * `{ limit: 500, include_spec: true }` on a 120-item board with 500-character
- * specs serializes to ~103k — LARGER than the ~66k payload that blew a
- * client's per-tool-result token cap and prompted the projection in the first
- * place. An item-count bound alone therefore does not bound the payload; this
- * one does, and it applies to EVERY path — summary rows and `include_spec`
- * alike — because `include_spec` is exactly the parameter that makes rows big.
- *
- * WHY the CLI is bounded too, despite writing to a byte stream with no token
- * cap: `bin/ideate-work list --json` is an AGENT-facing path (agents/
- * journal-keeper.md instructs an agent to run exactly that command), so its
- * stdout lands in a context window as a tool result under the same kind of cap
- * the MCP result was — measured at 66,324 characters on a real 125-item board,
- * larger than the failure this budget exists to prevent. One transport bounded
- * and the other not would just move the failure to the other door.
- *
- * WHY 40,000: at the usual ~4 characters per token that is ~10k tokens of
- * items, which leaves a wide margin under a typical 25k-token per-tool-result
- * cap for the result envelope and for the conversation the caller is actually
- * having. It is deliberately a round, memorable number rather than a tuned
- * one: the guarantee callers depend on is "a page is bounded and `next_cursor`
- * tells you whether to come back", not any particular size.
- *
- * WHY this constant lives HERE rather than in either transport: it is TRANSPORT
- * policy (exactly like {@link DEFAULT_LIST_LIMIT}) that BOTH transports must
- * agree on, and this module is the only home both can import without dragging
- * in the MCP SDK. It is deliberately NOT applied by this module: the store's
- * absent-options behavior stays "every matching row, no truncation" for the
- * in-repo consumer that sweeps the whole board (context/assemble-prototype.ts).
- */
-export const LIST_PAYLOAD_BUDGET_CHARS = 40_000;
-
-/**
- * How many characters ONE item costs on the wire — the per-transport half of
- * {@link applyListPayloadBudget}, injected because the two transports do not
- * write the same bytes. Bounding a payload is only meaningful against the
- * serialization that is ACTUALLY emitted, so each transport passes the measure
- * matching its own writer: {@link measureCompactItemChars} for MCP (the SDK
- * serializes a tool result compactly) and {@link measurePrettyItemChars} for
- * the CLI (which pretty-prints at 2-space indent, ~35% larger for the same
- * rows). Passing the wrong one would silently under- or over-count.
- */
-export type ListItemMeasure<T> = (item: T) => number;
-
-/**
- * The MCP transport's measure: an item as compact JSON, which is exactly what
- * the SDK writes into a tool result (`JSON.stringify(body)`, no indent).
- */
-export function measureCompactItemChars(item: unknown): number {
-  return JSON.stringify(item).length;
-}
-
-/** Items sit two levels deep in the CLI's envelope (`{ "items": [ … ] }`), so
- *  every line of an item carries four extra spaces on the wire. */
-const PRETTY_ITEM_INDENT_CHARS = 4;
-/** …and every row but the last pays a `,\n` separator; charging it to all of
- *  them keeps the measure conservative by exactly one character per page. */
-const PRETTY_ITEM_SEPARATOR_CHARS = 2;
-
-/**
- * The CLI transport's measure: an item as it is actually WRITTEN by
- * `list --json` — pretty-printed at 2-space indent, nested inside the
- * `{ "items": [ … ], "next_cursor": … }` envelope, plus its separator.
- *
- * WHY not just reuse {@link measureCompactItemChars} there: the CLI serializes
- * with `JSON.stringify(x, null, 2)`, so its on-the-wire size is roughly 35%
- * larger than the compact form for identical rows. Budgeting the compact form
- * would let the CLI emit ~54k characters against a 40k budget — bounding
- * something it does not write. The point of the budget is bounding REAL output.
- *
- * What is (and is not) covered: this counts the ITEMS REGION, mirroring the MCP
- * path, where the budget likewise bounds the items and not the `{ok:true, …}`
- * result envelope around them. The CLI's own framing — the object braces, the
- * two keys and the cursor string, on the order of a hundred characters — sits
- * outside the budget, because the cursor is not known until the page's rows are
- * chosen.
- */
-export function measurePrettyItemChars(item: unknown): number {
-  const rendered = JSON.stringify(item, null, 2);
-  const lines = rendered.split('\n').length;
-  return rendered.length + PRETTY_ITEM_INDENT_CHARS * lines + PRETTY_ITEM_SEPARATOR_CHARS;
-}
-
-/**
- * Close a page early when its serialized items would exceed
- * {@link LIST_PAYLOAD_BUDGET_CHARS}, re-deriving `next_cursor` from the LAST
- * INCLUDED row so the caller resumes exactly where the shortened page stopped.
- * Keyset paging is what makes this trivial: the cursor is a position in the
- * board's stable creation order ({@link encodeListCursor}), so any row can end
- * a page.
- *
- * ONE implementation, both transports (see {@link ListItemMeasure}): MCP and
- * CLI differ only in the `measureItem` they pass, so the budget, the liveness
- * rule and the cursor rebuild cannot drift between the two doors.
- *
- * LIVENESS — the property to not get wrong: if the page had ANY row, this
- * returns AT LEAST ONE row. A single item larger than the entire budget is
- * returned ALONE, with a valid `next_cursor`, rather than as an empty page —
- * an empty page with a cursor would stall the walk forever (the caller would
- * loop, or read the empty page as "the board ended" and stop early). The
- * budget is therefore a bound on how much a page carries BEYOND its first row,
- * never a filter that can drop a row entirely.
- *
- * Honesty of `next_cursor` is preserved in both directions: shortening a page
- * always yields a non-null cursor (rows remain, by construction), and a page
- * that fits is returned untouched — including its `null` cursor at true
- * exhaustion.
- */
-export function applyListPayloadBudget<T extends { id: string; created_at: string }>(
-  page: ListItemsPage<T>,
-  measureItem: ListItemMeasure<T>,
-): ListItemsPage<T> {
-  const kept: T[] = [];
-  let used = 0;
-  for (const item of page.items) {
-    const size = measureItem(item);
-    // The `kept.length > 0` guard IS the liveness guarantee above.
-    if (kept.length > 0 && used + size > LIST_PAYLOAD_BUDGET_CHARS) break;
-    kept.push(item);
-    used += size;
-  }
-  const last = kept.at(-1);
-  // Nothing was dropped (`kept.length === page.items.length`, the common
-  // case), or there was nothing to drop (an empty page — `last` undefined):
-  // either way the page, INCLUDING its cursor, is already correct.
-  if (last === undefined || kept.length === page.items.length) return page;
-  return { items: kept, next_cursor: encodeListCursor(last.created_at, last.id) };
 }
 
 /**
