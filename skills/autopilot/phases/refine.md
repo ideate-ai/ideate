@@ -6,7 +6,9 @@ review verdict was `needs-refinement`. Its job: turn this cycle's findings into
 the next cycle's board work — and detect when the loop is failing to converge.
 
 ## Turn findings into work
-Read this cycle's findings (`record_read(scope="finding")` / the verdict output)
+Read this cycle's findings (`record_read(scope="finding")` / the verdict output,
+paged to exhaustion as below; record rows carry the `claim`, not the prose, so
+fetch a finding by `id` with `include_content: true` when you need the detail)
 and the current board (`work_list`, paged to exhaustion — follow `next_cursor`
 until it is `null`; a short page is not the end — since the guard below counts
 the whole board):

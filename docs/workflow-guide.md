@@ -96,7 +96,11 @@ vocabulary is open — these are conventions, not a fixed schema.
 before compaction, when a subagent stops, when a task completes, and on
 `git commit` — with no tool call required. The `record_*` tools
 (`record_append`, `record_decision`, `record_read`) are the *explicit* path the
-skills use on top of that floor.
+skills use on top of that floor. `record_read` is selection-only and bounded
+like `work_list`: summary rows without the prose body (`content_length`
+instead), `limit`/`cursor`-paged under the same payload budget, so a whole
+scope is read by following `next_cursor` to `null` and a body is fetched one
+record at a time with `record_read(id, include_content: true)`.
 
 **Priming** surfaces a bounded, recency-and-scope-selected digest of recent
 records at session start and subagent start. It is **unranked** (selection
@@ -197,7 +201,15 @@ maintain.
 existing one *in place*; the prior version is pushed onto the item's `history`.
 Rules are never hard-deleted — a rule that no longer applies is set to
 `status: deprecated` or `superseded`. `steering_read` selects by domain,
-status, and/or kind, unranked.
+status, kind, and/or exact `id`, unranked — projected (each item carries
+`history_length`, not the `history` trail; `include_history` opts the trail
+back in, and an `id` with `include_history` is the single-item fetch) and
+`limit`/`cursor`-paged under the same payload budget as `work_list`, ordered
+newest-updated first. Reading the *whole* ruleset therefore means following
+`next_cursor` until it is `null`, never assuming a short page is the end; and
+because an amendment restamps the `updated_at` the order is keyed on, a
+`steering_put` mid-walk can push an unread item past your cursor — re-run a
+walk that must not miss one.
 
 **Steering is gated off by default.** Per a project guiding principle (GP-23),
 `steering_put`/`steering_read` return `{ok: false, code: "GATED"}` until

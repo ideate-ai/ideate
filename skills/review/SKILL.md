@@ -31,15 +31,20 @@ a work cycle and feeds `refine`.
 
 ## Step 2 — Circuit-breaker check (advisory)
 Count how many review cycles this area has been through without converging
-(`record_read` for prior cycle-summaries). If it exceeds a sensible threshold
-(default 5), **surface it as a reassess signal, not a hard stop** — tell the
-user the work may be thrashing and ask whether to continue, re-scope, or pause.
+(`record_read(scope="cycle-summary")`, paged to exhaustion — follow
+`next_cursor` until it is `null`, since a short page undercounts). If it exceeds
+a sensible threshold (default 5), **surface it as a reassess signal, not a hard
+stop** — tell the user the work may be thrashing and ask whether to continue,
+re-scope, or pause.
 Continuing past the threshold is fine if the work is genuinely converging;
 this is a prompt to reflect, not a gate.
 
 ## Step 3 — Load context and set review depth
 Read the completed work, its board items and specs (`work_get`/`work_events`),
-the applicable steering (`steering_read`), and prior findings (`record_read`).
+the applicable steering (`steering_read` — by `domain` when the review is
+scoped to one, otherwise paged out the same way), and prior findings
+(`record_read`, whose rows carry the `claim` but no prose — fetch one in full
+by `id` with `include_content: true`).
 Set depth proportionally: a small, low-risk change may warrant only the
 code-reviewer (confirm that shortcut with the user); a large or risky change
 gets the full panel.

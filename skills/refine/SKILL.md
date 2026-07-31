@@ -37,24 +37,28 @@ shapes the output:
 - **Requirement evolution** — a change to existing behaviour. Plan it against
   the current architecture and board.
 - **Post-review correction** — the input is `review`'s findings
-  (`record_read(scope="finding")`). Each unresolved significant/critical
-  finding becomes (or updates) a board item.
+  (`record_read(scope="finding")`, paged to exhaustion — see Step 3). Each
+  unresolved significant/critical finding becomes (or updates) a board item.
 - **Alignment recalibration** — the plan and the code have drifted. This case
   may legitimately produce **zero new work items** — the honest output can be
   amended steering and recorded decisions that realign intent, nothing more.
   Don't invent busywork.
 
 ## Step 3 — Load context
-Assemble what the decomposition must respect:
+Assemble what the decomposition must respect. Every read below is paged —
+follow `next_cursor` until it is `null`; a page shorter than `limit` is **not**
+the end:
 - **Steering** (`steering_read`) — the principles, constraints, and policies
-  the new work must honour.
-- **Board** (`work_list` paged to exhaustion — follow `next_cursor` until it is
-  `null`; a short page is not the end — plus `work_events`/`work_get` where
-  history or an item's `spec` matters, since list rows carry `spec_length`, not
-  the body) — existing open/in-progress/done items, so new work wires to them
-  and doesn't duplicate them.
+  the new work must honour. One page is not the ruleset; page it out, or filter
+  by `domain` if the idea is confined to one.
+- **Board** (`work_list`, plus `work_events`/`work_get` where history or an
+  item's `spec` matters, since list rows carry `spec_length`, not the body) —
+  existing open/in-progress/done items, so new work wires to them and doesn't
+  duplicate them.
 - **Record** (`record_read`) — the `init` architecture survey and prior
-  decisions; findings if this is a correction.
+  decisions; findings if this is a correction. Rows carry the `claim` and
+  `content_length`, not the prose — fetch a specific record by `id` with
+  `include_content: true` when the body matters.
 
 ## Step 4 — Clarify (short interview)
 Targeted, not a full interview — you have context. Pin down only what you need

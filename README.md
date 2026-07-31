@@ -141,9 +141,17 @@ via the other.
 - `record_append(kind, claim, verification_anchor?, scope?, content, task_id?)`
   — append one process record. Open-vocabulary `kind` (e.g. `finding`,
   `session-outcome`, `commit-boundary`, …).
-- `record_read(scope?, limit?)` — read records newest-first, optionally
-  filtered by a plain substring match against scope/kind/source. Unranked:
-  selection only, no scoring.
+- `record_read(scope?, id?, include_content?, limit?, cursor?)` — read records
+  newest-first, optionally filtered by a plain substring match against
+  scope/kind/source or by exact `id`. Unranked: selection only, no scoring.
+  Returns `{ok, records, next_cursor}`. Rows are **summaries** — every field
+  except the prose body, plus a derived `content_length`; `include_content:
+  true` adds the body, and an `id` with `include_content: true` is the
+  single-record fetch. **Paged:** at most `limit` rows (default 100, clamped
+  into 1..500) and at most ~40,000 characters of rows, so a page can come back
+  shorter than `limit` while records remain — only a `null` `next_cursor` means
+  exhaustion. Pass a page's `next_cursor` back as `cursor` (opaque; tied to the
+  filter it was issued for) to walk a selection to the end.
 - `record_decision(claim, rationale?, verification_anchor?, scope?, task_id?)`
   — sugar for `record_append(kind="decision", ...)`; the ADR entry point.
   The decision write *is* its capture — there is no separate decision store.

@@ -58,8 +58,10 @@ When a claimed item is a human-gate:
   fetch the body per item with `work_get` when you need it. Note `in_progress`
   items — an interrupted prior run may have left claims; check `work_events`
   and either resume or release stale ones.
-- Read steering (`steering_read`) and recent decisions (`record_read`) — this
-  is the context workers need to match the project's rules.
+- Read steering (`steering_read`, paged to exhaustion the same way — the whole
+  ruleset governs the work, and one page is not it) and recent decisions
+  (`record_read`, whose rows carry the `claim` and `content_length`, not the
+  prose) — this is the context workers need to match the project's rules.
 
 ## Step 2 — Present the execution plan and confirm
 Show the user: the claimable frontier, the dependency order, item count, and
@@ -83,8 +85,10 @@ For each claimed item:
    you `work_release` and continue). Skip the worker/review steps for it.
 2. **Assemble the worker's context.** The item's `spec` (returned by
    `work_claim`, or `work_get`) is authoritative; add the applicable steering
-   rules and any decisions scoped to this area (`record_read`). Pass all of it
-   in the worker prompt — the worker has no board/record access of its own.
+   rules and any decisions scoped to this area (`record_read`), pulling the
+   body of each decision you pass with `record_read(id, include_content: true)`
+   — one id at a time, not a bulk read. Pass all of it in the worker prompt —
+   the worker has no board/record access of its own.
 3. **Spawn `ideate:worker`** with that context. It implements, verifies (build
    + tests), and returns a completion report (`complete` or `blocked`, what
    changed, verification output, follow-ups).

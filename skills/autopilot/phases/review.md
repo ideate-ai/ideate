@@ -12,7 +12,9 @@ review instead, to catch regressions the differential scope misses.
 
 ## Reviewers (parallel)
 Spawn concurrently, each scoped to the work under review and handed the
-applicable steering (`steering_read`):
+applicable steering (`steering_read` — by `domain` for a differential review,
+else paged to exhaustion: follow `next_cursor` until it is `null`, since a
+short page is not the ruleset):
 - `ideate:code-reviewer` — correctness, security, quality.
 - `ideate:spec-reviewer` — spec + steering adherence.
 - `ideate:gap-analyst` — missing coverage, unupdated consumers, absent tests.

@@ -29,7 +29,10 @@ For each claimable item, apply **board claim discipline**:
    frontier until the gate completes (GP-27). Then `work_complete` or
    `work_release` the gate item itself and continue to the next claimable item.
 3. Assemble context: the item `spec` (authoritative — `work_claim` returned it)
-   + applicable steering (`steering_read`) + scoped decisions (`record_read`).
+   + applicable steering (`steering_read`, paged to exhaustion as above — one
+   page is not the ruleset) + scoped decisions (`record_read`; its rows carry
+   no prose, so pull the body of each decision you pass with
+   `record_read(id, include_content: true)`, one id at a time).
    Spawn `ideate:worker` with all of it.
 4. Incremental review: spawn `ideate:code-reviewer` (and `ideate:spec-reviewer`
    for spec-sensitive items) on the change.

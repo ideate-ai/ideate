@@ -16,13 +16,19 @@ One of:
 
 ## Reconstruct the run from the record
 Autopilot state lives in records, not memory — rebuild from ground truth:
-- `record_read(scope="autopilot")` — every `autopilot-cycle` record: per-cycle
-  items completed, findings, verdicts, head commits.
+- `record_read(scope="autopilot")` — the `autopilot-cycle` records: per-cycle
+  items completed, findings, verdicts, head commits. "Every cycle" means paging
+  to exhaustion: follow `next_cursor` until it is `null`; a page shorter than
+  `limit` is not the end, so a one-page read silently under-reports the run.
+  Rows carry the `claim`, not the prose — re-read one cycle by `id` with
+  `include_content: true` when you need its detail.
 - `work_list` — final board state (done / open / cancelled counts, remaining
   claimable frontier). These counts are whole-board: page with `next_cursor`
   until it is `null`; a page shorter than `limit` is not the end.
-- `record_read(scope="andon")` — every proxy-human decision, especially those
-  flagged `human: true`.
+- `record_read(scope="andon")` — the proxy-human decisions, especially those
+  flagged `human: true`. Page this one to exhaustion too — the report claims
+  to list them all — and where the flag or rationale isn't in a row's `claim`,
+  fetch that decision by `id` with `include_content: true`.
 - `git log --oneline <first-cycle-head>..HEAD` — what actually shipped.
 
 ## Present the report

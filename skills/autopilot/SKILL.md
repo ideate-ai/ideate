@@ -20,9 +20,11 @@ records and reconstruct it on resume:
 - At each cycle boundary write `record_append(kind="autopilot-cycle", ...)`
   with: cycle number, items completed this cycle, findings by severity,
   convergence verdict, and the head commit (`git rev-parse HEAD`).
-- On (re)start, `record_read(scope="autopilot")` to find the last cycle record;
-  the board (`work_list`, paged out via `next_cursor`) and `git log` are the
-  ground truth for what's done.
+- On (re)start, `record_read(scope="autopilot")` to find the last cycle
+  record — records come newest-first, so it is on the first page, and its `id`
+  with `include_content: true` gets that one record's body; the board
+  (`work_list`, paged out via `next_cursor`) and `git log` are the ground truth
+  for what's done.
   Resume from `last_cycle + 1`; a fresh project starts at cycle 1.
 
 Resolve `actor_human` once: `git config user.name` (fallback `$USER`).
@@ -33,10 +35,13 @@ Resolve `actor_human` once: `git config user.name` (fallback `$USER`).
 2. **Validate.** `work_list` must show a populated board; if empty, stop and
    tell the user to run `/ideate:refine` to populate the board (or
    `/ideate:init` first if the project isn't set up yet).
-3. **Load intent.** `steering_read` for principles/policies and `record_read`
-   for the stated appetite and success criteria (autopilot honours these and
-   passes them to proxy-human on escalations). Appetite default: 10 cycles of
-   effort unless recorded otherwise.
+3. **Load intent.** `steering_read` for principles/policies — paged to
+   exhaustion (follow `next_cursor` until it is `null`; a short page is not the
+   end), since the whole ruleset governs the run — and `record_read` for the
+   stated appetite and success criteria, whose rows carry the `claim` only, so
+   re-read the record that states them by `id` with `include_content: true`.
+   (Autopilot honours these and passes them to proxy-human on escalations.)
+   Appetite default: 10 cycles of effort unless recorded otherwise.
 4. **Resume check.** Reconstruct state (above); decide resume vs. fresh and
    confirm the starting cycle with the user before the loop begins.
 5. **Main loop** — each cycle:
