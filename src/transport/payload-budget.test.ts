@@ -47,6 +47,9 @@ const PERMITTED_IMPORTERS: readonly { readonly segments: readonly string[]; read
   { segments: ['record', 'tools.ts'], measure: 'measureCompactItemChars' },
   // The `ideate-record read --json` CLI — likewise 2-space indented.
   { segments: ['cli', 'ideate-record.ts'], measure: 'measurePrettyItemChars' },
+  // The MCP `usage_query` tool — the fourth and last unbounded read surface,
+  // compactly written like the other tool results. It has no CLI door.
+  { segments: ['usage', 'tools.ts'], measure: 'measureCompactItemChars' },
 ];
 
 /** A file "reaches for" the budget if it names either symbol at all — an
