@@ -548,6 +548,14 @@ describe('work_list summary projection + keyset pagination', () => {
     return { ids, pageSizes };
   }
 
+  it('an empty board: work_list returns {items: [], next_cursor: null} — a non-null cursor here would spin every documented walk loop forever', async () => {
+    const fixture = makeFixture();
+    const client = await fixture.connect();
+    const listed = await call(client, 'work_list', {});
+    expect(listed.isError).toBe(false);
+    expect(listed.body).toMatchObject({ items: [], next_cursor: null });
+  });
+
   it('returns summary rows by default: no spec key, a correct spec_length, and a bounded payload on a >100k-char board', async () => {
     const fixture = makeFixture();
     const client = await fixture.connect();
@@ -847,9 +855,13 @@ describe('work_list summary projection + keyset pagination', () => {
     expect(description).toContain('SHORTENED');
     expect(description).toContain(String(LIST_PAYLOAD_BUDGET_CHARS));
     expect(description).toContain('follow next_cursor');
-    // …and the parameters the prose enumerates really exist on the schema.
+    // …and — bidirectionally (matching steering_read's pattern) — the FULL
+    // property set the schema actually ships, not merely the subset the prose
+    // happens to enumerate: `arrayContaining` above would still pass if a
+    // parameter were added to the schema and left undocumented; `toEqual` on
+    // the full sorted set does not.
     const props = (listTool?.inputSchema as { properties?: Record<string, unknown> } | undefined)?.properties ?? {};
-    expect(Object.keys(props)).toEqual(expect.arrayContaining(['include_spec', 'limit', 'cursor']));
+    expect(Object.keys(props).sort()).toEqual(['cursor', 'include_spec', 'limit', 'parent_id', 'status', 'tenant_id']);
   });
 });
 

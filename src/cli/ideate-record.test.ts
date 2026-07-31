@@ -249,6 +249,24 @@ describe('read (direct-use path)', () => {
     return JSON.parse(runCli(['read', '--json', ...args], { cwd: root })) as JsonPage;
   }
 
+  /** Walk `read --json` to exhaustion, returning every page's raw stdout
+   *  alongside the parsed envelope — the only honest way to read the whole
+   *  record through this door, since a --json page is bounded by the payload
+   *  budget as well as by --limit. */
+  function walkJson(root: string, args: readonly string[]): { pages: JsonPage[]; stdouts: string[] } {
+    const pages: JsonPage[] = [];
+    const stdouts: string[] = [];
+    let cursor: string | null = null;
+    for (;;) {
+      const stdout = runCli(['read', '--json', ...args, ...(cursor === null ? [] : ['--cursor', cursor])], { cwd: root });
+      const page = JSON.parse(stdout) as JsonPage;
+      pages.push(page);
+      stdouts.push(stdout);
+      cursor = page.next_cursor;
+      if (cursor === null) return { pages, stdouts };
+    }
+  }
+
   it('round-trips appended records, newest first, honoring --limit and --scope', () => {
     const root = makeProjectRoot();
     appendRecord(root, 'First claim about the backend.', ['--scope', 'backend']);
@@ -356,6 +374,41 @@ describe('read (direct-use path)', () => {
 
     expect(seen).toEqual([...ids].reverse());
     expect(new Set(seen).size).toBe(ids.length);
+  });
+
+  it('--json is BUDGETED exactly like the MCP tool: fat records close a page early, under --limit, with a cursor — and the emitted stdout stays inside the budget', () => {
+    const root = makeProjectRoot();
+    // --include-content is the flag that reaches the budget fastest: 20 x 5k
+    // bodies pretty-print to well over the 40k `read --json` payload budget —
+    // the exact arc the finding names (a budget-closed page whose re-minted
+    // next_cursor must come from the last SURVIVING row, not the pre-budget
+    // page's own cursor).
+    const ids: string[] = [];
+    for (let i = 0; i < 20; i += 1) {
+      ids.push(appendRecord(root, `Fat claim ${String(i)}.`, ['--content', 'x'.repeat(5_000)]));
+    }
+    const newestFirst = [...ids].reverse();
+
+    const stdout = runCli(['read', '--json', '--limit', '20', '--include-content'], { cwd: root });
+    const page = JSON.parse(stdout) as JsonPage;
+    expect(page.records.length).toBeGreaterThan(0);
+    expect(page.records.length).toBeLessThan(20); // the BUDGET closed this page, not --limit
+    // The bound that matters is on the bytes actually written.
+    expect(stdout.length).toBeLessThanOrEqual(LIST_PAYLOAD_BUDGET_CHARS);
+    // …and the caller is told to come back, even though --limit was not reached.
+    expect(page.next_cursor).toBeTypeOf('string');
+
+    // A budget-closed sequence still walks the whole record exactly once —
+    // this is the fixture the finding says is missing: it has all three
+    // conditions (a budget-closing page, a walk to exhaustion, and a check
+    // that no rows were silently dropped) and never overlaps them anywhere
+    // else in the suite.
+    const { pages, stdouts } = walkJson(root, ['--limit', '20', '--include-content']);
+    for (const each of stdouts) expect(each.length).toBeLessThanOrEqual(LIST_PAYLOAD_BUDGET_CHARS);
+    const walked = pages.flatMap((p) => p.records.map((r) => r.id));
+    expect(walked).toEqual(newestFirst);
+    expect(new Set(walked).size).toBe(newestFirst.length);
+    expect(pages.every((p) => p.records.length < 20)).toBe(true);
   });
 
   it('exits 1 on a malformed --limit', () => {

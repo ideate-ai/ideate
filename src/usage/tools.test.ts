@@ -266,10 +266,13 @@ describe('usage_query is BOUNDED over the wire (the fourth read surface)', () =>
     expect(tool.description).toContain('next_cursor');
     expect(tool.description).toMatch(/null ONLY at true exhaustion/);
     expect(tool.description).toMatch(/OPAQUE/);
-    // …and the parameters it describes are the ones the schema accepts.
+    // …and — bidirectionally (matching steering_read's pattern) — the FULL
+    // property set the schema actually ships: `toContain` above only checks
+    // the schema has what the description names, not the reverse; a
+    // parameter added later without documentation would still pass. `toEqual`
+    // on the full sorted set catches that.
     const shape = (tool.inputSchema as { shape?: Record<string, unknown> } | undefined)?.shape ?? {};
-    expect(Object.keys(shape)).toContain('limit');
-    expect(Object.keys(shape)).toContain('cursor');
+    expect(Object.keys(shape).sort()).toEqual(['cursor', 'item_id', 'kind', 'limit', 'manifest_id', 'seed_id', 'session_id', 'task_id']);
     // The dropped field is not advertised either.
     expect(tool.description).not.toMatch(/\bcount\b/);
   });

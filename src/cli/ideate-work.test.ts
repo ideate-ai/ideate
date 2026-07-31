@@ -272,6 +272,12 @@ describe('list --json: summary rows, --include-spec, and keyset paging', () => {
     return ids;
   }
 
+  it('an empty board: `list --json` returns {items: [], next_cursor: null} — a non-null cursor here would spin every documented walk loop forever', () => {
+    const root = makeProjectRoot();
+    const page = JSON.parse(runCli(['list', '--json'], { cwd: root })) as ListEnvelope;
+    expect(page).toEqual({ items: [], next_cursor: null });
+  });
+
   it('--json emits {items, next_cursor} with no spec key and a correct spec_length; --include-spec puts the spec back', () => {
     const root = makeProjectRoot();
     const spec = 'x'.repeat(4096);

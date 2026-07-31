@@ -29,7 +29,7 @@ import { CONFIG_FILENAME, loadConfig } from '../config/ideate-config.js';
 import { TelemetryCounters } from '../telemetry/counters.js';
 import { LIST_PAYLOAD_BUDGET_CHARS } from '../transport/payload-budget.js';
 import type { Clock } from './id.js';
-import { DEFAULT_RECORD_READ_LIMIT } from './read-page.js';
+import { DEFAULT_RECORD_READ_LIMIT, MAX_RECORD_READ_LIMIT } from './read-page.js';
 import { parseRecord } from './schema.js';
 import { RecordStore } from './store.js';
 import { RECORD_TOOL_NAMES, createRecordToolsRegistrar } from './tools.js';
@@ -583,6 +583,30 @@ describe('record_read: standalone priming — unranked, filtered, PROJECTED and 
     expect(page.next_cursor).toBeTypeOf('string');
   });
 
+  it('LIVENESS over the wire: a record larger than the whole budget is returned ALONE with a cursor — never an empty page that stalls the walk', async () => {
+    const fx = makeFixture();
+    const client = await fx.connect();
+    fx.setNow('2026-07-01T00:00:00.000Z');
+    const small = await callAppend(client, { ...minimalAppend, claim: 'small record', content: 'tiny' });
+    fx.setNow('2026-07-02T00:00:00.000Z');
+    const huge = await callAppend(client, { ...minimalAppend, claim: 'huge record', content: 'x'.repeat(LIST_PAYLOAD_BUDGET_CHARS * 2) });
+
+    const page = await readPage(client, { include_content: true, limit: 10 });
+    // The oversized row cannot share a page with anything and is still SENT —
+    // dropping it would leave the caller looping on an empty page forever.
+    expect(page.records).toHaveLength(1);
+    expect(page.records[0]?.id).toBe(huge['id']);
+    expect(page.chars).toBeGreaterThan(LIST_PAYLOAD_BUDGET_CHARS);
+    expect(page.next_cursor).toBeTypeOf('string');
+
+    // …and the walk makes progress and terminates: the small record follows
+    // on the next page, with a null cursor at true exhaustion.
+    const second = await readPage(client, { include_content: true, limit: 10, cursor: page.next_cursor as string });
+    expect(second.records).toHaveLength(1);
+    expect(second.records[0]?.id).toBe(small['id']);
+    expect(second.next_cursor).toBeNull();
+  });
+
   it('walking next_cursor to exhaustion yields every record exactly once, id-descending, null only at the end', async () => {
     const fx = makeFixture();
     const client = await fx.connect();
@@ -620,5 +644,42 @@ describe('record_read: standalone priming — unranked, filtered, PROJECTED and 
       expect((result as CallToolResult).isError).toBe(true);
       expect(body['records']).toBeUndefined();
     }
+  });
+});
+
+describe('record_read description: the shipped contract, bidirectionally (P-52)', () => {
+  it('states the projection, the by-id path, paging, the short-page rule and the no-return-everything decision — and names exactly the parameters the schema ships', async () => {
+    const fx = makeFixture();
+    const client = await fx.connect();
+    const { tools } = await client.listTools();
+    const tool = tools.find((t) => t.name === 'record_read');
+    const description = tool?.description ?? '';
+
+    // The projection and its opt-in.
+    expect(description).toContain('content_length');
+    expect(description).toContain('include_content');
+    // The by-id retrieval path.
+    expect(description).toContain('IS the by-id fetch');
+    // Paging, with the numbers the code actually ships.
+    expect(description).toContain(`default ${String(DEFAULT_RECORD_READ_LIMIT)}`);
+    expect(description).toContain(`1..${String(MAX_RECORD_READ_LIMIT)}`);
+    expect(description).toContain('next_cursor');
+    expect(description).toContain(String(LIST_PAYLOAD_BUDGET_CHARS));
+    // A page may be SHORTER than limit, and exhaustion means following the
+    // cursor until it is null — never reading a short page as exhaustion.
+    expect(description).toContain('SHORTER than `limit`');
+    expect(description).toContain('null ONLY at true exhaustion');
+    // The deliberate "there is no return-everything" decision (tools.ts:325-327)
+    // — documented and, until now, guarded by nothing.
+    expect(description).toContain('NO "RETURN EVERYTHING"');
+    expect(description).toContain('record FILES on disk');
+
+    // Every parameter the prose names is actually on the shipped schema, and
+    // — bidirectionally — the schema carries no parameter the prose omits: the
+    // FULL property set, not a subset the description happens to mention
+    // (arrayContaining/toContain would pass even after a param was added and
+    // left undocumented).
+    const properties = Object.keys((tool?.inputSchema as { properties?: Record<string, unknown> } | undefined)?.properties ?? {});
+    expect(properties.sort()).toEqual(['cursor', 'id', 'include_content', 'limit', 'scope']);
   });
 });
