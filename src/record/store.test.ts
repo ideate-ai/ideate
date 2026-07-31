@@ -3,7 +3,10 @@
 //
 // Pins: round-trip serialization; four-contract-fields-always-present
 // enforcement; date-sharded config-resolved paths
-// with ULID filename stems; gate-before-persist with a
+// with ULID filename stems; the FILE-EXPORT CONTRACT the README states —
+// the `YYYY/MM/{id}.md` shard is a pure function of the record id (known
+// ULIDs, hand-computed expectations, a clock deliberately in another month)
+// and one file holds exactly one record; gate-before-persist with a
 // PLANTED SECRET asserted masked in the raw on-disk bytes; the telemetry
 // wiring (capture_fired / capture_write_failed, and every
 // redaction routed to the dedicated counter); typed no-throw failure on
@@ -13,7 +16,7 @@
 // All filesystem work happens in mkdtemp dirs — the real .ideate/ is never
 // touched.
 
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -254,6 +257,87 @@ describe('date-sharded config-resolved paths', () => {
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.path).toBe(join(projectRoot, 'notes', 'record', '2026', '07', `${result.record.id}.md`));
+  });
+});
+
+describe('the file-export contract: the shard path is a pure function of the record id', () => {
+  // WHY this block exists: the record FILES — not `record_read` — are the
+  // durable export surface an external consumer (e.g. a knowledge-graph
+  // ingester) reads WITHOUT ideate running, and the README states that
+  // contract in prose. Prose drifts; this pins the behaviour the prose
+  // promises: `<record.path>/YYYY/MM/{id}.md`, addressable from the id ALONE
+  // (no store, no clock, no index needed to compute where a record lives),
+  // one record per file. Change the derivation in store.append and these
+  // fail — which is the point.
+
+  /**
+   * Known ULIDs with their hand-computed mint dates. The stems are literal on
+   * purpose: deriving the expected year/month with parseUlidTimestamp here
+   * would just re-run the store's own arithmetic and assert nothing. Every
+   * one of these mints in a DIFFERENT month from the fixture clock
+   * (2026-07), so a shard taken from the wall clock cannot pass.
+   */
+  const KNOWN_IDS: readonly { id: string; iso: string; year: string; month: string }[] = [
+    { id: '01DRXD2DS0000000000000000A', iso: '2019-11-05T09:07:00.000Z', year: '2019', month: '11' },
+    { id: '01DT7KMT20000000000000000B', iso: '2019-11-21T18:30:00.000Z', year: '2019', month: '11' },
+    // Just past midnight UTC on New Year: the shard follows the id's UTC
+    // instant, so a derivation that used local time would land in 2019/12.
+    { id: '01DXF84QT0000000000000000C', iso: '2020-01-01T00:30:00.000Z', year: '2020', month: '01' },
+    // Leap day, last millisecond — zero-padded month, no rollover.
+    { id: '01HQVMZ0ZZ000000000000000D', iso: '2024-02-29T23:59:59.999Z', year: '2024', month: '02' },
+  ];
+
+  it.each(KNOWN_IDS)(
+    'id $id (minted $iso) lands at exactly <root>/$year/$month/{id}.md',
+    ({ id, year, month }) => {
+      const { store, recordDir } = makeFixture(); // clock fixed at 2026-07
+      const result = store.append(input({ id }));
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+
+      const expected = join(recordDir, year, month, `${id}.md`);
+      expect(result.path).toBe(expected);
+      expect(existsSync(expected)).toBe(true);
+      // The path an external reader would compute from the id alone — with no
+      // store instance in the loop — is the path the file is actually at.
+      expect(readdirSync(join(recordDir, year, month))).toEqual([`${id}.md`]);
+      // …and the shard is the id's month, never the clock's (2026/07).
+      expect(existsSync(join(recordDir, '2026'))).toBe(false);
+    },
+  );
+
+  it('one record per file: a second append writes its OWN file and never touches the first', () => {
+    const { store, recordDir } = makeFixture();
+    const [a, b] = KNOWN_IDS as unknown as [(typeof KNOWN_IDS)[number], (typeof KNOWN_IDS)[number]];
+    const first = store.append(input({ id: a.id, claim: 'the first record' }));
+    expect(first.ok).toBe(true);
+    if (!first.ok) return;
+    const firstBytes = readFileSync(first.path, 'utf8');
+
+    // Same shard (both mint in 2019-11), so if appends ever concatenated into
+    // a shard file rather than one file per record, this is where it shows.
+    const second = store.append(input({ id: b.id, claim: 'the second record' }));
+    expect(second.ok).toBe(true);
+    if (!second.ok) return;
+
+    expect(second.path).not.toBe(first.path);
+    expect(readFileSync(first.path, 'utf8')).toBe(firstBytes);
+    const shard = join(recordDir, a.year, a.month);
+    expect(readdirSync(shard).sort()).toEqual([`${a.id}.md`, `${b.id}.md`]);
+
+    // Each file holds EXACTLY one record: it parses whole (a concatenated
+    // second record would break the single-frontmatter parse), the parsed id
+    // is the filename stem, and only one frontmatter fence opens each file.
+    for (const { id, claim } of [
+      { id: a.id, claim: 'the first record' },
+      { id: b.id, claim: 'the second record' },
+    ]) {
+      const raw = readFileSync(join(shard, `${id}.md`), 'utf8');
+      const parsed = parseRecord(raw);
+      expect(parsed.id).toBe(id);
+      expect(parsed.claim).toBe(claim);
+      expect(raw.split('\n').filter((line) => line === '---')).toHaveLength(2);
+    }
   });
 });
 

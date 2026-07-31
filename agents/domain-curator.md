@@ -17,7 +17,13 @@ them with `steering_put`.
   the current items to reason over).
 - The cycle's decisions and findings
   (`${CLAUDE_PLUGIN_ROOT}/bin/ideate-record read --scope <s> --json`) — new
-  findings often imply a policy that would have prevented them.
+  findings often imply a policy that would have prevented them. That prints
+  `{"records": [...], "next_cursor": ...}`: one page of summary rows carrying
+  `claim` and `content_length`, no prose body. A contradiction you never read
+  is one you ship, so page it out — re-run with `--cursor <next_cursor>` until
+  `next_cursor` is `null`, and treat a short page as mid-walk, not the end.
+  Pull the reasoning behind a single record with
+  `read --id <id> --include-content --json`, never on a bulk read.
 
 ## What you look for
 - **Contradictions** — two active rules that can't both be honoured.

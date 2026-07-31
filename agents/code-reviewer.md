@@ -17,7 +17,11 @@ anything and you do not write records — you report, the skill records.
   - `${CLAUDE_PLUGIN_ROOT}/bin/ideate-work events --id <item-id> --json` — the
     authoritative transition history of a work item.
   - `${CLAUDE_PLUGIN_ROOT}/bin/ideate-record read --scope <substring> --json` —
-    recent decisions/findings to check the change against.
+    recent decisions/findings to check the change against. It prints
+    `{"records": [...], "next_cursor": ...}`: one bounded page of summary rows
+    carrying `claim` and `content_length`, no prose body. The newest page is
+    enough for reviewing one change — when a claim's reasoning matters, fetch
+    that record alone with `read --id <id> --include-content --json`.
 
 ## What you look for
 Correctness and logic errors; security vulnerabilities (injection, authz,

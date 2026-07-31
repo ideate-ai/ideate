@@ -46,7 +46,12 @@ describe('ideate MCP server boot', () => {
 
   it('exposes the ideate identity', () => {
     expect(SERVER_NAME).toBe('ideate');
-    expect(SERVER_VERSION).toBe('3.0.1');
+    // The version is deliberately NOT asserted against a literal here: that
+    // literal was an eighth hand-maintained copy of the shipped version, and
+    // a copy is the defect it looked like a guard against. SERVER_VERSION is
+    // now checked against .claude-plugin/plugin.json (the source of truth) in
+    // version-consistency.test.ts, which covers this and the other four
+    // in-package statements of the version at once.
   });
 
   it('accepts a mock tool through the registration extension point, alongside the default surface', () => {

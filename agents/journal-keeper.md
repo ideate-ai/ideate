@@ -13,7 +13,13 @@ invoking skill appends it with `record_append(kind=journal)`.
 ## Your inputs
 Whatever the invoker gives you plus what you can read:
 - `${CLAUDE_PLUGIN_ROOT}/bin/ideate-record read --scope <cycle-or-project> --json`
-  for the decisions and findings recorded this cycle.
+  for the decisions and findings recorded this cycle. That prints
+  `{"records": [...], "next_cursor": ...}` — one bounded page of summary rows
+  carrying `claim` and `content_length`, not the prose body. Your entry stands
+  for the whole cycle, so page it out with `--cursor <next_cursor>` until
+  `next_cursor` is `null`, exactly as for the board below; when you need the
+  reasoning behind one decision, fetch that record with
+  `read --id <id> --include-content --json`.
 - `${CLAUDE_PLUGIN_ROOT}/bin/ideate-work list --json` and `git log --oneline`
   for what actually shipped. That prints `{"items": [...], "next_cursor": ...}`
   — one bounded page, not the whole board, and rows carry `spec_length` rather

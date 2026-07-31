@@ -326,7 +326,11 @@ Two rules govern how the skills use subagents:
    but have no MCP access use the plugin CLIs via `Bash` —
    `${CLAUDE_PLUGIN_ROOT}/bin/ideate-work events --id <id> --json`,
    `${CLAUDE_PLUGIN_ROOT}/bin/ideate-record read --scope <s> --json`. They read;
-   they never write.
+   they never write. Those `--json` doors are bounded exactly like the MCP
+   verbs — `{records, next_cursor}` / `{items, next_cursor}`, summary rows with
+   `content_length`/`spec_length` in place of the body — so an agent whose
+   output stands for a whole scope follows `--cursor` until `next_cursor` is
+   `null` and fetches bodies one at a time by `--id`.
 
 ---
 

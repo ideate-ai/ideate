@@ -22,7 +22,15 @@ don't. Absence is your beat. You return findings; you write nothing.
 - **Established patterns not followed** — a place the codebase has a
   convention (via steering or repeated practice) that the new work ignores.
 
-Use `git diff`/`git show` to see the change and `${CLAUDE_PLUGIN_ROOT}/bin/ideate-record read --scope <s> --json` for prior decisions the work should respect.
+Use `git diff`/`git show` to see the change and
+`${CLAUDE_PLUGIN_ROOT}/bin/ideate-record read --scope <s> --json` for prior
+decisions the work should respect. That prints
+`{"records": [...], "next_cursor": ...}`: one bounded page of summary rows
+carrying `claim` and `content_length`, no prose body. Absence is your beat and
+an unread page is an invisible gap, so page to exhaustion — re-run with
+`--cursor <next_cursor>` until `next_cursor` is `null`; a short page is not the
+end. Pull one record's reasoning with `read --id <id> --include-content --json`,
+never on a bulk read.
 
 ## What you return — gap findings, each with
 - **Severity** — `critical` / `significant` / `minor`.

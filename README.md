@@ -101,8 +101,9 @@ through the marketplace resolver:
    }
    ```
 
-   This registers the three MCP verbs (`record_append`, `record_read`,
-   `record_decision`) described below.
+   This registers the three record MCP verbs (`record_append`, `record_read`,
+   `record_decision`) described below, alongside the board verbs in [The
+   work-state board](#the-work-state-board-local-backend).
 3. Wire the mechanical capture hooks by pointing the consuming project's
    host at this plugin's `hooks/hooks.json`. That file declares the actual
    hook shape this plugin provides — `SessionStart` (priming via
@@ -138,9 +139,12 @@ via the other.
 
 **MCP verbs** (registered by the ideate MCP server, `dist/server.js`):
 
-- `record_append(kind, claim, verification_anchor?, scope?, content, task_id?)`
-  — append one process record. Open-vocabulary `kind` (e.g. `finding`,
-  `session-outcome`, `commit-boundary`, …).
+- `record_append(kind, claim, verification_anchor?, scope?, content, task_id?,
+  supersedes?, references?)` — append one process record. Open-vocabulary
+  `kind` (e.g. `finding`, `session-outcome`, `commit-boundary`, …).
+  `supersedes` takes the id of the record this one replaces (a correction is a
+  new record, never an edit); `references` is the advanced form — a JSON array
+  of typed edges, `[{"rel":"refutes","id":"01…"}]`.
 - `record_read(scope?, id?, include_content?, limit?, cursor?)` — read records
   newest-first, optionally filtered by a plain substring match against
   scope/kind/source or by exact `id`. Unranked: selection only, no scoring.
@@ -152,17 +156,39 @@ via the other.
   shorter than `limit` while records remain — only a `null` `next_cursor` means
   exhaustion. Pass a page's `next_cursor` back as `cursor` (opaque; tied to the
   filter it was issued for) to walk a selection to the end.
-- `record_decision(claim, rationale?, verification_anchor?, scope?, task_id?)`
-  — sugar for `record_append(kind="decision", ...)`; the ADR entry point.
-  The decision write *is* its capture — there is no separate decision store.
+- `record_decision(claim, rationale?, verification_anchor?, scope?, task_id?,
+  supersedes?, references?)` — sugar for `record_append(kind="decision", ...)`;
+  the ADR entry point. The decision write *is* its capture — there is no
+  separate decision store, and an overturned decision is superseded, not
+  rewritten.
+
+**The record FILES are the export surface.** Each record is one Markdown file
+at `<record.path>/YYYY/MM/{ULID}.md` (`record.path` from `.ideate.json`,
+default `.ideate/record/`) — one record per file, never rewritten (files are
+written exclusive-create), with the `YYYY/MM` shard derived from the record
+id's own embedded timestamp, so the path of a record is computable from its id
+alone. An external consumer — a knowledge-graph ingester, a backup, a `grep` —
+reads that tree directly: durable, stably addressed, and requiring no ideate
+process, no MCP session, and no cooperation from this plugin at read time.
+`record_read` (and `ideate-record read`) is the in-session view for an agent:
+a bounded, paged, unranked *selection* over those same files, not an export
+API — do not build an ingester on it, and never read a short page as the end
+of the record.
 
 **`ideate-record` CLI** (`bin/ideate-record`, the same gated core as a
 standalone executable — this is what the capture hooks invoke):
 
-- `ideate-record append --kind <k> --claim <c> [--anchor <a>] [--scope <s>] [--content <text>|-] [--task <id>]`
-  — append one record directly; exits 1 on failure.
-- `ideate-record read [--scope <substring>] [--limit <n>] [--json]` — print
-  records newest-first; exits 1 on failure.
+- `ideate-record append --kind <k> --claim <c> [--anchor <a>] [--scope <s>] [--content <text>|-] [--task <id>] [--supersedes <id>]`
+  — append one record directly; exits 1 on failure. `--content -` reads the
+  prose body from stdin.
+- `ideate-record read [--scope <substring>] [--id <ulid>] [--limit <n>] [--cursor <c>] [--include-content] [--json]`
+  — print records newest-first; exits 1 on failure. `--json` is the
+  agent-facing door and is bounded exactly like `record_read` (summary rows,
+  default page size, opaque `next_cursor`, shared payload budget);
+  `--include-content` puts the prose bodies back and requires `--json`. The
+  human-readable listing is unpaged and full-bodied unless you pass `--limit`
+  or `--cursor`. There is no "print everything" flag — the record files above
+  are the export surface for that.
 - `ideate-record session-end` — reads a `SessionEnd` hook payload from stdin
   and appends a recall-shaped session-outcome record. Hook path: always
   exits 0 (a capture failure must never look like a hook failure to the

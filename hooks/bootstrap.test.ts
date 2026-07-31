@@ -6,25 +6,33 @@
 // npm install/tsc build never runs — the tests assert the DECISION (fast-path
 // vs rebuild vs fail) deterministically, not a real build.
 
-import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, utimesSync, writeFileSync, existsSync } from 'node:fs';
-import { spawnSync } from 'node:child_process';
+import {
+  chmodSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  utimesSync,
+  writeFileSync,
+  existsSync,
+} from 'node:fs';
+import { spawn, spawnSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 
 const BOOTSTRAP = join(dirname(fileURLToPath(import.meta.url)), 'bootstrap.sh');
 const NODE_DIR = dirname(process.execPath); // the real node, for cases that need it
-const tmps: string[] = [];
 
-afterEach(() => {
-  while (tmps.length) rmSync(tmps.pop()!, { recursive: true, force: true });
-});
+/** Per-case temp plugin roots. Torn down after every case (see afterEach below). */
+const roots: string[] = [];
 
 /** A temp plugin root with the minimal shape bootstrap inspects. */
 function makeRoot(opts: { built?: boolean } = {}): string {
   const root = mkdtempSync(join(tmpdir(), 'ideate-bootstrap-'));
-  tmps.push(root);
+  roots.push(root);
   mkdirSync(join(root, 'src'));
   writeFileSync(join(root, 'src', 'index.ts'), 'export const x = 1;\n');
   writeFileSync(join(root, 'package.json'), '{"name":"t","version":"0.0.0"}\n');
@@ -53,40 +61,133 @@ function setFreshness(root: string, fresh: boolean): void {
   }
 }
 
-/** A fake `npm` that logs its args and fabricates the build outputs in cwd. */
-function fakeNpmBin(): string {
-  const bin = mkdtempSync(join(tmpdir(), 'ideate-fakebin-'));
-  tmps.push(bin);
-  writeFileSync(
-    join(bin, 'npm'),
-    '#!/bin/sh\nprintf "%s\\n" "$*" >> ./.npm-calls\nmkdir -p ./node_modules/@modelcontextprotocol ./dist\n: > ./dist/server.js\nexit 0\n',
-  );
-  chmodSync(join(bin, 'npm'), 0o755);
-  return bin;
+/**
+ * THE FAKE BINARIES ARE MINTED ONCE PER FILE, AND WARMED, ON PURPOSE.
+ *
+ * macOS runs a first-execution security scan on a newly created executable, and
+ * on this class of machine that scan can BLOCK the exec for a minute or more.
+ * Measured directly here (write a script to a fresh mktemp dir, chmod +x, time
+ * its first exec):
+ *   - first exec of a brand-new executable:  17.4s / 20.0s / 82.2s / 94.3s
+ *   - second exec of the SAME path:          0.003s
+ *   - same content copied to a fresh path:   51.6s (so it is per FILE, not per
+ *     content — but a hardlink to an already-scanned inode ran in 0.008s)
+ *   - `command -v node` (PATH lookup, no exec) is instant, so the cost is EXEC.
+ *
+ * IT IS INTERMITTENT AND IT RECURS. Observed over ~90 minutes with no code
+ * change: 82.2s → 0.15s (whole suite green in 770ms) → 94.3s; and within a
+ * single minute, 20.0s for one file and 0.11s for the next. So neither a green
+ * run nor a fast probe proves the penalty is gone — it proves the scanner was
+ * quiet just then.
+ *
+ * When each CASE minted its own bin dir, nearly every case paid this toll
+ * INSIDE its budgeted spawn, and blew {@link BUILD_BUDGET_MS} mid-assertion.
+ * Only the cases that exit before ever exec'ing a fake survived. That is the
+ * "passes alone, fails in the suite" signature that sent two earlier
+ * investigations chasing fork contention and slow builds. It is neither.
+ *
+ * So: one fixed set of fakes for the whole file, each exec'd once in beforeAll
+ * (concurrently — three brand-new executables warmed in parallel cost 1.6s
+ * total when one alone cost 17s, so the stalls overlap). Any scan cost is then
+ * paid in SETUP, outside every budget, and the cases exec an already-scanned
+ * path. Do not move minting back into a case; do not "simplify" the warm away.
+ */
+const FAKE_NPM_SRC =
+  '#!/bin/sh\nprintf "%s\\n" "$*" >> ./.npm-calls\nmkdir -p ./node_modules/@modelcontextprotocol ./dist\n: > ./dist/server.js\nexit 0\n';
+
+/**
+ * Shared bin dirs, minted in beforeAll. Two are needed because the too-old-Node
+ * fake must SHADOW the real node for its case and must not for any other:
+ *   - NPM_BIN      — fake `npm` only; the real node stays on PATH.
+ *   - OLD_NODE_BIN — fake `node` reporting v18 (its `-e` version gate exits 1,
+ *                    the signal bootstrap uses to detect <22.5) plus the same
+ *                    fabricating fake `npm`, so a build must NOT fire.
+ */
+let NPM_BIN = '';
+let OLD_NODE_BIN = '';
+let WARM_CWD = '';
+
+/**
+ * Exec a fake once and discard the result, purely to pay any first-exec scan
+ * here rather than inside a case's budget. Runs in a throwaway cwd because the
+ * fake npm fabricates `./.npm-calls` and `./dist` relative to cwd.
+ *
+ * A spawn error is NOT swallowed: it means the fixture itself is broken (not
+ * executable, wrong interpreter), which would otherwise surface later as an
+ * unexplained bootstrap "failure" in every case.
+ */
+function warm(file: string, args: string[]): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const child = spawn(file, args, { cwd: WARM_CWD, stdio: 'ignore' });
+    child.on('close', () => {
+      resolve();
+    });
+    child.on('error', (e: Error) => {
+      reject(new Error(`fake binary ${file} could not be executed: ${e.message}`));
+    });
+  });
 }
 
 /**
- * A fake `node` + `npm` pair for the too-old-Node path. `node -v` reports the
- * given version; `node -e '…version gate…'` exits 1 when `tooOld` is set (the
- * signal bootstrap uses to detect <22.5). `npm` is the same fabricating fake
- * as {@link fakeNpmBin} so a build must NOT fire (the gate rejects before it).
+ * 300s is a ceiling for the pathological case (~95s per new executable, and the
+ * warms overlapping imperfectly), NOT an expectation — a quiet machine finishes
+ * this hook in milliseconds. It must be stated explicitly because vitest's
+ * default hookTimeout is 10s, which the scan alone can exceed; without it the
+ * penalty would simply move from a case failure to a hook failure.
  */
-function fakeNodeAndNpmBin(opts: { nodeVersion: string; tooOld: boolean }): string {
-  const bin = mkdtempSync(join(tmpdir(), 'ideate-fakebin-'));
-  tmps.push(bin);
-  const gateExit = opts.tooOld ? 1 : 0;
+const WARM_BUDGET_MS = 300_000;
+
+beforeAll(async () => {
+  WARM_CWD = mkdtempSync(join(tmpdir(), 'ideate-fakewarm-'));
+  NPM_BIN = mkdtempSync(join(tmpdir(), 'ideate-fakebin-npm-'));
+  OLD_NODE_BIN = mkdtempSync(join(tmpdir(), 'ideate-fakebin-oldnode-'));
+
+  writeFileSync(join(NPM_BIN, 'npm'), FAKE_NPM_SRC);
+  writeFileSync(join(OLD_NODE_BIN, 'npm'), FAKE_NPM_SRC);
   writeFileSync(
-    join(bin, 'node'),
-    `#!/bin/sh\nif [ "$1" = "-v" ]; then echo "${opts.nodeVersion}"; exit 0; fi\nif [ "$1" = "-e" ]; then exit ${String(gateExit)}; fi\nexit 0\n`,
+    join(OLD_NODE_BIN, 'node'),
+    '#!/bin/sh\nif [ "$1" = "-v" ]; then echo "v18.0.0"; exit 0; fi\nif [ "$1" = "-e" ]; then exit 1; fi\nexit 0\n',
   );
-  writeFileSync(
-    join(bin, 'npm'),
-    '#!/bin/sh\nprintf "%s\\n" "$*" >> ./.npm-calls\nmkdir -p ./node_modules/@modelcontextprotocol ./dist\n: > ./dist/server.js\nexit 0\n',
-  );
-  chmodSync(join(bin, 'node'), 0o755);
-  chmodSync(join(bin, 'npm'), 0o755);
-  return bin;
-}
+  for (const f of [join(NPM_BIN, 'npm'), join(OLD_NODE_BIN, 'npm'), join(OLD_NODE_BIN, 'node')]) {
+    chmodSync(f, 0o755);
+  }
+
+  await Promise.all([
+    warm(join(NPM_BIN, 'npm'), ['--warm']),
+    warm(join(OLD_NODE_BIN, 'npm'), ['--warm']),
+    warm(join(OLD_NODE_BIN, 'node'), ['-v']),
+  ]);
+}, WARM_BUDGET_MS);
+
+afterAll(() => {
+  for (const d of [WARM_CWD, NPM_BIN, OLD_NODE_BIN]) {
+    if (d) rmSync(d, { recursive: true, force: true });
+  }
+});
+
+/**
+ * CASE INDEPENDENCE GUARD for the shared bin dirs.
+ *
+ * Sharing a bin dir is only safe because every artifact the fakes produce
+ * (`.npm-calls`, the fabricated `dist/` and `node_modules/`) is written
+ * relative to CWD — which is the per-case temp root that {@link run} passes and
+ * afterEach deletes — never into the bin dir the fake happens to live in. This
+ * asserts that invariant after EVERY case instead of trusting it: if a fake (or
+ * bootstrap.sh) ever starts writing next to the binary, the case that did it
+ * fails here, rather than silently leaking a `npmCalled === true` into a later
+ * case that asserts false.
+ *
+ * The per-case root teardown lives in the same hook, under `finally`, so a
+ * guard failure still cleans up (a thrown hook can abort the ones after it).
+ */
+afterEach(() => {
+  try {
+    expect(readdirSync(NPM_BIN).sort()).toEqual(['npm']);
+    expect(readdirSync(OLD_NODE_BIN).sort()).toEqual(['node', 'npm']);
+  } finally {
+    while (roots.length) rmSync(roots.pop()!, { recursive: true, force: true });
+  }
+});
 
 /**
  * Wall-clock budgets for ONE bootstrap.sh invocation, in ms.
@@ -182,13 +283,17 @@ const withNode = (extra: string) => `${extra}:${NODE_DIR}:/usr/bin:/bin`;
  *
  * This cannot mask a real defect: a wedged or genuinely failing bootstrap.sh
  * fails both attempts, and the second failure is what gets reported.
+ *
+ * The shared fake bins are deliberately NOT re-minted on a retry: they hold no
+ * per-case state (see the independence guard above), and re-minting would hand
+ * attempt 2 a brand-new executable — i.e. the first-exec scan the beforeAll
+ * warm exists to avoid, arriving exactly where it does the most damage.
  */
 describe('bootstrap.sh', { retry: 1 }, () => {
   it('fast-paths (no build) when already built and current', () => {
     const root = makeRoot({ built: true });
     setFreshness(root, true);
-    const bin = fakeNpmBin();
-    const res = run(root, withNode(bin), DECISION_BUDGET_MS); // decides not to build
+    const res = run(root, withNode(NPM_BIN), DECISION_BUDGET_MS); // decides not to build
     expect(res.status).toBe(0);
     expect(res.npmCalled).toBe(false); // did NOT rebuild
   });
@@ -196,16 +301,14 @@ describe('bootstrap.sh', { retry: 1 }, () => {
   it('REBUILDS when a source file is newer than dist/ (staleness after an update)', () => {
     const root = makeRoot({ built: true });
     setFreshness(root, false); // src newer than dist/server.js
-    const bin = fakeNpmBin();
-    const res = run(root, withNode(bin));
+    const res = run(root, withNode(NPM_BIN));
     expect(res.status).toBe(0);
     expect(res.npmCalled).toBe(true); // rebuilt despite dist/ existing
   });
 
   it('builds when dist/ is absent (fresh install) — runs install THEN build', () => {
     const root = makeRoot({ built: false });
-    const bin = fakeNpmBin();
-    const res = run(root, withNode(bin));
+    const res = run(root, withNode(NPM_BIN));
     expect(res.status).toBe(0);
     expect(res.npmCalled).toBe(true);
     expect(existsSync(join(root, 'dist', 'server.js'))).toBe(true);
@@ -219,9 +322,8 @@ describe('bootstrap.sh', { retry: 1 }, () => {
 
   it('prints actionable guidance and does NOT build when Node is absent', () => {
     const root = makeRoot({ built: false });
-    const bin = fakeNpmBin();
     // PATH without the real node dir.
-    const res = run(root, `${bin}:/usr/bin:/bin`, DECISION_BUDGET_MS); // rejects before any build
+    const res = run(root, `${NPM_BIN}:/usr/bin:/bin`, DECISION_BUDGET_MS); // rejects before any build
     expect(res.status).toBe(0); // never blocks
     expect(res.stderr).toMatch(/Node\.js was not found|requires Node/i);
     expect(res.npmCalled).toBe(false);
@@ -229,8 +331,8 @@ describe('bootstrap.sh', { retry: 1 }, () => {
 
   it('prints actionable guidance and does NOT build when Node is too old (<22.5)', () => {
     const root = makeRoot({ built: false });
-    const bin = fakeNodeAndNpmBin({ nodeVersion: 'v18.0.0', tooOld: true });
-    const res = run(root, `${bin}:/usr/bin:/bin`, DECISION_BUDGET_MS); // rejects before any build
+    // OLD_NODE_BIN's fake node shadows the real one and fails the <22.5 gate.
+    const res = run(root, `${OLD_NODE_BIN}:/usr/bin:/bin`, DECISION_BUDGET_MS); // rejects before any build
     expect(res.status).toBe(0); // never blocks
     expect(res.stderr).toMatch(/too old|requires Node/i);
     expect(res.npmCalled).toBe(false);
@@ -241,8 +343,7 @@ describe('bootstrap.sh', { retry: 1 }, () => {
     // A lock left by a crashed builder: a pid that is not alive.
     mkdirSync(join(root, '.bootstrap.lock'));
     writeFileSync(join(root, '.bootstrap.lock', 'pid'), '2147483647\n'); // implausible, dead
-    const bin = fakeNpmBin();
-    const res = run(root, withNode(bin));
+    const res = run(root, withNode(NPM_BIN));
     expect(res.status).toBe(0);
     expect(res.npmCalled).toBe(true); // reclaimed and built rather than waiting forever
   });
