@@ -111,6 +111,8 @@ function makeItem(overrides?: Partial<WorkItem>): WorkItem {
     status: 'done',
     claim: null,
     depends_on: [],
+    parent_id: null,
+    references: [],
     created_by: actor('creator'),
     created_at: FIXED_ISO,
     updated_at: FIXED_ISO,

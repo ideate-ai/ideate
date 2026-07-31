@@ -128,6 +128,14 @@ npm run build    # compiles src/ to dist/ (gitignored)
 npm test         # vitest (fork pool capped — see vitest.config.ts)
 ```
 
+`npm run typecheck` (`tsc -p tsconfig.test.json`) typechecks every
+`**/*.test.ts` in the package with `noEmit` — `tsconfig.json`'s own build
+excludes test files so `dist/` stays exactly the compiled-source shape
+(no `.test.js` alongside it), but that means `npm run build` alone never
+typechecks a test. `typecheck` closes that gap without touching `dist/`, and
+runs automatically before `npm test`/`pnpm run test` via the `pretest`
+script — a test file with a type error fails before vitest ever starts.
+
 `npm run test:fresh-copy` runs `scripts/fresh-copy-check.mjs`, which copies
 this directory to a scratch location with no surrounding project context and
 re-runs install/build/test there — the mechanical proof that this package

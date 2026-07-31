@@ -621,7 +621,7 @@ function seedExpiredClaim(root: string): string {
 function boardStatus(root: string, id: string): string {
   const store = new WorkStateStore(join(root, '.ideate-work', 'board.db'), () => new Date());
   const item = store.getItem(id);
-  if (item === undefined) throw new Error('seeded item vanished');
+  if (item === null) throw new Error('seeded item vanished');
   return item.status;
 }
 

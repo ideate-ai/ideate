@@ -122,8 +122,17 @@ function main() {
     filter: (src) => !shouldExclude(src),
   });
 
+  // scripts/migrate-v2 is a SEPARATE mini-package with its own package.json,
+  // lockfile and deps (js-yaml). The top-level install does not reach it — it
+  // is not a workspace member — and its node_modules is excluded from the copy
+  // like every other. A committed test executes migrate.mjs and parses the same
+  // YAML with that package's js-yaml as an INDEPENDENT oracle (P-40b), so
+  // without this step the fresh copy fails on a missing module rather than on
+  // anything real. Installing it here keeps the oracle independent of
+  // migrate.mjs's own logic while satisfying P-40a's fresh-clone clause.
   const steps = [
     ['install', 'pnpm', ['install']],
+    ['install (scripts/migrate-v2)', 'pnpm', ['install', '--dir', join(copyDir, 'scripts', 'migrate-v2')]],
     ['build', 'pnpm', ['run', 'build']],
     ['test', 'pnpm', ['run', 'test']],
   ];

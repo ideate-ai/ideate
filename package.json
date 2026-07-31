@@ -17,6 +17,8 @@
   },
   "scripts": {
     "build": "tsc -b",
+    "typecheck": "tsc -p tsconfig.test.json",
+    "pretest": "tsc -p tsconfig.test.json",
     "test": "vitest run",
     "test:fresh-copy": "node scripts/fresh-copy-check.mjs"
   },

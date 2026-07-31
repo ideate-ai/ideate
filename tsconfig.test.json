@@ -1,0 +1,27 @@
+{
+  // tsconfig.test.json — typechecks test files (**/*.test.ts) that the main
+  // tsconfig.json deliberately excludes from the build. `noEmit` keeps this
+  // check from ever writing to `dist/` (or anywhere else) — build output
+  // shape stays exactly what tsconfig.json alone produces. See tsconfig.json
+  // for why the exclusion exists and why this is a SEPARATE config rather
+  // than folding tests into the main one.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "composite": false,
+    "incremental": false,
+    "noEmit": true,
+    "declaration": false,
+    "declarationMap": false,
+    "sourceMap": false,
+    // Unset the main config's src-only rootDir: this program spans src/,
+    // tests/, and hooks/, which a single rootDir can't cover.
+    "rootDir": null,
+    "tsBuildInfoFile": null
+  },
+  // Every *.test.ts in the package, plus the source it imports (src/**/*.ts
+  // is already required for that resolution). Deliberately NOT a bare
+  // "**/*.test.ts" glob: scripts/migrate-v2/ is a separate mini-package with
+  // its own deps/tsconfig and must never be pulled into this program.
+  "include": ["src/**/*.ts", "tests/**/*.ts", "hooks/**/*.test.ts"],
+  "exclude": ["node_modules", "dist", "build", "scripts/**"]
+}

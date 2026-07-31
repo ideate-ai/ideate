@@ -331,7 +331,7 @@ describe('assembleContext prototype', () => {
     // the ONLY supersession path.
     const existing = deps.records.read({ scope: seed, limit: 32 });
     if (existing.length === 0) throw new Error('fixture: no scope-matched record to supersede');
-    const supersededId = existing[0].id;
+    const supersededId = existing[0]!.id;
 
     const replacement = deps.records.append({
       kind: 'decision',
@@ -354,7 +354,8 @@ describe('assembleContext prototype', () => {
     expect(typedSkip?.source).toBe('record');
     expect(typedSkip?.inclusionReason).toContain(replacement.record.id);
     // The superseded record's claim text does not appear in the live briefing.
-    const supersededClaim = existing[0].claim;
+    // Non-null: `existing` was already asserted non-empty above.
+    const supersededClaim = existing[0]!.claim;
     expect(briefing).not.toContain(supersededClaim);
 
     // The superseding record itself IS delivered (it is live, scope-matched).

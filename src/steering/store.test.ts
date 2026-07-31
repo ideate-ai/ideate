@@ -307,7 +307,9 @@ describe('empty-statement guard (P-41, 2026-07-30)', () => {
     expect(fx.store.put({ id: 'POL-1', kind: 'policy', statement: 'Original rule text.', domain: 'auth' }).ok).toBe(true);
     const result = fx.store.put({ id: 'POL-1', kind: 'policy', statement: '', domain: 'auth' });
     expect(result).toMatchObject({ ok: false, code: 'SCHEMA' });
-    const [read] = fx.store.read();
+    const items = fx.store.read();
+    expect(items).toHaveLength(1);
+    const read = items[0]!;
     expect(read.statement).toBe('Original rule text.');
     expect(read.history).toEqual([]);
   });

@@ -86,6 +86,7 @@ describe('parent_id contract field', () => {
       claim: null,
       depends_on: [],
       parent_id: null,
+      references: [],
       created_by: { human: 'dan' },
       created_at: 'now',
       updated_at: 'now',

@@ -578,6 +578,7 @@ describe('completion-record post-commit hook', () => {
         verification_anchor: verificationAnchor,
         scope,
         source: { capture_point: 'work-completion', session_id: facts.sessionId, task_id: facts.item.id, timestamp: facts.completedAt },
+        references: [],
         content,
       },
       path: '/dev/null/stub-not-a-real-path.md',
