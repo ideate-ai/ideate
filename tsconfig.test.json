@@ -20,8 +20,10 @@
   },
   // Every *.test.ts in the package, plus the source it imports (src/**/*.ts
   // is already required for that resolution). Deliberately NOT a bare
-  // "**/*.test.ts" glob: scripts/migrate-v2/ is a separate mini-package with
-  // its own deps/tsconfig and must never be pulled into this program.
+  // "**/*.test.ts" glob: scripts/ (including scripts/migrate-v2, a workspace
+  // member as of pnpm-workspace.yaml — see that file for why) holds plain
+  // .mjs, not .ts, so it was never reachable by this glob anyway; "scripts/**"
+  // below is a defensive exclude, not a workspace-status special case.
   "include": ["src/**/*.ts", "tests/**/*.ts", "hooks/**/*.test.ts"],
   "exclude": ["node_modules", "dist", "build", "scripts/**"]
 }

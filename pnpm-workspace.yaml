@@ -1,0 +1,31 @@
+# plugin/pnpm-workspace.yaml — makes scripts/migrate-v2 a real workspace
+# member so a single top-level `pnpm install` (or `npm install`, via
+# package.json#workspaces) reaches its deps. Mirrors package.json#workspaces;
+# pnpm reads this file, not the npm-style field, so both must list the same
+# member or the two package managers this repo supports (P-50: npm is the
+# shipped path, pnpm is the dev-verification path) would disagree about what
+# "install the package's deps" means.
+#
+# Why scripts/migrate-v2 needed this: it is a plain subdirectory of this
+# package's own git-toplevel (not a submodule, not a separate repo), so by
+# P-36's own test — resolve mechanically from the package's own git-toplevel
+# — it was never actually independent of this package; it only *looked*
+# independent because it carried a second, disconnected lockfile. That second
+# lockfile is what made every tool that reasons about "the package and its
+# dependencies" as one unit (a fresh clone's top-level install, a rsync-plus-
+# symlink isolated copy for mutation testing, and — found while investigating
+# this — the `npm-shipped-path` CI job itself, which never installed this
+# directory's deps and would have failed the migrate-v2 fidelity test on its
+# next real run) get it wrong. Workspace membership makes the deps part of
+# the one lockfile-driven install everywhere, instead of a bespoke fix per
+# tool.
+#
+# js-yaml (this member's only dependency) is NOT added to @ideate/plugin's
+# own "dependencies" — it stays reachable only via scripts/migrate-v2's own
+# require graph (pnpm's default strict, non-hoisted linking keeps it out of
+# the plugin's own node_modules root; npm's default hoisting does place it in
+# the shared top-level node_modules, but never in the plugin's own
+# package.json or its runtime import graph). See the commit that added this
+# file for the full weighing of that tradeoff.
+packages:
+  - scripts/migrate-v2

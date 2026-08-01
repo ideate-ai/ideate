@@ -32,8 +32,9 @@
 
 import { execFileSync, spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
@@ -44,10 +45,21 @@ const MIGRATE_V2_DIR = join(PLUGIN_DIR, 'scripts', 'migrate-v2');
 const MIGRATE_SCRIPT = join(MIGRATE_V2_DIR, 'migrate.mjs');
 const DIST_STORE = join(PLUGIN_DIR, 'dist', 'record', 'store.js');
 
-// The oracle parser: migrate-v2's OWN js-yaml (a devDependency of that
-// standalone package, not of the plugin — importing it here rather than
-// adding a new plugin dependency), loaded dynamically since this file is a
-// .ts module and js-yaml is not on the plugin's own module path.
+// The oracle parser: migrate-v2's OWN js-yaml (a dependency of that workspace
+// member, not of the plugin — importing it here rather than adding a new
+// plugin dependency), loaded dynamically since this file is a .ts module and
+// js-yaml is not on the plugin's own import graph. Resolved via Node's own
+// CJS resolution algorithm anchored at MIGRATE_V2_DIR (createRequire), the
+// same walk-up-through-node_modules that migrate.mjs's own bare `import
+// yaml from 'js-yaml'` relies on — NOT a hardcoded
+// `scripts/migrate-v2/node_modules/js-yaml/...` path. That matters because
+// where js-yaml physically lands differs by package manager now that
+// scripts/migrate-v2 is a workspace member: pnpm's default strict linking
+// nests it under scripts/migrate-v2/node_modules, npm's default hoisting
+// puts it at the plugin's own top-level node_modules instead. Anchoring the
+// resolution at MIGRATE_V2_DIR (rather than importing a bare 'js-yaml'
+// specifier from this file's own location in tests/) finds it correctly
+// either way, exactly like a real consumer of that package would.
 let yamlLoad: (raw: string) => unknown;
 
 // -- fixtures: verbatim byte copies of real v2 YAML (see header) -----------
@@ -196,7 +208,9 @@ describe('migrate-v2 steering fix: run against a copy of a lossy v2 project, dif
     if (!existsSync(DIST_STORE)) {
       execFileSync(join(PLUGIN_DIR, 'node_modules', '.bin', 'tsc'), ['-b'], { cwd: PLUGIN_DIR, stdio: 'pipe' });
     }
-    const yamlModule = (await import(pathToFileURL(join(MIGRATE_V2_DIR, 'node_modules', 'js-yaml', 'dist', 'js-yaml.mjs')).href)) as {
+    const migrateV2Require = createRequire(join(MIGRATE_V2_DIR, 'package.json'));
+    const jsYamlDir = dirname(migrateV2Require.resolve('js-yaml/package.json'));
+    const yamlModule = (await import(pathToFileURL(join(jsYamlDir, 'dist', 'js-yaml.mjs')).href)) as {
       load: (raw: string) => unknown;
     };
     yamlLoad = yamlModule.load;
