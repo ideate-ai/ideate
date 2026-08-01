@@ -37,7 +37,7 @@ breakdown and the invoking skill calls `work_create` for each item.
     {
       "ref": "a",
       "title": "short imperative title",
-      "spec": "self-contained instructions: what to build, files/interfaces involved, patterns to follow — MUST end with an ACCEPTANCE section (concrete, testable conditions; never 'handle edge cases') and a VERIFICATION ANCHOR (the exact runnable command/path that proves the work — verify-before-done lives in the requirements, not the board)",
+      "spec": "MUST open with a short plain-language block — two to three sentences, no file paths, no policy ids, no ULIDs, no ideate jargon — stating what this is and why it matters, before any dense section begins; write it so someone new to the codebase can follow it. It is a handle, not a summary: it does not need to cover the spec, only make a reader want to continue or decide they don't need to — a future presentation layer lifts it verbatim, so word it as something a human should actually read. After that block: self-contained instructions — what to build, files/interfaces involved, patterns to follow — MUST end with an ACCEPTANCE section (concrete, testable conditions; never 'handle edge cases') and a VERIFICATION ANCHOR (the exact runnable command/path that proves the work — verify-before-done lives in the requirements, not the board)",
       "spec_format": "markdown",
       "depends_on": ["<ref of prerequisite items>"],
       "parent": "<ref of containing item, or null>"
