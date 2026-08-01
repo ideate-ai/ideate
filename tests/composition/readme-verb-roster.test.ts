@@ -1,11 +1,11 @@
 // plugin/tests/composition/readme-verb-roster.test.ts — the README's MCP verb
 // roster, bound to the SHIPPED registrars.
 //
-// WHY this file exists: four of the eighteen verbs were absent from the README
-// entirely (`steering_read`, `steering_put`, `usage_capture`, `usage_query`),
-// and the install section still said the server "registers the three record
-// MCP verbs … alongside the board verbs". Nothing could disagree with that
-// prose, because the roster lived only in the prose.
+// WHY this file exists: two of the sixteen verbs were absent from the README
+// entirely (`steering_read`, `steering_put`), and the install section still
+// said the server "registers the three record MCP verbs … alongside the
+// board verbs". Nothing could disagree with that prose, because the roster
+// lived only in the prose.
 //
 // The answer is NOT typed here. It is derived by applying the composition
 // root's own registrars (server.ts's `toolRegistrars`, the exact list
@@ -25,7 +25,6 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { RECORD_TOOL_NAMES } from '../../src/record/tools.js';
 import { registerTools } from '../../src/server.js';
 import { STEERING_TOOL_NAMES } from '../../src/steering/tools.js';
-import { USAGE_TOOL_NAMES } from '../../src/usage/tools.js';
 import { WORK_STATE_TOOL_NAMES } from '../../src/work-state/tools.js';
 
 const PLUGIN_DIR = fileURLToPath(new URL('../..', import.meta.url));
@@ -74,17 +73,17 @@ function shippedVerbNames(): string[] {
 function verbLikeSpansInReadme(): string[] {
   const prose = README.replace(/```[\s\S]*?```/g, '');
   const spans = [...prose.matchAll(/`([^`\n]+)`/g)].map((m) => (m[1] as string).split('(')[0] as string);
-  return [...new Set(spans.filter((s) => /^(record|work|steering|usage)_[a-z_]+$/.test(s)))].sort();
+  return [...new Set(spans.filter((s) => /^(record|work|steering)_[a-z_]+$/.test(s)))].sort();
 }
 
 describe("the README's MCP verb roster matches the shipped registrars", () => {
   const shipped = shippedVerbNames();
 
   it('the per-seam name arrays are the shipped surface (nothing registered outside them)', () => {
-    // Binds the four exported rosters — which the README section headings are
-    // counted against below — to what the registrars really do.
+    // Binds the three exported rosters — which the README section headings
+    // are counted against below — to what the registrars really do.
     expect(shipped).toEqual(
-      [...RECORD_TOOL_NAMES, ...WORK_STATE_TOOL_NAMES, ...STEERING_TOOL_NAMES, ...USAGE_TOOL_NAMES].sort(),
+      [...RECORD_TOOL_NAMES, ...WORK_STATE_TOOL_NAMES, ...STEERING_TOOL_NAMES].sort(),
     );
   });
 
@@ -106,7 +105,6 @@ describe("the README's MCP verb roster matches the shipped registrars", () => {
       ['record verbs', RECORD_TOOL_NAMES.length],
       ['board verbs', WORK_STATE_TOOL_NAMES.length],
       ['steering verbs', STEERING_TOOL_NAMES.length],
-      ['usage verbs', USAGE_TOOL_NAMES.length],
     ];
     for (const [label, count] of claims) {
       const phrase = `${word(count)} ${label}`.toLowerCase();

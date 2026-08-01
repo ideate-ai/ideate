@@ -134,8 +134,6 @@ import type { ToolRegistrar } from '../server.js';
 import { claim, complete, release, renew } from './claims.js';
 import { createRealCompletionRecordWriter } from './completion-record.js';
 import type { CompletionRecordWriter } from './completion-record.js';
-import { createGatedUsageCaptureWriter } from './completion-usage-hook.js';
-import type { UsageCaptureWriter } from './completion-usage-hook.js';
 import { checkExpiry, sweepBoard } from './expiry.js';
 import { primeOnClaim } from './priming-hook.js';
 import {
@@ -276,10 +274,6 @@ interface ToolContext {
   /** Built once per context (not per completion) — see this
    *  factory's own composition edge below. */
   completionRecordWriter: CompletionRecordWriter;
-  /** Built once per context, mirroring `completionRecordWriter` — see
-   *  completion-usage-hook.ts's file header for what this writer captures
-   *  and why. */
-  usageCaptureWriter: UsageCaptureWriter;
 }
 
 /** Build the real `ExpiryCheck` (criterion 2) for one context — the lazy
@@ -302,18 +296,17 @@ function ok(payload: Record<string, unknown>): CallToolResult {
  * module's to swallow.
  *
  * Carries BOTH `message` (this module's own historical key, asserted by
- * tools.test.ts) and `reason` (the key record/tools.ts, steering/tools.ts and
- * usage/tools.ts have always used for the identical `{ok:false, code,
- * <string>}` shape on the other three bounded-read surfaces) with the same
- * string value. This is an ADDITIVE fix, not a rename: a review of this
- * item's cleanup pass found consumers reading each key on a different
- * surface (this package's own tests read `message`; record/tools.test.ts and
- * usage/tools.test.ts read `reason`), so removing either would break a real
- * consumer. Adding the missing key here — rather than stripping `message` or
- * pushing `message` onto the other three — resolves the drift a caller would
- * hit writing one handler for "a malformed cursor on a bounded read" (that
- * handler reads `reason` today, and got `undefined` on `work_list` before
- * this).
+ * tools.test.ts) and `reason` (the key record/tools.ts and steering/tools.ts
+ * have always used for the identical `{ok:false, code, <string>}` shape on
+ * the other bounded-read surfaces) with the same string value. This is an
+ * ADDITIVE fix, not a rename: a review of this item's cleanup pass found
+ * consumers reading each key on a different surface (this package's own
+ * tests read `message`; record/tools.test.ts reads `reason`), so removing
+ * either would break a real consumer. Adding the missing key here — rather
+ * than stripping `message` or pushing `message` onto the other surfaces —
+ * resolves the drift a caller would hit writing one handler for "a malformed
+ * cursor on a bounded read" (that handler reads `reason` today, and got
+ * `undefined` on `work_list` before this).
  */
 function toolError(err: unknown): CallToolResult {
   if (err instanceof WorkStateModuleError) {
@@ -362,11 +355,7 @@ export function createWorkStateToolsRegistrar(options: WorkStateToolsOptions = {
       // project root/telemetry/clock this context already resolved, so
       // `.ideate.json` is not re-read on every `work_complete` call.
       const completionRecordWriter = createRealCompletionRecordWriter(projectRoot, telemetry, clock);
-      // The usage-capture writer, built ONCE from the same project root/
-      // clock this context already resolved (mirrors completionRecordWriter
-      // immediately above) — see completion-usage-hook.ts's file header.
-      const usageCaptureWriter = createGatedUsageCaptureWriter(projectRoot, undefined, clock);
-      context = { store, verbs, clock, telemetry, sessionId, projectRoot, completionRecordWriter, usageCaptureWriter };
+      context = { store, verbs, clock, telemetry, sessionId, projectRoot, completionRecordWriter };
     }
     return context;
   };
@@ -717,10 +706,9 @@ export function createWorkStateToolsRegistrar(options: WorkStateToolsOptions = {
       async (args): Promise<CallToolResult> => {
         const ctx = getContext();
         try {
-          // Completion-record post-commit hook, PLUS the usage-capture
-          // post-commit hook (completion-usage-hook.ts) — same call site as
-          // every other verb's dependencies, reusing this context's own
-          // project root/telemetry/session id/writers.
+          // Completion-record post-commit hook — same call site as every
+          // other verb's dependencies, reusing this context's own project
+          // root/telemetry/session id/writer.
           let unresolvedIds: readonly UnresolvedId[] = [];
           const item = complete(
             ctx.store,
@@ -733,12 +721,6 @@ export function createWorkStateToolsRegistrar(options: WorkStateToolsOptions = {
               telemetry: ctx.telemetry,
               sessionId: ctx.sessionId,
               recordWriter: ctx.completionRecordWriter,
-            },
-            {
-              projectRoot: ctx.projectRoot,
-              telemetry: ctx.telemetry,
-              sessionId: ctx.sessionId,
-              usageWriter: ctx.usageCaptureWriter,
             },
             (ids) => {
               unresolvedIds = ids;

@@ -23,7 +23,6 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 
 import { createRecordToolsRegistrar } from './record/tools.js';
 import { createSteeringToolsRegistrar } from './steering/tools.js';
-import { createUsageToolsRegistrar } from './usage/tools.js';
 import { createWorkStateToolsRegistrar } from './work-state/tools.js';
 
 /** Server identity, mirrored from .claude-plugin/plugin.json. */
@@ -43,8 +42,8 @@ export type ToolRegistrar = (server: McpServer) => void;
  * Extension point: the ordered list of tool registrars applied at boot.
  *
  * COMPOSITION ROOT — populated here, in production code, so the
- * .mcp.json-launched artifact serves the full default tool surface. Both
- * registrars take no options: every default (projectRoot = process.cwd(),
+ * .mcp.json-launched artifact serves the full default tool surface. Every
+ * registrar takes no options: every default (projectRoot = process.cwd(),
  * telemetry dir, session id, wall clock) resolves lazily at the first tool
  * call, which is what makes module-scope composition safe — nothing is read
  * or written until a tool actually runs.
@@ -53,7 +52,6 @@ export const toolRegistrars: ToolRegistrar[] = [
   createRecordToolsRegistrar(),
   createWorkStateToolsRegistrar(),
   createSteeringToolsRegistrar(),
-  createUsageToolsRegistrar(),
 ];
 
 /** Apply each registrar in `registrars` (default: the composed root) to `server`, in order. */

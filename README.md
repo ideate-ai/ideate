@@ -101,12 +101,11 @@ through the marketplace resolver:
    }
    ```
 
-   This registers all eighteen MCP verbs: the three record verbs
+   This registers all sixteen MCP verbs: the three record verbs
    (`record_append`, `record_read`, `record_decision`) described below, the
    eleven board verbs in [The work-state
-   board](#the-work-state-board-local-backend), and the two steering verbs
-   plus the two usage verbs in [Steering and usage
-   verbs](#steering-and-usage-verbs).
+   board](#the-work-state-board-local-backend), and the two steering verbs in
+   [Steering verbs](#steering-verbs).
 3. Wire the mechanical capture hooks by pointing the consuming project's
    host at this plugin's `hooks/hooks.json`. That file declares the actual
    hook shape this plugin provides — `SessionStart` (priming via
@@ -339,11 +338,11 @@ That `--json` output is a PAGE, and the real one is indented — the transcript
 above is trimmed for width. Read `next_cursor`, not the row count: a `null`
 is the only statement that the selection is exhausted.
 
-## Steering and usage verbs
+## Steering verbs
 
-Two smaller seams ride the same MCP server (`dist/server.js`). Each keeps its
-own store, separate from the record and the board, and neither has a CLI —
-these four verbs exist over MCP only.
+A smaller seam rides the same MCP server (`dist/server.js`). It keeps its own
+store, separate from the record and the board, and has no CLI — these two
+verbs exist over MCP only.
 
 **Two steering verbs — `steering_read` and `steering_put` — GATED OFF by
 default.** Steering items are a project's guiding principles and policies, one
@@ -368,50 +367,14 @@ even create the steering directory by calling with bad arguments. Steering
 shapes what a model attends to, and nothing that shapes attention ships live
 here ahead of the evaluation that measures it.
 
-**Two usage verbs — `usage_capture` and `usage_query`.** Append-only
-instrumentation for retrieval effectiveness, stored under `.ideate/usage/`.
-`usage_capture` is mechanical: given captured worker `text` and the
-authoritative `delivered` set of item ids, it string-matches (no relevance
-inference, no judgement) and appends one usage signal per cited id — its
-callers are mechanical capture points, never an agent deciding what to
-"cite". `usage_query` reads those signals back, exact-match filtered by
-seed/task/manifest/session/kind/item, and returns
-`{ok, used_item_ids, signals, next_cursor}` — the distinct used items of THAT
-PAGE plus the signals themselves, oldest first, paged and payload-budgeted
-exactly like the reads above. Like the record, this store is append-only:
-there is no update verb and no delete verb.
-
-`usage_capture` has **no enabled caller today, deliberately** — the store is
-empty and `citations.ndjson` does not exist. A `work_complete` post-commit
-hook is fully built, tested and wired through both transports
-(`completion-usage-hook.ts`), but it ships **gated off**
-(`USAGE_CAPTURE_ENABLED = false`), and a test pins that both transports
-inject the gated writer and that no row is written through either.
-
-The reason is worth stating, because the plumbing looks ready: that hook
-would detect whether the completion **note** cites the completed item's
-structural neighbours — but in every shipped orchestration path the note is
-written by the **coordinator**, never by the agent that did the work, and the
-coordinator has held those ids verbatim since before the work began. Citing
-them costs no retrieval and evidences no reuse. Enabling it would fill the
-store with orchestrator narration that reads as evidence of context reuse. An
-empty store is visibly empty; a misleading one is not — and this is the
-instrument that gates downstream retrieval work, so a false-healthy signal is
-worse than no signal.
-
-Flip the gate when an integration point that observes genuine **use** exists.
-The claim-time context assembler is the obvious candidate and is itself
-unshipped and gated off.
-
 ## Honest status
 
 - **Available now:** the append-only process record, the five mechanical
   capture points (`SessionEnd`, `PreCompact`, `SubagentStop`,
   `TaskCompleted`, `PostToolUse` on `git commit`), session/subagent priming,
-  the capture-time secret-scanning gate, native telemetry counters, the
+  the capture-time secret-scanning gate, native telemetry counters, and the
   work-state board's **local** backend (the eleven verbs above, with a
-  contention suite racing real OS processes as its correctness evidence), and
-  the two usage verbs.
+  contention suite racing real OS processes as its correctness evidence).
 - **Not yet built:** the *hosted* delegation board (cross-machine,
   multi-person coordination). Its ratified trigger is a concrete second
   contributor; the local board implements the identical contract, so that
@@ -419,8 +382,7 @@ unshipped and gated off.
 - **Present but gated off:** the two steering verbs. They are registered by
   the shipped server and answer every call with
   `{"ok":false,"code":"GATED",...}` until `steering.enabled` is set to true in
-  `.ideate.json` — see [Steering and usage
-  verbs](#steering-and-usage-verbs).
+  `.ideate.json` — see [Steering verbs](#steering-verbs).
 - **Present but off:** claim-time priming — the hook point exists in the
   claim path and a `work_claims` telemetry counter records the denominator,
   but priming itself is mechanically disabled (`work_state.claim_priming`

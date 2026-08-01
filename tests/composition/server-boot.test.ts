@@ -32,7 +32,6 @@ import { CONFIG_FILENAME, DEFAULT_RECORD_PATH, DEFAULT_WORK_STATE_PATH } from '.
 import { RECORD_TOOL_NAMES } from '../../src/record/tools.js';
 import { SERVER_NAME, SERVER_VERSION } from '../../src/server.js';
 import { STEERING_TOOL_NAMES } from '../../src/steering/tools.js';
-import { USAGE_TOOL_NAMES } from '../../src/usage/tools.js';
 import { WORK_STATE_TOOL_NAMES } from '../../src/work-state/tools.js';
 
 const PLUGIN_DIR = fileURLToPath(new URL('../..', import.meta.url));
@@ -99,12 +98,12 @@ describe('boot the shipped artifact (node dist/server.js, real stdio)', () => {
     expect(client.getServerCapabilities()?.tools).toBeDefined();
   });
 
-  it('tools/list: the three record verbs plus the eleven work-state verbs plus the two steering verbs plus the two usage verbs, eighteen total', async () => {
+  it('tools/list: the three record verbs plus the eleven work-state verbs plus the two steering verbs, sixteen total', async () => {
     const { tools } = await client.listTools();
     expect(tools.map((t) => t.name).sort()).toEqual(
-      [...RECORD_TOOL_NAMES, ...WORK_STATE_TOOL_NAMES, ...STEERING_TOOL_NAMES, ...USAGE_TOOL_NAMES].sort(),
+      [...RECORD_TOOL_NAMES, ...WORK_STATE_TOOL_NAMES, ...STEERING_TOOL_NAMES].sort(),
     );
-    expect(tools).toHaveLength(18);
+    expect(tools).toHaveLength(16);
   });
 
   it('record_append round trip: the call succeeds and the record lands on disk in the temp root', async () => {

@@ -53,8 +53,6 @@ import {
 import { claim, complete, release, renew } from '../work-state/claims.js';
 import { createRealCompletionRecordWriter } from '../work-state/completion-record.js';
 import type { CompletionRecordWriter } from '../work-state/completion-record.js';
-import { createGatedUsageCaptureWriter } from '../work-state/completion-usage-hook.js';
-import type { UsageCaptureWriter } from '../work-state/completion-usage-hook.js';
 import { checkExpiry, sweepBoard } from '../work-state/expiry.js';
 import { primeOnClaim } from '../work-state/priming-hook.js';
 import {
@@ -238,10 +236,6 @@ interface CliContext {
   /** Built once per invocation (mirrors work-state/tools.ts's own
    *  memoized context). */
   completionRecordWriter: CompletionRecordWriter;
-  /** Built once per invocation, mirroring `completionRecordWriter` — see
-   *  completion-usage-hook.ts's file header for what this writer captures
-   *  and why. */
-  usageCaptureWriter: UsageCaptureWriter;
 }
 
 function buildContext(projectRoot: string): CliContext {
@@ -259,10 +253,7 @@ function buildContext(projectRoot: string): CliContext {
   // The completion-record writer, built from the SAME project
   // root/telemetry/clock this context already resolved.
   const completionRecordWriter = createRealCompletionRecordWriter(projectRoot, telemetry, clock);
-  // The usage-capture writer, mirroring completionRecordWriter immediately
-  // above — see completion-usage-hook.ts's file header.
-  const usageCaptureWriter = createGatedUsageCaptureWriter(projectRoot, undefined, clock);
-  return { store, verbs, clock, telemetry, sessionId, projectRoot, completionRecordWriter, usageCaptureWriter };
+  return { store, verbs, clock, telemetry, sessionId, projectRoot, completionRecordWriter };
 }
 
 function makeExpiryCheck(ctx: CliContext): ExpiryCheck {
@@ -626,10 +617,9 @@ function runComplete(argv: readonly string[], stdout: NodeJS.WritableStream, std
   const ctx = buildContext(process.cwd());
   try {
     const token = parseIntArg(tokenRaw, '--token');
-    // Completion-record post-commit hook, PLUS the usage-capture post-commit
-    // hook — same call site as the MCP work_complete tool
-    // (work-state/tools.ts), reusing this context's own project root/
-    // telemetry/session id/writers.
+    // Completion-record post-commit hook — same call site as the MCP
+    // work_complete tool (work-state/tools.ts), reusing this context's own
+    // project root/telemetry/session id/writer.
     const item = complete(
       ctx.store,
       ctx.clock,
@@ -641,12 +631,6 @@ function runComplete(argv: readonly string[], stdout: NodeJS.WritableStream, std
         telemetry: ctx.telemetry,
         sessionId: ctx.sessionId,
         recordWriter: ctx.completionRecordWriter,
-      },
-      {
-        projectRoot: ctx.projectRoot,
-        telemetry: ctx.telemetry,
-        sessionId: ctx.sessionId,
-        usageWriter: ctx.usageCaptureWriter,
       },
     );
     printItem(item, stdout, false);

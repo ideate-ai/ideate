@@ -10,7 +10,6 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { RECORD_TOOL_NAMES } from './record/tools.js';
 import { createServer, registerTools, toolRegistrars, SERVER_NAME, SERVER_VERSION } from './server.js';
 import { STEERING_TOOL_NAMES } from './steering/tools.js';
-import { USAGE_TOOL_NAMES } from './usage/tools.js';
 import { WORK_STATE_TOOL_NAMES } from './work-state/tools.js';
 
 /** The composed production root, captured at import so tests can restore it. */
@@ -29,12 +28,12 @@ afterEach(() => {
 });
 
 describe('ideate MCP server boot', () => {
-  it('the composed default serves the record tools plus the work-state, steering, and usage tools (composition root)', () => {
-    expect(toolRegistrars).toHaveLength(4);
+  it('the composed default serves the record tools plus the work-state and steering tools (composition root)', () => {
+    expect(toolRegistrars).toHaveLength(3);
     const server = createServer();
     expect(server).toBeInstanceOf(McpServer);
     expect(registeredToolNames(server).sort()).toEqual(
-      [...RECORD_TOOL_NAMES, ...WORK_STATE_TOOL_NAMES, ...STEERING_TOOL_NAMES, ...USAGE_TOOL_NAMES].sort(),
+      [...RECORD_TOOL_NAMES, ...WORK_STATE_TOOL_NAMES, ...STEERING_TOOL_NAMES].sort(),
     );
   });
 
@@ -72,7 +71,6 @@ describe('ideate MCP server boot', () => {
       ...RECORD_TOOL_NAMES,
       ...WORK_STATE_TOOL_NAMES,
       ...STEERING_TOOL_NAMES,
-      ...USAGE_TOOL_NAMES,
       'mock_tool',
     ]);
   });
@@ -89,7 +87,7 @@ describe('ideate MCP server boot', () => {
     const server = new McpServer({ name: SERVER_NAME, version: SERVER_VERSION });
     registerTools(server);
     expect(registeredToolNames(server).sort()).toEqual(
-      [...RECORD_TOOL_NAMES, ...WORK_STATE_TOOL_NAMES, ...STEERING_TOOL_NAMES, ...USAGE_TOOL_NAMES].sort(),
+      [...RECORD_TOOL_NAMES, ...WORK_STATE_TOOL_NAMES, ...STEERING_TOOL_NAMES].sort(),
     );
   });
 

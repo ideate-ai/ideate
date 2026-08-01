@@ -15,11 +15,11 @@
 // It keys on the IMPORT PATH and on the SIZE of a declared number, never on
 // this module's symbol SPELLINGS. A matcher spelled out of the symbols it
 // happens to remember is blind twice over: it misses the files that use the
-// symbol it forgot (`fitToListPayloadBudget`, the door record/read-page.ts and
-// usage/read-page.ts go through), and it misses a fork outright, because a fork
-// picks its OWN names — a planted `STEERING_PAYLOAD_BUDGET = 30_000` beside a
-// hand-copied prefix loop is exactly the drift this file exists to catch and
-// exactly what a symbol-name matcher cannot see.
+// symbol it forgot (`fitToListPayloadBudget`, the door record/read-page.ts
+// goes through), and it misses a fork outright, because a fork picks its OWN
+// names — a planted `STEERING_PAYLOAD_BUDGET = 30_000` beside a hand-copied
+// prefix loop is exactly the drift this file exists to catch and exactly
+// what a symbol-name matcher cannot see.
 //
 // Lives beside the module rather than in any store's test file: the budget
 // belongs to no seam (see payload-budget.ts's header), so neither the board's
@@ -40,10 +40,10 @@ import {
 /**
  * Every file PERMITTED to import the budget module, and the per-item measure
  * each one names. This list is the ONE thing a new bounded read extends — add
- * a row (record_read, steering_read, usage_query) and the drift test below
- * keeps working unchanged. What it may NOT do is grow a second DEFINITION or a
- * second budget-sized NUMBER: those halves of the test take no list and admit
- * no exceptions.
+ * a row (record_read, steering_read) and the drift test below keeps working
+ * unchanged. What it may NOT do is grow a second DEFINITION or a second
+ * budget-sized NUMBER: those halves of the test take no list and admit no
+ * exceptions.
  *
  * `measure` is the symbol the file must name. A transport that WRITES bytes
  * names the concrete measure matching its own writer (compact vs pretty); a
@@ -64,19 +64,12 @@ const PERMITTED_IMPORTERS: readonly { readonly segments: readonly string[]; read
   { segments: ['record', 'tools.ts'], measure: 'measureCompactItemChars' },
   // The `ideate-record read --json` CLI — likewise 2-space indented.
   { segments: ['cli', 'ideate-record.ts'], measure: 'measurePrettyItemChars' },
-  // The MCP `usage_query` tool — the fourth and last unbounded read surface,
-  // compactly written like the other tool results. It has no CLI door.
-  { segments: ['usage', 'tools.ts'], measure: 'measureCompactItemChars' },
   // The process record's shared page-shaper (`boundRecordPage`), which BOTH
   // record transports go through. It reaches the budget by way of
   // `fitToListPayloadBudget` — the prefix rule without the cursor re-mint,
   // because the record's cursor is an id alone — and takes its caller's
   // measure rather than writing bytes itself.
   { segments: ['record', 'read-page.ts'], measure: 'ListItemMeasure' },
-  // The usage log's shared page-shaper (`boundUsagePage`) — the same
-  // `fitToListPayloadBudget` door and the same injected measure, WRAPPED so
-  // every row is also charged for its echo in `used_item_ids`.
-  { segments: ['usage', 'read-page.ts'], measure: 'ListItemMeasure' },
 ];
 
 /**
