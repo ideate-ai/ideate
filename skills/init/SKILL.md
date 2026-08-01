@@ -19,6 +19,13 @@ and the stores with defaults. `init`'s value is making that setup meaningful —
 turning steering on and seeding it with the project's intent — not scaffolding
 a directory tree (there isn't one).
 
+## Addressing the human
+Any prose this surface writes for a person — a summary, a report, a question,
+ordinary conversation, not only a confirm gate — follows the shared rule in
+`skills/shared/human-presentation.md` (relative to the plugin root). Read it
+and apply it to everything a person will read; it is the single copy — do not
+paraphrase or restate it here.
+
 ## Tool vocabulary (v3)
 - Steering: `steering_put`, `steering_read` (guiding principles, constraints,
   policies; each a stable `id`, a `kind`, a `domain`, a `statement`). **Gated

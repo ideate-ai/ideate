@@ -5,6 +5,13 @@ loop ends, for any reason. Its job: reconstruct and present a truthful account
 of the whole run from the durable record — autopilot ran unattended, so this
 report is how the user learns what happened.
 
+## Addressing the human
+Any prose this surface writes for a person — a summary, a report, a question,
+ordinary conversation, not only a confirm gate — follows the shared rule in
+`skills/shared/human-presentation.md` (relative to the plugin root). Read it
+and apply it to everything a person will read; it is the single copy — do not
+paraphrase or restate it here.
+
 ## Determine why the loop ended
 One of:
 - **Converged** — review returned `converged` and the board has no open

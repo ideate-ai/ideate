@@ -11,6 +11,13 @@ specialized reviewer subagents, synthesizes their findings into the process
 record, and has the domain-curator keep steering coherent. It's the capstone of
 a work cycle and feeds `refine`.
 
+## Addressing the human
+Any prose this surface writes for a person — a summary, a report, a question,
+ordinary conversation, not only a confirm gate — follows the shared rule in
+`skills/shared/human-presentation.md` (relative to the plugin root). Read it
+and apply it to everything a person will read; it is the single copy — do not
+paraphrase or restate it here.
+
 ## Tool vocabulary (v3)
 - Read: `work_list`, `work_get`, `work_events`, `record_read`, `steering_read`.
 - Write: `record_append(kind="finding")`, `record_append(kind="cycle-summary")`,

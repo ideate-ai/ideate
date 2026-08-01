@@ -14,6 +14,13 @@ the loop keeps one continuous context. When work hits an Andon escalation there
 is no user to stop for — it routes the decision to the `ideate:proxy-human`
 agent and records the outcome.
 
+## Addressing the human
+Any prose this surface writes for a person — a summary, a report, a question,
+ordinary conversation, not only a confirm gate — follows the shared rule in
+`skills/shared/human-presentation.md` (relative to the plugin root). Read it
+and apply it to everything a person will read; it is the single copy — do not
+paraphrase or restate it here.
+
 ## State (v3 has no autopilot-state store)
 There is no `manage_autopilot_state` tool in v3. Persist loop state as process
 records and reconstruct it on resume:

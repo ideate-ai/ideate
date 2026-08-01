@@ -12,6 +12,13 @@ the result, records findings, and completes or releases the claim. It never
 designs or re-plans — if work reveals the plan is wrong, it stops (Andon) and
 sends you to `refine`.
 
+## Addressing the human
+Any prose this surface writes for a person — a summary, a report, a question,
+ordinary conversation, not only a confirm gate — follows the shared rule in
+`skills/shared/human-presentation.md` (relative to the plugin root). Read it
+and apply it to everything a person will read; it is the single copy — do not
+paraphrase or restate it here.
+
 ## Board claim discipline (the core loop invariant)
 Every board write is fenced by a **claim token**. For each item:
 1. `work_claim(id, actor_human, [lease_ms])` — succeeds only if the item is
