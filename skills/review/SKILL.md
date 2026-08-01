@@ -20,11 +20,28 @@ a work cycle and feeds `refine`.
   `ideate:domain-curator` — all read-only; you record what they return.
 
 ## Step 1 — Parse mode and scope
-- **cycle** (default) — review the work completed since the last review. Derive
-  the scope from `git diff` against the last cycle-summary's commit (or recent
-  `done` board items via `work_list` + `work_events` — its pages run
-  newest-created first, so follow `next_cursor` if the cycle touched older
-  items).
+- **cycle** (default) — review the work completed since the last review.
+  - Primary signal: `git diff` against the last cycle-summary's commit — exact,
+    and unaffected by anything below.
+  - Supplementary signal, for board-only work with no code diff (decisions,
+    process items): `work_list(status:"done")`, paged to TRUE exhaustion —
+    follow `next_cursor` until it is `null` (a short page is never the end).
+    State this plainly: **`work_list` orders newest-CREATED first
+    (`created_at DESC`), which is NOT the same fact as "completed
+    recently."** An item created long before this cycle but completed within
+    it sorts by its old `created_at` and would be silently dropped by an
+    early stop on this ordering; paging to exhaustion avoids that, but the
+    ordering still cannot mark where "this cycle" begins. There is no cheaper
+    completion signal on the item row — `updated_at` is stamped at create
+    time and is bumped only by `update_meta`/`cancel`/`reopen`, never by
+    `claim`/`renew`/`complete`/`release`, so it does not track completion and
+    cannot substitute. The exact completion time is only reachable per item
+    (`work_events(id)`'s `complete` transition), and no board-wide query
+    exists for it, so treat it as a one-item spot-check for a genuinely
+    ambiguous item, not a way to scan the whole board. Bound the
+    supplementary set instead by cross-referencing the exhausted `done` list
+    against what the most recent `record_read(scope="cycle-summary")` entry
+    already reported as reviewed — anything not covered there is in scope.
 - **`--full`** — audit the whole project, not just the last cycle.
 - **`--domain <name>`** — review one domain/area against its steering.
 - **natural-language arg** — ad-hoc: review exactly the scope described.

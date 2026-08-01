@@ -5,10 +5,24 @@ inside the autopilot context and **returns a convergence verdict** the
 controller branches on. Read and run this after the execute phase each cycle.
 
 ## Scope
-Default to a **differential** review of what this cycle changed (`git diff`
-against the previous cycle record's head commit, plus the items completed this
-cycle). Periodically — every few cycles, or on the final cycle — do a **full**
-review instead, to catch regressions the differential scope misses.
+Default to a **differential** review of what this cycle changed: `git diff`
+against the previous cycle record's head commit (exact), plus board-only work
+with no code diff (decisions, process items) found via `work_list(status:
+"done")` paged to TRUE exhaustion — follow `next_cursor` until it is `null`
+(a short page is never the end). State this plainly: **`work_list` orders
+newest-CREATED first (`created_at DESC`), not by completion time** — an item
+created long before this cycle but completed within it sorts by its old
+`created_at`, so an early stop on this ordering silently drops it; exhaustive
+paging avoids that, but the ordering still cannot mark where "this cycle"
+begins. `updated_at` is not a substitute — it is untouched by
+`claim`/`renew`/`complete`/`release`, only `update_meta`/`cancel`/`reopen`
+bump it. A per-item `work_events(id)` completion timestamp exists but has no
+board-wide query, so use it to spot-check one ambiguous item, not to scan the
+whole board. Bound the supplementary set by cross-referencing the exhausted
+`done` list against what the most recent recorded cycle-summary already
+reported as reviewed. Periodically — every few cycles, or on the final cycle
+— do a **full** review instead, to catch regressions the differential scope
+misses.
 
 ## Reviewers (parallel)
 Spawn concurrently, each scoped to the work under review and handed the
