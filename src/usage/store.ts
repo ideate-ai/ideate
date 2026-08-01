@@ -155,10 +155,21 @@ export class UsageStore {
 
   /**
    * The distinct delivered items that were USED under `filter`, in first-seen
-   * order. This IS the effectiveness denominator: for a seed (task), the set
-   * of items the worker actually used = the ground-truth "relevant" set the
-   * context-quality metric computes recall against. `query({ seed_id })` then `usedItemIds` gives the
-   * per-task denominator directly.
+   * order. This WOULD BE the effectiveness denominator: for a seed (task), the
+   * set of items the worker actually used = the ground-truth "relevant" set a
+   * context-quality metric would compute recall against — `query({ seed_id
+   * })` then `usedItemIds` gives the per-task denominator directly.
+   *
+   * RESERVED, not yet consumed: that metric computation is not built. The
+   * completion-usage-capture hook that would feed it real signals lands gated
+   * OFF (a separate, still-open board item), and as of this writing nothing
+   * outside this method's own tests calls it — `usage_read`'s bounded page
+   * uses read-page.ts's page-scoped `distinctItemIds` instead, which folds
+   * only the rows already being returned rather than the whole store. Kept
+   * here rather than removed because the whole-store fold IS the shape the
+   * eventual metric needs and re-deriving it later would just recreate this
+   * method; if that metric is abandoned rather than deferred, this method
+   * should be removed then, not now.
    */
   usedItemIds(filter: UsageQuery = {}): string[] {
     const seen = new Set<string>();

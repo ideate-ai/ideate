@@ -76,7 +76,8 @@ Subcommands (mirror the eleven MCP work-state verbs):
        [--include-spec] [--limit <n>] [--cursor <c>]
       List work items with the derived claimability view attached.
       Rows are SUMMARIES: every field except the opaque spec body, plus
-      spec_length. \`--include-spec\` requires --json (the human listing never
+      spec_length (Unicode CODE POINTS — SQLite's own LENGTH() semantics, not
+      UTF-16 code units). \`--include-spec\` requires --json (the human listing never
       prints spec bodies, so reading them would be a silent no-op); fetch a
       single item's spec with \`get --id\` instead when you can.
       \`--json\` prints {"items": [...], "next_cursor": ...} and pages at

@@ -70,7 +70,9 @@
 // `WorkStateError`, `DagError`, `VerbError`, `ClaimEngineError` — extends, per
 // types.ts's own note) is caught with ONE `instanceof` check and shaped into a
 // typed
-// `{ ok: false, code, message }` MCP error payload. Anything else (a
+// `{ ok: false, code, message, reason }` MCP error payload — `message` and
+// `reason` carry the identical string; see `toolError`'s own doc comment for
+// why both keys are present. Anything else (a
 // genuinely unexpected internal error) is re-thrown and falls through to
 // the MCP SDK's own generic error handling — this module never silently
 // swallows a non-work-state failure.
@@ -175,7 +177,9 @@ function actorFromArgs(human: string, agent: string | undefined): ActorRef {
  * typed edges). Mirrors record/tools.ts's `referencesFromArgs` exactly, with
  * one adaptation to this module's own error idiom: a malformed arg THROWS a
  * typed `WorkStateError('SCHEMA', …)`, which the handlers' existing
- * try/catch shapes into the standard `{ ok: false, code, message }` payload
+ * try/catch shapes into the standard error payload via {@link toolError} —
+ * see that function's own doc comment for the emitted keys rather than a
+ * second copy of them here (P-52)
  * (record/tools.ts returns a sentinel object instead because its append path
  * has no try/catch). Target EXISTENCE is not checked here — that is dag.ts's
  * write-time guard one layer down; ULID well-formedness is also re-checked at
@@ -274,11 +278,25 @@ function ok(payload: Record<string, unknown>): CallToolResult {
  * `instanceof WorkStateModuleError` check covers every typed failure this
  * package's logic layer can raise. Anything else is re-thrown — not this
  * module's to swallow.
+ *
+ * Carries BOTH `message` (this module's own historical key, asserted by
+ * tools.test.ts) and `reason` (the key record/tools.ts, steering/tools.ts and
+ * usage/tools.ts have always used for the identical `{ok:false, code,
+ * <string>}` shape on the other three bounded-read surfaces) with the same
+ * string value. This is an ADDITIVE fix, not a rename: a review of this
+ * item's cleanup pass found consumers reading each key on a different
+ * surface (this package's own tests read `message`; record/tools.test.ts and
+ * usage/tools.test.ts read `reason`), so removing either would break a real
+ * consumer. Adding the missing key here — rather than stripping `message` or
+ * pushing `message` onto the other three — resolves the drift a caller would
+ * hit writing one handler for "a malformed cursor on a bounded read" (that
+ * handler reads `reason` today, and got `undefined` on `work_list` before
+ * this).
  */
 function toolError(err: unknown): CallToolResult {
   if (err instanceof WorkStateModuleError) {
     return {
-      content: [{ type: 'text', text: JSON.stringify({ ok: false, code: err.code, message: err.message }) }],
+      content: [{ type: 'text', text: JSON.stringify({ ok: false, code: err.code, message: err.message, reason: err.message }) }],
       isError: true,
     };
   }
@@ -400,7 +418,9 @@ export function createWorkStateToolsRegistrar(options: WorkStateToolsOptions = {
         description:
           'List work items, with the derived claimability view attached to each (an open item every direct ' +
           'depends_on entry of which is done). Selection only — never ranking. SUMMARY ROWS BY DEFAULT: each item ' +
-          'carries every field EXCEPT the opaque spec body, plus spec_length (its character count) — fetch the ' +
+          'carries every field EXCEPT the opaque spec body, plus spec_length (its length in Unicode CODE POINTS, ' +
+          'SQLite\'s own LENGTH() semantics — NOT UTF-16 code units, which is what record_read\'s content_length ' +
+          'counts; the two disagree on astral text) — fetch the ' +
           'spec of an item you actually intend to work on with work_get, or set include_spec: true to get every ' +
           'spec back here. PAGED: at most `limit` items per call (default ' +
           `${String(DEFAULT_LIST_LIMIT)}, clamped into 1..${String(MAX_LIST_LIMIT)}` +

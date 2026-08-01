@@ -16,23 +16,22 @@
 // on the behavioral probe below.
 
 import { execFileSync } from 'node:child_process';
-import { existsSync, readFileSync } from 'node:fs';
+import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { beforeAll, describe, expect, it } from 'vitest';
 
 const PLUGIN_DIR = fileURLToPath(new URL('../..', import.meta.url));
 const BIN_PATH = join(PLUGIN_DIR, 'bin', 'ideate-record');
-const DIST_CLI = join(PLUGIN_DIR, 'dist', 'cli', 'ideate-record.js');
 const README = readFileSync(join(PLUGIN_DIR, 'README.md'), 'utf8');
 const CLI_SOURCE = readFileSync(join(PLUGIN_DIR, 'src', 'cli', 'ideate-record.ts'), 'utf8');
 
 beforeAll(() => {
-  // Same self-sufficiency posture as ideate-record.test.ts: the bin runs
-  // compiled output, so build it if this suite runs before `npm run build`.
-  if (!existsSync(DIST_CLI)) {
-    execFileSync(join(PLUGIN_DIR, 'node_modules', '.bin', 'tsc'), ['-b'], { cwd: PLUGIN_DIR, stdio: 'pipe' });
-  }
+  // Build UNCONDITIONALLY, every run — `tsc -b` is incremental, so a no-op
+  // rebuild is cheap, and a conditional (skip when dist/ already exists) let
+  // this suite pass green against a STALE dist left by a previous change
+  // (P-50: the verified path must BE the shipped path).
+  execFileSync(join(PLUGIN_DIR, 'node_modules', '.bin', 'tsc'), ['-b'], { cwd: PLUGIN_DIR, stdio: 'pipe' });
 }, 120_000);
 
 /** Every distinct `--flag` token in a chunk of text, sorted. */

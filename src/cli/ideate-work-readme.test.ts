@@ -20,7 +20,7 @@
 // README bullet fails this suite rather than passing it silently.
 
 import { execFileSync } from 'node:child_process';
-import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -28,18 +28,17 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 const PLUGIN_DIR = fileURLToPath(new URL('../..', import.meta.url));
 const BIN_PATH = join(PLUGIN_DIR, 'bin', 'ideate-work');
-const DIST_CLI = join(PLUGIN_DIR, 'dist', 'cli', 'ideate-work.js');
 const README = readFileSync(join(PLUGIN_DIR, 'README.md'), 'utf8');
 const CLI_SOURCE = readFileSync(join(PLUGIN_DIR, 'src', 'cli', 'ideate-work.ts'), 'utf8');
 
 let scratchRoot: string;
 
 beforeAll(() => {
-  // Same self-sufficiency posture as ideate-work.test.ts: the bin runs
-  // compiled output, so build it if this suite runs before `npm run build`.
-  if (!existsSync(DIST_CLI)) {
-    execFileSync(join(PLUGIN_DIR, 'node_modules', '.bin', 'tsc'), ['-b'], { cwd: PLUGIN_DIR, stdio: 'pipe' });
-  }
+  // Build UNCONDITIONALLY, every run — `tsc -b` is incremental, so a no-op
+  // rebuild is cheap, and a conditional (skip when dist/ already exists) let
+  // this suite pass green against a STALE dist left by a previous change
+  // (P-50: the verified path must BE the shipped path).
+  execFileSync(join(PLUGIN_DIR, 'node_modules', '.bin', 'tsc'), ['-b'], { cwd: PLUGIN_DIR, stdio: 'pipe' });
   // A throwaway cwd for the behavioral probe: the board is lazily created
   // under cwd, and this suite must never write one into the repository.
   scratchRoot = mkdtempSync(join(tmpdir(), 'ideate-work-readme-'));

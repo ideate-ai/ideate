@@ -165,8 +165,9 @@ export type { ListItemsPage };
 
 /**
  * A work item WITHOUT its opaque `spec` body: every other current `WorkItem`
- * field, plus `spec_length` (the SQL-computed character count of the spec
- * that was left in the database). `spec_format` deliberately stays — it is a
+ * field, plus `spec_length` (the SQL-computed CODE POINT count of the spec
+ * that was left in the database — see the file header's note on why this is
+ * code points, never UTF-16 units). `spec_format` deliberately stays — it is a
  * short triage hint, not a payload. `spec` itself reappears ONLY when the
  * caller opts in via {@link ListPageOptions.include_spec}; the key is absent
  * entirely otherwise, so a consumer can never mistake a projected row for a

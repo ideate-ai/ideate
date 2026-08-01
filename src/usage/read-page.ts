@@ -41,10 +41,17 @@
 // exactly the rows written while it ran.
 //
 // WHERE THE DEFAULT LIVES: here, at the transport boundary, never in store.ts.
-// `UsageStore.query`/`usedItemIds` still mean "every matching signal" with no
-// limit parameter at all, because they ARE the effectiveness denominator an
-// in-process metric computation reads whole; a default imposed one layer down
-// would silently truncate that denominator and quietly understate recall.
+// `UsageStore.query` still means "every matching signal" with no limit
+// parameter at all, because a default imposed one layer down would silently
+// truncate a caller that genuinely needs the whole set. `UsageStore.
+// usedItemIds` is the same shape (fold `query`'s result to distinct item
+// ids), reserved for the context-quality recall metric this store's header
+// describes — that metric is NOT YET BUILT (the completion-usage-capture
+// hook that would feed it lands gated OFF, a separate still-open item), so as
+// of this writing `usedItemIds` has no caller anywhere in this tree outside
+// its own tests. This module's OWN page-scoped fold — {@link
+// distinctItemIds} below — is what `usage_read`'s bounded page actually
+// serves; it does not call `usedItemIds`.
 //
 // PAGING IS SELECTION, NOT RANKING (GP-27): the walk is the store's own id
 // order and a cursor is a POSITION in it. Nothing here scores or reorders.

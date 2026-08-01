@@ -662,6 +662,11 @@ describe('work_list summary projection + keyset pagination', () => {
       expect(result.body.ok).toBe(false);
       expect(result.body.code).toBe('SCHEMA');
       expect(result.body.message).toContain('cursor');
+      // The board's error carries `reason` too, identical to `message`: a
+      // handler written against record/tools.test.ts's and
+      // usage/tools.test.ts's sibling assertion (which reads `reason`) must
+      // not get `undefined` here — see toolError's own doc comment.
+      expect(result.body.reason).toBe(result.body.message);
       expect(result.body.items).toBeUndefined();
     }
   });

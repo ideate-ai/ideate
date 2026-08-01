@@ -16,7 +16,7 @@
 // CLI-only `sweep` subcommand always exits 0 with silent stdout.
 
 import { execFileSync, spawnSync } from 'node:child_process';
-import { existsSync, mkdtempSync, readFileSync, rmSync, statSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -27,7 +27,6 @@ import { DEFAULT_LIST_LIMIT, MAX_LIST_LIMIT } from '../work-state/store.js';
 
 const PLUGIN_DIR = fileURLToPath(new URL('../..', import.meta.url));
 const BIN_PATH = join(PLUGIN_DIR, 'bin', 'ideate-work');
-const DIST_CLI = join(PLUGIN_DIR, 'dist', 'cli', 'ideate-work.js');
 
 const tempDirs: string[] = [];
 function makeProjectRoot(): string {
@@ -59,12 +58,13 @@ function runCliRaw(args: string[], options: RunOptions): { status: number | null
 }
 
 beforeAll(() => {
-  // The CLI runs against compiled output. Build incrementally if needed
-  // (documented order is `pnpm build` then `pnpm test`; this keeps the
-  // suite self-sufficient when run in isolation).
-  if (!existsSync(DIST_CLI)) {
-    execFileSync(join(PLUGIN_DIR, 'node_modules', '.bin', 'tsc'), ['-b'], { cwd: PLUGIN_DIR, stdio: 'pipe' });
-  }
+  // The CLI runs against compiled output. Build UNCONDITIONALLY, every run —
+  // `tsc -b` is incremental, so a no-op rebuild is cheap, and a conditional
+  // (skip when dist/ already exists) let this suite pass green against a
+  // STALE dist left by a previous change: a mutation to this CLI's source
+  // landed silently unverified until the guard was made unconditional here
+  // (P-50: the verified path must BE the shipped path).
+  execFileSync(join(PLUGIN_DIR, 'node_modules', '.bin', 'tsc'), ['-b'], { cwd: PLUGIN_DIR, stdio: 'pipe' });
 }, 120_000);
 
 describe('bin wiring', () => {

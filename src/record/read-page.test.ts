@@ -126,6 +126,28 @@ describe('projection: summary rows by default, content_length always', () => {
     }
   });
 
+  it('content_length counts UTF-16 CODE UNITS, not Unicode code points — deliberately the ' +
+    'opposite of the board\'s spec_length (work-state/store.test.ts pins that one as code ' +
+    'points); the two disagree by a factor of two per astral character', () => {
+    const store = makeStore();
+    const content = '🎉'.repeat(10); // 10 astral (non-BMP) code points, 20 UTF-16 code units
+    const result = store.append({
+      kind: 'finding',
+      claim: 'astral content',
+      verification_anchor: 'src/record/read-page.ts',
+      scope: 'astral scope',
+      source: { capture_point: 'test', session_id: 'sess-astral' },
+      content,
+    });
+    if (!result.ok) throw new Error(`seed failed: ${result.reason}`);
+
+    const row = rowsOf(store, {})[0];
+    if (row === undefined) throw new Error('expected a row');
+    expect(row.content_length).toBe(20);
+    expect(row.content_length).not.toBe([...content].length); // [...content].length counts code points (10)
+    expect([...content].length).toBe(10);
+  });
+
   it('projection is where the payload shrinks: summary rows are a fraction of full ones', () => {
     const store = makeStore();
     seed(store, 20, 'x'.repeat(1_500));

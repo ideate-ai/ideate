@@ -312,7 +312,8 @@ export function createRecordToolsRegistrar(options: RecordToolsOptions = {}): To
           'scope/kind/source fields) or by exact id. Unranked by contract — selection only, no scoring. ' +
           'SUMMARY ROWS BY DEFAULT: each row carries every field EXCEPT the prose body — id, kind, claim, scope, ' +
           'verification_anchor, source, references, referenced_by — plus content_length, the body length in ' +
-          'characters. To read a body, pass include_content: true; to read ONE record in full, pass its id with ' +
+          'UTF-16 code units (JS string length — NOT the same unit as work_list\'s spec_length, which counts ' +
+          'Unicode code points; they can disagree on astral text). To read a body, pass include_content: true; to read ONE record in full, pass its id with ' +
           'include_content: true (that pair IS the by-id fetch — there is no separate get verb). ' +
           `PAGED: at most \`limit\` rows per call (default ${String(DEFAULT_RECORD_READ_LIMIT)}, clamped into ` +
           `1..${String(MAX_RECORD_READ_LIMIT)}); the result carries next_cursor — a string when more matching ` +

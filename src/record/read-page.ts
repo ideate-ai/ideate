@@ -59,12 +59,24 @@ export const MAX_RECORD_READ_LIMIT = 500;
 
 /**
  * One returned row: every field of a record view EXCEPT the prose body, plus
- * `content_length` — the body's length in CHARACTERS, always present, so a
+ * `content_length` — the body's length in UTF-16 CODE UNITS (JS
+ * `String.prototype.length`; NOT Unicode code points), always present, so a
  * caller can see what it did not receive and decide whether to fetch it. This
  * generalizes the shape the priming digest has always emitted (cli/
  * ideate-record.ts's `formatDigest`: kind + claim + anchor + supersession),
  * which is the universal priming floor — it is not a new judgment about what a
  * record's "summary" is.
+ *
+ * Deliberately NOT aligned to the board's `spec_length` (work-state/store.ts),
+ * which counts CODE POINTS via SQLite's own `LENGTH()`: this row's length is
+ * computed in JS (`content.length` below), and the SAME JS `.length` also
+ * drives this module's own payload-budget accounting (transport/payload-
+ * budget.ts measures `JSON.stringify(item).length` on these very rows) — so
+ * aligning `content_length` to code points would make it disagree with the
+ * truncation math for the row it describes. The two surfaces measure "length"
+ * in different units for that reason, not by drift; {@link projectRecordRow}
+ * below is pinned to UTF-16 code units by a non-BMP test in
+ * read-page.test.ts.
  *
  * `content` comes back only when the caller asks for it (`include_content`),
  * and `content_length` stays present either way so the two shapes differ by
@@ -212,6 +224,11 @@ export function readRecordPage(store: RecordStore, options: RecordPageOptions = 
  * The key is OMITTED rather than set to `undefined` when excluded, so a caller
  * can test presence (`'content' in row`) and a JSON payload carries no
  * misleading null.
+ *
+ * `content_length` is JS `String.prototype.length` — UTF-16 code units — by
+ * deliberate choice, not oversight: see this file's `ProcessRecordRow` doc
+ * comment for why it is not aligned to the board's code-point-counted
+ * `spec_length`.
  */
 export function projectRecordRow(view: ProcessRecordView, includeContent: boolean): ProcessRecordRow {
   const { content, ...rest } = view;

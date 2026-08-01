@@ -111,7 +111,8 @@ Subcommands:
       \`--json\` prints {"records": [...], "next_cursor": ...} and pages at
       ${String(DEFAULT_RECORD_READ_LIMIT)} rows by default; its rows are
       SUMMARIES — every field except the prose body, plus content_length (the
-      body's character count). \`--include-content\` puts the bodies back and
+      body's length in UTF-16 code units — JS string length, not Unicode code
+      points). \`--include-content\` puts the bodies back and
       requires --json (the human listing always prints them, so the flag would
       be a costly no-op there). The human-readable listing is UNPAGED and
       full-bodied unless you pass --limit or --cursor, and then prints a resume
