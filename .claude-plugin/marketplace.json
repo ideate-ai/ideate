@@ -5,14 +5,14 @@
   },
   "metadata": {
     "description": "ideate plugin marketplace — a composable process framework for Claude Code (process record, work board, steering, skills, agents, hooks, CLIs)",
-    "version": "3.1.0"
+    "version": "3.1.1"
   },
   "plugins": [
     {
       "name": "ideate",
       "source": "./",
       "description": "ideate — a composable process framework for Claude Code: an append-only process record, a dependency-ordered work board, and gated steering, with skills, agents, hooks, and CLIs that drive an autopilot loop from idea to verified work.",
-      "version": "3.1.0"
+      "version": "3.1.1"
     }
   ]
 }

@@ -1,6 +1,6 @@
 {
   "name": "@ideate/plugin",
-  "version": "3.1.0",
+  "version": "3.1.1",
   "private": true,
   "license": "AGPL-3.0-only",
   "description": "ideate — a composable process framework for Claude Code: an append-only process record, a dependency-ordered work board, and gated steering, with skills, agents, hooks, and CLIs that drive an autopilot loop from idea to verified work. Stays \"private\": true until npm publishing is ratified — see README.md status section.",

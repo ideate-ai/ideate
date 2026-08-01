@@ -27,7 +27,7 @@ import { createWorkStateToolsRegistrar } from './work-state/tools.js';
 
 /** Server identity, mirrored from .claude-plugin/plugin.json. */
 export const SERVER_NAME = 'ideate';
-export const SERVER_VERSION = '3.1.0';
+export const SERVER_VERSION = '3.1.1';
 
 /**
  * A tool registrar contributes tools to the server at boot.
