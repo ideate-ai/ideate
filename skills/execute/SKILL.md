@@ -64,8 +64,39 @@ When a claimed item is a human-gate:
   prose) — this is the context workers need to match the project's rules.
 
 ## Step 2 — Present the execution plan and confirm
-Show the user: the claimable frontier, the dependency order, item count, and
-the execution mode you'll use (below). Get confirmation before building.
+The board's `spec`s are written for a worker — dense with file paths, policy
+ids and record ULIDs, because that is exactly what a worker needs to build
+with no other context. That density is exactly wrong for a human reviewer,
+who is reading a different document for a different reason. **Never present
+spec bodies for review.**
+
+Tell each item's story instead, one item at a time, in the shape that has
+demonstrably worked:
+- **Background you need** — what a newcomer to this codebase would need to
+  follow the rest.
+- **The problem** — what's wrong or missing, and why it matters now.
+- **The work** — what will be built, in plain language.
+- **How we know it's done** — the acceptance bar, in plain terms.
+
+**Expand references at the boundary.** A bare policy id or record ULID means
+nothing to someone reading cold — inline what it means ("GP-03, the rule that
+demo machinery can't ship in the real binary") and keep the bare id in
+parentheses at most, never as the label itself.
+
+**Progressive disclosure, not a wall of text.** Default to title → one-line
+summary → the full four-part story → the raw spec, in that order, and let the
+user pull more depth rather than handing them all of it up front. This same
+rule governs confirm-question option text — including the execution-mode
+choice in Step 3: enumerate the actual options in plain language rather than
+implying them or arguing from a set the user was never shown; a dense or
+unstated option list produces answers that talk past it, not through it.
+
+Show the user, item by item: the claimable frontier, the dependency order,
+item count, and the execution mode you'll use (below). **Frame this as
+review, not approval** — objections and redesigns are cheaper now, before a
+worker builds anything, than after. Invite them explicitly and give the user
+room to reshape an item before it's claimed. Get confirmation before
+building.
 
 ## Step 3 — Choose an execution mode
 - **Sequential** (default, safest) — one item at a time. Use when items share

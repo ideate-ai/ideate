@@ -108,12 +108,33 @@ Turn the analyzed idea into items:
   least one `claimable` item and no orphaned refs.
 
 ## Step 7 — Close out
+Before recommending `/ideate:execute`, present what was decomposed the way a
+human can actually judge it — not the `spec` bodies, which are written
+densely for a worker to build from with no other context. **Never present
+spec bodies for review.** Tell each new or updated item's story, one item at
+a time, in the same shape as `execute`'s confirmation gate:
+- **Background you need** — what a newcomer to this codebase would need to
+  follow the rest.
+- **The problem** — what's wrong or missing, and why it matters now.
+- **The work** — what will be built, in plain language.
+- **How we know it's done** — the acceptance bar, in plain terms.
+
+**Expand references at the boundary** the same way: inline what a policy id
+or record ULID means rather than citing it bare, keeping the id in
+parentheses at most, never as the label itself. **Default to progressive
+disclosure** — title → one-line summary → the full four-part story → the raw
+spec — letting the user pull depth instead of receiving it all at once; this
+governs any confirm-question option text this step (or Step 4's clarifying
+interview) poses too, so enumerate real options in plain language rather than
+leaving them implied or arguing from a set the user was never shown.
+
 - `record_append(kind="journal")` — what was decomposed and why; the items
   created/updated; any steering amended.
 - `record_append(kind="plan-complete")` — the planning milestone.
-- Summarize for the user: the case, the items created (count + the claimable
-  frontier), and the next step — **`/ideate:execute`** to build the new work
-  (or, for a recalibration with no new items, the realignment you recorded).
+- Summarize for the user, item by item per the story shape above: the case,
+  the items created (count + the claimable frontier), and the next step —
+  **`/ideate:execute`** to build the new work (or, for a recalibration with
+  no new items, the realignment you recorded).
 
 ## Guardrails
 - You are the only writer; subagents return analysis and item JSON.
