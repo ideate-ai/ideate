@@ -23,7 +23,14 @@ import { fileURLToPath } from 'node:url';
 import { afterEach, beforeAll, describe, expect, it } from 'vitest';
 
 import { LIST_PAYLOAD_BUDGET_CHARS } from '../transport/payload-budget.js';
+import { BUSY_TIMEOUT_MS, openForWrite } from '../work-state/schema.js';
 import { DEFAULT_LIST_LIMIT, MAX_LIST_LIMIT } from '../work-state/store.js';
+
+// Real BUSY-contention fixture (production BUSY_TIMEOUT_MS, work-state/schema.ts):
+// genuinely waits out the full timeout via a second, real connection holding
+// the write lock — mirrors work-state/tx.test.ts's own P-41 fixtures rather
+// than a mocked/stubbed throw. Slow by unit-test standards, deliberately.
+const REPRESENTATIVE_TEST_TIMEOUT_MS = BUSY_TIMEOUT_MS + 5_000;
 
 const PLUGIN_DIR = fileURLToPath(new URL('../..', import.meta.url));
 const BIN_PATH = join(PLUGIN_DIR, 'bin', 'ideate-work');
@@ -610,4 +617,76 @@ describe('sweep — CLI-only, hook path (always exit 0, silent stdout)', () => {
     const result = runCliRaw(['--help'], { cwd: makeProjectRoot() });
     expect(result.stdout).toContain('CLI-ONLY');
   });
+});
+
+describe('list sweeps lapsed leases before serving the page (decision 01KYX9BGM9N9FGXQDMESN94FX1)', () => {
+  it('list --json reclaims a lapsed claim with NO explicit sweep and no other id-scoped call in between — this transport has no wrapping session at all, so this is its only compensator', () => {
+    const root = makeProjectRoot();
+    const created = JSON.parse(
+      runCli(['create', '--title', 'x', '--spec', 's', '--spec-format', 'text/plain', '--human', 'dan'], { cwd: root }),
+    ) as { id: string };
+
+    // A 1ms lease: by the time the NEXT subprocess (list) starts, real wall-clock
+    // process-spawn overhead (tens of ms, this repo's own measured floor) has
+    // already exceeded it — no fake clock available across separate processes,
+    // so the margin is the real clock itself, deliberately huge relative to
+    // the lease.
+    runCli(['claim', '--id', created.id, '--human', 'dan', '--lease-ms', '1'], { cwd: root });
+
+    // Deliberately no `get`/`events`/`sweep` call on `id` in between — list
+    // itself must be the thing that reclaims it.
+    const listed = JSON.parse(runCli(['list', '--json'], { cwd: root })) as {
+      items: Array<{ id: string; status: string; claimable: boolean }>;
+    };
+    const row = listed.items.find((it) => it.id === created.id);
+    expect(row?.status).toBe('open');
+    expect(row?.claimable).toBe(true);
+
+    // The reclaim is REAL (the stored row changed, not just the derived
+    // view): a subsequent claim succeeds.
+    const reclaimed = JSON.parse(runCli(['claim', '--id', created.id, '--human', 'someone-else'], { cwd: root })) as {
+      status: string;
+    };
+    expect(reclaimed.status).toBe('in_progress');
+  });
+});
+
+describe("list's opportunistic sweep is best-effort, not load-bearing for the read (critical finding closed by 01KYX9BGM9N9FGXQDMESN94FX1)", () => {
+  it(
+    'list --json still serves the page under a REAL BUSY from sweepBoard (a second real connection holding the write lock past BUSY_TIMEOUT_MS), and reports the failed sweep loudly on stderr',
+    () => {
+      const root = makeProjectRoot();
+      const created = JSON.parse(
+        runCli(['create', '--title', 'x', '--spec', 's', '--spec-format', 'text/plain', '--human', 'dan'], { cwd: root }),
+      ) as { id: string };
+      // Claimed but UNEXPIRED: checkExpiry (expiry.ts) opens `BEGIN IMMEDIATE`
+      // for EVERY in_progress item unconditionally, before it even checks
+      // whether that item's lease has passed — so an ordinary, still-live
+      // claim is already enough to contend with a held write lock.
+      runCli(['claim', '--id', created.id, '--human', 'dan'], { cwd: root });
+
+      // A REAL second connection to the SAME board.db, holding a genuine
+      // BEGIN IMMEDIATE — production `openForWrite`, not a mock.
+      const dbPath = join(root, '.ideate-work', 'board.db');
+      const holderDb = openForWrite(dbPath);
+      holderDb.exec('BEGIN IMMEDIATE');
+      try {
+        const result = runCliRaw(['list', '--json'], { cwd: root });
+        // Exit 0 — NOT the exit-1 path a BUSY throw would have taken.
+        expect(result.status).toBe(0);
+        const parsed = JSON.parse(result.stdout) as { items: Array<{ id: string; status: string }> };
+        // Unswept (the write lock blocked the sweep the whole time), so the
+        // claimed item still shows in_progress — "best-effort" means the
+        // read is guaranteed, not that the sweep ran.
+        expect(parsed.items.find((it) => it.id === created.id)?.status).toBe('in_progress');
+        // Loud, durable signal (P-45) — not a silent degrade.
+        expect(result.stderr).toMatch(/list: opportunistic sweep FAILED/);
+        expect(result.stderr).toMatch(/serving the page WITHOUT it/);
+      } finally {
+        holderDb.exec('ROLLBACK');
+        holderDb.close();
+      }
+    },
+    REPRESENTATIVE_TEST_TIMEOUT_MS,
+  );
 });

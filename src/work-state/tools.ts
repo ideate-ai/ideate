@@ -65,6 +65,26 @@
 // `complete`/`release` need no such wiring here — claims.ts's own functions
 // already call `checkExpiry` internally as their documented first step.
 //
+// `work_list`'s OWN seam (decision 01KYX9BGM9N9FGXQDMESN94FX1): `listSummaries`
+// stays side-effect-free by design (verbs.ts's own header) — a per-ITEM reclaim
+// on a many-row read was explicitly declined there. But the session-boundary
+// sweep (hooks/session-start.mjs, hooks/session-end.mjs) does not reach every
+// consumer of this page: an autopilot run is ONE continuous session by design
+// (skills/autopilot/SKILL.md — "keeps one continuous context"; its spawned
+// subagents fire SubagentStart/SubagentStop, which never sweep), so a claim
+// that lapses mid-run can sit invisible for the rest of the run with no
+// engine-level bound. This handler closes that gap the way option (b) of that
+// decision chose: ONE `sweepBoard` call, here, before the page is served — not
+// per row, and not inside verbs.ts (which stays decoupled from expiry.ts by
+// its own stated boundary). Cost is one indexed `status='in_progress'` scan
+// (idx_items_tenant_status) plus one CAS write per genuinely-expired claim —
+// measured directly (no process-spawn noise; this server is long-lived)
+// against this repo's own real board (159 items, 1 in_progress): sweepBoard
+// averages 0.63ms/call, listItemSummaryViews(limit 20) averages 0.69ms/call —
+// the SAME order of magnitude as the read it now always precedes, not a
+// multiple of it. Scoped to the SAME `tenant_id` this call filters to,
+// matching TenantGuard posture.
+//
 // Error surface: every handler below is wrapped in one try/catch; any
 // `WorkStateModuleError` (the shared base every typed work-state failure —
 // `WorkStateError`, `DagError`, `VerbError`, `ClaimEngineError` — extends, per
@@ -116,7 +136,7 @@ import { createRealCompletionRecordWriter } from './completion-record.js';
 import type { CompletionRecordWriter } from './completion-record.js';
 import { createGatedUsageCaptureWriter } from './completion-usage-hook.js';
 import type { UsageCaptureWriter } from './completion-usage-hook.js';
-import { checkExpiry } from './expiry.js';
+import { checkExpiry, sweepBoard } from './expiry.js';
 import { primeOnClaim } from './priming-hook.js';
 import {
   DEFAULT_LIST_LIMIT,
@@ -490,6 +510,33 @@ export function createWorkStateToolsRegistrar(options: WorkStateToolsOptions = {
             // absent arg leaves the filter free of any containment clause.
             ...(args.parent_id === undefined ? {} : { parent_id: args.parent_id }),
           };
+          // Sweep BEFORE serving the page — see this file's header ("work_list's
+          // OWN seam"). One board-wide pass, not per row; scoped to the same
+          // tenant this call filters to.
+          //
+          // BEST-EFFORT (finding closed by 01KYX9BGM9N9FGXQDMESN94FX1): this
+          // sweep is the ONLY thing standing between "read the board" and a
+          // write-lock contention it never used to have — `checkExpiry`
+          // (expiry.ts) opens `BEGIN IMMEDIATE` for EVERY in_progress item
+          // before it even checks whether that item's lease expired, so a
+          // concurrent writer holding the lock past `BUSY_TIMEOUT_MS` turns a
+          // previously-guaranteed-success read into a `BUSY` error. That
+          // regression would be worse than the gap this sweep closes, so the
+          // sweep call itself is guarded, narrowly, right here — never the
+          // `listSummaries` read below it. A failure here is loud (P-45: no
+          // silent downgrade) but never fatal to the page; mirrors
+          // cli/ideate-work.ts's `runSweep`, the standalone sweep hook path,
+          // which applies the identical "never let sweepBoard's failure stop
+          // the caller" rule for the same reason.
+          try {
+            sweepBoard(ctx.store, ctx.clock, args.tenant_id === undefined ? undefined : { tenant_id: args.tenant_id });
+          } catch (err) {
+            const message = err instanceof Error ? err.message : String(err);
+            process.stderr.write(
+              `ideate work-state: work_list's opportunistic sweep FAILED (${message}) — serving the page WITHOUT it; ` +
+                'an expired claim may still show as in_progress until the next successful sweep\n',
+            );
+          }
           // The DEFAULT page size is applied HERE, at the transport boundary —
           // never in verbs.ts/store.ts, whose absent-limit behavior stays
           // "every matching row" for internal callers (context/

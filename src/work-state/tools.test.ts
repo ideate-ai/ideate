@@ -42,8 +42,16 @@ import { RecordStore } from '../record/store.js';
 import { TelemetryCounters } from '../telemetry/counters.js';
 import { reportFromDir } from '../telemetry/report.js';
 import { LIST_PAYLOAD_BUDGET_CHARS } from '../transport/payload-budget.js';
+import { BUSY_TIMEOUT_MS, openForWrite } from './schema.js';
 import { DEFAULT_LIST_LIMIT, MAX_LIST_LIMIT } from './store.js';
 import { WORK_STATE_TOOL_NAMES, createWorkStateToolsRegistrar } from './tools.js';
+
+// Real BUSY-contention fixtures (production BUSY_TIMEOUT_MS, schema.ts) genuinely
+// wait out the full timeout via a second, real connection holding the write
+// lock — mirrors tx.test.ts's own P-41 fixtures rather than inventing a
+// second pattern. Slow by unit-test standards, deliberately: a shortened/
+// mocked timeout would prove nothing about the actual shipped behavior.
+const REPRESENTATIVE_TEST_TIMEOUT_MS = BUSY_TIMEOUT_MS + 5_000;
 
 const FIXED_ISO = '2026-07-11T12:00:00.000Z';
 const SESSION_ID = 'sess-work-tools-test';
@@ -1080,6 +1088,119 @@ describe('the real expiry check is wired (criterion 2 — closes the expiry seam
     const transitions = (events.body.events as Array<Record<string, unknown>>).map((e) => e.transition);
     expect(transitions).toContain('orphan-recovery');
   });
+});
+
+describe('work_list sweeps lapsed leases before serving the page (decision 01KYX9BGM9N9FGXQDMESN94FX1)', () => {
+  it('a claim that lapsed with NO other id-scoped touch since (no work_get/events call on it) still shows open/claimable on work_list, through the shipped transport only', async () => {
+    const fixture = makeFixture();
+    const client = await fixture.connect();
+
+    const created = await call(client, 'work_create', {
+      title: 'x',
+      spec: 's',
+      spec_format: 'text/plain',
+      actor_human: 'dan',
+    });
+    const id = (created.body.item as Record<string, unknown>).id as string;
+
+    const claimed = await call(client, 'work_claim', { id, actor_human: 'dan', lease_ms: 1000 });
+    expect((claimed.body.item as Record<string, unknown>).status).toBe('in_progress');
+
+    // Advance the fake clock well past the 1-second lease. Deliberately do
+    // NOT call work_get/work_events/anything id-scoped on `id` — the point is
+    // that work_list itself, with no other help, reclaims it.
+    fixture.setNow('2026-07-11T13:00:00.000Z');
+
+    const listed = await call(client, 'work_list', {});
+    const items = listed.body.items as Array<Record<string, unknown>>;
+    const row = items.find((it) => it.id === id);
+    expect(row?.status).toBe('open');
+    expect(row?.claimable).toBe(true);
+
+    // The stored row and the derived view agree: a lapsed lease that
+    // work_list surfaced as claimable was ACTUALLY reclaimed (this is a real
+    // sweepBoard call, not a read-only "present as open" projection), so a
+    // subsequent claim succeeds rather than failing INVALID_CLAIM/CONFLICT.
+    const reclaimed = await call(client, 'work_claim', { id, actor_human: 'someone-else' });
+    expect(reclaimed.isError).toBe(false);
+    expect((reclaimed.body.item as Record<string, unknown>).status).toBe('in_progress');
+  });
+
+  it('does not touch a claim on a DIFFERENT tenant when the call filters to one tenant', async () => {
+    const fixture = makeFixture();
+    const client = await fixture.connect();
+
+    const created = await call(client, 'work_create', {
+      title: 'x',
+      spec: 's',
+      spec_format: 'text/plain',
+      actor_human: 'dan',
+      tenant_id: 'tenant-a',
+    });
+    const id = (created.body.item as Record<string, unknown>).id as string;
+    await call(client, 'work_claim', { id, actor_human: 'dan', lease_ms: 1000 });
+
+    // Lease lapses; a work_list scoped to a DIFFERENT tenant must not reclaim
+    // it — proven by the orphan-recovery event's OWN `at` timestamp, not by
+    // re-querying tenant-a (which would sweep tenant-a itself and make the
+    // check trivially true regardless of whether the tenant-b call leaked).
+    fixture.setNow('2026-07-11T12:30:00.000Z');
+    await call(client, 'work_list', { tenant_id: 'tenant-b' });
+
+    fixture.setNow('2026-07-11T13:00:00.000Z');
+    const events = await call(client, 'work_events', { id });
+    const orphanRecovery = (events.body.events as Array<Record<string, unknown>>).find((e) => e.transition === 'orphan-recovery');
+    expect(orphanRecovery).toBeDefined();
+    // Reclaimed at 13:00 (this work_events call itself), NOT at 12:30 (the
+    // tenant-b-scoped work_list) — the cross-tenant sweep left it alone.
+    expect(orphanRecovery?.at).toBe('2026-07-11T13:00:00.000Z');
+  });
+});
+
+describe("work_list's opportunistic sweep is best-effort, not load-bearing for the read (critical finding closed by 01KYX9BGM9N9FGXQDMESN94FX1)", () => {
+  it(
+    'a REAL BUSY from sweepBoard (a second connection genuinely holding the write lock past BUSY_TIMEOUT_MS) does not fail work_list — the page is still served, and the failed sweep is reported loudly on stderr',
+    async () => {
+      const fixture = makeFixture();
+      const client = await fixture.connect();
+
+      const created = await call(client, 'work_create', { title: 'x', spec: 's', spec_format: 'text/plain', actor_human: 'dan' });
+      const id = (created.body.item as Record<string, unknown>).id as string;
+      // Claimed but UNEXPIRED: checkExpiry (expiry.ts) opens `BEGIN IMMEDIATE`
+      // for EVERY in_progress item unconditionally, before it even checks
+      // whether that item's lease has passed — so an ordinary, still-live
+      // claim is already enough to contend with a held write lock. No
+      // lease-timing race needed.
+      await call(client, 'work_claim', { id, actor_human: 'dan' });
+
+      // A REAL second connection to the SAME board.db, holding a genuine
+      // BEGIN IMMEDIATE — production `openForWrite`, not a mock.
+      const dbPath = join(fixture.projectRoot, '.ideate-work', 'board.db');
+      const holderDb = openForWrite(dbPath);
+      holderDb.exec('BEGIN IMMEDIATE');
+      const stderrSpy = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+      try {
+        const listed = await call(client, 'work_list', {});
+        // The page was served — NOT a BUSY tool error.
+        expect(listed.isError).toBe(false);
+        const items = listed.body.items as Array<Record<string, unknown>>;
+        // Unswept (the write lock blocked the sweep the whole time), so the
+        // claimed item still shows in_progress — this is what "best-effort"
+        // means: not a promise the sweep ran, only that the read did.
+        expect(items.find((it) => it.id === id)?.status).toBe('in_progress');
+
+        // Loud, durable signal (P-45) — not a silent degrade.
+        const written = stderrSpy.mock.calls.map((c) => String(c[0])).join('');
+        expect(written).toMatch(/work_list's opportunistic sweep FAILED/);
+        expect(written).toMatch(/serving the page WITHOUT it/);
+      } finally {
+        stderrSpy.mockRestore();
+        holderDb.exec('ROLLBACK');
+        holderDb.close();
+      }
+    },
+    REPRESENTATIVE_TEST_TIMEOUT_MS,
+  );
 });
 
 describe('claim-time priming hook wiring (criterion 5)', () => {

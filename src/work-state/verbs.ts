@@ -48,7 +48,8 @@
 // parameter. `create` and `list` have no single-item `ExpiryCheck` call:
 // `create` operates on an item that does not exist yet, and `list` is a
 // many-item selection view (see its own doc comment for why it does not sweep
-// expiry itself).
+// expiry itself — and for the DIFFERENT, board-wide sweep its transports now
+// run instead, decision 01KYX9BGM9N9FGXQDMESN94FX1).
 //
 // Opacity: no code path in this file parses, masks,
 // or transforms `spec` — every verb here that touches metadata inspects only
@@ -444,13 +445,31 @@ export class WorkStateVerbs {
 
   /**
    * List work items, with the derived claimability view attached to
-   * each (see `ListedWorkItem`). Does NOT run the lazy-expiry seam per item:
-   * `list` is a many-item selection view, and running a per-item reclaim
-   * side effect on every board read (rather than on the single-item touches
-   * the contract actually specifies) would be a design decision beyond this
-   * layer's scope — noted here rather than silently assumed. The opportunistic
-   * session-boundary sweep is the mechanism that keeps a read-mostly board
-   * from drifting stale.
+   * each (see `ListedWorkItem`). Does NOT run the lazy-expiry seam per item,
+   * and does NOT run a board-wide sweep either: `list` is a many-item
+   * selection view, and running a reclaim side effect INSIDE this layer
+   * (whether per-item or once per call) would put a write behind a call this
+   * file documents as a read, AND would require importing expiry.ts here —
+   * both declined; this file stays decoupled from claims.ts/expiry.ts by its
+   * own header's boundary. That is a design decision beyond this layer's
+   * scope, not an oversight — noted here rather than silently assumed.
+   *
+   * DECISION 01KYX9BGM9N9FGXQDMESN94FX1 (established, not a deferral): the
+   * session-boundary sweep (hooks/session-start.mjs, hooks/session-end.mjs)
+   * does NOT by itself bound how long a lapsed claim stays invisible through
+   * this method — a long-running single session (the autopilot case:
+   * skills/autopilot/SKILL.md runs one continuous context across every cycle;
+   * its subagents fire SubagentStart/SubagentStop, which never sweep) can span
+   * the mechanism's entire compensating window with zero sweeps. So the
+   * transports that serve `claimable` to an agent — work-state/tools.ts's
+   * `work_list`, cli/ideate-work.ts's `list` — each run ONE `sweepBoard` call
+   * of their own, at the transport boundary, before calling {@link
+   * listSummaries} (see either file's own header for the full analysis and
+   * measured cost). `list` itself is called by ONE internal, non-transport
+   * consumer (context/assemble-prototype.ts, sweeping the board to render
+   * `spec` bodies for reverse edges — never a claimability decision), which
+   * does not get that pre-sweep: its read does not act on `claimable`, so the
+   * gap this decision closes does not apply to it.
    *
    * FULL FIDELITY, ALWAYS: every matching item, each with its opaque `spec`
    * body, no page limit. This is the read internal TypeScript callers use
@@ -479,8 +498,11 @@ export class WorkStateVerbs {
    * sweep) keeps calling {@link list} and keeps getting every item. Truncation
    * is only ever something a transport asks for explicitly.
    *
-   * Like {@link list}, this does not run the lazy-expiry seam per item (see
-   * that method's own note).
+   * Like {@link list}, this does not run the lazy-expiry seam per item, and
+   * does not sweep the board itself either — see {@link list}'s own note
+   * (decision 01KYX9BGM9N9FGXQDMESN94FX1): its two transports (`work_list`,
+   * `ideate-work list`) each sweep once, at their own boundary, before
+   * calling this method.
    */
   listSummaries(filter?: ListItemsFilter, page?: ListPageOptions): ListItemsPage<ListedWorkItemSummary> {
     const result = this.#store.listItemSummaryViews(filter, page);

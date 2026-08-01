@@ -10,6 +10,15 @@
 // SessionStart/SessionEnd hooks trigger (hooks/session-start.mjs,
 // hooks/session-end.mjs).
 //
+// `list` ALSO calls `sweepBoard` itself, once, before serving its page
+// (decision 01KYX9BGM9N9FGXQDMESN94FX1 — mirrors work-state/tools.ts's
+// `work_list` handler; see that file's header for the full rationale). This
+// matters MORE here than on the MCP transport: `ideate-work list --json` can
+// be invoked with no wrapping Claude Code session at all (a bare terminal, a
+// script, a cron job), in which case SessionStart/SessionEnd never fire for
+// it and the standalone `sweep` subcommand is the only other way this
+// invisibility window closes — `list`'s own pre-sweep makes that automatic.
+//
 // EXIT-CODE SPLIT (mirrors cli/ideate-record.ts):
 //   - --help/-h/no-args: print USAGE to stdout, exit 0 — a safe, informative
 //     no-op, not an error.
@@ -75,7 +84,10 @@ Subcommands (mirror the eleven MCP work-state verbs):
       Fetch one work item by id (or null). Runs the lazy-expiry seam first.
   list [--tenant <t>] [--status <open|in_progress|done|cancelled>] [--json]
        [--include-spec] [--limit <n>] [--cursor <c>]
-      List work items with the derived claimability view attached.
+      List work items with the derived claimability view attached. Sweeps
+      the board for lapsed leases once (scoped to --tenant if given) before
+      serving the page — see \`sweep\` below; this is the only compensator a
+      standalone invocation (no wrapping Claude Code session) gets.
       Rows are SUMMARIES: every field except the opaque spec body, plus
       spec_length (Unicode CODE POINTS — SQLite's own LENGTH() semantics, not
       UTF-16 code units). \`--include-spec\` requires --json (the human listing never
@@ -392,6 +404,31 @@ function runList(argv: readonly string[], stdout: NodeJS.WritableStream, stderr:
       ...(tenantId === undefined ? {} : { tenant_id: tenantId }),
       ...(status === undefined ? {} : { status }),
     };
+    // Sweep BEFORE serving the page — mirrors the MCP work_list handler
+    // (work-state/tools.ts, "work_list's OWN seam", decision
+    // 01KYX9BGM9N9FGXQDMESN94FX1). This is the transport with NO guaranteed
+    // session-boundary sweep at all when invoked outside a Claude Code session
+    // (a bare terminal or script call has no SessionStart/SessionEnd hook to
+    // fire `sweep` for it) — so this call site is not optional symmetry, it is
+    // the ONLY compensator this transport gets on its own. One board-wide
+    // pass, not per row; scoped to the same tenant this call filters to.
+    //
+    // BEST-EFFORT, same as the MCP side (same finding, closed together):
+    // `checkExpiry` opens `BEGIN IMMEDIATE` for every in_progress item before
+    // testing whether its lease actually expired, so a concurrent writer can
+    // turn this previously-lock-free read into a `BUSY` failure. Guarded
+    // narrowly around the sweep only — `listSummaries` below stays unguarded,
+    // exactly like `runSweep` (below in this file), the standalone sweep hook
+    // path, which applies this same "never let sweepBoard's failure stop the
+    // caller" rule and writes the identical style of loud stderr line.
+    try {
+      sweepBoard(ctx.store, ctx.clock, tenantId === undefined ? undefined : { tenant_id: tenantId });
+    } catch (err) {
+      stderr.write(
+        `ideate-work: list: opportunistic sweep FAILED (${describeError(err)}) — serving the page WITHOUT it; ` +
+          'an expired claim may still show as in_progress until the next successful sweep\n',
+      );
+    }
     const asJson = parsed.switches.has('--json');
     const limitRaw = parsed.values.get('--limit');
     const cursor = parsed.values.get('--cursor');
