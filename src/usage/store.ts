@@ -69,6 +69,13 @@ export interface UsageQuery {
  *
  * The exported API is append + read. There is deliberately NO update, NO
  * delete, and NO rank — see the append-only note above.
+ *
+ * P-40 SIBLING-PARITY SWEEP (record/store.ts's WalkCache follow-up): `query`
+ * holds no cross-call state — it is a bare `readFileSync` of the one NDJSON
+ * log on every call, with no directory listing step to even split a memo
+ * along (there is exactly one file). A foreign process's `record()` is
+ * therefore visible on this instance's very next `query()` by construction
+ * (pinned behaviorally by store.test.ts's "cross-process freshness" test).
  */
 export class UsageStore {
   readonly #dir: string;

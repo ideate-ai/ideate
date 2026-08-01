@@ -114,3 +114,44 @@ describe('append-only API surface', () => {
     }
   });
 });
+
+describe('P-40 sibling-parity sweep: cross-process freshness (no per-instance read cache)', () => {
+  it('a record() from a SECOND UsageStore instance is visible on the FIRST instance\'s very next query(), even after A already queried a WARMED signal from its OWN prior record() — no stale cross-instance state', () => {
+    // Mirrors record/store.ts's own cross-process freshness test. `query()`
+    // (store.ts) does a plain `readFileSync` of the single NDJSON log on
+    // EVERY call and holds no parsed-signal memo on the instance between
+    // calls — there is not even a directory listing here, just one flat
+    // file re-read whole each time — so this test pins that property
+    // behaviorally: it would fail the moment any read-side memo were
+    // introduced without being invalidated on a foreign append.
+    //
+    // A records and queries a REAL signal of its own BEFORE B ever writes,
+    // rather than starting from the log empty: an empty-first oracle only
+    // exercises a memo's "log doesn't exist yet" branch, and a memo that
+    // happens not to cache that branch (while still caching the with-data
+    // case) would slip straight through it.
+    const usageDir = mkdtempSync(join(tmpdir(), 'ideate-usage-store-test-'));
+    tempDirs.push(usageDir);
+    const clock: Clock = () => new Date(FIXED_ISO);
+    const instanceA = new UsageStore(usageDir, clock);
+    const instanceB = new UsageStore(usageDir, clock);
+
+    // A records and queries its OWN signal first, warming any per-instance
+    // memo with real data.
+    const seedSignal = instanceA.record({
+      item_id: 'seen-first-by-A',
+      source: { capture_point: 'eval-replay', session_id: 'sess-1' },
+    });
+    expect(instanceA.query().map((s) => s.id)).toEqual([seedSignal.id]);
+
+    // B (a DIFFERENT instance, same on-disk log) appends a SECOND signal.
+    const signal = instanceB.record({
+      item_id: 'written-by-B',
+      source: { capture_point: 'eval-replay', session_id: 'sess-1' },
+    });
+
+    // A's very next query() must see BOTH, in append order.
+    const seen = instanceA.query();
+    expect(seen.map((s) => s.id)).toEqual([seedSignal.id, signal.id]);
+  });
+});

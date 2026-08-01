@@ -864,6 +864,66 @@ describe('cross-process freshness: two RecordStore instances sharing one on-disk
   });
 });
 
+describe('WalkCache growth is structural, not per-call (Finding 1: the [machine] unbounded-memo claim, pinned deterministically)', () => {
+  // record/store.ts's WalkCache doc comment reports a MEASURED byte figure
+  // (~9.3 MB / ~4 KB per record over 2,382 records) for the memo's retained
+  // footprint. That number is a snapshot — heap measurement varies with GC
+  // timing, Node version, and concurrent load — so asserting it here would
+  // be a flaky guard. What IS deterministic, and what "growth is linear and
+  // reaches steady state" actually MEANS, is pinned instead: the memo holds
+  // exactly one entry per record this instance has read (never more than
+  // once for the same record, however many calls it takes to read it), and
+  // a second identical walk adds no further entries. `walkCacheEntryCountForTest`
+  // is a narrow test-only accessor added to RecordStore (see its doc
+  // comment) purely to make this checkable without reaching past a private
+  // field from the test — the memo itself stays exactly as designed.
+  function seedN(fx: Fixture, n: number): string[] {
+    const ids: string[] = [];
+    for (let i = 0; i < n; i++) {
+      fx.setNow(`2026-0${String((i % 3) + 5)}-01T00:00:00.000Z`); // spread across 3 month shards
+      const result = fx.store.append(input({ claim: `record ${String(i)}` }));
+      if (!result.ok) throw new Error('seed failed');
+      ids.push(result.record.id);
+    }
+    return ids;
+  }
+
+  it('a full readViews walk memoizes exactly one entry per record; a second identical walk adds none', () => {
+    const fx = makeFixture();
+    const ids = seedN(fx, 6);
+    expect(fx.store.walkCacheEntryCountForTest).toBe(0); // nothing memoized before any readViews call
+
+    const first = fx.store.readViews();
+    expect(first).toHaveLength(6);
+    expect(fx.store.walkCacheEntryCountForTest).toBe(ids.length); // one entry per record, not per call
+
+    // A second, IDENTICAL walk re-reads nothing new — every record it
+    // touches is already in the memo — so the entry count must not move.
+    const second = fx.store.readViews();
+    expect(second).toHaveLength(6);
+    expect(fx.store.walkCacheEntryCountForTest).toBe(ids.length);
+  });
+
+  it('a page-to-exhaustion walk (many calls) still ends with exactly one entry per record — growth is per RECORD, not per CALL', () => {
+    const fx = makeFixture();
+    const ids = seedN(fx, 6);
+
+    // Walk to exhaustion two records at a time — three separate readViews
+    // calls over the same six records. If the memo grew per CALL instead of
+    // per RECORD, this would leave MORE than 6 entries; it must not.
+    let beforeId: string | undefined;
+    let pages = 0;
+    for (;;) {
+      const page = fx.store.readViews({ limit: 2, ...(beforeId !== undefined ? { before_id: beforeId } : {}) });
+      if (page.length === 0) break;
+      pages++;
+      beforeId = page.at(-1)?.id;
+    }
+    expect(pages).toBe(3);
+    expect(fx.store.walkCacheEntryCountForTest).toBe(ids.length);
+  });
+});
+
 describe('append: reference-id ULID validation at the write chokepoint', () => {
   it('rejects a non-ULID reference id with a typed SCHEMA failure and writes nothing', () => {
     const fx = makeFixture();

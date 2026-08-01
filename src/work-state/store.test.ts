@@ -1205,6 +1205,48 @@ describe('summary projection + keyset paging (the store half)', () => {
   });
 });
 
+describe('P-40 sibling-parity sweep: cross-process freshness (no per-instance read cache)', () => {
+  it('an insert from a SECOND WorkStateStore instance is visible on the FIRST instance\'s very next listItemViews(), even after A already listed a WARMED item from its OWN prior insert — no stale cross-instance state', () => {
+    // Mirrors record/store.ts's own cross-process freshness test (the bug
+    // that motivated this sweep) and the "WAL + busy-timeout" describe
+    // block above, but frames it explicitly as a BEFORE/write/AFTER
+    // staleness check rather than "both items are eventually visible
+    // somehow". getItem/listItems/listItemViews each open (and close) their
+    // own connection per call (schema.ts's openForRead/openForWrite) and
+    // hold no query result, prepared statement, or referrer map on the
+    // store instance between calls — the engine (SQLite), not application
+    // memory, owns cross-connection visibility. This test would fail the
+    // moment any of those reads started reusing state across calls without
+    // invalidating it on a foreign write.
+    //
+    // A lists a REAL item of its own BEFORE B ever writes, rather than
+    // starting from the board empty: an empty-first oracle only exercises a
+    // memo's "no rows yet" branch, and a memo that happens not to cache that
+    // branch (while still caching the with-data case) would slip straight
+    // through it.
+    const root = makeTempDir();
+    const dbPath = join(root, 'board.db');
+    let nowIso = FIXED_ISO;
+    const clock: Clock = () => new Date(nowIso);
+    const storeA = new WorkStateStore(dbPath, clock);
+    const storeB = new WorkStateStore(dbPath, clock);
+
+    // A inserts and lists its OWN item first, warming any per-instance
+    // memo with real data.
+    const itemA = storeA.insertItem({ title: 'seen first by A', spec: 's', spec_format: 'f', created_by: actor() });
+    expect(storeA.listItemViews().map((item) => item.id)).toEqual([itemA.id]);
+
+    // B (a DIFFERENT instance, same db file) inserts a SECOND item, later.
+    nowIso = '2026-07-12T00:00:00.000Z';
+    const itemB = storeB.insertItem({ title: 'written by instance B', spec: 's', spec_format: 'f', created_by: actor() });
+
+    // A's very next listItemViews() must see BOTH — its own earlier item
+    // AND B's, newest first.
+    const seen = storeA.listItemViews();
+    expect(seen.map((item) => item.id)).toEqual([itemB.id, itemA.id]);
+  });
+});
+
 describe('ActorRef — accountability resolves to a person', () => {
   it('carries an optional agent alongside the required human', () => {
     const { store } = makeFixture();

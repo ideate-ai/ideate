@@ -393,6 +393,21 @@ export class SteeringStore {
    * scores or ranks. Returned newest-first by `updated_at` (id tie-break) for
    * deterministic order. Files that fail to parse are skipped with a warning —
    * a stray file must not poison every read.
+   *
+   * P-40 SIBLING-PARITY SWEEP (record/store.ts's WalkCache follow-up): this
+   * store holds no cross-call state to check for staleness — `#scanItems`
+   * re-`readdirSync`s and re-parses every file on every call, so a foreign
+   * write is visible on the very next read by construction (pinned
+   * behaviorally by store.test.ts's "cross-process freshness" test). If a
+   * FILE-CONTENTS memo is ever added here to speed up a hot path, the record
+   * store's "cache contents, never the listing" split is NOT a free transfer:
+   * that split is safe there only because record files are immutable
+   * (`append()`'s `wx` exclusive-create — nothing ever rewrites a record
+   * `.md`). Steering items are the opposite: every `put` OVERWRITES the
+   * existing file in place (`w`) and restamps `updated_at`. A parsed-contents
+   * memo keyed by id would go stale the moment ANY process amends that item,
+   * which record's premise does not guard against — a steering memo would
+   * need its own freshness check (e.g. mtime), not a copy of WalkCache.
    */
   read(options?: SteeringReadOptions): SteeringItem[] {
     return this.#select(this.#scanItems(), options);

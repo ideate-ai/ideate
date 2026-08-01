@@ -879,6 +879,17 @@ export function appendEventRowOn(db: DatabaseSync, input: unknown, defaultAt: ()
  * returning — see schema.ts's file header for the lazy-init rationale this
  * protects. `get`/`list`/`events` never create the database file; `insert`,
  * `updateMeta`, `appendEvent`, and `nextClaimToken` do (on first call).
+ *
+ * P-40 SIBLING-PARITY SWEEP (record/store.ts's WalkCache follow-up): no read
+ * here holds a query result, prepared statement, or referrer map across
+ * calls — `#dbPath`/`#clock`/`#nextId` are the only instance fields, and
+ * they are configuration, not retained data. Every read opens a FRESH
+ * connection via `schema.ts`'s `openForRead`/`openForWrite` (WAL mode) and
+ * closes it before returning, so cross-process visibility is the SQLite
+ * engine's own guarantee, not something this layer could make stale even if
+ * it tried (pinned behaviorally by store.test.ts's "cross-process
+ * freshness" test, alongside the pre-existing "two stores, same db file"
+ * WAL test above).
  */
 export class WorkStateStore {
   readonly #dbPath: string;

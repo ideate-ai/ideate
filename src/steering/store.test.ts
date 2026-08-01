@@ -705,6 +705,50 @@ describe('page-argument guards (typed, this seam’s own)', () => {
   });
 });
 
+describe('P-40 sibling-parity sweep: cross-process freshness (no per-instance read cache)', () => {
+  it('a put from a SECOND SteeringStore instance is visible on the FIRST instance\'s very next read, even after A already read a WARMED item from its OWN prior put — no stale cross-instance state', () => {
+    // Mirrors record/store.ts's own cross-process freshness test. The
+    // record store once cached a WalkCache's directory LISTING as well as its
+    // parsed contents, which made a long-lived MCP instance stop seeing
+    // records written by a second (e.g. CLI) instance for the rest of its
+    // session. `read`/`readViews` here (store.ts's `#scanItems` ->
+    // `#listFiles`) re-`readdirSync`s and re-parses every file on EVERY call
+    // — no directory listing or parsed-item memo is ever held across calls —
+    // so this test pins that property behaviorally: it would fail the moment
+    // any such memo were introduced without also being invalidated on a
+    // foreign write.
+    //
+    // A reads a REAL item of its own BEFORE B ever writes, rather than
+    // starting from the store empty: an empty-first oracle only exercises a
+    // memo's "no data yet" branch, and a memo that happens not to cache that
+    // branch (while still caching the with-data case) would slip straight
+    // through it. Seeding A's own item first forces any memo to hold real
+    // data before B's write lands, which is the shape a real staleness bug
+    // would actually take.
+    const projectRoot = makeTempDir('ideate-steering-store-test-');
+    let nowIso = FIXED_ISO;
+    const clock: Clock = () => new Date(nowIso);
+    const instanceA = new SteeringStore(projectRoot, clock);
+    const instanceB = new SteeringStore(projectRoot, clock);
+
+    // A writes and reads its OWN item first, warming any per-instance memo
+    // with real data.
+    const seedPut = instanceA.put({ id: 'GP-91', kind: 'guiding-principle', statement: 'seen first by A' });
+    expect(seedPut.ok).toBe(true);
+    expect(instanceA.read().map((item) => item.id)).toEqual(['GP-91']);
+
+    // B (a DIFFERENT instance, same on-disk dir) writes a SECOND item, later.
+    nowIso = '2026-07-17T00:00:00.000Z';
+    const put = instanceB.put({ id: 'GP-90', kind: 'guiding-principle', statement: 'written by instance B' });
+    expect(put.ok).toBe(true);
+
+    // A's very next read must see BOTH — its own earlier item AND B's,
+    // newest first.
+    const seen = instanceA.read();
+    expect(seen.map((item) => item.id)).toEqual(['GP-90', 'GP-91']);
+  });
+});
+
 describe('GP-26 narrow seams', () => {
   it('no steering source file imports from work-state/ — the board’s error type is unreachable from here', () => {
     const steeringDirPath = fileURLToPath(new URL('.', import.meta.url));

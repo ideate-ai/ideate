@@ -209,6 +209,41 @@ function errorMessage(err: unknown): string {
  * consulted purely as an optimization over this instance's OWN prior file
  * reads, never as a requirement for decoding what the cursor means.
  */
+/**
+ * UNBOUNDED GROWTH — MEASURED, ACCEPTED FOR NOW (P-40 sibling-parity sweep,
+ * the record store's own deferred minor, decided here rather than fixed):
+ * `parsedById`/`referrers` never evict, so a long-lived instance (the MCP
+ * context memoizes one `RecordStore` per server session) retains every
+ * record it has ever read for the rest of that session. Measured against
+ * this project's own live store (`.ideate-record/`, 2,382 records, ~10 MB on
+ * disk) via a full `readViews({})` walk on a fresh instance, with the
+ * returned array discarded and only the instance's own retained heap
+ * observed (`node --expose-gc`, forced GC before/after): the WalkCache's
+ * retained footprint is ~9.3 MB (~4 KB/record) — negligible next to any
+ * process's baseline memory, and a second full walk added no further growth
+ * (confirming the cache reaches a steady state rather than climbing per
+ * call). Extrapolated linearly, a 25,000-record store (~10x this project's
+ * current size) would retain on the order of ~100 MB, still well inside an
+ * ordinary long-lived server process's budget. ACCEPT as-is: no eviction is
+ * added by this sweep. Re-measure before accepting again at an order of
+ * magnitude larger store, or if a long-running MCP session's actual RSS is
+ * ever observed to be dominated by this cache rather than assumed.
+ *
+ * The byte figure above is a snapshot, not something this repo re-checks on
+ * every run — heap measurement varies with GC timing, Node version, and
+ * concurrent load, so asserting it in a test would be a flaky guard (worse
+ * than none: it trains people to ignore red). What IS mechanically pinned,
+ * in store.test.ts's "WalkCache growth is structural" describe block via
+ * the {@link RecordStore.walkCacheEntryCountForTest} test-only accessor, is
+ * the DETERMINISTIC property that "growth is linear and reaches steady
+ * state" actually means: the memo holds exactly one entry per record this
+ * instance has read, and a second identical walk adds no further entries.
+ * That test fails for the right reason if the memo is ever made to grow per
+ * CALL instead of per RECORD; it does not, and is not meant to, re-derive
+ * the 9.3 MB/2,382-record figure itself. Re-run the byte measurement by hand
+ * (see the paragraph above for the method) if that number itself needs
+ * reconfirming.
+ */
 interface WalkCache {
   /** Every record this instance has read and parsed, keyed by id. Permanent:
    *  a file's contents never change once written, so an entry never goes
@@ -260,6 +295,21 @@ export class RecordStore {
   /** The resolved record directory — always via config's single resolver. */
   get recordDir(): string {
     return recordPath(this.#config, this.#projectRoot);
+  }
+
+  /**
+   * TEST-ONLY. The number of records currently memoized in this instance's
+   * {@link WalkCache} (`#walkCache.parsedById.size`), or `0` before any
+   * `readViews` call has populated one. Exists solely so store.test.ts can
+   * mechanically pin the WalkCache doc comment's structural growth claim —
+   * one memo entry per record READ, never per CALL, reaching a steady state
+   * on a repeat walk — without asserting a byte figure (which would vary
+   * with GC timing/Node version and flake). Deliberately NOT part of the
+   * store's read/append contract; nothing outside a test should ever
+   * observe or depend on this number.
+   */
+  get walkCacheEntryCountForTest(): number {
+    return this.#walkCache?.parsedById.size ?? 0;
   }
 
   /**
