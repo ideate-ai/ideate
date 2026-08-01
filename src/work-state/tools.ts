@@ -108,6 +108,8 @@ import {
   applyListPayloadBudget,
   measureCompactItemChars,
 } from '../transport/payload-budget.js';
+import { createProjectIdResolver } from '../transport/id-resolver.js';
+import type { UnresolvedId } from '../transport/id-lint.js';
 import type { ToolRegistrar } from '../server.js';
 import { claim, complete, release, renew } from './claims.js';
 import { createRealCompletionRecordWriter } from './completion-record.js';
@@ -325,9 +327,16 @@ export function createWorkStateToolsRegistrar(options: WorkStateToolsOptions = {
       // (schema.ts), independent of this.
       const config = loadConfig(projectRoot);
       const dbPath = options.dbPath ?? join(workStatePath(config, projectRoot), 'board.db');
-      const store = new WorkStateStore(dbPath, clock);
-      const verbs = new WorkStateVerbs(store, clock);
       const telemetry = new TelemetryCounters(options.telemetryDir ?? join(projectRoot, '.ideate-telemetry'), clock);
+      // Cross-store id-lint resolver (correction 01KYV387QKRP3V330WAS6DX95K):
+      // transport/id-resolver.ts is the one module allowed to know about both
+      // the board and the record store, so it — not this file — decides how
+      // an id resolves. Wired unconditionally (production composition root),
+      // sharing this context's own `dbPath` so it resolves against the SAME
+      // board file this store writes, not a re-derived default.
+      const resolveId = createProjectIdResolver(projectRoot, telemetry, clock, dbPath);
+      const store = new WorkStateStore(dbPath, clock, resolveId);
+      const verbs = new WorkStateVerbs(store, clock);
       const sessionId = options.sessionId ?? `mcp-${createUlidGenerator(clock)()}`;
       // The completion-record writer, built ONCE from the same
       // project root/telemetry/clock this context already resolved, so
@@ -375,20 +384,32 @@ export function createWorkStateToolsRegistrar(options: WorkStateToolsOptions = {
         const ctx = getContext();
         try {
           const references = referencesFromArgs(args.supersedes, args.references);
-          const item = ctx.verbs.create({
-            title: args.title,
-            spec: args.spec,
-            spec_format: args.spec_format,
-            ...(args.depends_on === undefined ? {} : { depends_on: args.depends_on }),
-            // Thread parent_id only when supplied. Absent OR null both
-            // create a root; null is passed through so the store records a
-            // root explicitly (harmless, same as absent).
-            ...(args.parent_id === undefined ? {} : { parent_id: args.parent_id }),
-            ...(references === undefined ? {} : { references }),
-            ...(args.tenant_id === undefined ? {} : { tenant_id: args.tenant_id }),
-            created_by: actorFromArgs(args.actor_human, args.actor_agent),
-          });
-          return ok({ item });
+          let unresolvedIds: readonly UnresolvedId[] = [];
+          const item = ctx.verbs.create(
+            {
+              title: args.title,
+              spec: args.spec,
+              spec_format: args.spec_format,
+              ...(args.depends_on === undefined ? {} : { depends_on: args.depends_on }),
+              // Thread parent_id only when supplied. Absent OR null both
+              // create a root; null is passed through so the store records a
+              // root explicitly (harmless, same as absent).
+              ...(args.parent_id === undefined ? {} : { parent_id: args.parent_id }),
+              ...(references === undefined ? {} : { references }),
+              ...(args.tenant_id === undefined ? {} : { tenant_id: args.tenant_id }),
+              created_by: actorFromArgs(args.actor_human, args.actor_agent),
+            },
+            // `unresolved_ids` (correction 01KYV387QKRP3V330WAS6DX95K FINDING
+            // 1): mirrors record/tools.ts's `appendToolResult` — the SAME
+            // structured, machine-checkable envelope field every caller can
+            // read, so the id-lint report reaches the calling agent, not just
+            // `process.emitWarning`. Empty on the common case; WARN, never
+            // reject — never flips `ok` to false.
+            (ids) => {
+              unresolvedIds = ids;
+            },
+          );
+          return ok({ item, unresolved_ids: unresolvedIds });
         } catch (err) {
           return toolError(err);
         }
@@ -541,8 +562,11 @@ export function createWorkStateToolsRegistrar(options: WorkStateToolsOptions = {
             // iff either edge arg was supplied; absent = leave unchanged.
             ...(references === undefined ? {} : { references }),
           };
-          const item = ctx.verbs.updateMeta(args.id, args.expected_version, patch, makeExpiryCheck(ctx));
-          return ok({ item });
+          let unresolvedIds: readonly UnresolvedId[] = [];
+          const item = ctx.verbs.updateMeta(args.id, args.expected_version, patch, makeExpiryCheck(ctx), (ids) => {
+            unresolvedIds = ids;
+          });
+          return ok({ item, unresolved_ids: unresolvedIds });
         } catch (err) {
           return toolError(err);
         }
@@ -620,8 +644,11 @@ export function createWorkStateToolsRegistrar(options: WorkStateToolsOptions = {
       async (args): Promise<CallToolResult> => {
         const ctx = getContext();
         try {
-          const item = release(ctx.store, ctx.clock, args.id, args.claim_token, args.note);
-          return ok({ item });
+          let unresolvedIds: readonly UnresolvedId[] = [];
+          const item = release(ctx.store, ctx.clock, args.id, args.claim_token, args.note, (ids) => {
+            unresolvedIds = ids;
+          });
+          return ok({ item, unresolved_ids: unresolvedIds });
         } catch (err) {
           return toolError(err);
         }
@@ -647,6 +674,7 @@ export function createWorkStateToolsRegistrar(options: WorkStateToolsOptions = {
           // post-commit hook (completion-usage-hook.ts) — same call site as
           // every other verb's dependencies, reusing this context's own
           // project root/telemetry/session id/writers.
+          let unresolvedIds: readonly UnresolvedId[] = [];
           const item = complete(
             ctx.store,
             ctx.clock,
@@ -665,8 +693,11 @@ export function createWorkStateToolsRegistrar(options: WorkStateToolsOptions = {
               sessionId: ctx.sessionId,
               usageWriter: ctx.usageCaptureWriter,
             },
+            (ids) => {
+              unresolvedIds = ids;
+            },
           );
-          return ok({ item });
+          return ok({ item, unresolved_ids: unresolvedIds });
         } catch (err) {
           return toolError(err);
         }

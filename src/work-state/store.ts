@@ -17,6 +17,20 @@
 // ULID-validated at the write chokepoint before persist, so a typo can never
 // land as a silent dangling edge (the record store's exact posture).
 //
+// Capture-time id-lint (correction 01KYV387QKRP3V330WAS6DX95K): AFTER
+// gating, `title` (insertItem/updateMeta) and an event's `note`
+// (validateAppendEventInput, shared by appendEvent and appendEventRowOn) are
+// scanned for ULID-shaped tokens that resolve against neither this store nor
+// the record store (transport/id-lint.ts's `lintFreeText`, given the
+// cross-store resolver injected at construction — transport/id-resolver.ts is
+// the one module allowed to know about both; this file stays exactly as
+// ignorant of the record store as it always was). `spec`/`spec_format` are
+// deliberately EXCLUDED, mirroring the secret gate's own opacity posture for
+// `spec` above — a report-only scan is not a "transform", but this module
+// draws the line at the same field either way rather than inventing a second,
+// narrower definition of "free text this layer is allowed to read". WARN,
+// never reject: the write always succeeds; see id-lint.ts's header for why.
+//
 // Forward-edge persistence (v3 schema): the `"references"` column stores
 // ONLY the forward typed edge (`supersedes` primary). The reverse edge —
 // `superseded_by` — is DERIVED on read by the view reads
@@ -83,6 +97,8 @@ import type { Clock, UlidGenerator } from '../record/id.js';
 import { createUlidGenerator, isUlid } from '../record/id.js';
 import { encodeListCursor, parseListCursorPayload } from '../transport/keyset-page.js';
 import type { ListItemsPage } from '../transport/keyset-page.js';
+import { lintFreeText } from '../transport/id-lint.js';
+import type { IdResolver, UnresolvedId } from '../transport/id-lint.js';
 import { openForRead, openForWrite } from './schema.js';
 import { withBusyWrap, withWriteTransaction } from './tx.js';
 import {
@@ -292,6 +308,23 @@ function gate(text: string): string {
   return scanAndMask(text).content;
 }
 
+/**
+ * Report every id-lint finding for one write, via `process.emitWarning` —
+ * the SAME secondary, in-the-moment signal record/store.ts's own `append`
+ * uses (see this file's header). WARN only: never throws, never blocks the
+ * write that is already committed by the time this runs.
+ */
+function warnUnresolvedIds(context: string, unresolved: readonly UnresolvedId[]): void {
+  for (const item of unresolved) {
+    process.emitWarning(
+      item.resolution === 'unknown'
+        ? `ideate work-state: id-lint could not verify ${item.id} cited in ${context} — no cross-store resolver was available (P-45: treat as unverified, not as fine)`
+        : `ideate work-state: id-lint found ${item.id} cited in ${context} that does not resolve as a record or a work item — if this is a correction quoting a dead id on purpose, no action is needed`,
+      { code: item.resolution === 'unknown' ? 'IDEATE_WORK_ID_LINT_UNAVAILABLE' : 'IDEATE_WORK_UNRESOLVED_ID' },
+    );
+  }
+}
+
 /** Gate every member of every reference edge before persist (see the
  *  gate-before-persist note in the file header). */
 function gateReferences(references: readonly WorkItemReference[]): WorkItemReference[] {
@@ -478,7 +511,32 @@ interface ValidatedAppendEventInput {
   at: string;
 }
 
-function validateAppendEventInput(input: unknown, defaultAt: () => string): ValidatedAppendEventInput {
+/** The result of validating an append-event input: the validated event
+ *  shape {@link insertEventRow} persists, PLUS the capture-time id-lint tally
+ *  for `note` (correction 01KYV387QKRP3V330WAS6DX95K FINDING 1) — `[]` when
+ *  `note` is absent or nothing was unresolved. Kept as a SEPARATE wrapper
+ *  rather than a field on {@link ValidatedAppendEventInput} itself: that
+ *  inner shape is also what every direct `insertEventRow` call site persists
+ *  (e.g. `insertItem`'s own `create` event, which never carries a `note` and
+ *  has no lint result to attach), so folding `unresolvedIds` into it would
+ *  force every one of those call sites to invent a meaningless `[]`. */
+interface ValidatedAppendEventOutcome {
+  event: ValidatedAppendEventInput;
+  unresolvedIds: UnresolvedId[];
+}
+
+/**
+ * `resolveId`, when supplied, id-lints the gated `note` (correction
+ * 01KYV387QKRP3V330WAS6DX95K) — the one free-text field this function
+ * handles; `item_id`/`transition`/`at` are identifiers/timestamps, not prose,
+ * and `actor` is not gated by the secret scanner either (see this file's
+ * header), so it stays out of the id-lint's scope too, for the same reason.
+ * Absent `resolveId` is NOT "skip the check" — `lintFreeText` treats it as
+ * "every candidate is unverified" (P-45); it is genuinely absent only for
+ * callers with no cross-store resolver to give it (most of this module's own
+ * unit tests).
+ */
+function validateAppendEventInput(input: unknown, defaultAt: () => string, resolveId?: IdResolver): ValidatedAppendEventOutcome {
   const raw = requireObject(input, 'event');
   const item_id = requireNonEmptyString(raw['item_id'], 'item_id');
   const actor = validateActorRef(raw['actor'], 'actor');
@@ -487,15 +545,23 @@ function validateAppendEventInput(input: unknown, defaultAt: () => string): Vali
   if (claimTokenRaw !== undefined && typeof claimTokenRaw !== 'number') {
     throw new WorkStateError('SCHEMA', 'work-state store: field "claim_token" must be a number when present');
   }
-  const note = requireOptionalString(raw['note'], 'note');
+  const noteRaw = requireOptionalString(raw['note'], 'note');
+  const note = noteRaw === undefined ? undefined : gate(noteRaw);
+  const unresolvedIds = note === undefined ? [] : lintFreeText([note], resolveId);
+  if (note !== undefined) {
+    warnUnresolvedIds(`item ${item_id}'s ${transition} note`, unresolvedIds);
+  }
   const at = requireOptionalString(raw['at'], 'at') ?? defaultAt();
   return {
-    item_id,
-    actor,
-    transition,
-    ...(claimTokenRaw === undefined ? {} : { claim_token: claimTokenRaw }),
-    ...(note === undefined ? {} : { note: gate(note) }),
-    at,
+    event: {
+      item_id,
+      actor,
+      transition,
+      ...(claimTokenRaw === undefined ? {} : { claim_token: claimTokenRaw }),
+      ...(note === undefined ? {} : { note }),
+      at,
+    },
+    unresolvedIds,
   };
 }
 
@@ -857,17 +923,39 @@ function insertEventRow(db: DatabaseSync, event: ValidatedAppendEventInput): voi
  * Callers own `db`'s lifecycle (open/transaction/close) entirely; this
  * function neither opens nor closes it, and neither begins nor commits/rolls
  * back the transaction.
+ *
+ * `resolveId` (optional): the id-lint counterpart to the secret-gate note
+ * above — thread the calling `WorkStateStore`'s own `resolveId` getter
+ * through here so an event's `note` gets the SAME check `appendEvent` gives
+ * it (claims.ts's `complete`/`release` are the only callers that ever pass a
+ * `note`; the other call sites of this function never set one, so omitting
+ * it there is a no-op, not a coverage gap).
+ *
+ * `onUnresolvedIds` (optional, correction 01KYV387QKRP3V330WAS6DX95K
+ * FINDING 1): fired EXACTLY ONCE, with `note`'s id-lint tally (`[]` when
+ * `note` is absent or clean) — mirrors {@link WorkStateStore.insertItem}'s
+ * own callback shape exactly, so claims.ts's `complete`/`release` (the only
+ * callers that ever pass a `note`) can hand the report up to the MCP tool
+ * layer without this function's RETURN TYPE (`WorkStateEvent`, unchanged)
+ * or `WorkStateEvent` itself ever needing to carry it.
  */
-export function appendEventRowOn(db: DatabaseSync, input: unknown, defaultAt: () => string): WorkStateEvent {
-  const validated = validateAppendEventInput(input, defaultAt);
-  insertEventRow(db, validated);
+export function appendEventRowOn(
+  db: DatabaseSync,
+  input: unknown,
+  defaultAt: () => string,
+  resolveId?: IdResolver,
+  onUnresolvedIds?: (ids: readonly UnresolvedId[]) => void,
+): WorkStateEvent {
+  const { event, unresolvedIds } = validateAppendEventInput(input, defaultAt, resolveId);
+  insertEventRow(db, event);
+  onUnresolvedIds?.(unresolvedIds);
   return {
-    item_id: validated.item_id,
-    actor: validated.actor,
-    transition: validated.transition,
-    ...(validated.claim_token === undefined ? {} : { claim_token: validated.claim_token }),
-    ...(validated.note === undefined ? {} : { note: validated.note }),
-    at: validated.at,
+    item_id: event.item_id,
+    actor: event.actor,
+    transition: event.transition,
+    ...(event.claim_token === undefined ? {} : { claim_token: event.claim_token }),
+    ...(event.note === undefined ? {} : { note: event.note }),
+    at: event.at,
   };
 }
 
@@ -896,16 +984,35 @@ export class WorkStateStore {
   readonly #dbPath: string;
   readonly #clock: Clock;
   readonly #nextId: UlidGenerator;
+  /** Cross-store id-lint resolver (transport/id-resolver.ts composes the
+   *  real one) — OPTIONAL and trailing, mirroring record/store.ts's own
+   *  `RecordStore` constructor exactly, for the same reason: every existing
+   *  constructor call keeps compiling unchanged, and every PRODUCTION
+   *  composition root wires a real one (work-state/tools.ts,
+   *  cli/ideate-work.ts). Absent is "every candidate resolves 'unknown'"
+   *  (id-lint.ts), never "nothing to check" (P-45). */
+  readonly #resolveId: IdResolver | undefined;
 
-  constructor(dbPath: string, clock: Clock) {
+  constructor(dbPath: string, clock: Clock, resolveId?: IdResolver) {
     this.#dbPath = dbPath;
     this.#clock = clock;
     this.#nextId = createUlidGenerator(clock);
+    this.#resolveId = resolveId;
   }
 
   /** The resolved database file path this store reads/writes. */
   get dbPath(): string {
     return this.#dbPath;
+  }
+
+  /** The injected cross-store id-lint resolver, or `undefined` if this
+   *  instance was constructed without one — exposed so claims.ts's
+   *  `complete`/`release` (the only two verbs that ever carry a free-text
+   *  `note` through `appendEventRowOn`, a standalone function with no store
+   *  instance of its own) can thread the SAME resolver this store would use
+   *  for its own writes, rather than each opening a second one. */
+  get resolveId(): IdResolver | undefined {
+    return this.#resolveId;
   }
 
   /**
@@ -914,8 +1021,19 @@ export class WorkStateStore {
    * the injected clock. Appends the immutable `create` event. `title` is
    * gated through the secret scanner before persist; `spec` is stored as-is
    * (never gated, never parsed).
+   *
+   * `onUnresolvedIds` (optional, correction 01KYV387QKRP3V330WAS6DX95K
+   * FINDING 1): mirrors `scanAndMask`'s own `onRedaction` callback shape —
+   * fired EXACTLY ONCE, with the `title` id-lint tally (empty on the common
+   * case), regardless of whether anything was unresolved. This is how the
+   * MCP tool layer (work-state/tools.ts) recovers the id-lint report that
+   * `warnUnresolvedIds` otherwise drops into `process.emitWarning` alone — a
+   * channel the calling AGENT cannot see. Not a change to `WorkItem` itself:
+   * the return type here is unchanged, so every existing caller (verbs.ts,
+   * and every test that reads a plain `WorkItem` off this method) keeps
+   * compiling and behaving exactly as before.
    */
-  insertItem(input: unknown): WorkItem {
+  insertItem(input: unknown, onUnresolvedIds?: (ids: readonly UnresolvedId[]) => void): WorkItem {
     const validated = validateNewWorkItemInput(input);
     assertReferenceIdsAreUlids(validated.references, 'create');
     const db = openForWrite(this.#dbPath);
@@ -923,6 +1041,9 @@ export class WorkStateStore {
       const id = this.#nextId();
       const now = this.#clock().toISOString();
       const title = gate(validated.title);
+      const unresolvedIds = lintFreeText([title], this.#resolveId);
+      warnUnresolvedIds(`item ${id}'s title`, unresolvedIds);
+      onUnresolvedIds?.(unresolvedIds);
       // Gate both members of every edge — same gate-before-persist posture as
       // `title`; rel tokens and ULIDs never match a secret pattern, so this is
       // a no-op in practice but keeps the invariant total (record/store.ts's
@@ -1127,8 +1248,15 @@ export class WorkStateStore {
    * not exist, `VERSION_CONFLICT` if `expectedVersion` does not match the
    * item's current version. Cycle detection over `depends_on` is a verb-level
    * concern — not enforced here.
+   *
+   * `onUnresolvedIds` (optional, correction 01KYV387QKRP3V330WAS6DX95K
+   * FINDING 1): mirrors {@link insertItem}'s own callback exactly, INCLUDING
+   * on the "title not touched by this patch" path — fired with `[]` (never
+   * skipped), so a caller (work-state/tools.ts) always gets a definite
+   * answer rather than having to distinguish "not linted" from "linted
+   * clean".
    */
-  updateMeta(id: string, expectedVersion: number, patch: unknown): WorkItem {
+  updateMeta(id: string, expectedVersion: number, patch: unknown, onUnresolvedIds?: (ids: readonly UnresolvedId[]) => void): WorkItem {
     const validated = validateUpdateMetaInput(patch);
     if (validated.references !== undefined) assertReferenceIdsAreUlids(validated.references, 'update_meta');
     const db = openForWrite(this.#dbPath);
@@ -1144,7 +1272,17 @@ export class WorkStateStore {
         );
       }
       const now = this.#clock().toISOString();
+      // Only lint a title the caller is actually SETTING here — re-linting
+      // `current.title` (already checked, or written before this store had a
+      // resolver) on every unrelated update_meta call (e.g. one that only
+      // touches `spec`) would re-warn on an already-accepted value every
+      // single time, which is noise, not a new finding.
       const nextTitle = validated.title === undefined ? current.title : gate(validated.title);
+      const unresolvedIds = validated.title === undefined ? [] : lintFreeText([nextTitle], this.#resolveId);
+      if (validated.title !== undefined) {
+        warnUnresolvedIds(`item ${id}'s title`, unresolvedIds);
+      }
+      onUnresolvedIds?.(unresolvedIds);
       const nextSpec = validated.spec === undefined ? current.spec : validated.spec;
       const nextSpecFormat = validated.spec_format === undefined ? current.spec_format : validated.spec_format;
       const nextDependsOn = validated.depends_on === undefined ? current.depends_on : JSON.stringify(validated.depends_on);
@@ -1199,19 +1337,19 @@ export class WorkStateStore {
    * separate connection.
    */
   appendEvent(input: unknown): WorkStateEvent {
-    const validated = validateAppendEventInput(input, () => this.#clock().toISOString());
+    const { event } = validateAppendEventInput(input, () => this.#clock().toISOString(), this.#resolveId);
     const db = openForWrite(this.#dbPath);
     try {
       // Bare autocommit INSERT, wrapped so an exhausted busy_timeout
       // surfaces as a typed `WorkStateError('BUSY', ...)`.
-      withBusyWrap(() => insertEventRow(db, validated));
+      withBusyWrap(() => insertEventRow(db, event));
       return {
-        item_id: validated.item_id,
-        actor: validated.actor,
-        transition: validated.transition,
-        ...(validated.claim_token === undefined ? {} : { claim_token: validated.claim_token }),
-        ...(validated.note === undefined ? {} : { note: validated.note }),
-        at: validated.at,
+        item_id: event.item_id,
+        actor: event.actor,
+        transition: event.transition,
+        ...(event.claim_token === undefined ? {} : { claim_token: event.claim_token }),
+        ...(event.note === undefined ? {} : { note: event.note }),
+        at: event.at,
       };
     } finally {
       db.close();

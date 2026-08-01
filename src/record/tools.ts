@@ -26,9 +26,10 @@
 //
 // Registration is SIDE-EFFECT FREE: registering the tools touches no
 // filesystem. The composition edge (loadConfig → TelemetryCounters →
-// RecordStore) is built lazily inside the first tool CALL, so the
-// lazy-init onboarding — first MCP call creates `.ideate.json` and the
-// record directory — fires on first use, never at boot. (Note: the SDK
+// createProjectIdResolver → RecordStore) is built lazily inside the first
+// tool CALL, so the lazy-init onboarding — first MCP call creates
+// `.ideate.json` and the record directory — fires on first use, never at
+// boot. (Note: the SDK
 // advertises the `tools` capability as soon as a tool registers; that is
 // protocol state on the in-memory server object, not a side effect.)
 //
@@ -68,6 +69,7 @@ import { CursorSchema, ProgressSchema, ToolAnnotationsSchema } from '@modelconte
 import { loadConfig } from '../config/ideate-config.js';
 import type { ToolRegistrar } from '../server.js';
 import { TelemetryCounters } from '../telemetry/counters.js';
+import { createProjectIdResolver } from '../transport/id-resolver.js';
 import { LIST_PAYLOAD_BUDGET_CHARS, measureCompactItemChars } from '../transport/payload-budget.js';
 import type { Clock } from './id.js';
 import { createUlidGenerator, isUlid } from './id.js';
@@ -221,7 +223,17 @@ function appendToolResult(result: AppendResult): CallToolResult {
     content: [
       {
         type: 'text',
-        text: JSON.stringify({ ok: true, id: result.record.id, kind: result.record.kind, redactions: result.redactions }),
+        // `unresolved_ids` (correction 01KYV387QKRP3V330WAS6DX95K): mirrors
+        // `redactions` — structured, machine-checkable, on the SAME envelope
+        // every caller already reads. Empty on the common case; WARN, never
+        // reject, so this never flips `ok` to false.
+        text: JSON.stringify({
+          ok: true,
+          id: result.record.id,
+          kind: result.record.kind,
+          redactions: result.redactions,
+          unresolved_ids: result.unresolvedIds,
+        }),
       },
     ],
   };
@@ -255,7 +267,13 @@ export function createRecordToolsRegistrar(options: RecordToolsOptions = {}): To
       const config = loadConfig(projectRoot);
       const telemetry = new TelemetryCounters(options.telemetryDir ?? join(projectRoot, '.ideate-telemetry'), clock);
       const sessionId = options.sessionId ?? `mcp-${createUlidGenerator(clock)()}`;
-      context = { store: new RecordStore(config, projectRoot, telemetry, clock), sessionId };
+      // Cross-store id-lint resolver (correction 01KYV387QKRP3V330WAS6DX95K):
+      // transport/id-resolver.ts is the one module allowed to know about both
+      // the record store and the board, so it — not this file — decides how
+      // an id resolves. Wired unconditionally: this is a production
+      // composition root, never a test call site that would want to omit it.
+      const resolveId = createProjectIdResolver(projectRoot, telemetry, clock);
+      context = { store: new RecordStore(config, projectRoot, telemetry, clock, resolveId), sessionId };
     }
     return context;
   };

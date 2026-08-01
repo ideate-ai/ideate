@@ -50,8 +50,21 @@
 // (Misrouting through `capture_fired` or `capture_write_failed` remains
 // forbidden: a redaction is a SUCCESSFUL gate action, not a capture event
 // or a failure.)
+//
+// Capture-time id-lint (correction 01KYV387QKRP3V330WAS6DX95K, `append`'s own
+// comment has the field-by-field detail): AFTER gating, every genuinely
+// free-form prose field is scanned for ULID-shaped tokens that resolve
+// against neither this store nor the board (transport/id-lint.ts's
+// `lintFreeText`, given the cross-store resolver injected at construction —
+// transport/id-resolver.ts is the one module allowed to know about both
+// stores, so this one stays exactly as ignorant of the board as it always
+// was). WARN, not reject: `unresolvedIds` rides the `AppendResult` (mirroring
+// `redactions`) and a process warning is the secondary, in-the-moment signal
+// — the write still succeeds either way. A correction record's whole job is
+// sometimes to quote a dead id on purpose; rejecting would block exactly the
+// record that repairs the trail.
 
-import { mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import type { IdeateConfigV3 } from '../config/ideate-config.js';
@@ -59,6 +72,8 @@ import { recordPath } from '../config/ideate-config.js';
 import { scanAndMask } from '../secret-gate/scan.js';
 import type { Redaction } from '../secret-gate/scan.js';
 import type { TelemetryCounters } from '../telemetry/counters.js';
+import { lintFreeText } from '../transport/id-lint.js';
+import type { IdResolver, UnresolvedId } from '../transport/id-lint.js';
 import type { Clock, UlidGenerator } from './id.js';
 import { createUlidGenerator, isUlid, parseUlidTimestamp } from './id.js';
 import type { ProcessRecord, RecordReference, RecordSource } from './schema.js';
@@ -117,6 +132,16 @@ export type AppendResult =
       path: string;
       /** Secret-gate tally for this record (see redaction routing note). */
       redactions: Redaction[];
+      /**
+       * Capture-time id-lint tally (correction 01KYV387QKRP3V330WAS6DX95K):
+       * every ULID-shaped token found in this record's free text that did
+       * NOT resolve against either store, in first-seen order across fields.
+       * Empty on the common case. WARN, never reject — see id-lint.ts's own
+       * header for why (a correction record's whole job is to quote a dead
+       * id). `resolution: 'unknown'` means the check could not be answered
+       * (P-45 — never conflated with a clean resolve).
+       */
+      unresolvedIds: UnresolvedId[];
     }
   | { ok: false; code: AppendErrorCode; reason: string };
 
@@ -280,21 +305,44 @@ export class RecordStore {
   readonly #telemetry: TelemetryCounters;
   readonly #clock: Clock;
   readonly #nextId: UlidGenerator;
+  /** Cross-store id-lint resolver (transport/id-resolver.ts composes the
+   *  real one) — OPTIONAL and trailing so every existing constructor call
+   *  keeps compiling unchanged; every PRODUCTION composition root wires a
+   *  real one (record/tools.ts, cli/ideate-record.ts,
+   *  work-state/completion-record.ts). Absent is treated as "every candidate
+   *  resolves 'unknown'" by id-lint.ts's `lintFreeText` — never as "nothing
+   *  to check" (P-45). */
+  readonly #resolveId: IdResolver | undefined;
   /** The current memo, or `undefined` before the first `readViews({..})` call
    *  that needs one; see {@link WalkCache} — never invalidated, only extended. */
   #walkCache: WalkCache | undefined;
 
-  constructor(config: IdeateConfigV3, projectRoot: string, telemetry: TelemetryCounters, clock: Clock) {
+  constructor(config: IdeateConfigV3, projectRoot: string, telemetry: TelemetryCounters, clock: Clock, resolveId?: IdResolver) {
     this.#config = config;
     this.#projectRoot = projectRoot;
     this.#telemetry = telemetry;
     this.#clock = clock;
     this.#nextId = createUlidGenerator(clock);
+    this.#resolveId = resolveId;
   }
 
   /** The resolved record directory — always via config's single resolver. */
   get recordDir(): string {
     return recordPath(this.#config, this.#projectRoot);
+  }
+
+  /**
+   * O(1) record-id existence check — the record half of the cross-store
+   * id-lint resolver (transport/id-resolver.ts). A single `existsSync` on
+   * the shard path computed from `id`'s own embedded timestamp
+   * (the same private `#shardDirAndPath` `append` uses) — never a directory walk, and never a
+   * `readViews`/`read` call (see this file's header on WalkCache's known
+   * superlinear cost). A malformed (non-ULID) `id` cannot name a record, so
+   * it answers `false` rather than throwing.
+   */
+  hasRecord(id: string): boolean {
+    if (!isUlid(id)) return false;
+    return existsSync(this.#shardDirAndPath(id).filePath);
   }
 
   /**
@@ -402,6 +450,41 @@ export class RecordStore {
       content: gate(record.content),
     };
 
+    // CAPTURE-TIME ID-LINT (correction 01KYV387QKRP3V330WAS6DX95K): scan the
+    // genuinely free-form PROSE fields for ULID-shaped tokens that resolve
+    // against neither store. Deliberately NOT every gated field:
+    //   - `kind` and `references[].rel` are controlled vocabulary, not prose
+    //     a citation would land in.
+    //   - `source.capture_point` is a system-derived tag ('mcp:record_append').
+    //   - `source.session_id` is ULID-SHAPED BY CONSTRUCTION (record/tools.ts
+    //     and cli/ideate-record.ts both stamp `mcp-<ULID>`/`cli-<ULID>`) — the
+    //     concrete false-positive this lint must not report on: it is a
+    //     session identifier, never a citation, and would warn on EVERY
+    //     record if included. Pinned in store.test.ts.
+    //   - `source.timestamp` is a structured ISO-8601 string, not prose.
+    //   - `references[].id` is out of scope by the item's own non-goal. Note
+    //     for the record: this store's write chokepoint validates a
+    //     reference id's ULID FORMAT only (isUlid, above) — unlike the
+    //     board's dag.ts, it has no existence check for a reference target,
+    //     so a well-formed-but-nonexistent references[].id can persist
+    //     today. That is a real, pre-existing gap, but it is a DIFFERENT
+    //     mechanism (dangling-edge validation) than this lint (free-text
+    //     citation scanning) and this item's non-goal excludes references
+    //     either way, so it is intentionally left untouched here.
+    // `id` (the record's own, freshly assigned/validated) is never scanned:
+    // it is an identifier, not free text a person wrote.
+    const lintTexts = [masked.claim, masked.verification_anchor, masked.scope, masked.content];
+    if (masked.source.task_id !== undefined) lintTexts.push(masked.source.task_id);
+    const unresolvedIds = lintFreeText(lintTexts, this.#resolveId);
+    for (const unresolved of unresolvedIds) {
+      process.emitWarning(
+        unresolved.resolution === 'unknown'
+          ? `ideate record: id-lint could not verify ${unresolved.id} cited in record ${id} — no cross-store resolver was available (P-45: treat as unverified, not as fine)`
+          : `ideate record: id-lint found ${unresolved.id} cited in record ${id} that does not resolve as a record or a work item — if this is a correction quoting a dead id on purpose, no action is needed`,
+        { code: unresolved.resolution === 'unknown' ? 'IDEATE_RECORD_ID_LINT_UNAVAILABLE' : 'IDEATE_RECORD_UNRESOLVED_ID' },
+      );
+    }
+
     // Shard from the ULID's embedded timestamp: `record.path/YYYY/MM/{id}.md`.
     const { shardDir, filePath } = this.#shardDirAndPath(masked.id);
 
@@ -428,7 +511,7 @@ export class RecordStore {
       this.#walkCache.parsedById.set(masked.id, masked);
       addReferrerContribution(this.#walkCache.referrers, masked);
     }
-    return { ok: true, record: masked, path: filePath, redactions };
+    return { ok: true, record: masked, path: filePath, redactions, unresolvedIds };
   }
 
   /** The `record.path/YYYY/MM/{id}.md` shard directory and file path for

@@ -35,6 +35,7 @@ import { loadConfig, workStatePath } from '../config/ideate-config.js';
 import type { Clock } from '../record/id.js';
 import { createUlidGenerator } from '../record/id.js';
 import { TelemetryCounters } from '../telemetry/counters.js';
+import { createProjectIdResolver } from '../transport/id-resolver.js';
 import {
   LIST_PAYLOAD_BUDGET_CHARS,
   applyListPayloadBudget,
@@ -235,9 +236,13 @@ function buildContext(projectRoot: string): CliContext {
   const clock: Clock = () => new Date();
   const config = loadConfig(projectRoot);
   const dbPath = join(workStatePath(config, projectRoot), 'board.db');
-  const store = new WorkStateStore(dbPath, clock);
-  const verbs = new WorkStateVerbs(store, clock);
   const telemetry = new TelemetryCounters(join(projectRoot, '.ideate-telemetry'), clock);
+  // Cross-store id-lint resolver (correction 01KYV387QKRP3V330WAS6DX95K) —
+  // the SECOND shipped write path (P-50), wired identically to
+  // work-state/tools.ts's MCP transport via the same neutral composer.
+  const resolveId = createProjectIdResolver(projectRoot, telemetry, clock, dbPath);
+  const store = new WorkStateStore(dbPath, clock, resolveId);
+  const verbs = new WorkStateVerbs(store, clock);
   const sessionId = `cli-${createUlidGenerator(clock)()}`;
   // The completion-record writer, built from the SAME project
   // root/telemetry/clock this context already resolved.

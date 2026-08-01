@@ -32,6 +32,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { Clock } from '../record/id.js';
 import { TelemetryCounters } from '../telemetry/counters.js';
 import { reportFromDir } from '../telemetry/report.js';
+import type { IdResolver } from '../transport/id-lint.js';
 import { openForWrite } from './schema.js';
 import { WorkStateStore } from './store.js';
 import type { ActorRef, WorkItemStatus } from './types.js';
@@ -63,12 +64,12 @@ interface Fixture {
   setNow: (iso: string) => void;
 }
 
-function makeFixture(): Fixture {
+function makeFixture(resolveId?: IdResolver): Fixture {
   const root = makeTempDir();
   const dbPath = join(root, 'work-state', 'board.db');
   let nowIso = FIXED_ISO;
   const clock: Clock = () => new Date(nowIso);
-  const store = new WorkStateStore(dbPath, clock);
+  const store = new WorkStateStore(dbPath, clock, resolveId);
   return {
     store,
     clock,
@@ -563,6 +564,40 @@ describe('complete() — fencing + optional note', () => {
   });
 });
 
+describe('capture-time id-lint threading through complete()/release() (correction 01KYV387QKRP3V330WAS6DX95K)', () => {
+  const DEAD_ID = '01KYTP1H0B2FMFBQ4H9QCXPK2Z';
+
+  function resolverFor(resolved: ReadonlySet<string>): IdResolver {
+    return (id) => (resolved.has(id) ? 'resolved' : 'unresolved');
+  }
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("complete()'s note is id-linted through appendEventRowOn using the STORE's own resolveId — proving the resolver survives the claim engine's own atomic-transaction call, not just appendEvent", () => {
+    const { store, clock } = makeFixture(resolverFor(new Set()));
+    const item = store.insertItem({ title: 'x', spec: 's', spec_format: 'f', created_by: actor() });
+    const claimed = claim(store, clock, item.id, actor());
+    const warn = vi.spyOn(process, 'emitWarning').mockImplementation(() => undefined);
+
+    complete(store, clock, item.id, claimed.claim!.claim_token, `shipped — see ${DEAD_ID} for the prior broken attempt`);
+
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining(DEAD_ID), expect.objectContaining({ code: 'IDEATE_WORK_UNRESOLVED_ID' }));
+  });
+
+  it("release()'s handoff note is id-linted the same way; a resolving id produces no warning", () => {
+    const { store, clock } = makeFixture(resolverFor(new Set(['01KYTQZXDGVPJRBNY64JJ4YNV1'])));
+    const item = store.insertItem({ title: 'x', spec: 's', spec_format: 'f', created_by: actor() });
+    const claimed = claim(store, clock, item.id, actor());
+    const warn = vi.spyOn(process, 'emitWarning').mockImplementation(() => undefined);
+
+    release(store, clock, item.id, claimed.claim!.claim_token, 'handing off, see 01KYTQZXDGVPJRBNY64JJ4YNV1');
+
+    expect(warn).not.toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ code: 'IDEATE_WORK_UNRESOLVED_ID' }));
+  });
+});
+
 describe('completion-record post-commit hook', () => {
   /** A minimal, type-correct successful AppendResult stub — the injected
    *  writer never goes through the real RecordStore, so this just needs to
@@ -583,6 +618,7 @@ describe('completion-record post-commit hook', () => {
       },
       path: '/dev/null/stub-not-a-real-path.md',
       redactions: [],
+      unresolvedIds: [],
     };
   }
 

@@ -25,9 +25,10 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { CursorSchema, ProgressSchema } from '@modelcontextprotocol/sdk/types.js';
 
-import { CONFIG_FILENAME, loadConfig } from '../config/ideate-config.js';
+import { CONFIG_FILENAME, loadConfig, workStatePath } from '../config/ideate-config.js';
 import { TelemetryCounters } from '../telemetry/counters.js';
 import { LIST_PAYLOAD_BUDGET_CHARS } from '../transport/payload-budget.js';
+import { WorkStateStore } from '../work-state/store.js';
 import type { Clock } from './id.js';
 import { DEFAULT_RECORD_READ_LIMIT, MAX_RECORD_READ_LIMIT } from './read-page.js';
 import { parseRecord } from './schema.js';
@@ -250,6 +251,61 @@ describe('record_append: the unconditional Tier A write', () => {
     expect(raw).toContain('[REDACTED:aws-access-key-id]');
     // The redaction tally comes back to the caller.
     expect(result['redactions']).toEqual(expect.arrayContaining([{ pattern: 'aws-access-key-id', count: 1 }]));
+  });
+});
+
+describe('record_append: capture-time id-lint for unresolvable ULIDs (correction 01KYV387QKRP3V330WAS6DX95K) — P-50: through the REAL registered MCP tool, not the checker directly', () => {
+  it('an unresolvable ULID cited in content is reported on the response envelope AND via process.emitWarning; the write still succeeds', async () => {
+    const fx = makeFixture();
+    const client = await fx.connect();
+    const warn = vi.spyOn(process, 'emitWarning').mockImplementation(() => undefined);
+    const deadId = '01KYV31MB4BAWG8ZAP2FZDGVGP'; // one of the three real historical dead ids
+
+    const result = await callAppend(client, { ...minimalAppend, content: `see ${deadId} for the prior attempt` });
+
+    expect(result['ok']).toBe(true);
+    expect(result['unresolved_ids']).toEqual([{ id: deadId, resolution: 'unresolved' }]);
+    expect(warn).toHaveBeenCalledWith(
+      expect.stringContaining(deadId),
+      expect.objectContaining({ code: 'IDEATE_RECORD_UNRESOLVED_ID' }),
+    );
+  });
+
+  it('a ULID citing a REAL, already-written record produces no report', async () => {
+    const fx = makeFixture();
+    const client = await fx.connect();
+    const first = await callAppend(client, minimalAppend);
+    const realId = first['id'] as string;
+
+    const second = await callAppend(client, { ...minimalAppend, claim: `see ${realId} for the earlier finding` });
+    expect(second['unresolved_ids']).toEqual([]);
+  });
+
+  it('a ULID citing a REAL board item (a separate store, resolved via the SAME project root the transport already resolves) produces no report', async () => {
+    const fx = makeFixture();
+    const dbPath = join(workStatePath(loadConfig(fx.projectRoot), fx.projectRoot), 'board.db');
+    const board = new WorkStateStore(dbPath, () => new Date(FIXED_ISO));
+    const item = board.insertItem({ title: 'x', spec: 'y', spec_format: 'z', created_by: { human: 'dan' } });
+
+    const client = await fx.connect();
+    const result = await callAppend(client, {
+      ...minimalAppend,
+      verification_anchor: `board:${item.id}#complete@${FIXED_ISO}`,
+    });
+    expect(result['unresolved_ids']).toEqual([]);
+  });
+
+  it("THE CORRECTION-RECORD CASE, through the real tool: a correction quoting a known-dead id succeeds AND is reported — never rejected", async () => {
+    const fx = makeFixture();
+    const client = await fx.connect();
+    const deadId = '01KYV31MB4BAWG8ZAP2FZDGVGP';
+    const result = await callAppend(client, {
+      kind: 'correction',
+      claim: `${deadId} was corrected — it never resolved.`,
+      content: `Supersedes a premature citation of ${deadId}.`,
+    });
+    expect(result['ok']).toBe(true);
+    expect((result['unresolved_ids'] as { id: string }[]).map((u) => u.id)).toEqual([deadId]);
   });
 });
 

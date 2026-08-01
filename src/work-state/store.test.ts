@@ -27,7 +27,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync }
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import {
   DEFAULT_RECORD_PATH,
@@ -40,6 +40,7 @@ import type { IdeateConfigV3 } from '../config/ideate-config.js';
 import { isUlid } from '../record/id.js';
 import type { Clock } from '../record/id.js';
 import { encodeListCursor } from '../transport/keyset-page.js';
+import type { IdResolver } from '../transport/id-lint.js';
 import { openForWrite } from './schema.js';
 import { DEFAULT_TENANT_ID, WorkStateError } from './types.js';
 import {
@@ -130,12 +131,12 @@ interface Fixture {
   setNow: (iso: string) => void;
 }
 
-function makeFixture(): Fixture {
+function makeFixture(resolveId?: IdResolver): Fixture {
   const root = makeTempDir();
   const dbPath = join(root, 'work-state', 'board.db');
   let nowIso = FIXED_ISO;
   const clock: Clock = () => new Date(nowIso);
-  const store = new WorkStateStore(dbPath, clock);
+  const store = new WorkStateStore(dbPath, clock, resolveId);
   return {
     store,
     dbPath,
@@ -463,6 +464,92 @@ describe('secret gate: title and event note are masked before persist', () => {
     // spec passes through completely unmodified — no code path may parse or
     // transform it, including the secret gate.
     expect(item.spec).toBe(specWithSecretShape);
+  });
+});
+
+describe('capture-time id-lint for unresolvable ULIDs in free text (correction 01KYV387QKRP3V330WAS6DX95K)', () => {
+  const DEAD_ID = '01KYV31MB4BAWG8ZAP2FZDGVGP';
+  const LIVE_ID = '01KYTQZXDGVPJRBNY64JJ4YNV1';
+
+  function resolverFor(resolved: ReadonlySet<string>): IdResolver {
+    return (id) => (resolved.has(id) ? 'resolved' : 'unresolved');
+  }
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('a ULID cited in TITLE (create) that resolves nowhere is reported via process.emitWarning; the write still succeeds', () => {
+    const { store } = makeFixture(resolverFor(new Set()));
+    const warn = vi.spyOn(process, 'emitWarning').mockImplementation(() => undefined);
+    const item = store.insertItem({ title: `see ${DEAD_ID} for prior work`, spec: 'x', spec_format: 'text/plain', created_by: actor() });
+    expect(item.title).toContain(DEAD_ID); // report only — never rewritten
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining(DEAD_ID), expect.objectContaining({ code: 'IDEATE_WORK_UNRESOLVED_ID' }));
+  });
+
+  it('a ULID cited in TITLE that resolves is not reported', () => {
+    const { store } = makeFixture(resolverFor(new Set([LIVE_ID])));
+    const warn = vi.spyOn(process, 'emitWarning').mockImplementation(() => undefined);
+    store.insertItem({ title: `see ${LIVE_ID}`, spec: 'x', spec_format: 'text/plain', created_by: actor() });
+    expect(warn).not.toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ code: 'IDEATE_WORK_UNRESOLVED_ID' }));
+  });
+
+  it('update_meta re-titling to cite a dead id is reported; leaving title untouched on an unrelated update is NOT re-reported', () => {
+    const { store } = makeFixture(resolverFor(new Set()));
+    const item = store.insertItem({ title: 'clean title', spec: 'x', spec_format: 'text/plain', created_by: actor() });
+    const warn = vi.spyOn(process, 'emitWarning').mockImplementation(() => undefined);
+    store.updateMeta(item.id, item.version, { title: `now cites ${DEAD_ID}` });
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining(DEAD_ID), expect.objectContaining({ code: 'IDEATE_WORK_UNRESOLVED_ID' }));
+    warn.mockClear();
+    const afterTitle = store.getItem(item.id);
+    if (afterTitle === null) throw new Error('missing');
+    // An unrelated update_meta call that does not touch title must not
+    // re-warn about the title it already accepted.
+    store.updateMeta(item.id, afterTitle.version, { spec: 'new spec text' });
+    expect(warn).not.toHaveBeenCalled();
+  });
+
+  it('an event NOTE (appendEvent) citing a dead id is reported; a resolving one is not', () => {
+    const dead = makeFixture(resolverFor(new Set()));
+    const item = dead.store.insertItem({ title: 'x', spec: 'y', spec_format: 'z', created_by: actor() });
+    const warnDead = vi.spyOn(process, 'emitWarning').mockImplementation(() => undefined);
+    dead.store.appendEvent({ item_id: item.id, actor: actor(), transition: 'release', note: `handoff, see ${DEAD_ID}` });
+    expect(warnDead).toHaveBeenCalledWith(expect.stringContaining(DEAD_ID), expect.objectContaining({ code: 'IDEATE_WORK_UNRESOLVED_ID' }));
+    warnDead.mockRestore();
+
+    const live = makeFixture(resolverFor(new Set([LIVE_ID])));
+    const item2 = live.store.insertItem({ title: 'x', spec: 'y', spec_format: 'z', created_by: actor() });
+    const warnLive = vi.spyOn(process, 'emitWarning').mockImplementation(() => undefined);
+    live.store.appendEvent({ item_id: item2.id, actor: actor(), transition: 'release', note: `handoff, see ${LIVE_ID}` });
+    expect(warnLive).not.toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ code: 'IDEATE_WORK_UNRESOLVED_ID' }));
+  });
+
+  it("NON-GOAL / mirrors the secret gate's own posture: spec is NEVER scanned, even when it plainly cites a dead id", () => {
+    const { store } = makeFixture(resolverFor(new Set()));
+    const warn = vi.spyOn(process, 'emitWarning').mockImplementation(() => undefined);
+    store.insertItem({ title: 'x', spec: `plan: see ${DEAD_ID} for context`, spec_format: 'text/plain', created_by: actor() });
+    expect(warn).not.toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ code: 'IDEATE_WORK_UNRESOLVED_ID' }));
+  });
+
+  it('P-45: an ABSENT resolver reports every candidate as "unknown" with a DISTINCT warning code, never silently clean', () => {
+    const { store } = makeFixture(); // no resolver wired
+    const warn = vi.spyOn(process, 'emitWarning').mockImplementation(() => undefined);
+    store.insertItem({ title: `see ${DEAD_ID}`, spec: 'x', spec_format: 'text/plain', created_by: actor() });
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining(DEAD_ID), expect.objectContaining({ code: 'IDEATE_WORK_ID_LINT_UNAVAILABLE' }));
+  });
+
+  it('P-41 FALSIFICATION: the guard fires on an induced violation and stays quiet on agreement for the identical title text', () => {
+    const inducedId = '01KYTP1H0B2FMFBQ4H9QCXPK2Z';
+    const violating = makeFixture(resolverFor(new Set()));
+    const warnViolating = vi.spyOn(process, 'emitWarning').mockImplementation(() => undefined);
+    violating.store.insertItem({ title: `cites ${inducedId}`, spec: 'x', spec_format: 'text/plain', created_by: actor() });
+    expect(warnViolating).toHaveBeenCalledWith(expect.stringContaining(inducedId), expect.objectContaining({ code: 'IDEATE_WORK_UNRESOLVED_ID' }));
+    warnViolating.mockRestore();
+
+    const agreeing = makeFixture(resolverFor(new Set([inducedId])));
+    const warnAgreeing = vi.spyOn(process, 'emitWarning').mockImplementation(() => undefined);
+    agreeing.store.insertItem({ title: `cites ${inducedId}`, spec: 'x', spec_format: 'text/plain', created_by: actor() });
+    expect(warnAgreeing).not.toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ code: 'IDEATE_WORK_UNRESOLVED_ID' }));
   });
 });
 

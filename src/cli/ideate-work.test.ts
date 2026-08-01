@@ -540,6 +540,51 @@ describe('claim lifecycle: actor flags mirror the engine signatures exactly', ()
   });
 });
 
+describe('capture-time id-lint for unresolvable ULIDs in free text (correction 01KYV387QKRP3V330WAS6DX95K) — P-50: the real subprocess, not the checker directly', () => {
+  it('create: an unresolvable ULID in --title is reported on stderr; the write still succeeds (exit 0)', () => {
+    const root = makeProjectRoot();
+    const deadId = '01KYV31MB4BAWG8ZAP2FZDGVGP'; // one of the three real historical dead ids
+    const result = runCliRaw(
+      ['create', '--title', `see ${deadId} for prior work`, '--spec', 's', '--spec-format', 'text/plain', '--human', 'dan'],
+      { cwd: root },
+    );
+    expect(result.status).toBe(0); // WARN, not reject
+    expect(result.stdout.trim().length).toBeGreaterThan(0); // the item was genuinely created
+    expect(result.stderr).toContain(deadId);
+    expect(result.stderr).toMatch(/does not resolve as a record or a work item/);
+  });
+
+  it('create: a ULID citing a REAL, already-existing board item produces no stderr report', () => {
+    const root = makeProjectRoot();
+    const first = JSON.parse(
+      runCli(['create', '--title', 'the original item', '--spec', 's', '--spec-format', 'text/plain', '--human', 'dan'], { cwd: root }),
+    ) as { id: string };
+    const result = runCliRaw(
+      ['create', '--title', `follow-up to ${first.id}`, '--spec', 's', '--spec-format', 'text/plain', '--human', 'dan'],
+      { cwd: root },
+    );
+    expect(result.status).toBe(0);
+    expect(result.stderr).not.toContain('does not resolve as a record or a work item');
+  });
+
+  it('complete: a completion note citing a dangling id is reported on stderr; the completion still succeeds', () => {
+    const root = makeProjectRoot();
+    const deadId = '01KYTP1H0B2FMFBQ4H9QCXPK2Z';
+    const created = JSON.parse(
+      runCli(['create', '--title', 'x', '--spec', 's', '--spec-format', 'text/plain', '--human', 'dan'], { cwd: root }),
+    ) as { id: string };
+    const claimed = JSON.parse(runCli(['claim', '--id', created.id, '--human', 'dan'], { cwd: root })) as {
+      claim: { claim_token: number };
+    };
+    const result = runCliRaw(
+      ['complete', '--id', created.id, '--token', String(claimed.claim.claim_token), '--note', `shipped — see ${deadId}`],
+      { cwd: root },
+    );
+    expect(result.status).toBe(0);
+    expect(result.stderr).toContain(deadId);
+  });
+});
+
 describe('events --json', () => {
   it('lists the immutable event trail as JSON, oldest first', () => {
     const root = makeProjectRoot();

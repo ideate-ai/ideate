@@ -230,6 +230,46 @@ describe('append (direct-use path)', () => {
   });
 });
 
+describe('append: capture-time id-lint for unresolvable ULIDs in free text (correction 01KYV387QKRP3V330WAS6DX95K) — P-50: the real subprocess, not the checker directly', () => {
+  it('an unresolvable ULID cited in content is reported on stderr; the write still succeeds (exit 0)', () => {
+    const root = makeProjectRoot();
+    const deadId = '01KYV31MB4BAWG8ZAP2FZDGVGP'; // one of the three real historical dead ids
+    const result = runCliRaw(
+      ['append', '--kind', 'finding', '--claim', 'x', '--content', `see ${deadId} for the prior attempt`],
+      { cwd: root },
+    );
+    expect(result.status).toBe(0); // WARN, not reject
+    expect(result.stderr).toContain(deadId);
+    expect(result.stderr).toMatch(/does not resolve as a record or a work item/);
+    expect(readRecordFiles(root)).toHaveLength(1); // the write genuinely happened
+  });
+
+  it('a ULID citing a REAL, already-written record produces no stderr report', () => {
+    const root = makeProjectRoot();
+    const realId = appendRecord(root, 'the original finding');
+    const result = runCliRaw(
+      ['append', '--kind', 'finding', '--claim', 'x', '--content', `see ${realId} for the earlier finding`],
+      { cwd: root },
+    );
+    expect(result.status).toBe(0);
+    expect(result.stderr).not.toContain('does not resolve as a record or a work item');
+  });
+
+  it('THE CORRECTION-RECORD CASE, through the real CLI: a correction quoting a known-dead id succeeds AND is reported on stderr — never rejected', () => {
+    const root = makeProjectRoot();
+    const deadId = '01KYV31MB4BAWG8ZAP2FZDGVGP';
+    const result = runCliRaw(
+      ['append', '--kind', 'correction', '--claim', `${deadId} was corrected`, '--content', `Supersedes a premature citation of ${deadId}.`],
+      { cwd: root },
+    );
+    expect(result.status).toBe(0);
+    expect(result.stderr).toContain(deadId);
+    const files = readRecordFiles(root);
+    expect(files).toHaveLength(1); // never rejected, never rewritten
+    expect(files[0]?.raw).toContain(deadId);
+  });
+});
+
 describe('read (direct-use path)', () => {
   /** One `--json` page, as the CLI writes it. */
   interface JsonPage {

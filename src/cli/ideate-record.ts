@@ -69,6 +69,7 @@ import { RecordSchemaError } from '../record/schema.js';
 import { RecordStore } from '../record/store.js';
 import type { ProcessRecordView } from '../record/store.js';
 import { TelemetryCounters } from '../telemetry/counters.js';
+import { createProjectIdResolver } from '../transport/id-resolver.js';
 import { LIST_PAYLOAD_BUDGET_CHARS, measurePrettyItemChars } from '../transport/payload-budget.js';
 
 /**
@@ -220,7 +221,11 @@ function buildContext(projectRoot: string, sessionId?: string): CliContext {
   const config = loadConfig(projectRoot);
   const telemetry = new TelemetryCounters(join(projectRoot, '.ideate-telemetry'), clock);
   const sid = sessionId ?? `cli-${createUlidGenerator(clock)()}`;
-  return { store: new RecordStore(config, projectRoot, telemetry, clock), telemetry, sessionId: sid };
+  // Cross-store id-lint resolver (correction 01KYV387QKRP3V330WAS6DX95K) —
+  // the SECOND shipped write path (P-50), wired identically to
+  // record/tools.ts's MCP transport via the same neutral composer.
+  const resolveId = createProjectIdResolver(projectRoot, telemetry, clock);
+  return { store: new RecordStore(config, projectRoot, telemetry, clock, resolveId), telemetry, sessionId: sid };
 }
 
 function errorMessage(err: unknown): string {
@@ -283,8 +288,31 @@ async function runAppend(
     stderr.write(`ideate-record: append failed (${result.code}): ${result.reason}\n`);
     return 1;
   }
+  writeUnresolvedIdWarnings(stderr, 'append', result.unresolvedIds);
   stdout.write(`${result.record.id}\n`);
   return 0;
+}
+
+/**
+ * Print the id-lint's own findings on stderr (correction
+ * 01KYV387QKRP3V330WAS6DX95K) — WARN, not reject, so this never affects the
+ * exit code: the write already succeeded by the time this runs. This is the
+ * OPERATOR-visible half of the report; `process.emitWarning` inside
+ * `RecordStore.append` is the secondary, in-the-moment signal (mirrors the
+ * secret gate's own primary/secondary split).
+ */
+function writeUnresolvedIdWarnings(
+  stderr: NodeJS.WritableStream,
+  subcommand: string,
+  unresolvedIds: readonly { id: string; resolution: 'unresolved' | 'unknown' }[],
+): void {
+  for (const item of unresolvedIds) {
+    stderr.write(
+      item.resolution === 'unknown'
+        ? `ideate-record: ${subcommand}: id-lint could not verify ${item.id} — no cross-store resolver was available\n`
+        : `ideate-record: ${subcommand}: id-lint: ${item.id} does not resolve as a record or a work item (if this is a correction quoting a dead id on purpose, no action is needed)\n`,
+    );
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -627,6 +655,7 @@ async function runSessionEnd(
     stderr.write(`ideate-record: session-end: capture write failed (${result.code}): ${result.reason}\n`);
     return 0;
   }
+  writeUnresolvedIdWarnings(stderr, 'session-end', result.unresolvedIds);
   stdout.write(`${result.record.id}\n`);
   return 0;
 }

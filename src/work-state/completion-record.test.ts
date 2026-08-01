@@ -28,14 +28,14 @@ import { chmodSync, existsSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { afterEach, beforeAll, describe, expect, it } from 'vitest';
+import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 
-import { DEFAULT_RECORD_PATH, V3_SCHEMA_VERSION, recordPath } from '../config/ideate-config.js';
+import { DEFAULT_RECORD_PATH, V3_SCHEMA_VERSION, loadConfig, recordPath, workStatePath } from '../config/ideate-config.js';
 import type { IdeateConfigV3 } from '../config/ideate-config.js';
 import type { Clock } from '../record/id.js';
 import { RecordStore } from '../record/store.js';
@@ -52,6 +52,7 @@ import {
   createRealCompletionRecordWriter,
 } from './completion-record.js';
 import type { CompletionRecordFacts } from './completion-record.js';
+import { WorkStateStore } from './store.js';
 import type { ActorRef, WorkItem } from './types.js';
 
 const FIXED_ISO = '2026-07-11T12:00:00.000Z';
@@ -87,6 +88,7 @@ function makeTempDir(prefix = 'ideate-completion-record-test-'): string {
 }
 
 afterEach(() => {
+  vi.restoreAllMocks();
   while (permRestores.length > 0) {
     const dir = permRestores.pop();
     if (dir !== undefined) chmodSync(dir, 0o755);
@@ -219,6 +221,42 @@ describe('createRealCompletionRecordWriter — persists exactly one work-complet
   function report_captureFired(telemetryDir: string): number {
     return reportFromDir(telemetryDir).report.captureFired.byPoint[COMPLETION_CAPTURE_POINT] ?? 0;
   }
+});
+
+describe('createRealCompletionRecordWriter — capture-time id-lint (correction 01KYV387QKRP3V330WAS6DX95K): the completion note IS the failure mode this item exists to catch', () => {
+  it('a completion note citing a dangling id is reported (the note becomes the record content/claim verbatim)', () => {
+    const projectRoot = makeTempDir();
+    const clock: Clock = () => new Date(FIXED_ISO);
+    const telemetryDir = makeTempDir();
+    const telemetry = new TelemetryCounters(telemetryDir, clock);
+    const deadId = '01KYV31MB4BAWG8ZAP2FZDGVGP'; // one of the three real historical dead ids
+
+    const writer = createRealCompletionRecordWriter(projectRoot, telemetry, clock);
+    const warn = vi.spyOn(process, 'emitWarning').mockImplementation(() => undefined);
+    const result = writer(makeFacts({ note: `shipped — see ${deadId} for the prior broken attempt` }));
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.unresolvedIds.map((u) => u.id)).toEqual([deadId]);
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining(deadId), expect.objectContaining({ code: 'IDEATE_RECORD_UNRESOLVED_ID' }));
+  });
+
+  it('a note citing a REAL, already-existing board item produces no report', () => {
+    const projectRoot = makeTempDir();
+    const clock: Clock = () => new Date(FIXED_ISO);
+    const telemetryDir = makeTempDir();
+    const telemetry = new TelemetryCounters(telemetryDir, clock);
+    // The SAME default board path createProjectIdResolver derives when no
+    // dbPath override is given (workStatePath(config, projectRoot)/board.db).
+    const dbPath = join(workStatePath(loadConfig(projectRoot), projectRoot), 'board.db');
+    const board = new WorkStateStore(dbPath, clock);
+    const otherItem = board.insertItem({ title: 'x', spec: 'y', spec_format: 'z', created_by: { human: 'dan' } });
+
+    const writer = createRealCompletionRecordWriter(projectRoot, telemetry, clock);
+    const result = writer(makeFacts({ note: `depends on ${otherItem.id}` }));
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.unresolvedIds).toEqual([]);
+  });
 });
 
 describe('secret-gate idempotence (criterion 3) — already-masked text passes through unchanged', () => {

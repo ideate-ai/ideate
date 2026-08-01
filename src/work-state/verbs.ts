@@ -70,6 +70,7 @@ import { withWriteTransaction } from './tx.js';
 import { WorkStateError, WorkStateModuleError } from './types.js';
 import type { ActorRef, UpdateMetaInput, WorkItem, WorkItemReference, WorkItemStatus, WorkStateEvent } from './types.js';
 import { assertDependenciesExist, assertNoCycle, assertNoParentCycle, assertParentExists, assertSupersedesTargetsExist } from './dag.js';
+import type { UnresolvedId } from '../transport/id-lint.js';
 import type { DependsOnLookup, ParentLookup } from './dag.js';
 
 /**
@@ -392,8 +393,14 @@ export class WorkStateVerbs {
    * (see its own doc comment), so it still catches and names a pre-existing
    * cycle among the REFERENCED items, should that invariant ever be broken
    * upstream, even though `itemId` itself can never be part of it here.
+   *
+   * `onUnresolvedIds` (optional, correction 01KYV387QKRP3V330WAS6DX95K
+   * FINDING 1): threaded straight through to `store.insertItem`'s own
+   * callback of the same name — see that method's doc comment. The return
+   * type here stays `WorkItem`, unchanged, so every existing caller keeps
+   * compiling.
    */
-  create(input: unknown): WorkItem {
+  create(input: unknown, onUnresolvedIds?: (ids: readonly UnresolvedId[]) => void): WorkItem {
     const dependsOn = peekDependsOn(input) ?? [];
     if (dependsOn.length > 0) {
       const lookup = this.#lookup();
@@ -423,7 +430,7 @@ export class WorkStateVerbs {
     if (references.length > 0) {
       assertSupersedesTargetsExist(references, this.#lookup());
     }
-    return this.#store.insertItem(input);
+    return this.#store.insertItem(input, onUnresolvedIds);
   }
 
   /** Fetch one work item by id, or `null` if it does not exist. Runs the
@@ -544,8 +551,20 @@ export class WorkStateVerbs {
    * A stale `expectedVersion` surfaces as the store's own typed
    * `WorkStateError('VERSION_CONFLICT', …)`, unchanged. Runs the lazy-expiry
    * seam first.
+   *
+   * `onUnresolvedIds` (optional, correction 01KYV387QKRP3V330WAS6DX95K
+   * FINDING 1): threaded straight through to `store.updateMeta`'s own
+   * callback of the same name — see that method's doc comment, including its
+   * "fired with `[]`, never skipped, even when this patch doesn't touch
+   * `title`" contract.
    */
-  updateMeta(id: string, expectedVersion: number, patch: UpdateMetaInput, expiryCheck: ExpiryCheck = noopExpiryCheck): WorkItem {
+  updateMeta(
+    id: string,
+    expectedVersion: number,
+    patch: UpdateMetaInput,
+    expiryCheck: ExpiryCheck = noopExpiryCheck,
+    onUnresolvedIds?: (ids: readonly UnresolvedId[]) => void,
+  ): WorkItem {
     expiryCheck(id);
     const dependsOn = peekDependsOn(patch);
     if (dependsOn !== undefined) {
@@ -573,7 +592,7 @@ export class WorkStateVerbs {
     if (references !== undefined && references.length > 0) {
       assertSupersedesTargetsExist(references, this.#lookup());
     }
-    return this.#store.updateMeta(id, expectedVersion, patch);
+    return this.#store.updateMeta(id, expectedVersion, patch, onUnresolvedIds);
   }
 
   /**

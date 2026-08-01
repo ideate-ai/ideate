@@ -43,6 +43,7 @@ import type { Clock } from '../record/id.js';
 import { RecordStore } from '../record/store.js';
 import type { AppendResult } from '../record/store.js';
 import type { TelemetryCounters } from '../telemetry/counters.js';
+import { createProjectIdResolver } from '../transport/id-resolver.js';
 import type { ActorRef, WorkItem } from './types.js';
 
 /** The record's `kind`. */
@@ -185,7 +186,14 @@ export function createRealCompletionRecordWriter(
   clock: Clock,
 ): CompletionRecordWriter {
   const config = loadConfig(projectRoot);
-  const store = new RecordStore(config, projectRoot, telemetry, clock);
+  // Cross-store id-lint resolver (correction 01KYV387QKRP3V330WAS6DX95K) —
+  // this writer's `claim`/`content` embed the completion `note` verbatim,
+  // which is EXACTLY the failure mode this item exists to catch (a worker
+  // citing an id in a completion note before the write that mints it has
+  // returned). transport/id-resolver.ts is the one module allowed to know
+  // about both stores, so it — not this file — decides how an id resolves.
+  const resolveId = createProjectIdResolver(projectRoot, telemetry, clock);
+  const store = new RecordStore(config, projectRoot, telemetry, clock, resolveId);
   return (facts: CompletionRecordFacts): AppendResult =>
     store.append({
       kind: COMPLETION_RECORD_KIND,

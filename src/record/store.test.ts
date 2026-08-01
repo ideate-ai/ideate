@@ -28,6 +28,7 @@ import { DEFAULT_RECORD_PATH, V3_SCHEMA_VERSION, recordPath } from '../config/id
 import type { IdeateConfigV3 } from '../config/ideate-config.js';
 import { TelemetryCounters } from '../telemetry/counters.js';
 import { reportFromDir } from '../telemetry/report.js';
+import type { IdResolver } from '../transport/id-lint.js';
 import type { Clock } from './id.js';
 import { DEFAULT_RECORD_READ_LIMIT } from './read-page.js';
 import { parseRecord, serializeRecord } from './schema.js';
@@ -66,7 +67,7 @@ interface Fixture {
   setNow: (iso: string) => void;
 }
 
-function makeFixture(): Fixture {
+function makeFixture(resolveId?: IdResolver): Fixture {
   const projectRoot = makeTempDir('ideate-record-store-test-');
   const telemetryDir = makeTempDir('ideate-record-telemetry-test-');
   const config: IdeateConfigV3 = {
@@ -77,7 +78,7 @@ function makeFixture(): Fixture {
   let nowIso = FIXED_ISO;
   const clock: Clock = () => new Date(nowIso);
   const telemetry = new TelemetryCounters(telemetryDir, clock);
-  const store = new RecordStore(config, projectRoot, telemetry, clock);
+  const store = new RecordStore(config, projectRoot, telemetry, clock, resolveId);
   return {
     store,
     projectRoot,
@@ -405,6 +406,168 @@ describe('gate before persist (secret gate wired ahead of any write)', () => {
     const { report } = reportFromDir(telemetryDir);
     expect(report.redactions.total).toBe(0);
     expect(report.redactions.events).toBe(0);
+  });
+});
+
+describe('capture-time id-lint for unresolvable ULIDs in free text (correction 01KYV387QKRP3V330WAS6DX95K)', () => {
+  const DEAD_ID = '01KYV31MB4BAWG8ZAP2FZDGVGP'; // one of the three real historical dead ids (see below)
+  const LIVE_RECORD_ID = '01KYTM4XXR3FGWQY8HB3RGPT4M';
+  const LIVE_BOARD_ID = '01KYTQZXDGVPJRBNY64JJ4YNV1';
+
+  /** A resolver that reports exactly the given ids as resolved — the rest
+   *  unresolved. Mirrors the real cross-store resolver's contract
+   *  (transport/id-resolver.ts) without constructing a WorkStateStore. */
+  function resolverFor(resolved: ReadonlySet<string>): IdResolver {
+    return (id) => (resolved.has(id) ? 'resolved' : 'unresolved');
+  }
+
+  it('a ULID cited in content that resolves NOWHERE is reported: the write still succeeds (WARN, not reject)', () => {
+    const { store } = makeFixture(resolverFor(new Set()));
+    const warn = vi.spyOn(process, 'emitWarning').mockImplementation(() => undefined);
+    const result = store.append(input({ content: `see ${DEAD_ID} for the prior attempt` }));
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.unresolvedIds).toEqual([{ id: DEAD_ID, resolution: 'unresolved' }]);
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining(DEAD_ID), expect.objectContaining({ code: 'IDEATE_RECORD_UNRESOLVED_ID' }));
+  });
+
+  it('a ULID that resolves as a RECORD produces no report', () => {
+    const { store } = makeFixture(resolverFor(new Set([LIVE_RECORD_ID])));
+    const result = store.append(input({ claim: `see ${LIVE_RECORD_ID} for context` }));
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.unresolvedIds).toEqual([]);
+  });
+
+  it('a ULID that resolves as a BOARD ITEM produces no report — the resolver need not distinguish which store answered yes', () => {
+    const { store } = makeFixture(resolverFor(new Set([LIVE_BOARD_ID])));
+    const result = store.append(input({ verification_anchor: `board:${LIVE_BOARD_ID}#complete@2026-08-01T01:26:45.052Z` }));
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.unresolvedIds).toEqual([]);
+  });
+
+  it('THE CORRECTION-RECORD CASE: a record whose whole job is to quote a known-dead id succeeds AND is reported — never rejected', () => {
+    const { store } = makeFixture(resolverFor(new Set())); // the dead id resolves nowhere, exactly as it would in production
+    const result = store.append(
+      input({
+        kind: 'correction',
+        claim: `${DEAD_ID} was minted before the write that assigns it had returned; do not treat it as live.`,
+        content: `Corrects a premature citation of ${DEAD_ID}.`,
+      }),
+    );
+    expect(result.ok).toBe(true); // WARN, not reject — this is the case that decides warn-vs-reject
+    if (!result.ok) return;
+    expect(result.unresolvedIds.map((u) => u.id)).toEqual([DEAD_ID]);
+    // And the correction is genuinely ON DISK, exactly as written — nothing
+    // rewrote or stripped the quoted dead id (non-goal: report only).
+    const raw = readFileSync(result.path, 'utf8');
+    expect(raw).toContain(DEAD_ID);
+  });
+
+  it('REPLAYING THE THREE REAL HISTORICAL INSTANCES: each would have produced a warning at the time it was written', () => {
+    const historical = [
+      '01KYTM4XXR3FGWQY8HB3RGPT4M', // corrected by 01KYTMQY03EM38RQDSDSQEASZW
+      '01KYTP1H0B2FMFBQ4H9QCXPK2Z', // corrected by 01KYTQZXDGVPJRBNY64JJ4YNV1
+      '01KYV31MB4BAWG8ZAP2FZDGVGP', // corrected by 01KYV387QKRP3V330WAS6DX95K
+    ];
+    for (const deadId of historical) {
+      // At the moment of the ORIGINAL (premature) write, neither store had
+      // ever heard of `deadId` — it names nothing yet.
+      const { store } = makeFixture(resolverFor(new Set()));
+      // P-35: this test's own TITLE claims a warning, so it must actually spy
+      // on process.emitWarning and assert on it — not just on the returned
+      // `unresolvedIds` array, which the id-lint's own header documents as a
+      // SEPARATE signal from the warning (both are fired from the same `for`
+      // loop in `append`, but nothing before this change proved they stay
+      // coupled for exactly these three citations).
+      const warn = vi.spyOn(process, 'emitWarning').mockImplementation(() => undefined);
+      const result = store.append(input({ content: `citing ${deadId} before its write returned` }));
+      expect(result.ok).toBe(true);
+      if (!result.ok) continue;
+      expect(result.unresolvedIds.map((u) => u.id)).toContain(deadId);
+      expect(warn).toHaveBeenCalledWith(
+        expect.stringContaining(deadId),
+        expect.objectContaining({ code: 'IDEATE_RECORD_UNRESOLVED_ID' }),
+      );
+      warn.mockRestore();
+    }
+  });
+
+  it("FALSE POSITIVE: the record's own session_id (ULID-shaped by construction, e.g. mcp-<ULID>) never triggers a report", () => {
+    const { store } = makeFixture(resolverFor(new Set()));
+    const warn = vi.spyOn(process, 'emitWarning').mockImplementation(() => undefined);
+    const sessionUlid = '01KYTM4XXR3FGWQY8HB3RGPT4M';
+    const result = store.append(
+      input({ source: { capture_point: 'mcp:record_append', session_id: `mcp-${sessionUlid}`, task_id: 'T-271' } }),
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.unresolvedIds).toEqual([]);
+    expect(warn).not.toHaveBeenCalledWith(expect.stringContaining('IDEATE_RECORD_UNRESOLVED_ID'), expect.anything());
+  });
+
+  it('FALSE POSITIVE: kind and references[].rel (controlled vocabulary) are never scanned even if ULID-shaped', () => {
+    const { store } = makeFixture(resolverFor(new Set()));
+    const shapedAsUlid = '01KYTM4XXR3FGWQY8HB3RGPT4M'; // syntactically valid but absurd as a "kind"
+    const result = store.append(input({ kind: shapedAsUlid }));
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.unresolvedIds).toEqual([]);
+  });
+
+  it('NON-GOAL: a dangling references[].id is never reported by THIS lint (the ULID-well-formedness check already covers references at the write chokepoint)', () => {
+    const { store } = makeFixture(resolverFor(new Set()));
+    const danglingTarget = '01KYTM4XXR3FGWQY8HB3RGPT4M';
+    const result = store.append(input({ references: [{ rel: 'supersedes', id: danglingTarget }] }));
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.unresolvedIds).toEqual([]);
+  });
+
+  it('P-45: an ABSENT resolver reports every ULID-shaped candidate as "unknown", never as clean — and warns with a DISTINCT code', () => {
+    const { store } = makeFixture(); // no resolver wired at all
+    const warn = vi.spyOn(process, 'emitWarning').mockImplementation(() => undefined);
+    const result = store.append(input({ content: `see ${DEAD_ID}` }));
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.unresolvedIds).toEqual([{ id: DEAD_ID, resolution: 'unknown' }]);
+    expect(warn).toHaveBeenCalledWith(
+      expect.stringContaining(DEAD_ID),
+      expect.objectContaining({ code: 'IDEATE_RECORD_ID_LINT_UNAVAILABLE' }),
+    );
+  });
+
+  it('P-41 FALSIFICATION: the guard fires on an induced violation (a fabricated dangling id planted in content) and stays quiet on agreement (a resolver that reports it live)', () => {
+    const inducedId = '01KYTP1H0B2FMFBQ4H9QCXPK2Z';
+    // Violation: resolver says the id is nowhere to be found.
+    const violating = makeFixture(resolverFor(new Set()));
+    const violatingResult = violating.store.append(input({ content: `refer to ${inducedId}` }));
+    expect(violatingResult.ok).toBe(true);
+    if (violatingResult.ok) expect(violatingResult.unresolvedIds.map((u) => u.id)).toContain(inducedId);
+    // Agreement: the SAME id, but the resolver now reports it live — the
+    // guard must stay quiet, proving the fixture above genuinely EXERCISED
+    // the check rather than always reporting by construction.
+    const agreeing = makeFixture(resolverFor(new Set([inducedId])));
+    const agreeingResult = agreeing.store.append(input({ content: `refer to ${inducedId}` }));
+    expect(agreeingResult.ok).toBe(true);
+    if (agreeingResult.ok) expect(agreeingResult.unresolvedIds).toEqual([]);
+  });
+
+  it('a task_id citing a nonexistent work item is scanned (task_id is a real citation surface, unlike session_id/capture_point)', () => {
+    const { store } = makeFixture(resolverFor(new Set()));
+    const result = store.append(input({ source: { capture_point: 'session_end', session_id: 'sess-1', task_id: DEAD_ID } }));
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.unresolvedIds.map((u) => u.id)).toEqual([DEAD_ID]);
+  });
+
+  it('dedupes across fields: the same dead id in both claim and content is reported once', () => {
+    const { store } = makeFixture(resolverFor(new Set()));
+    const result = store.append(input({ claim: `cites ${DEAD_ID}`, content: `also cites ${DEAD_ID}` }));
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.unresolvedIds).toEqual([{ id: DEAD_ID, resolution: 'unresolved' }]);
   });
 });
 

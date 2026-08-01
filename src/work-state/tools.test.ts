@@ -28,14 +28,18 @@ import { Buffer } from 'node:buffer';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 
+import { DEFAULT_RECORD_PATH, V3_SCHEMA_VERSION } from '../config/ideate-config.js';
+import type { IdeateConfigV3 } from '../config/ideate-config.js';
 import type { Clock } from '../record/id.js';
+import { RecordStore } from '../record/store.js';
+import { TelemetryCounters } from '../telemetry/counters.js';
 import { reportFromDir } from '../telemetry/report.js';
 import { LIST_PAYLOAD_BUDGET_CHARS } from '../transport/payload-budget.js';
 import { DEFAULT_LIST_LIMIT, MAX_LIST_LIMIT } from './store.js';
@@ -446,6 +450,184 @@ describe('secret gate pass-through (criterion 6 — no double-gating)', () => {
     const item = created.body.item as Record<string, unknown>;
     expect(item.title).toBe('rotate [REDACTED:aws-access-key-id] now');
     expect(item.title).not.toContain('AKIAABCDEFGHIJKLMNOP');
+  });
+});
+
+describe('capture-time id-lint for unresolvable ULIDs in free text (correction 01KYV387QKRP3V330WAS6DX95K) — P-50: through the REAL registered MCP tool', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('work_create: an unresolvable ULID in title is reported via process.emitWarning AND on the response envelope; the write still succeeds', async () => {
+    const fixture = makeFixture();
+    const client = await fixture.connect();
+    const warn = vi.spyOn(process, 'emitWarning').mockImplementation(() => undefined);
+    const deadId = '01KYV31MB4BAWG8ZAP2FZDGVGP'; // one of the three real historical dead ids
+
+    const created = await call(client, 'work_create', { title: `see ${deadId} for prior work`, spec: 's', spec_format: 'text/plain', actor_human: 'dan' });
+    expect(created.isError).toBe(false);
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining(deadId), expect.objectContaining({ code: 'IDEATE_WORK_UNRESOLVED_ID' }));
+    // FINDING 1 (01KYV3S3E0J98TFRGKZXYX353P): the lint must reach the CALLING
+    // AGENT, not just process.emitWarning — a channel that actor cannot see.
+    expect(created.body['unresolved_ids']).toEqual([{ id: deadId, resolution: 'unresolved' }]);
+  });
+
+  it('work_create: a clean write (nothing unresolved) still carries unresolved_ids: [] on the envelope — never an absent key', async () => {
+    const fixture = makeFixture();
+    const client = await fixture.connect();
+    const created = await call(client, 'work_create', { title: 'a perfectly ordinary title', spec: 's', spec_format: 'text/plain', actor_human: 'dan' });
+    expect(created.isError).toBe(false);
+    expect(created.body['unresolved_ids']).toEqual([]);
+  });
+
+  it('work_create: a ULID citing a REAL, already-existing board item produces no report (on process.emitWarning OR the envelope)', async () => {
+    const fixture = makeFixture();
+    const client = await fixture.connect();
+    const warn = vi.spyOn(process, 'emitWarning').mockImplementation(() => undefined);
+
+    const first = await call(client, 'work_create', { title: 'the original item', spec: 's', spec_format: 'text/plain', actor_human: 'dan' });
+    const firstId = (first.body.item as Record<string, unknown>).id as string;
+
+    const second = await call(client, 'work_create', { title: `follow-up to ${firstId}`, spec: 's', spec_format: 'text/plain', actor_human: 'dan' });
+    expect(warn).not.toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ code: 'IDEATE_WORK_UNRESOLVED_ID' }));
+    expect(second.body['unresolved_ids']).toEqual([]);
+  });
+
+  it('work_create: a ULID citing a REAL record (a separate store, resolved via the SAME project root this transport already resolves) produces no report', async () => {
+    const fixture = makeFixture();
+    const config: IdeateConfigV3 = { schema_version: V3_SCHEMA_VERSION, record: { path: DEFAULT_RECORD_PATH }, backend: 'local' };
+    const telemetry = new TelemetryCounters(fixture.telemetryDir, () => new Date(FIXED_ISO));
+    const record = new RecordStore(config, fixture.projectRoot, telemetry, () => new Date(FIXED_ISO));
+    const written = record.append({
+      kind: 'finding',
+      claim: 'x',
+      verification_anchor: '',
+      scope: '',
+      source: { capture_point: 'test', session_id: 'sess-1' },
+      content: 'y',
+    });
+    expect(written.ok).toBe(true);
+    if (!written.ok) return;
+
+    const client = await fixture.connect();
+    const warn = vi.spyOn(process, 'emitWarning').mockImplementation(() => undefined);
+    const result = await call(client, 'work_create', { title: `see finding ${written.record.id}`, spec: 's', spec_format: 'text/plain', actor_human: 'dan' });
+    expect(warn).not.toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ code: 'IDEATE_WORK_UNRESOLVED_ID' }));
+    expect(result.body['unresolved_ids']).toEqual([]);
+  });
+
+  it('work_update_meta: an unresolvable ULID in a NEW title is reported on the response envelope; a patch that never touches title carries unresolved_ids: []', async () => {
+    const fixture = makeFixture();
+    const client = await fixture.connect();
+    const deadId = '01KYTP1H0B2FMFBQ4H9QCXPK2Z';
+
+    const created = await call(client, 'work_create', { title: 'x', spec: 's', spec_format: 'text/plain', actor_human: 'dan' });
+    const item = created.body.item as Record<string, unknown>;
+
+    const warn = vi.spyOn(process, 'emitWarning').mockImplementation(() => undefined);
+    const retitled = await call(client, 'work_update_meta', {
+      id: item.id as string,
+      expected_version: item.version as number,
+      title: `renamed — see ${deadId}`,
+    });
+    expect(retitled.isError).toBe(false);
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining(deadId), expect.objectContaining({ code: 'IDEATE_WORK_UNRESOLVED_ID' }));
+    expect(retitled.body['unresolved_ids']).toEqual([{ id: deadId, resolution: 'unresolved' }]);
+    warn.mockClear();
+
+    // A second edit that never touches title (only spec): nothing new was
+    // linted, and the envelope says so explicitly rather than omitting the key.
+    const retitledItem = retitled.body.item as Record<string, unknown>;
+    const respecced = await call(client, 'work_update_meta', {
+      id: item.id as string,
+      expected_version: retitledItem.version as number,
+      spec: 'a different spec',
+    });
+    expect(respecced.isError).toBe(false);
+    expect(warn).not.toHaveBeenCalled();
+    expect(respecced.body['unresolved_ids']).toEqual([]);
+  });
+
+  it('work_complete: a completion note citing a dangling id is reported on the envelope; work_release: a handoff note citing a dangling id is reported on the envelope', async () => {
+    const fixture = makeFixture();
+    const client = await fixture.connect();
+    const deadId = '01KYTP1H0B2FMFBQ4H9QCXPK2Z';
+
+    const created = await call(client, 'work_create', { title: 'x', spec: 's', spec_format: 'text/plain', actor_human: 'dan' });
+    const id = (created.body.item as Record<string, unknown>).id as string;
+    const claimed = await call(client, 'work_claim', { id, actor_human: 'dan' });
+    const claimToken = ((claimed.body.item as Record<string, unknown>).claim as Record<string, unknown>).claim_token as number;
+
+    const warn = vi.spyOn(process, 'emitWarning').mockImplementation(() => undefined);
+    const completed = await call(client, 'work_complete', { id, claim_token: claimToken, note: `shipped — see ${deadId}` });
+    expect(completed.isError).toBe(false);
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining(deadId), expect.objectContaining({ code: 'IDEATE_WORK_UNRESOLVED_ID' }));
+    expect(completed.body['unresolved_ids']).toEqual([{ id: deadId, resolution: 'unresolved' }]);
+    warn.mockClear();
+
+    // A second item, released with a note citing the same dangling id.
+    const created2 = await call(client, 'work_create', { title: 'y', spec: 's', spec_format: 'text/plain', actor_human: 'dan' });
+    const id2 = (created2.body.item as Record<string, unknown>).id as string;
+    const claimed2 = await call(client, 'work_claim', { id: id2, actor_human: 'dan' });
+    const claimToken2 = ((claimed2.body.item as Record<string, unknown>).claim as Record<string, unknown>).claim_token as number;
+    const released = await call(client, 'work_release', { id: id2, claim_token: claimToken2, note: `handing off, see ${deadId}` });
+    expect(released.isError).toBe(false);
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining(deadId), expect.objectContaining({ code: 'IDEATE_WORK_UNRESOLVED_ID' }));
+    expect(released.body['unresolved_ids']).toEqual([{ id: deadId, resolution: 'unresolved' }]);
+  });
+
+  it('work_complete / work_release: an absent note carries unresolved_ids: [] on the envelope', async () => {
+    const fixture = makeFixture();
+    const client = await fixture.connect();
+
+    const created = await call(client, 'work_create', { title: 'x', spec: 's', spec_format: 'text/plain', actor_human: 'dan' });
+    const id = (created.body.item as Record<string, unknown>).id as string;
+    const claimed = await call(client, 'work_claim', { id, actor_human: 'dan' });
+    const claimToken = ((claimed.body.item as Record<string, unknown>).claim as Record<string, unknown>).claim_token as number;
+    const completed = await call(client, 'work_complete', { id, claim_token: claimToken });
+    expect(completed.isError).toBe(false);
+    expect(completed.body['unresolved_ids']).toEqual([]);
+
+    const created2 = await call(client, 'work_create', { title: 'y', spec: 's', spec_format: 'text/plain', actor_human: 'dan' });
+    const id2 = (created2.body.item as Record<string, unknown>).id as string;
+    const claimed2 = await call(client, 'work_claim', { id: id2, actor_human: 'dan' });
+    const claimToken2 = ((claimed2.body.item as Record<string, unknown>).claim as Record<string, unknown>).claim_token as number;
+    const released = await call(client, 'work_release', { id: id2, claim_token: claimToken2 });
+    expect(released.isError).toBe(false);
+    expect(released.body['unresolved_ids']).toEqual([]);
+  });
+
+  it('NON-GOAL: spec is never scanned, even when it plainly cites a dead id', async () => {
+    const fixture = makeFixture();
+    const client = await fixture.connect();
+    const warn = vi.spyOn(process, 'emitWarning').mockImplementation(() => undefined);
+    const deadId = '01KYV31MB4BAWG8ZAP2FZDGVGP';
+    const result = await call(client, 'work_create', { title: 'x', spec: `plan: see ${deadId} for context`, spec_format: 'text/plain', actor_human: 'dan' });
+    expect(warn).not.toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ code: 'IDEATE_WORK_UNRESOLVED_ID' }));
+    expect(result.body['unresolved_ids']).toEqual([]);
+  });
+
+  it('P-40 sibling-surface parity: work_claim/work_renew/work_cancel/work_reopen never carry a note field at all — mechanically verified against the REGISTERED tool schemas (tools/list, the protocol truth), not just trusted', async () => {
+    const fixture = makeFixture();
+    const client = await fixture.connect();
+    const { tools } = await client.listTools();
+    const propsOf = (name: string): Record<string, unknown> => {
+      const tool = tools.find((t) => t.name === name);
+      return (tool?.inputSchema as { properties?: Record<string, unknown> } | undefined)?.properties ?? {};
+    };
+    for (const name of ['work_claim', 'work_renew', 'work_cancel', 'work_reopen']) {
+      expect(Object.keys(propsOf(name))).not.toContain('note');
+    }
+    // The two verbs that DO carry a note are exactly the two this item wires
+    // unresolved_ids onto above — confirms the schema-derived claim in this
+    // item's own spec ("verify yourself") rather than trusting the grep it cites.
+    for (const name of ['work_complete', 'work_release']) {
+      expect(Object.keys(propsOf(name))).toContain('note');
+    }
+    // title (create/update_meta) is the OTHER carrier — same verification.
+    for (const name of ['work_create', 'work_update_meta']) {
+      expect(Object.keys(propsOf(name))).toContain('title');
+    }
   });
 });
 

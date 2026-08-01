@@ -80,6 +80,7 @@ import type { WorkStateStore } from './store.js';
 import { withWriteTransaction } from './tx.js';
 import { WorkStateModuleError } from './types.js';
 import type { ActorRef, WorkItem } from './types.js';
+import type { UnresolvedId } from '../transport/id-lint.js';
 
 /** Typed failure classes for the claim engine (parallels types.ts's
  *  `WorkStateError` convention, but scoped to this module — claim-specific
@@ -388,6 +389,14 @@ export function renew(
  * module's header for the full delivered-vs-used analysis). Same
  * never-throws, never-un-completes contract as the completion-record hook;
  * absent `usageCapture`, nothing is attempted.
+ *
+ * `onUnresolvedIds` (optional, correction 01KYV387QKRP3V330WAS6DX95K
+ * FINDING 1): fired EXACTLY ONCE, with `note`'s capture-time id-lint tally
+ * (`[]` when `note` is absent, clean, or the CAS never succeeded) — the same
+ * callback shape `store.ts`'s `insertItem`/`appendEventRowOn` use, so the MCP
+ * tool layer (work-state/tools.ts's `work_complete`) can report the id-lint
+ * finding back to the calling agent instead of it landing only in
+ * `process.emitWarning`, a channel that actor cannot see.
  */
 export function complete(
   store: WorkStateStore,
@@ -397,6 +406,7 @@ export function complete(
   note?: string,
   completionRecord?: CompletionRecordConfig,
   usageCapture?: UsageCaptureConfig,
+  onUnresolvedIds?: (ids: readonly UnresolvedId[]) => void,
 ): WorkItem {
   checkExpiry(store, clock, itemId); // lazy check, evaluated FIRST
   requireItem(store, itemId, 'complete');
@@ -444,6 +454,11 @@ export function complete(
         return;
       }
       completedBy = holder;
+      // `store.resolveId` threads the SAME cross-store id-lint resolver this
+      // store's own writes use (correction 01KYV387QKRP3V330WAS6DX95K) — a
+      // completion `note` is exactly the failure mode this item exists to
+      // catch (a worker citing an id in a completion note before the write
+      // that mints it has returned).
       appendEventRowOn(
         db,
         {
@@ -455,6 +470,8 @@ export function complete(
           at: nowIso,
         },
         () => nowIso,
+        store.resolveId,
+        onUnresolvedIds,
       );
     });
   } finally {
@@ -522,8 +539,19 @@ export function complete(
  * the SAME locked transaction as the CAS, never a caller-supplied argument —
  * the same misattribution risk `complete` had (any token holder could
  * otherwise name an arbitrary actor) applies identically here.
+ *
+ * `onUnresolvedIds` (optional): mirrors `complete`'s own callback exactly —
+ * see its doc comment for the full rationale (correction
+ * 01KYV387QKRP3V330WAS6DX95K FINDING 1).
  */
-export function release(store: WorkStateStore, clock: Clock, itemId: string, claimToken: number, note?: string): WorkItem {
+export function release(
+  store: WorkStateStore,
+  clock: Clock,
+  itemId: string,
+  claimToken: number,
+  note?: string,
+  onUnresolvedIds?: (ids: readonly UnresolvedId[]) => void,
+): WorkItem {
   checkExpiry(store, clock, itemId); // lazy check, evaluated FIRST
   requireItem(store, itemId, 'release');
 
@@ -567,6 +595,8 @@ export function release(store: WorkStateStore, clock: Clock, itemId: string, cla
         return;
       }
       releasedBy = holder;
+      // Same id-lint wiring as `complete` above — a handoff note is exactly
+      // as likely to cite a not-yet-existing id as a completion note is.
       appendEventRowOn(
         db,
         {
@@ -578,6 +608,8 @@ export function release(store: WorkStateStore, clock: Clock, itemId: string, cla
           at: nowIso,
         },
         () => nowIso,
+        store.resolveId,
+        onUnresolvedIds,
       );
     });
   } finally {
