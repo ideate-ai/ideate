@@ -64,6 +64,10 @@ const PERMITTED_IMPORTERS: readonly { readonly segments: readonly string[]; read
   { segments: ['record', 'tools.ts'], measure: 'measureCompactItemChars' },
   // The `ideate-record read --json` CLI — likewise 2-space indented.
   { segments: ['cli', 'ideate-record.ts'], measure: 'measurePrettyItemChars' },
+  // The CLI's ephemeral walk snapshot (cli/record-walk-snapshot.ts) — it
+  // materializes pages for that same 2-space-indented stream, so it bounds
+  // them with the same pretty measure, via the same `boundRecordPage`.
+  { segments: ['cli', 'record-walk-snapshot.ts'], measure: 'measurePrettyItemChars' },
   // The process record's shared page-shaper (`boundRecordPage`), which BOTH
   // record transports go through. It reaches the budget by way of
   // `fitToListPayloadBudget` — the prefix rule without the cursor re-mint,

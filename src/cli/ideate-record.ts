@@ -18,7 +18,12 @@
 //                  MCP record_read tool: summary rows (no prose body, plus
 //                  content_length), a default page size, an opaque cursor, and
 //                  the shared payload budget — measured on the INDENTED bytes
-//                  this stream actually writes. The human-readable listing is
+//                  this stream actually writes. The exhaustive-summary walk
+//                  (--json, no --id, no --include-content) is served through
+//                  an EPHEMERAL page snapshot (cli/record-walk-snapshot.ts)
+//                  so a page-to-exhaustion walk of cold invocations does not
+//                  re-walk the store per page; the bytes are identical to the
+//                  direct paging either way. The human-readable listing is
 //                  what a person pipes into a pager, so it stays UNPAGED and
 //                  full-bodied unless --limit/--cursor asks for a page.
 //   session-end  — session-outcome capture point: reads the SessionEnd hook
@@ -71,6 +76,7 @@ import type { ProcessRecordView } from '../record/store.js';
 import { TelemetryCounters } from '../telemetry/counters.js';
 import { createProjectIdResolver } from '../transport/id-resolver.js';
 import { LIST_PAYLOAD_BUDGET_CHARS, measurePrettyItemChars } from '../transport/payload-budget.js';
+import { readWalkSnapshotPage } from './record-walk-snapshot.js';
 
 /**
  * Default prime budget — a COUNT CAP (number of records), not a token
@@ -406,6 +412,23 @@ function runRead(argv: readonly string[], stdout: NodeJS.WritableStream, stderr:
       const records = ctx.store.readViews(selection);
       stdout.write(records.map(formatRecord).join('\n\n'));
       stdout.write(records.length > 0 ? '\n' : '(no records)\n');
+      return 0;
+    }
+    // The exhaustive-summary pattern — `--json` WITHOUT --id and WITHOUT
+    // --include-content, the walk the review agents drive to coverage — goes
+    // through the EPHEMERAL walk snapshot (cli/record-walk-snapshot.ts): one
+    // warm-cache walk materialized to os.tmpdir(), then O(page) serves. The
+    // envelope is byte-identical to the direct paging below because the
+    // snapshot build runs this exact readRecordPage → projectRecordRow →
+    // boundRecordPage chain. --id (already cheap), --include-content (the
+    // snapshot stores no bodies) and the human paths keep the direct read.
+    if (asJson && id === undefined && !parsed.switches.has('--include-content')) {
+      const bounded = readWalkSnapshotPage(ctx.store, {
+        ...(scope === undefined ? {} : { scope }),
+        ...(limit === undefined ? {} : { limit }),
+        ...(cursor === undefined ? {} : { cursor }),
+      });
+      stdout.write(`${JSON.stringify({ records: bounded.records, next_cursor: bounded.next_cursor }, null, 2)}\n`);
       return 0;
     }
     const page = readRecordPage(ctx.store, {
