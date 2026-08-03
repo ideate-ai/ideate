@@ -48,15 +48,23 @@
 //        record — so a superseded entry anywhere announces its replacement
 //        (the SEED board item is exempt: a claimed item is by definition the
 //        live frontier, so its own supersedes backlink is not a skip signal).
-//        STICKINESS: a typed-edge supersede sticks even if the REPLACEMENT is
-//        later deprecated/superseded — the forward edge persists on the
-//        replacement's file, so the superseded item stays hidden even though
-//        the replacement is itself no longer live. That can leave a domain
-//        with no live item (surfaced by the confidence signal's noPolicy
-//        reason); it is recoverable by amending the replacement to drop the
-//        edge. Deliberately consistent with the sticky status-supersession
-//        model — resurrecting the superseded item when its replacement dies is
-//        a semantic call, deferred, not made here.
+//        STICKINESS (DECIDED — Dan, 2026-08-01, decision 01KZ006528WP4KATWKPG3N07QR;
+//        board 01KYX9FTZN): a typed-edge supersede is STICKY. The forward edge
+//        persists on the replacement's file, so the superseded item STAYS HIDDEN
+//        even when its replacement is itself later retired (deprecated) or
+//        superseded — the original does NOT resurrect when its replacement dies.
+//        Retiring a replacement is not evidence the original is valid again.
+//        This is deliberate, not a deferred call: the empty domain that can
+//        result (every rule suppressed by a dead replacement) is acceptable and
+//        SILENT — the skip reason names the replacement but does NOT flag that
+//        the replacement is itself dead. Recovery is OUT-OF-BAND: curation /
+//        refinement recreates or revives a rule that becomes relevant again,
+//        or amends the replacement to drop its supersedes edge (which
+//        re-surfaces the original). The assembler does not second-guess a
+//        deliberate supersession or retirement. Pinned in code across all three
+//        seams by the transitive-chain tests in assemble-prototype.test.ts
+//        (A←B←C live-tip on steering/board/record; dead-tip on steering where
+//        `deprecated` is the native retirement lifecycle).
 //
 // Budget: estimateTokens = floor(len / 4),
 // explicitly NOT load-bearing for correctness (±30% ASCII, ±50% multi-byte).

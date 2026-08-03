@@ -28,10 +28,20 @@ import { TelemetryCounters } from '../telemetry/counters.js';
 import { WorkStateStore } from '../work-state/store.js';
 import { WorkStateVerbs } from '../work-state/verbs.js';
 import { assembleContext, estimateTokens } from './assemble-prototype.js';
-import type { AssembleDeps } from './assemble-prototype.js';
+import type { AssembleDeps, AssembleOptions } from './assemble-prototype.js';
 
 const FIXED_ISO = '2026-07-16T12:00:00.000Z';
 const ACTOR = { human: 'dan' };
+
+/**
+ * A generous budget + high per-source caps so SUPERSESSION is the only skip
+ * reason in the stickiness fixtures — nothing is crowded out by budget or cap,
+ * which would muddy the visibility assertions with unrelated skips.
+ */
+const STICKY_OPTIONS: AssembleOptions = {
+  tokenBudget: 8000,
+  perSourceCaps: { board: 50, steering: 50, record: 50 },
+};
 
 const tempDirs: string[] = [];
 
@@ -391,5 +401,167 @@ describe('assembleContext prototype', () => {
     expect(thin.manifest.confidence).toBe('low');
     expect(thin.manifest.confidenceReasons.length).toBeGreaterThan(0);
     expect(typeof thin.briefing).toBe('string');
+  });
+
+  // -------------------------------------------------------------------------
+  // Supersession STICKINESS — the transitive chain, pinned in code (board 01KYX9FTZN).
+  //
+  // Decided with Dan 2026-08-01 (decision 01KZ006528WP4KATWKPG3N07QR): a replaced
+  // rule STAYS hidden when its replacement is later retired. No resurrection, no
+  // new visibility in the assembler. Intentionally retiring a rule is
+  // recoverable out-of-band — curation / refinement recreates or revives a rule
+  // that becomes relevant again; the assembler does not second-guess a deliberate
+  // supersession by resurrecting the original when its replacement dies. This
+  // resolves finding 01KYH1HTZH7ZEDQWXF0WZMEZPB, which flagged the stickiness
+  // posture as prose-only.
+  //
+  // Two facets, mapped to the seam where each is NATIVE:
+  //   (1) TRANSITIVE LIVE-TIP — A←B←C with C live: A and B both hidden, C
+  //       delivered. Exercised on ALL THREE seams (steering, board, record) —
+  //       this is the chain the finding named, and P-40's sibling-parity clause
+  //       makes a partial-seam pin the unguarded case. Pins against a mutation
+  //       that resurrects an original whose REPLACEMENT is itself superseded.
+  //   (2) DEAD-TIP — B supersedes A, then B is RETIRED (status `deprecated`):
+  //       A stays hidden. Exercised on the STEERING seam only, where
+  //       `deprecated` is the native retirement lifecycle. Board items have no
+  //       `deprecated` status (cancellation is a work status, not a steering
+  //       retirement) and records are immutable events with no lifecycle at
+  //       all — so retirement is not a native state on those two seams, and the
+  //       live-tip chain is their pin. This is Dan's sharpening ("if 2
+  //       supersedes 1 and 2 is retired, don't bring 1 back"). Pins against a
+  //       mutation that resurrects an original whose replacement is inactive.
+  //
+  // Each test is mutation-proven (P-35): the resurrection mutation that turns
+  // it red is named below, run against the source, and the result reported in
+  // the item's completion note. A green test whose pinning logic could be
+  // deleted without going red does not pin the property.
+  // -------------------------------------------------------------------------
+
+  it('STEERING transitive stickiness (A←B←C, C live): A and B hidden, C delivered — no resurrection', () => {
+    const { deps, seed } = makeFixture();
+    // C replaces B replaces A. All three are active; all are gathered
+    // (readViews returns every item, so no structural edge to the seed is
+    // needed for gathering — domain only affects the inclusion reason/score).
+    deps.steering.put({ id: 'POL-stk-a', kind: 'policy', domain: 'auth', statement: 'Stickiness A — the original rule.' });
+    deps.steering.put({ id: 'POL-stk-b', kind: 'policy', domain: 'auth', statement: 'Stickiness B — replaces A.', references: [{ rel: 'supersedes', id: 'POL-stk-a' }] });
+    deps.steering.put({ id: 'POL-stk-c', kind: 'policy', domain: 'auth', statement: 'Stickiness C — replaces B.', references: [{ rel: 'supersedes', id: 'POL-stk-b' }] });
+
+    const { manifest, briefing } = assembleContext(seed, deps, STICKY_OPTIONS);
+
+    // A is hidden by B's forward edge — even though B is itself superseded by C.
+    expect(manifest.included.some((i) => i.sourceId === 'POL-stk-a')).toBe(false);
+    const skipA = manifest.skipped.find((i) => i.sourceId === 'POL-stk-a');
+    expect(skipA?.skipReason).toBe('superseded');
+    expect(skipA?.inclusionReason).toContain('POL-stk-b');
+    // B is hidden by C's forward edge.
+    expect(manifest.included.some((i) => i.sourceId === 'POL-stk-b')).toBe(false);
+    const skipB = manifest.skipped.find((i) => i.sourceId === 'POL-stk-b');
+    expect(skipB?.skipReason).toBe('superseded');
+    expect(skipB?.inclusionReason).toContain('POL-stk-c');
+    // C is the live tip — no supersedes backlink — and is delivered.
+    expect(manifest.included.some((i) => i.sourceId === 'POL-stk-c')).toBe(true);
+    expect(briefing).toContain('Stickiness C');
+    expect(briefing).not.toContain('Stickiness A');
+    expect(briefing).not.toContain('Stickiness B');
+    // MUTATION (R2): skip an item only if its replacement is NOT itself
+    // superseded. Under R2, A's replacement B carries a backlink from C, so A
+    // is no longer suppressed and RESURRECTS — this test turns red. (B stays
+    // hidden under R2 because its replacement C is live.)
+  });
+
+  it('STEERING dead-replacement stickiness (B supersedes A, B then deprecated): A stays hidden — no resurrection', () => {
+    const { deps, seed } = makeFixture();
+    deps.steering.put({ id: 'POL-stk-d-a', kind: 'policy', domain: 'auth', statement: 'Dead-tip A — the original rule.' });
+    deps.steering.put({ id: 'POL-stk-d-b', kind: 'policy', domain: 'auth', statement: 'Dead-tip B — replaces A.', references: [{ rel: 'supersedes', id: 'POL-stk-d-a' }] });
+    // B is RETIRED. No `references` field on the amend, so the supersedes edge
+    // to A PERSISTS (SteeringPutInput: absent-on-amend = carry the prior edge
+    // list). This is the heart of the decision: the edge survives retirement.
+    const retired = deps.steering.put({ id: 'POL-stk-d-b', kind: 'policy', domain: 'auth', status: 'deprecated', statement: 'Dead-tip B — now retired.' });
+    if (!retired.ok) throw new Error('fixture: failed to retire B');
+
+    const { manifest, briefing } = assembleContext(seed, deps, STICKY_OPTIONS);
+
+    // A stays hidden: retiring its replacement is not evidence A is valid again.
+    expect(manifest.included.some((i) => i.sourceId === 'POL-stk-d-a')).toBe(false);
+    const skipA = manifest.skipped.find((i) => i.sourceId === 'POL-stk-d-a');
+    expect(skipA?.skipReason).toBe('superseded');
+    expect(skipA?.inclusionReason).toContain('POL-stk-d-b');
+    // B is hidden by its own deprecated status — a SEPARATE skip path from A's
+    // typed-edge skip, but the same `superseded` reason literal. Asserting the
+    // reason text pins WHICH path caught B, so a reorder of the two checks in
+    // gatherSteering cannot silently change B's skip path.
+    const skipB = manifest.skipped.find((i) => i.sourceId === 'POL-stk-d-b');
+    expect(skipB?.skipReason).toBe('superseded');
+    expect(skipB?.inclusionReason).toContain('deprecated');
+    expect(briefing).not.toContain('Dead-tip A');
+    expect(briefing).not.toContain('Dead-tip B');
+    // MUTATION (R1): suppress an item only if at least one of its replacements
+    // is still `active`. Under R1, A's sole replacement B is deprecated, so A
+    // is no longer suppressed and RESURRECTS — this test turns red. This is the
+    // decision's exact sharpening ("don't bring it back").
+  });
+
+  it('BOARD transitive stickiness (A←B←C, C live): A and B hidden, C delivered — no resurrection', () => {
+    const { deps, seed } = makeFixture();
+    // All three depend_on the seed, so the reverse-edge sweep gathers each
+    // (a supersession edge does NOT pull the replacement in — only structural
+    // edges do). Board items have no `deprecated` lifecycle; the live-tip
+    // chain is this seam's native pin.
+    const a = deps.board.create({ title: 'Stk board A', spec: 'Original downstream of the seed.', spec_format: 'ideate/work-item', depends_on: [seed], created_by: ACTOR });
+    const b = deps.board.create({ title: 'Stk board B', spec: 'Replaces A, downstream of the seed.', spec_format: 'ideate/work-item', depends_on: [seed], references: [{ rel: 'supersedes', id: a.id }], created_by: ACTOR });
+    const c = deps.board.create({ title: 'Stk board C', spec: 'Replaces B, downstream of the seed.', spec_format: 'ideate/work-item', depends_on: [seed], references: [{ rel: 'supersedes', id: b.id }], created_by: ACTOR });
+
+    const { manifest, briefing } = assembleContext(seed, deps, STICKY_OPTIONS);
+
+    expect(manifest.included.some((i) => i.sourceId === a.id)).toBe(false);
+    const skipA = manifest.skipped.find((i) => i.sourceId === a.id);
+    expect(skipA?.skipReason).toBe('superseded');
+    expect(skipA?.source).toBe('board');
+    expect(skipA?.inclusionReason).toContain(b.id);
+    expect(manifest.included.some((i) => i.sourceId === b.id)).toBe(false);
+    const skipB = manifest.skipped.find((i) => i.sourceId === b.id);
+    expect(skipB?.skipReason).toBe('superseded');
+    expect(skipB?.inclusionReason).toContain(c.id);
+    // C is the live tip: no supersedes backlink, so it is delivered.
+    expect(manifest.included.some((i) => i.sourceId === c.id)).toBe(true);
+    expect(briefing).toContain('Stk board C');
+    expect(briefing).not.toContain('Stk board A');
+    expect(briefing).not.toContain('Stk board B');
+    // MUTATION (R2): skip a non-seed item only if its replacement is NOT itself
+    // superseded. Under R2, A's replacement B carries a backlink from C, so A
+    // RESURRECTS — this test turns red.
+  });
+
+  it('RECORD transitive stickiness (A←B←C, C live): A and B hidden, C delivered — no resurrection', () => {
+    const { deps, seed } = makeFixture();
+    // All three scope-matched to the seed. Records are immutable events with no
+    // lifecycle status — the typed-edge backlink is the ONLY supersession path,
+    // and there is no dead-tip (a record cannot be 'retired'). The live-tip
+    // chain is this seam's native pin.
+    const ra = deps.records.append({ kind: 'decision', claim: 'Stk record A — original decision.', verification_anchor: 'stickiness-record-a', scope: `auth ${seed} context assembly`, source: { capture_point: 'design', session_id: 's-stk', task_id: seed }, content: 'A is the original decision in the chain.' });
+    if (!ra.ok) throw new Error('fixture: failed to append record A');
+    const rb = deps.records.append({ kind: 'decision', claim: 'Stk record B — replaces A.', verification_anchor: 'stickiness-record-b', scope: `auth ${seed} context assembly`, source: { capture_point: 'design', session_id: 's-stk', task_id: seed }, content: 'B supersedes A via a typed edge.', references: [{ rel: 'supersedes', id: ra.record.id }] });
+    if (!rb.ok) throw new Error('fixture: failed to append record B');
+    const rc = deps.records.append({ kind: 'decision', claim: 'Stk record C — replaces B.', verification_anchor: 'stickiness-record-c', scope: `auth ${seed} context assembly`, source: { capture_point: 'design', session_id: 's-stk', task_id: seed }, content: 'C supersedes B via a typed edge.', references: [{ rel: 'supersedes', id: rb.record.id }] });
+    if (!rc.ok) throw new Error('fixture: failed to append record C');
+
+    const { manifest, briefing } = assembleContext(seed, deps, STICKY_OPTIONS);
+
+    expect(manifest.included.some((i) => i.sourceId === ra.record.id)).toBe(false);
+    const skipA = manifest.skipped.find((i) => i.sourceId === ra.record.id);
+    expect(skipA?.skipReason).toBe('superseded');
+    expect(skipA?.source).toBe('record');
+    expect(skipA?.inclusionReason).toContain(rb.record.id);
+    expect(manifest.included.some((i) => i.sourceId === rb.record.id)).toBe(false);
+    const skipB = manifest.skipped.find((i) => i.sourceId === rb.record.id);
+    expect(skipB?.skipReason).toBe('superseded');
+    expect(skipB?.inclusionReason).toContain(rc.record.id);
+    expect(manifest.included.some((i) => i.sourceId === rc.record.id)).toBe(true);
+    expect(briefing).toContain('Stk record C');
+    expect(briefing).not.toContain('Stk record A');
+    expect(briefing).not.toContain('Stk record B');
+    // MUTATION (R2): skip a record only if its replacement is NOT itself
+    // superseded. Under R2, A's replacement B carries a backlink from C, so A
+    // RESURRECTS — this test turns red.
   });
 });
