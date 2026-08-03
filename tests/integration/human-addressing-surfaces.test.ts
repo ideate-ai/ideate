@@ -95,6 +95,8 @@ const EXEMPTIONS: Record<string, string> = {
     'Controller-facing; runs unattended and its output feeds the cycle record, not the user directly.',
   'docs/workflow-guide.md':
     'Static documentation already authored for its human reader; the rule governs agent-generated presentation, not authored docs.',
+  'docs/transport-contract.md':
+    'Static contributor documentation already authored for its human reader (a contract doc, not agent-generated presentation); same standing as docs/workflow-guide.md.',
 };
 
 /** Every .md under the prose roots, as forward-slash relative paths. */

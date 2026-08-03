@@ -108,9 +108,8 @@ const PAGING_VOCABULARY = /next_cursor`[\s\S]{0,80}?`null`/;
  * property that prose text alone cannot reliably classify.
  */
 const EXISTENCE_ONLY_ALLOWLIST: Record<string, string> = {
-  // (none) — add `'skills/foo/SKILL.md': 'reason ...'` only once a file's
-  // sole board-read mention is a genuine existence check with no
-  // enumerating passage anywhere else in the same file.
+  'docs/transport-contract.md':
+    'A contributor contract, not an agent procedure. Its sole mentions of `work_list`/`ideate-work list` are in the per-store table naming the board store\'s transports and process lifetime to characterize the fault line — descriptive, never an instruction to read the board. No enumerating passage anywhere in the file.',
 };
 
 /** Every `.md` file under `root` (relative to `base`), found recursively.
@@ -181,6 +180,7 @@ describe('the registry is derived from the shipped tree, not hand-maintained (P-
     expect(registry).toEqual(
       [
         'agents/journal-keeper.md',
+        'docs/transport-contract.md',
         'docs/workflow-guide.md',
         'skills/autopilot/SKILL.md',
         'skills/autopilot/phases/execute.md',
