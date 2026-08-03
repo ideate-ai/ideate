@@ -10,9 +10,10 @@
 import { existsSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { BOARD_SCHEMA_VERSION, openForRead, openForWrite } from './schema.js';
+import { BOARD_SCHEMA_FLOOR, BOARD_SCHEMA_VERSION, openForRead, openForWrite, resetFloorAcceptWarning, setMigrationListener } from './schema.js';
+import type { MigrationInfo } from './schema.js';
 import { WorkStateError } from './types.js';
 
 const tempDirs: string[] = [];
@@ -45,6 +46,23 @@ function forceUserVersion(dbPath: string, version: number): void {
   const db = new sqliteModule.DatabaseSync(dbPath);
   db.exec(`PRAGMA user_version = ${String(version)}`);
   db.close();
+}
+
+/** Force `PRAGMA application_id` (the compatibility-floor stamp) to an
+ *  arbitrary value — same fixture-fabrication rationale as forceUserVersion. */
+function forceApplicationId(dbPath: string, floor: number): void {
+  const sqliteModule = process.getBuiltinModule('node:sqlite') as typeof import('node:sqlite');
+  const db = new sqliteModule.DatabaseSync(dbPath);
+  db.exec(`PRAGMA application_id = ${String(floor)}`);
+  db.close();
+}
+
+function readApplicationIdRaw(dbPath: string): number {
+  const sqliteModule = process.getBuiltinModule('node:sqlite') as typeof import('node:sqlite');
+  const db = new sqliteModule.DatabaseSync(dbPath, { readOnly: true });
+  const row = db.prepare('PRAGMA application_id').get() as { application_id: number };
+  db.close();
+  return row.application_id;
 }
 
 function readUserVersionRaw(dbPath: string): number {
@@ -328,11 +346,16 @@ describe('board schema versioning', () => {
     db.close();
   });
 
-  it('a hand-bumped user_version=99 (newer than understood) throws a typed WorkStateError naming both versions, on both open paths', () => {
+  it('a hand-bumped user_version=99 with NO floor stamp (newer than understood, nothing certified) throws a typed WorkStateError naming both versions, on both open paths', () => {
     const root = makeTempDir();
     const dbPath = join(root, 'board.db');
     openForWrite(dbPath).close();
     forceUserVersion(dbPath, 99);
+    // openForWrite stamped a floor of BOARD_SCHEMA_FLOOR, which this binary
+    // satisfies — with the stamp in place this fixture would floor-ACCEPT,
+    // not throw. Clearing it is what makes the fixture mean "a newer writer
+    // certified nothing about older readers."
+    forceApplicationId(dbPath, 0);
 
     let writeErr: unknown;
     try {
@@ -535,5 +558,155 @@ describe('references column + v2->v3 migration', () => {
     const row = db.prepare('SELECT "references" FROM items WHERE id = ?').get('legacy') as { references: string };
     expect(row.references).toBe('[]');
     db.close();
+  });
+});
+
+// The compatibility floor (PRAGMA application_id) + the migration signal —
+// board 01KYXHZP8P, decision: additive rungs stay automatic, but the writer
+// stamps the oldest binary version VERIFIED safe against the current schema,
+// a newer board whose floor covers this binary opens DEGRADED instead of
+// refusing, and every migration announces itself on stderr AND to the
+// registered listener (the durable half lives in migration-signal.ts).
+describe('compatibility floor + migration signal (board 01KYXHZP8P)', () => {
+  afterEach(() => {
+    setMigrationListener(undefined);
+    resetFloorAcceptWarning();
+    vi.restoreAllMocks();
+  });
+
+  it('a fresh create stamps BOTH user_version (3) and the floor (application_id = BOARD_SCHEMA_FLOOR)', () => {
+    const root = makeTempDir();
+    const dbPath = join(root, 'board.db');
+
+    openForWrite(dbPath).close();
+    expect(readUserVersionRaw(dbPath)).toBe(BOARD_SCHEMA_VERSION);
+    expect(readApplicationIdRaw(dbPath)).toBe(BOARD_SCHEMA_FLOOR);
+  });
+
+  it('migrating a legacy v2 board stamps version AND floor, announces on stderr, and fires the listener once with from/to/floor', () => {
+    const root = makeTempDir();
+    const dbPath = join(root, 'board.db');
+    seedLegacyV2Board(dbPath);
+    expect(readApplicationIdRaw(dbPath)).toBe(0); // fixture really is pre-floor
+
+    const stderr = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const seen: MigrationInfo[] = [];
+    setMigrationListener((info) => seen.push(info));
+
+    openForWrite(dbPath).close();
+
+    expect(readUserVersionRaw(dbPath)).toBe(BOARD_SCHEMA_VERSION);
+    expect(readApplicationIdRaw(dbPath)).toBe(BOARD_SCHEMA_FLOOR);
+    expect(seen).toEqual([
+      { dbPath, fromVersion: 2, toVersion: BOARD_SCHEMA_VERSION, floor: BOARD_SCHEMA_FLOOR },
+    ]);
+    const errText = stderr.mock.calls.map((c) => String(c[0])).join('\n');
+    expect(errText).toContain('migrated board.db from schema v2 to v3');
+
+    // A second open migrates nothing and fires nothing.
+    stderr.mockClear();
+    openForWrite(dbPath).close();
+    expect(seen).toHaveLength(1);
+    expect(stderr).not.toHaveBeenCalled();
+  });
+
+  it('a listener that throws does not break the write — the migration commits and the failure is loud on stderr', () => {
+    const root = makeTempDir();
+    const dbPath = join(root, 'board.db');
+    seedLegacyV2Board(dbPath);
+
+    const stderr = vi.spyOn(console, 'error').mockImplementation(() => {});
+    setMigrationListener(() => {
+      throw new Error('listener boom');
+    });
+
+    const db = openForWrite(dbPath); // must not throw
+    db.close();
+    expect(readUserVersionRaw(dbPath)).toBe(BOARD_SCHEMA_VERSION);
+    const errText = stderr.mock.calls.map((c) => String(c[0])).join('\n');
+    expect(errText).toContain('migration listener failed');
+    expect(errText).toContain('listener boom');
+  });
+
+  it('a current-version board missing the floor (written before the floor existed) is self-healed on next write — without firing the listener or touching user_version', () => {
+    const root = makeTempDir();
+    const dbPath = join(root, 'board.db');
+    openForWrite(dbPath).close();
+    forceApplicationId(dbPath, 0); // stand-in for a pre-floor v3 board
+
+    const seen: MigrationInfo[] = [];
+    setMigrationListener((info) => seen.push(info));
+    openForWrite(dbPath).close();
+
+    expect(readUserVersionRaw(dbPath)).toBe(BOARD_SCHEMA_VERSION);
+    expect(readApplicationIdRaw(dbPath)).toBe(BOARD_SCHEMA_FLOOR);
+    expect(seen).toHaveLength(0); // a stamp heal is NOT a migration
+  });
+
+  it('openForRead NEVER stamps the floor — a pre-floor current board read stays at application_id 0', () => {
+    const root = makeTempDir();
+    const dbPath = join(root, 'board.db');
+    openForWrite(dbPath).close();
+    forceApplicationId(dbPath, 0);
+
+    const db = openForRead(dbPath);
+    expect(db).not.toBeNull();
+    db?.close();
+    expect(readApplicationIdRaw(dbPath)).toBe(0);
+  });
+
+  it('a newer board whose stamped floor COVERS this binary opens (read AND write) with a loud degraded warning, and its stamps are left alone', () => {
+    const root = makeTempDir();
+    const dbPath = join(root, 'board.db');
+    openForWrite(dbPath).close();
+    // Fabricate the NEXT bump: v(BOARD_SCHEMA_VERSION+1) board, whose writer
+    // certified additive-only back to our version — exactly the shape a
+    // future v4 binary would stamp if its rung is additive.
+    forceUserVersion(dbPath, BOARD_SCHEMA_VERSION + 1);
+    forceApplicationId(dbPath, BOARD_SCHEMA_VERSION);
+
+    const stderr = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const read = openForRead(dbPath);
+    expect(read).not.toBeNull();
+    read?.close();
+    const write = openForWrite(dbPath);
+    write.close();
+
+    // The warning fired, and only ONCE for the process despite two opens.
+    const warnings = stderr.mock.calls.map((c) => String(c[0])).filter((m) => m.includes('opening DEGRADED'));
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]).toContain(`user_version ${String(BOARD_SCHEMA_VERSION + 1)}`);
+
+    // A floor-accepted FOREIGN board keeps its own writer's stamps — this
+    // binary must neither downgrade the version nor re-stamp the floor.
+    expect(readUserVersionRaw(dbPath)).toBe(BOARD_SCHEMA_VERSION + 1);
+    expect(readApplicationIdRaw(dbPath)).toBe(BOARD_SCHEMA_VERSION);
+  });
+
+  it('a newer board whose stamped floor is ABOVE this binary refuses, loudly naming the floor, on both open paths', () => {
+    const root = makeTempDir();
+    const dbPath = join(root, 'board.db');
+    openForWrite(dbPath).close();
+    forceUserVersion(dbPath, BOARD_SCHEMA_VERSION + 1);
+    forceApplicationId(dbPath, BOARD_SCHEMA_VERSION + 1); // certified nothing older can read it
+
+    let writeErr: unknown;
+    try {
+      openForWrite(dbPath);
+    } catch (err) {
+      writeErr = err;
+    }
+    expect(writeErr).toBeInstanceOf(WorkStateError);
+    expect((writeErr as WorkStateError).code).toBe('SCHEMA_VERSION');
+    expect((writeErr as WorkStateError).message).toContain('compatibility floor');
+
+    let readErr: unknown;
+    try {
+      openForRead(dbPath);
+    } catch (err) {
+      readErr = err;
+    }
+    expect(readErr).toBeInstanceOf(WorkStateError);
+    expect((readErr as WorkStateError).code).toBe('SCHEMA_VERSION');
   });
 });

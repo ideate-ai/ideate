@@ -24,7 +24,7 @@
 // sibling test file's own established pattern).
 
 import { execFileSync, spawnSync } from 'node:child_process';
-import { chmodSync, existsSync, mkdtempSync, rmSync } from 'node:fs';
+import { chmodSync, existsSync, mkdtempSync, readdirSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -414,12 +414,23 @@ describe('CLI transport (cli/ideate-work.ts) — complete produces exactly one w
 
     // `create`/`claim` above already triggered loadConfig's lazy-init, which
     // creates the record directory (see config/ideate-config.ts) — force
-    // every write under it to fail.
+    // every write under it to fail. Recursively: the board-migration signal
+    // (schema.ts's listener, fired by `create`'s first-board-write migration)
+    // may already have appended a record, creating the YYYY/MM shard dirs —
+    // and chmod'ing only the ROOT leaves those existing shard dirs writable,
+    // so the completion-record append would succeed and the failure path
+    // this test forces would never run.
     const config = realConfig();
     const dir = recordPath(config, root);
     expect(existsSync(dir)).toBe(true);
-    chmodSync(dir, 0o500); // read+execute only: mkdir of the shard fails
-    permRestores.push(dir);
+    const chmodTree = (d: string): void => {
+      chmodSync(d, 0o500); // read+execute only: file creation fails
+      permRestores.push(d);
+      for (const entry of readdirSync(d, { withFileTypes: true })) {
+        if (entry.isDirectory()) chmodTree(join(d, entry.name));
+      }
+    };
+    chmodTree(dir);
 
     const result = runCliRaw(
       ['complete', '--id', created.id, '--token', String(claimed.claim.claim_token), '--note', 'done despite failure'],

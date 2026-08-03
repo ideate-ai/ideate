@@ -134,6 +134,8 @@ import type { ToolRegistrar } from '../server.js';
 import { claim, complete, release, renew } from './claims.js';
 import { createRealCompletionRecordWriter } from './completion-record.js';
 import type { CompletionRecordWriter } from './completion-record.js';
+import { setMigrationListener } from './schema.js';
+import { createMigrationListener } from './migration-signal.js';
 import { checkExpiry, sweepBoard } from './expiry.js';
 import { primeOnClaim } from './priming-hook.js';
 import {
@@ -351,6 +353,10 @@ export function createWorkStateToolsRegistrar(options: WorkStateToolsOptions = {
       const store = new WorkStateStore(dbPath, clock, resolveId);
       const verbs = new WorkStateVerbs(store, clock);
       const sessionId = options.sessionId ?? `mcp-${createUlidGenerator(clock)()}`;
+      // Durable migration signal (schema.ts's stderr line is loud but
+      // evaporates): any write THIS server triggers that migrates the
+      // board lands in the project's process record.
+      setMigrationListener(createMigrationListener({ config, projectRoot, telemetry, clock, capturePoint: 'mcp:work-state', sessionId }));
       // The completion-record writer, built ONCE from the same
       // project root/telemetry/clock this context already resolved, so
       // `.ideate.json` is not re-read on every `work_complete` call.

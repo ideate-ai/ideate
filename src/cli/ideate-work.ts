@@ -53,6 +53,8 @@ import {
 import { claim, complete, release, renew } from '../work-state/claims.js';
 import { createRealCompletionRecordWriter } from '../work-state/completion-record.js';
 import type { CompletionRecordWriter } from '../work-state/completion-record.js';
+import { setMigrationListener } from '../work-state/schema.js';
+import { createMigrationListener } from '../work-state/migration-signal.js';
 import { checkExpiry, sweepBoard } from '../work-state/expiry.js';
 import { primeOnClaim } from '../work-state/priming-hook.js';
 import {
@@ -250,6 +252,10 @@ function buildContext(projectRoot: string): CliContext {
   const store = new WorkStateStore(dbPath, clock, resolveId);
   const verbs = new WorkStateVerbs(store, clock);
   const sessionId = `cli-${createUlidGenerator(clock)()}`;
+  // Durable migration signal (schema.ts's stderr line is loud but
+  // evaporates): any write THIS invocation triggers that migrates the
+  // board lands in the project's process record.
+  setMigrationListener(createMigrationListener({ config, projectRoot, telemetry, clock, capturePoint: 'cli:ideate-work', sessionId }));
   // The completion-record writer, built from the SAME project
   // root/telemetry/clock this context already resolved.
   const completionRecordWriter = createRealCompletionRecordWriter(projectRoot, telemetry, clock);

@@ -100,6 +100,89 @@ export const BUSY_TIMEOUT_MS = 5000;
 export const BOARD_SCHEMA_VERSION = 3;
 
 /**
+ * The compatibility FLOOR: the oldest binary schema version verified safe to
+ * BOTH read and write a board at {@link BOARD_SCHEMA_VERSION}. Stamped into
+ * SQLite's spare header field `PRAGMA application_id` (a free 4-byte
+ * application-defined integer — no table, no rung, preserved by VACUUM and
+ * the backup API) so the tolerance claim travels INSIDE the board file and a
+ * future older binary can evaluate it without knowing anything about
+ * versions after its own.
+ *
+ * Why a floor, stated plainly: a `user_version` above a binary's
+ * BOARD_SCHEMA_VERSION used to be an unconditional hard refusal
+ * ({@link checkSchemaVersion}), on the conservative assumption that a newer
+ * board is unreadable. Verified against the SHIPPED v2 binary (the installed
+ * 3.0.0 build, not from memory): every v2->v3 difference is an additive,
+ * metadata-only `ALTER TABLE ... ADD COLUMN`, and the v2 binary's SQL is
+ * column-tolerant in all four directions — reads use `SELECT *` but map rows
+ * by named property (unknown column ignored), INSERT uses an explicit column
+ * list (the new column's DEFAULT fills it), UPDATE uses an explicit SET list
+ * (never touches the new column), and the events table is unchanged. So the
+ * lockout was a policy choice, not a data necessity, and a floor of 2 is
+ * CERTIFIED for a v3 board. (One honest degradation: a floored older binary
+ * cannot see the `"references"` forward edges — a superseded item and its
+ * replacement both look live to it. Working-but-degraded, versus dead.)
+ *
+ * THE RULE FOR THE NEXT RUNG (P-40, same change as the rung): whoever adds
+ * v(N+1) must re-derive this floor with the SAME verification — read the
+ * oldest in-field binary's actual SQL and confirm named-property row
+ * mapping, explicit INSERT column lists, and explicit UPDATE SET lists
+ * against the new column. If every binary >= the current floor still
+ * tolerates the board, the floor STAYS; otherwise it rises to the oldest
+ * version that remains correct; if no older version is correct, the floor
+ * equals the new version (no window — the hard refusal returns). A rung
+ * that moves the floor to the current version is exactly the "non-additive,
+ * explicit-upgrade" case: say so loudly in the rung's commit.
+ */
+export const BOARD_SCHEMA_FLOOR = 2;
+
+/**
+ * A migration that actually ran, reported to the registered listener
+ * ({@link setMigrationListener}) so a composition root can make it DURABLE —
+ * the stderr line {@link openForWrite} always emits is loud but evaporates;
+ * the record the composition root appends from this callback is what a later
+ * "why does the older plugin refuse this board?" investigation finds.
+ */
+export interface MigrationInfo {
+  dbPath: string;
+  fromVersion: number;
+  toVersion: number;
+  floor: number;
+}
+
+export type MigrationListener = (info: MigrationInfo) => void;
+
+/**
+ * Process-scoped migration listener, registered ONCE by each composition
+ * root (the CLI per invocation, the MCP server per process). Module-level by
+ * design: the alternative — threading a callback through every one of the
+ * ten `openForWrite` call sites across store/claims/expiry/verbs — is wider
+ * plumbing for the same reach, and the transports are exactly process-scoped
+ * (one listener per process is never ambiguous). With NO listener registered
+ * the migration is still loud on stderr; the listener only adds durability.
+ */
+let migrationListener: MigrationListener | undefined;
+
+/** Register (or clear, with `undefined`) the process's migration listener. */
+export function setMigrationListener(listener: MigrationListener | undefined): void {
+  migrationListener = listener;
+}
+
+/**
+ * The floor-accept warning fires ONCE per process, not per open: the MCP
+ * transport opens a fresh connection per verb, so per-open would spam the
+ * server log into noise (and noise is how a loud signal stops being loud).
+ * Once per process is exactly once per CLI invocation and once per MCP
+ * server lifetime. Reset by tests via {@link resetFloorAcceptWarning}.
+ */
+let floorAcceptWarned = false;
+
+/** Test-only: re-arm the once-per-process floor-accept warning. */
+export function resetFloorAcceptWarning(): void {
+  floorAcceptWarned = false;
+}
+
+/**
  * `items`: one row per work item. `depends_on` is stored as a JSON array of
  * ULID strings (store.ts owns the (de)serialization — this module is DDL
  * only). `claim_token_counter` is the fencing-token monotonicity source: a
@@ -194,23 +277,35 @@ function readUserVersion(db: DatabaseSync): number {
   return row.user_version;
 }
 
+/** Read the file's compatibility floor (`PRAGMA application_id`; 0 = never
+ *  stamped, i.e. the board's writer certified nothing about older readers). */
+function readApplicationId(db: DatabaseSync): number {
+  const row = db.prepare('PRAGMA application_id').get() as { application_id: number };
+  return row.application_id;
+}
+
 /**
  * Enforce the one rule this schema version understands: a file stamped
  * `user_version` at or below {@link BOARD_SCHEMA_VERSION} is acceptable; a
- * file stamped ABOVE it is a typed, loud failure — never a silent misread:
+ * file stamped ABOVE it is acceptable ONLY through the compatibility floor
+ * its writer stamped, and is otherwise a typed, loud failure — never a
+ * silent misread:
  *
  * - `user_version` > {@link BOARD_SCHEMA_VERSION}: the file was written by a
- *   NEWER plugin than this one. Mirrors `ideate-config.ts`'s
- *   `schema_version` check almost verbatim ("newer than this ideate
- *   understands") — same honest-failure posture, same wording style. A v2
- *   board opened by a v1 plugin throws HERE, on the older plugin's side —
- *   that is the intended honest failure, not a silent misread of the
- *   parent_id column.
+ *   NEWER plugin than this one. If its stamped floor ({@link
+ *   BOARD_SCHEMA_FLOOR} — the writer's certified "additive-only back to
+ *   here") covers this binary's version, open anyway and warn LOUDLY (once
+ *   per process): this binary predates the board and runs degraded —
+ *   anything the newer schema added (e.g. v3's `"references"` forward
+ *   edges) is invisible to it. If the floor is absent (0) or ABOVE this
+ *   binary's version, throw HERE, on the older plugin's side — the intended
+ *   honest failure, not a silent misread. Mirrors `ideate-config.ts`'s
+ *   `schema_version` check ("newer than this ideate understands") — same
+ *   honest-failure posture, same wording style.
  * - `user_version` <= {@link BOARD_SCHEMA_VERSION}: acceptable. `0` (unstamped
  *   pre-versioning) and any stamped version below the current one are
  *   migrated FORWARD by {@link openForWrite}'s additive ladder (the rungs are
- *   v1->v2 and v2->v3). This is the difference from the pre-v2 shape,
- *   which had no ladder and rejected any non-zero version below current.
+ *   v1->v2 and v2->v3).
  *
  * Called on EVERY open (read and write) — this is the "a newer board file
  * against an older plugin is silently misread" half of the gap this module
@@ -221,10 +316,26 @@ function readUserVersion(db: DatabaseSync): number {
  * current shape on the next {@link openForWrite}; the version check here
  * merely refuses to fail loud on a file a write WOULD migrate.
  */
-function checkSchemaVersion(userVersion: number): void {
+function checkSchemaVersion(db: DatabaseSync, userVersion: number): void {
   if (userVersion > BOARD_SCHEMA_VERSION) {
+    const floor = readApplicationId(db);
+    if (floor !== 0 && floor <= BOARD_SCHEMA_VERSION) {
+      if (!floorAcceptWarned) {
+        floorAcceptWarned = true;
+        console.error(
+          `work-state: board.db has user_version ${String(userVersion)}, newer than this ideate understands ` +
+            `(${String(BOARD_SCHEMA_VERSION)}), but its writer stamped a compatibility floor of ${String(floor)} — ` +
+            'opening DEGRADED: anything the newer schema added is invisible to this binary. ' +
+            'Update the ideate plugin to see the full board.',
+        );
+      }
+      return;
+    }
     throw new WorkStateError('SCHEMA_VERSION',
-      `board.db has user_version ${String(userVersion)}, newer than this ideate understands (${String(BOARD_SCHEMA_VERSION)})`,
+      `board.db has user_version ${String(userVersion)}, newer than this ideate understands (${String(BOARD_SCHEMA_VERSION)})` +
+        (floor === 0
+          ? ', and its writer stamped no compatibility floor'
+          : `, and its stamped compatibility floor (${String(floor)}) is newer than this binary`),
     );
   }
   // userVersion in [0, BOARD_SCHEMA_VERSION]: fine. Below-current versions are
@@ -303,11 +414,40 @@ export function openForWrite(dbPath: string): DatabaseSync {
   const db = new DatabaseSync(dbPath);
   applyPragmas(db);
   const userVersion = readUserVersion(db);
-  checkSchemaVersion(userVersion);
+  checkSchemaVersion(db, userVersion);
   ensureSchema(db);
   if (userVersion < BOARD_SCHEMA_VERSION) {
     migrateSchema(db);
     db.exec(`PRAGMA user_version = ${String(BOARD_SCHEMA_VERSION)}`);
+    db.exec(`PRAGMA application_id = ${String(BOARD_SCHEMA_FLOOR)}`);
+    // LOUD at the moment the one-way door closes (P-45): a migration is
+    // triggered incidentally by whichever binary writes first, and the
+    // person hurt by it is not the person who triggered it — so the
+    // crossing announces itself on stderr here AND, via the registered
+    // listener, durably in the project's process record.
+    console.error(
+      `work-state: migrated board.db from schema v${String(userVersion)} to v${String(BOARD_SCHEMA_VERSION)} ` +
+        `(compatibility floor v${String(BOARD_SCHEMA_FLOOR)} stamped — binaries >= v${String(BOARD_SCHEMA_FLOOR)} with the floor check keep working). ` +
+        'Binaries older than the floor will refuse this board; update the ideate plugin everywhere that opens it.',
+    );
+    if (migrationListener !== undefined) {
+      try {
+        migrationListener({ dbPath, fromVersion: userVersion, toVersion: BOARD_SCHEMA_VERSION, floor: BOARD_SCHEMA_FLOOR });
+      } catch (err) {
+        // The migration itself is already committed; a listener failure
+        // must not break the write that triggered it. Loud fallback.
+        console.error(
+          `work-state: migration listener failed for ${dbPath}: ${err instanceof Error ? err.message : String(err)}`,
+        );
+      }
+    }
+  } else if (userVersion === BOARD_SCHEMA_VERSION && readApplicationId(db) !== BOARD_SCHEMA_FLOOR) {
+    // Self-heal: a board written before the floor existed (application_id
+    // 0) gets stamped on its next write, so the floor reaches every active
+    // board without a sweep. A floor-accepted FOREIGN board (user_version
+    // above ours) is deliberately left alone — its stamps belong to its
+    // own writer.
+    db.exec(`PRAGMA application_id = ${String(BOARD_SCHEMA_FLOOR)}`);
   }
   return db;
 }
@@ -338,6 +478,6 @@ export function openForRead(dbPath: string): DatabaseSync | null {
   const { DatabaseSync } = requireSqliteModule();
   const db = new DatabaseSync(dbPath, { readOnly: true });
   db.exec(`PRAGMA busy_timeout = ${String(BUSY_TIMEOUT_MS)}`);
-  checkSchemaVersion(readUserVersion(db));
+  checkSchemaVersion(db, readUserVersion(db));
   return db;
 }
