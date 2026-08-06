@@ -124,12 +124,14 @@ describe('createMigrationListener — the durable half of the migration signal',
 
     const found = boardMigrationRecords(projectRoot);
     expect(found).toHaveLength(1);
-    expect(found[0].scope).toBe('board-migration');
-    expect(found[0].claim).toContain('v2 to v3');
-    expect(found[0].claim).toContain('floor stamped at v2');
-    expect(found[0].claim).toContain('test:migration-signal');
-    expect(found[0].verification_anchor).toBe(dbPath);
-    expect(found[0].source.capture_point).toBe('test:migration-signal');
+    const record = found[0];
+    if (record === undefined) throw new Error('board-migration record missing');
+    expect(record.scope).toBe('board-migration');
+    expect(record.claim).toContain('v2 to v3');
+    expect(record.claim).toContain('floor stamped at v2');
+    expect(record.claim).toContain('test:migration-signal');
+    expect(record.verification_anchor).toBe(dbPath);
+    expect(record.source.capture_point).toBe('test:migration-signal');
   });
 
   it('a failing record path does NOT break the write — the migration commits and the failure is loud on stderr', () => {
@@ -193,7 +195,9 @@ describe('the shipped CLI path (P-50): bin/ideate-work against a real v2 board',
 
     const found = boardMigrationRecords(projectRoot);
     expect(found).toHaveLength(1);
-    expect(found[0].claim).toContain('v2 to v3');
-    expect(found[0].source.capture_point).toBe('cli:ideate-work');
+    const record = found[0];
+    if (record === undefined) throw new Error('board-migration record missing');
+    expect(record.claim).toContain('v2 to v3');
+    expect(record.source.capture_point).toBe('cli:ideate-work');
   });
 });
