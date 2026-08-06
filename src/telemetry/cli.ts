@@ -61,6 +61,11 @@ export function renderReport(report: TelemetryReport, stateDir: string): string 
     ['frontier_size (samples)', num(report.frontierSize.overall.samples)],
     ['capture_write_failed', num(report.captureWriteFailed.total)],
     ['redactions', num(report.redactions.total)],
+    // Rendered because this counter IS the occurrence record for degraded
+    // board opens: P-45 puts one durable record per distinct condition in the
+    // process record and the COUNT here, so a counter nobody can read would
+    // make that split a demotion rather than a routing decision.
+    ['board_degraded_opens', num(report.boardDegradedOpens.total)],
   ];
   const width = Math.max(...rows.map(([label]) => label.length)) + 2;
   lines.push(`  ${pad('counter', width)}total`);
@@ -74,6 +79,9 @@ export function renderReport(report: TelemetryReport, stateDir: string): string 
   breakdown(lines, 'priming.requested by source', report.priming.requested.bySource);
   breakdown(lines, 'priming.requested by session', report.priming.requested.bySession);
   breakdown(lines, 'kg_unreachable by session', report.kgUnreachable.bySession);
+  // By board path, because the question a reader has when this counter is
+  // non-zero is WHICH board an out-of-date binary has been reading blind.
+  breakdown(lines, 'board_degraded_opens by board', report.boardDegradedOpens.byPath);
 
   lines.push('', `  frontier_size: ${frontierLine(report.frontierSize.overall)}`);
   const frontierSessions = Object.keys(report.frontierSize.bySession).sort();

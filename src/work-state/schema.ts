@@ -169,11 +169,70 @@ export function setMigrationListener(listener: MigrationListener | undefined): v
 }
 
 /**
+ * A degraded open — an OLDER binary opening a NEWER board whose stamped
+ * floor covers it (see {@link checkSchemaVersion}) — reported to the
+ * registered listener ({@link setDegradedOpenListener}) so a composition
+ * root can make THIS crossing durable too, exactly as {@link MigrationInfo}
+ * does for a write-migration. The two crossings are mirror images (an
+ * older binary silently working from a partial view is the same "nothing
+ * points back at the moment it happened" gap {@link MigrationInfo}'s doc
+ * comment names), so this carries the same shape of fact: what this binary
+ * understands, what the board is actually stamped at, the floor that let it
+ * proceed anyway, and where.
+ *
+ * Unlike a migration (a one-time, one-way-door event on a single write),
+ * a degraded open recurs on EVERY open this binary makes against the board
+ * for as long as it keeps running against it — {@link checkSchemaVersion}
+ * runs on every `openForRead`/`openForWrite` call, and every read view in
+ * store.ts opens a fresh connection per call (no cross-call cache). So this
+ * listener, unlike {@link migrationListener}, is invoked on every
+ * degraded-accepting call, not gated behind the once-per-process flag that
+ * guards the console line ({@link floorAcceptWarned}) — the two dedup
+ * decisions are independent BY DESIGN, even though (per P-45's amended
+ * durability-per-condition rule) both now land on "once per process" for a
+ * fixed board: the log line is deduplicated here, unconditionally, purely to
+ * keep it readable; the DURABLE record's dedup is the caller's decision
+ * (migration-signal.ts's `createDegradedOpenListener`), keyed on the
+ * (dbPath, boardVersion, floor) CONDITION rather than gated on this flag, so
+ * a long-lived process that later observes a different board — or the same
+ * board at a changed version/floor — still gets a fresh record. This
+ * listener is invoked on every call regardless, both so that caller can
+ * detect the condition changing and so a telemetry counter can tally every
+ * occurrence even where the durable record does not.
+ */
+export interface DegradedOpenInfo {
+  dbPath: string;
+  /** This binary's own understanding — {@link BOARD_SCHEMA_VERSION}. */
+  binaryVersion: number;
+  /** The board's actual stamped `PRAGMA user_version` — newer than `binaryVersion`. */
+  boardVersion: number;
+  /** The board's stamped compatibility floor (`PRAGMA application_id`) that let this binary open it anyway. */
+  floor: number;
+}
+
+export type DegradedOpenListener = (info: DegradedOpenInfo) => void;
+
+/**
+ * Process-scoped degraded-open listener — same registration shape as
+ * {@link migrationListener}, registered once per composition root.
+ */
+let degradedOpenListener: DegradedOpenListener | undefined;
+
+/** Register (or clear, with `undefined`) the process's degraded-open listener. */
+export function setDegradedOpenListener(listener: DegradedOpenListener | undefined): void {
+  degradedOpenListener = listener;
+}
+
+/**
  * The floor-accept warning fires ONCE per process, not per open: the MCP
  * transport opens a fresh connection per verb, so per-open would spam the
  * server log into noise (and noise is how a loud signal stops being loud).
  * Once per process is exactly once per CLI invocation and once per MCP
  * server lifetime. Reset by tests via {@link resetFloorAcceptWarning}.
+ *
+ * This gates ONLY the console line — {@link degradedOpenListener} is called
+ * on every occurrence regardless (see {@link DegradedOpenInfo}'s doc
+ * comment for why the two must not share a gate).
  */
 let floorAcceptWarned = false;
 
@@ -316,7 +375,7 @@ function readApplicationId(db: DatabaseSync): number {
  * current shape on the next {@link openForWrite}; the version check here
  * merely refuses to fail loud on a file a write WOULD migrate.
  */
-function checkSchemaVersion(db: DatabaseSync, userVersion: number): void {
+function checkSchemaVersion(db: DatabaseSync, userVersion: number, dbPath: string): void {
   if (userVersion > BOARD_SCHEMA_VERSION) {
     const floor = readApplicationId(db);
     if (floor !== 0 && floor <= BOARD_SCHEMA_VERSION) {
@@ -328,6 +387,23 @@ function checkSchemaVersion(db: DatabaseSync, userVersion: number): void {
             'opening DEGRADED: anything the newer schema added is invisible to this binary. ' +
             'Update the ideate plugin to see the full board.',
         );
+      }
+      // Invoked EVERY time, not gated behind floorAcceptWarned — see
+      // DegradedOpenInfo's doc comment: the listener needs every occurrence
+      // (for its telemetry counter and to detect the condition changing),
+      // even though its own durable-record dedup now lands on roughly the
+      // same "once per process" cadence as the log line, for a different
+      // reason (per-condition, not per-call).
+      if (degradedOpenListener !== undefined) {
+        try {
+          degradedOpenListener({ dbPath, binaryVersion: BOARD_SCHEMA_VERSION, boardVersion: userVersion, floor });
+        } catch (err) {
+          // Best-effort, same posture as the migration listener below: the
+          // open itself must not fail because the durable copy failed.
+          console.error(
+            `work-state: degraded-open listener failed for ${dbPath}: ${err instanceof Error ? err.message : String(err)}`,
+          );
+        }
       }
       return;
     }
@@ -414,7 +490,7 @@ export function openForWrite(dbPath: string): DatabaseSync {
   const db = new DatabaseSync(dbPath);
   applyPragmas(db);
   const userVersion = readUserVersion(db);
-  checkSchemaVersion(db, userVersion);
+  checkSchemaVersion(db, userVersion, dbPath);
   ensureSchema(db);
   if (userVersion < BOARD_SCHEMA_VERSION) {
     migrateSchema(db);
@@ -478,6 +554,6 @@ export function openForRead(dbPath: string): DatabaseSync | null {
   const { DatabaseSync } = requireSqliteModule();
   const db = new DatabaseSync(dbPath, { readOnly: true });
   db.exec(`PRAGMA busy_timeout = ${String(BUSY_TIMEOUT_MS)}`);
-  checkSchemaVersion(db, readUserVersion(db));
+  checkSchemaVersion(db, readUserVersion(db), dbPath);
   return db;
 }

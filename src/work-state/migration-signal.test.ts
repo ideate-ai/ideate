@@ -28,9 +28,10 @@ import type { IdeateConfigV3 } from '../config/ideate-config.js';
 import type { Clock } from '../record/id.js';
 import { RecordStore } from '../record/store.js';
 import { TelemetryCounters } from '../telemetry/counters.js';
+import { reportFromDir } from '../telemetry/report.js';
 
-import { createMigrationListener } from './migration-signal.js';
-import { openForWrite, setMigrationListener } from './schema.js';
+import { createDegradedOpenListener, createMigrationListener } from './migration-signal.js';
+import { BOARD_SCHEMA_VERSION, openForRead, openForWrite, resetFloorAcceptWarning, setDegradedOpenListener, setMigrationListener } from './schema.js';
 
 const PLUGIN_DIR = fileURLToPath(new URL('../..', import.meta.url));
 const BIN_PATH = join(PLUGIN_DIR, 'bin', 'ideate-work');
@@ -44,6 +45,8 @@ function makeTempDir(prefix: string): string {
 
 afterEach(() => {
   setMigrationListener(undefined);
+  setDegradedOpenListener(undefined);
+  resetFloorAcceptWarning();
   vi.restoreAllMocks();
   while (tempDirs.length > 0) {
     const dir = tempDirs.pop();
@@ -100,6 +103,38 @@ function boardMigrationRecords(projectRoot: string): { kind: string; claim: stri
   return records
     .readViews()
     .filter((r) => r.kind === 'board-migration');
+}
+
+function boardDegradedOpenRecords(projectRoot: string): { kind: string; claim: string; scope: string; verification_anchor: string; source: { capture_point: string } }[] {
+  const records = new RecordStore(testConfig(), projectRoot, new TelemetryCounters(join(projectRoot, '.ideate-telemetry'), FIXED_CLOCK), FIXED_CLOCK);
+  return records
+    .readViews()
+    .filter((r) => r.kind === 'board-degraded-open');
+}
+
+/** The occurrence tally — counter 8, `board_degraded_opens` — read back from
+ *  the same `.ideate-telemetry` dir the composition root writes to. */
+function boardDegradedOpenCount(projectRoot: string): number {
+  return reportFromDir(join(projectRoot, '.ideate-telemetry')).report.boardDegradedOpens.total;
+}
+
+/** Force `PRAGMA user_version` to an arbitrary value — fixture fabrication,
+ *  mirrors schema.test.ts's helper of the same name (duplicated so this
+ *  file stands alone). */
+function forceUserVersion(dbPath: string, version: number): void {
+  const sqliteModule = process.getBuiltinModule('node:sqlite') as typeof import('node:sqlite');
+  const db = new sqliteModule.DatabaseSync(dbPath);
+  db.exec(`PRAGMA user_version = ${String(version)}`);
+  db.close();
+}
+
+/** Force `PRAGMA application_id` (the compatibility-floor stamp) — mirrors
+ *  schema.test.ts's helper of the same name. */
+function forceApplicationId(dbPath: string, floor: number): void {
+  const sqliteModule = process.getBuiltinModule('node:sqlite') as typeof import('node:sqlite');
+  const db = new sqliteModule.DatabaseSync(dbPath);
+  db.exec(`PRAGMA application_id = ${String(floor)}`);
+  db.close();
 }
 
 describe('createMigrationListener — the durable half of the migration signal', () => {
@@ -161,6 +196,212 @@ describe('createMigrationListener — the durable half of the migration signal',
 
     const errText = stderr.mock.calls.map((c) => String(c[0])).join('\n');
     expect(errText).toContain('board-migration');
+  });
+});
+
+// The mirror-image crossing: an OLDER binary opens a NEWER, floor-accepted
+// board. This bridge makes it durable — but, per the AMENDED P-45 (governing
+// decision 01KZCPXJK1WX9BK51W8BQX4DFK), durability is per CONDITION (board
+// path + board version + floor), not per call: a degraded open is the
+// steady state, not a rare crossing, so the record fires on the first
+// observation of a distinct condition and re-fires only when the tuple
+// changes. The occurrence count beyond the first is carried by the
+// `board_degraded_opens` telemetry counter, which increments on every call.
+describe('createDegradedOpenListener — the durable half of the degraded-open signal', () => {
+  it('a degraded open appends a board-degraded-open record naming the binary version, board version, floor, and board path', () => {
+    const projectRoot = makeTempDir('ideate-degraded-open-signal-');
+    const dbPath = join(projectRoot, '.ideate-work', 'board.db');
+    openForWrite(dbPath).close();
+    forceUserVersion(dbPath, BOARD_SCHEMA_VERSION + 1);
+    forceApplicationId(dbPath, BOARD_SCHEMA_VERSION);
+
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    setDegradedOpenListener(
+      createDegradedOpenListener({
+        config: testConfig(),
+        projectRoot,
+        telemetry: new TelemetryCounters(join(projectRoot, '.ideate-telemetry'), FIXED_CLOCK),
+        clock: FIXED_CLOCK,
+        capturePoint: 'test:degraded-open-signal',
+        sessionId: 'test-session',
+      }),
+    );
+
+    openForRead(dbPath)?.close();
+
+    const found = boardDegradedOpenRecords(projectRoot);
+    expect(found).toHaveLength(1);
+    const record = found[0];
+    if (record === undefined) throw new Error('board-degraded-open record missing');
+    expect(record.scope).toBe('board-degraded-open');
+    expect(record.claim).toContain(`v${String(BOARD_SCHEMA_VERSION)}`); // this binary's version
+    expect(record.claim).toContain(`v${String(BOARD_SCHEMA_VERSION + 1)}`); // the board's version
+    expect(record.claim).toContain('test:degraded-open-signal');
+    expect(record.verification_anchor).toBe(dbPath);
+    expect(record.source.capture_point).toBe('test:degraded-open-signal');
+    // The counter tallies this one occurrence.
+    expect(boardDegradedOpenCount(projectRoot)).toBe(1);
+  });
+
+  it('re-observing the SAME condition in the same process appends no further record — but the counter still increments on every occurrence, and the console line stays suppressed to once per process', () => {
+    const projectRoot = makeTempDir('ideate-degraded-open-repeat-');
+    const dbPath = join(projectRoot, '.ideate-work', 'board.db');
+    openForWrite(dbPath).close();
+    forceUserVersion(dbPath, BOARD_SCHEMA_VERSION + 1);
+    forceApplicationId(dbPath, BOARD_SCHEMA_VERSION);
+
+    const stderr = vi.spyOn(console, 'error').mockImplementation(() => {});
+    setDegradedOpenListener(
+      createDegradedOpenListener({
+        config: testConfig(),
+        projectRoot,
+        telemetry: new TelemetryCounters(join(projectRoot, '.ideate-telemetry'), FIXED_CLOCK),
+        clock: FIXED_CLOCK,
+        capturePoint: 'test:degraded-open-signal',
+        sessionId: 'test-session',
+      }),
+    );
+
+    openForRead(dbPath)?.close();
+    openForRead(dbPath)?.close();
+    openForRead(dbPath)?.close();
+
+    // Same (dbPath, boardVersion, floor) tuple all three times — ONE record.
+    expect(boardDegradedOpenRecords(projectRoot)).toHaveLength(1);
+    // The counter tallies all THREE occurrences, including the two the
+    // durable record suppressed.
+    expect(boardDegradedOpenCount(projectRoot)).toBe(3);
+    // The console warning still fires exactly once for the process.
+    const warnings = stderr.mock.calls.map((c) => String(c[0])).filter((m) => m.includes('opening DEGRADED'));
+    expect(warnings).toHaveLength(1);
+  });
+
+  it('a changed board VERSION on the same path appends a NEW record — the tuple changed', () => {
+    const projectRoot = makeTempDir('ideate-degraded-open-version-change-');
+    const dbPath = join(projectRoot, '.ideate-work', 'board.db');
+    openForWrite(dbPath).close();
+    forceUserVersion(dbPath, BOARD_SCHEMA_VERSION + 1);
+    forceApplicationId(dbPath, BOARD_SCHEMA_VERSION);
+
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    setDegradedOpenListener(
+      createDegradedOpenListener({
+        config: testConfig(),
+        projectRoot,
+        telemetry: new TelemetryCounters(join(projectRoot, '.ideate-telemetry'), FIXED_CLOCK),
+        clock: FIXED_CLOCK,
+        capturePoint: 'test:degraded-open-signal',
+        sessionId: 'test-session',
+      }),
+    );
+
+    openForRead(dbPath)?.close();
+    expect(boardDegradedOpenRecords(projectRoot)).toHaveLength(1);
+
+    // The board gets migrated further by some other (newer still) binary —
+    // simulated here by re-stamping the same file to one version higher.
+    forceUserVersion(dbPath, BOARD_SCHEMA_VERSION + 2);
+    openForRead(dbPath)?.close();
+
+    const found = boardDegradedOpenRecords(projectRoot);
+    expect(found).toHaveLength(2);
+    // FIXED_CLOCK means both records share a timestamp, so their relative
+    // order in readViews() is not guaranteed — assert on the SET, not a
+    // position.
+    expect(found.some((r) => r.claim.includes(`v${String(BOARD_SCHEMA_VERSION + 2)}`))).toBe(true);
+    expect(boardDegradedOpenCount(projectRoot)).toBe(2);
+  });
+
+  it('a changed compatibility FLOOR on the same path and version appends a NEW record — the tuple changed', () => {
+    const projectRoot = makeTempDir('ideate-degraded-open-floor-change-');
+    const dbPath = join(projectRoot, '.ideate-work', 'board.db');
+    openForWrite(dbPath).close();
+    forceUserVersion(dbPath, BOARD_SCHEMA_VERSION + 1);
+    forceApplicationId(dbPath, BOARD_SCHEMA_VERSION);
+
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    setDegradedOpenListener(
+      createDegradedOpenListener({
+        config: testConfig(),
+        projectRoot,
+        telemetry: new TelemetryCounters(join(projectRoot, '.ideate-telemetry'), FIXED_CLOCK),
+        clock: FIXED_CLOCK,
+        capturePoint: 'test:degraded-open-signal',
+        sessionId: 'test-session',
+      }),
+    );
+
+    openForRead(dbPath)?.close();
+    expect(boardDegradedOpenRecords(projectRoot)).toHaveLength(1);
+
+    // Same board, same version, but a DIFFERENT stamped floor (still <=
+    // this binary's version, so still an accepted degraded open).
+    forceApplicationId(dbPath, BOARD_SCHEMA_VERSION - 1);
+    openForRead(dbPath)?.close();
+
+    expect(boardDegradedOpenRecords(projectRoot)).toHaveLength(2);
+    expect(boardDegradedOpenCount(projectRoot)).toBe(2);
+  });
+
+  it('a DIFFERENT board path, same version and floor, appends a NEW record — the tuple changed', () => {
+    const projectRoot = makeTempDir('ideate-degraded-open-path-change-');
+    const dbPathA = join(projectRoot, 'board-a.db');
+    const dbPathB = join(projectRoot, 'board-b.db');
+    for (const dbPath of [dbPathA, dbPathB]) {
+      openForWrite(dbPath).close();
+      forceUserVersion(dbPath, BOARD_SCHEMA_VERSION + 1);
+      forceApplicationId(dbPath, BOARD_SCHEMA_VERSION);
+    }
+
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    const listener = createDegradedOpenListener({
+      config: testConfig(),
+      projectRoot,
+      telemetry: new TelemetryCounters(join(projectRoot, '.ideate-telemetry'), FIXED_CLOCK),
+      clock: FIXED_CLOCK,
+      capturePoint: 'test:degraded-open-signal',
+      sessionId: 'test-session',
+    });
+    setDegradedOpenListener(listener);
+
+    openForRead(dbPathA)?.close();
+    openForRead(dbPathA)?.close(); // repeat of A — suppressed
+    openForRead(dbPathB)?.close(); // a genuinely different board — new record
+
+    const found = boardDegradedOpenRecords(projectRoot);
+    expect(found).toHaveLength(2);
+    expect(found.map((r) => r.verification_anchor).sort()).toEqual([dbPathA, dbPathB].sort());
+    expect(boardDegradedOpenCount(projectRoot)).toBe(3);
+  });
+
+  it('a failing record path does NOT break the open — it succeeds and the failure is loud on stderr', () => {
+    const projectRoot = makeTempDir('ideate-degraded-open-signal-fail-');
+    const dbPath = join(projectRoot, '.ideate-work', 'board.db');
+    openForWrite(dbPath).close();
+    forceUserVersion(dbPath, BOARD_SCHEMA_VERSION + 1);
+    forceApplicationId(dbPath, BOARD_SCHEMA_VERSION);
+    // Block the record path: a FILE where the record directory must go.
+    const blockedConfig = { ...testConfig(), record: { path: '.blocked-record' } };
+    writeFileSync(join(projectRoot, '.blocked-record'), 'not a directory');
+
+    const stderr = vi.spyOn(console, 'error').mockImplementation(() => {});
+    setDegradedOpenListener(
+      createDegradedOpenListener({
+        config: blockedConfig,
+        projectRoot,
+        telemetry: new TelemetryCounters(join(projectRoot, '.ideate-telemetry'), FIXED_CLOCK),
+        clock: FIXED_CLOCK,
+        capturePoint: 'test:degraded-open-signal',
+        sessionId: 'test-session',
+      }),
+    );
+
+    const db = openForRead(dbPath); // must not throw
+    expect(db).not.toBeNull();
+    db?.close();
+
+    const errText = stderr.mock.calls.map((c) => String(c[0])).join('\n');
+    expect(errText).toContain('board-degraded-open');
   });
 });
 

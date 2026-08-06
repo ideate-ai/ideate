@@ -76,6 +76,14 @@ export interface TelemetryReport {
     byItem: Record<string, number>;
     bySession: Record<string, number>;
   };
+  /** Counter 8 — degraded board open occurrences, EVERY one (including the
+   *  ones the durable `board-degraded-open` process record deduplicates
+   *  away per condition; see work-state/migration-signal.ts). */
+  boardDegradedOpens: {
+    total: number;
+    byPath: Record<string, number>;
+    bySession: Record<string, number>;
+  };
 }
 
 const EMPTY_FRONTIER: FrontierStats = { samples: 0, min: null, max: null, mean: null, last: null };
@@ -93,6 +101,7 @@ export function emptyReport(): TelemetryReport {
     captureWriteFailed: { total: 0, byPoint: {}, bySession: {}, byReason: {} },
     redactions: { total: 0, events: 0, byPattern: {}, bySession: {} },
     workClaims: { total: 0, byItem: {}, bySession: {} },
+    boardDegradedOpens: { total: 0, byPath: {}, bySession: {} },
   };
 }
 
@@ -142,6 +151,11 @@ export function parseEventLine(line: string): TelemetryEvent | null {
     case 'work_claims':
       if (typeof e.itemId !== 'string') return null;
       return { counter: 'work_claims', itemId: e.itemId, sessionId, at };
+    case 'board_degraded_opens':
+      if (typeof e.dbPath !== 'string') return null;
+      if (typeof e.boardVersion !== 'number' || !Number.isInteger(e.boardVersion)) return null;
+      if (typeof e.floor !== 'number' || !Number.isInteger(e.floor)) return null;
+      return { counter: 'board_degraded_opens', dbPath: e.dbPath, boardVersion: e.boardVersion, floor: e.floor, sessionId, at };
     default:
       return null;
   }
@@ -280,6 +294,13 @@ export function foldReport(events: readonly TelemetryEvent[]): TelemetryReport {
         w.total += 1;
         bump(w.byItem, event.itemId);
         bump(w.bySession, event.sessionId);
+        break;
+      }
+      case 'board_degraded_opens': {
+        const b = report.boardDegradedOpens;
+        b.total += 1;
+        bump(b.byPath, event.dbPath);
+        bump(b.bySession, event.sessionId);
         break;
       }
     }

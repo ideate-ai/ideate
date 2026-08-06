@@ -134,8 +134,8 @@ import type { ToolRegistrar } from '../server.js';
 import { claim, complete, release, renew } from './claims.js';
 import { createRealCompletionRecordWriter } from './completion-record.js';
 import type { CompletionRecordWriter } from './completion-record.js';
-import { setMigrationListener } from './schema.js';
-import { createMigrationListener } from './migration-signal.js';
+import { setDegradedOpenListener, setMigrationListener } from './schema.js';
+import { createDegradedOpenListener, createMigrationListener } from './migration-signal.js';
 import { checkExpiry, sweepBoard } from './expiry.js';
 import { primeOnClaim } from './priming-hook.js';
 import {
@@ -357,6 +357,11 @@ export function createWorkStateToolsRegistrar(options: WorkStateToolsOptions = {
       // evaporates): any write THIS server triggers that migrates the
       // board lands in the project's process record.
       setMigrationListener(createMigrationListener({ config, projectRoot, telemetry, clock, capturePoint: 'mcp:work-state', sessionId }));
+      // Durable degraded-open signal — the mirror-image crossing: if THIS
+      // server is the older binary opening a newer, floor-accepted board,
+      // every open (not just the first) lands in the project's process
+      // record too, same reasoning as the migration signal above.
+      setDegradedOpenListener(createDegradedOpenListener({ config, projectRoot, telemetry, clock, capturePoint: 'mcp:work-state', sessionId }));
       // The completion-record writer, built ONCE from the same
       // project root/telemetry/clock this context already resolved, so
       // `.ideate.json` is not re-read on every `work_complete` call.

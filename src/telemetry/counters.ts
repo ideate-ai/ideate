@@ -3,7 +3,7 @@
 // Native telemetry from day one, ON BY DEFAULT (no opt-in flag exists in this
 // API), so the same facts are a dashboard read, not an investigation.
 //
-// Exactly seven counters — a closed set (COUNTER_NAMES):
+// Exactly eight counters — a closed set (COUNTER_NAMES):
 //   1. capture_fired        — capture-point firing counts (per point, per session)
 //   2. priming              — priming requests and their usefulness signals
 //   3. kg_unreachable       — KG unreachability rate (fail-open degradation, measured)
@@ -19,6 +19,14 @@
 //                             `work_claim` fires this, whether or not
 //                             claim-time priming is enabled; see
 //                             work-state/priming-hook.ts.
+//   8. board_degraded_opens — every degraded board open (an older binary
+//                             opening a newer, floor-accepted board), per
+//                             occurrence — including the ones the durable
+//                             `board-degraded-open` process record
+//                             deduplicates away (P-45: durability is per
+//                             CONDITION, not per call; this counter is where
+//                             the per-call occurrence count still lives). See
+//                             work-state/migration-signal.ts.
 //
 // `kg_unreachable` and `frontier_size` have no live firing site in this phase
 // — deliberate; their call sites arrive with KG integration.
@@ -55,6 +63,14 @@ export type Clock = () => Date;
  * behavior itself stays mechanically gated off until that eval exists; see
  * work-state/priming-hook.ts). `work_claims` fires on every successful
  * `work_claim`, independent of whether priming is enabled.
+ *
+ * `board_degraded_opens` exists for the same split the record store already
+ * makes for `redactions`: the durable `board-degraded-open` process record
+ * (migration-signal.ts) now fires once per distinct CONDITION (board path +
+ * board version + floor) rather than once per call, so the per-occurrence
+ * tally — a frequent, mechanically identical, low-narrative-value fact —
+ * belongs in this aggregate counter instead. It fires on EVERY degraded
+ * open, including the ones the durable record suppresses.
  */
 export const COUNTER_NAMES = [
   'capture_fired',
@@ -64,6 +80,7 @@ export const COUNTER_NAMES = [
   'capture_write_failed',
   'redactions',
   'work_claims',
+  'board_degraded_opens',
 ] as const;
 
 export type CounterName = (typeof COUNTER_NAMES)[number];
@@ -92,7 +109,8 @@ export type TelemetryEvent =
   | { counter: 'kg_unreachable'; sessionId: string; at: string }
   | { counter: 'frontier_size'; size: number; sessionId: string; at: string }
   | { counter: 'redactions'; pattern: string; count: number; sessionId: string; at: string }
-  | { counter: 'work_claims'; itemId: string; sessionId: string; at: string };
+  | { counter: 'work_claims'; itemId: string; sessionId: string; at: string }
+  | { counter: 'board_degraded_opens'; dbPath: string; boardVersion: number; floor: number; sessionId: string; at: string };
 
 /**
  * The counter library. Constructing it is enabling it: the state directory is
@@ -197,6 +215,18 @@ export class TelemetryCounters {
    */
   workClaimed(itemId: string, sessionId: string): void {
     this.#append({ counter: 'work_claims', itemId, sessionId, at: this.#now() });
+  }
+
+  /**
+   * Counter 8 — a degraded board open occurred (an older binary opening a
+   * newer, floor-accepted board). Fires on EVERY occurrence, regardless of
+   * whether the caller's durable `board-degraded-open` process record was
+   * suppressed as a repeat observation of the same condition — this counter
+   * is the occurrence tally the per-condition dedup moved out of the
+   * narrative record (P-45; work-state/migration-signal.ts).
+   */
+  boardDegradedOpen(dbPath: string, boardVersion: number, floor: number, sessionId: string): void {
+    this.#append({ counter: 'board_degraded_opens', dbPath, boardVersion, floor, sessionId, at: this.#now() });
   }
 
   #now(): string {

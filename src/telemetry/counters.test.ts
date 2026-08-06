@@ -38,7 +38,7 @@ afterEach(() => {
 });
 
 describe('closed counter set', () => {
-  it('exposes exactly the seven named counters', () => {
+  it('exposes exactly the eight named counters', () => {
     expect([...COUNTER_NAMES]).toEqual([
       'capture_fired',
       'priming',
@@ -47,13 +47,15 @@ describe('closed counter set', () => {
       'capture_write_failed',
       'redactions',
       'work_claims',
+      'board_degraded_opens',
     ]);
-    expect(COUNTER_NAMES).toHaveLength(7);
+    expect(COUNTER_NAMES).toHaveLength(8);
   });
 
   it('the report has exactly one top-level key per counter', () => {
     const { report } = reportFromDir(makeStateDir());
     expect(Object.keys(report).sort()).toEqual([
+      'boardDegradedOpens',
       'captureFired',
       'captureWriteFailed',
       'frontierSize',
@@ -192,6 +194,9 @@ describe('report shape', () => {
     t.workClaimed('item-1', 'sess-1');
     t.workClaimed('item-1', 'sess-2');
     t.workClaimed('item-2', 'sess-1');
+    t.boardDegradedOpen('/proj/.ideate-work/board.db', 4, 3, 'sess-1');
+    t.boardDegradedOpen('/proj/.ideate-work/board.db', 4, 3, 'sess-1');
+    t.boardDegradedOpen('/proj/.ideate-work/board.db', 4, 3, 'sess-2');
 
     const { report } = reportFromDir(dir);
 
@@ -255,6 +260,12 @@ describe('report shape', () => {
       byItem: { 'item-1': 2, 'item-2': 1 },
       bySession: { 'sess-1': 2, 'sess-2': 1 },
     });
+
+    expect(report.boardDegradedOpens).toEqual({
+      total: 3,
+      byPath: { '/proj/.ideate-work/board.db': 3 },
+      bySession: { 'sess-1': 2, 'sess-2': 1 },
+    });
   });
 
   it('an empty state dir folds to a valid all-zero report', () => {
@@ -269,6 +280,7 @@ describe('report shape', () => {
     expect(report.redactions.total).toBe(0);
     expect(report.redactions.events).toBe(0);
     expect(report.workClaims.total).toBe(0);
+    expect(report.boardDegradedOpens.total).toBe(0);
   });
 
   it('frontierSize is a size-sample recorder and rejects invalid sizes loudly', () => {

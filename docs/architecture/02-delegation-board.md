@@ -55,12 +55,38 @@ application_id` stamps a **compatibility floor** — the oldest binary
 verified safe against the current schema. A newer board whose floor covers
 this binary opens *degraded with a loud warning* instead of hard-refusing;
 a board with no floor or a floor above this binary still throws
-`SCHEMA_VERSION` — the refusal stays loud by design. Every migration
-announces on stderr at the moment it runs **and** fires a listener that
-appends a durable `board-migration` record to the project's process record
-(the conway incident had nothing pointing back at the crossing; now it
-would). Boards written before the floor existed self-heal the stamp on
-their next write.
+`SCHEMA_VERSION` — the refusal stays loud by design.
+
+Two crossings, both made durable, not just loud:
+
+- **Write-migration** (a newer binary migrates an older board forward).
+  Announces on stderr at the moment it runs **and** fires a listener that
+  appends a durable `board-migration` record to the project's process
+  record (the conway incident had nothing pointing back at the crossing;
+  now it would). Fires once per crossing.
+- **Degraded open** (the mirror image: an OLDER binary opens a NEWER,
+  floor-accepted board and runs with a partial view — anything the newer
+  schema added is invisible to it). Also announces on stderr **and** fires
+  a listener that appends a durable `board-degraded-open` record, naming
+  this binary's schema version, the board's actual version, the stamped
+  floor, and the board path. `checkSchemaVersion` runs on every
+  `openForRead`/`openForWrite`, and the store opens a fresh connection per
+  call — a degraded open is the steady state for an older binary against a
+  given board, not a rare crossing, so durability here is per **condition**,
+  not per call: the record appends on the first observation of a distinct
+  (board path, board version, floor) tuple in the process and re-fires only
+  when that tuple changes (a further migration on the same board, or a
+  different board entirely) — record N would otherwise carry nothing record
+  1 did not, since all three facts are fixed for the life of the process.
+  The stderr line stays deduplicated to once per process, independently. The
+  per-call occurrence count that the per-condition dedup no longer carries
+  in the narrative record is tallied instead by the `board_degraded_opens`
+  telemetry counter, which increments on every occurrence including the
+  suppressed ones (mirroring the split the record store already makes
+  between a redaction's process warning and its `redactions` counter).
+
+Boards written before the floor existed self-heal the stamp on their next
+write.
 
 ## Bridges to the process record (the named pattern)
 
@@ -70,8 +96,11 @@ bridge modules — the stores never import each other:
 - `completion-record.ts` — `work_complete` appends a `work-completion`
   record (best-effort: record failure never blocks the completion, and is
   loud on stderr + telemetry).
-- `migration-signal.ts` — a schema migration appends a `board-migration`
-  record through a process-scoped listener registered by each transport.
+- `migration-signal.ts` — the bridge for BOTH schema crossings: a
+  write-migration appends a `board-migration` record, and a degraded open
+  appends a `board-degraded-open` record, each through its own
+  process-scoped listener registered by each transport. One bridge module,
+  two listener factories — not a second bridge.
 
 ## Retrieval
 

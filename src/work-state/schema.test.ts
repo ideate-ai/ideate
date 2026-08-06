@@ -12,8 +12,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { BOARD_SCHEMA_FLOOR, BOARD_SCHEMA_VERSION, openForRead, openForWrite, resetFloorAcceptWarning, setMigrationListener } from './schema.js';
-import type { MigrationInfo } from './schema.js';
+import { BOARD_SCHEMA_FLOOR, BOARD_SCHEMA_VERSION, openForRead, openForWrite, resetFloorAcceptWarning, setDegradedOpenListener, setMigrationListener } from './schema.js';
+import type { DegradedOpenInfo, MigrationInfo } from './schema.js';
 import { WorkStateError } from './types.js';
 
 const tempDirs: string[] = [];
@@ -570,6 +570,7 @@ describe('references column + v2->v3 migration', () => {
 describe('compatibility floor + migration signal (board 01KYXHZP8P)', () => {
   afterEach(() => {
     setMigrationListener(undefined);
+    setDegradedOpenListener(undefined);
     resetFloorAcceptWarning();
     vi.restoreAllMocks();
   });
@@ -666,6 +667,8 @@ describe('compatibility floor + migration signal (board 01KYXHZP8P)', () => {
     forceApplicationId(dbPath, BOARD_SCHEMA_VERSION);
 
     const stderr = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const seen: DegradedOpenInfo[] = [];
+    setDegradedOpenListener((info) => seen.push(info));
     const read = openForRead(dbPath);
     expect(read).not.toBeNull();
     read?.close();
@@ -677,10 +680,72 @@ describe('compatibility floor + migration signal (board 01KYXHZP8P)', () => {
     expect(warnings).toHaveLength(1);
     expect(warnings[0]).toContain(`user_version ${String(BOARD_SCHEMA_VERSION + 1)}`);
 
+    // But the durable listener fires on BOTH opens, NOT gated behind the
+    // same once-per-process flag as the console line — this is the
+    // acceptance bar: the record must land on every occurrence.
+    expect(seen).toEqual([
+      { dbPath, binaryVersion: BOARD_SCHEMA_VERSION, boardVersion: BOARD_SCHEMA_VERSION + 1, floor: BOARD_SCHEMA_VERSION },
+      { dbPath, binaryVersion: BOARD_SCHEMA_VERSION, boardVersion: BOARD_SCHEMA_VERSION + 1, floor: BOARD_SCHEMA_VERSION },
+    ]);
+
     // A floor-accepted FOREIGN board keeps its own writer's stamps — this
     // binary must neither downgrade the version nor re-stamp the floor.
     expect(readUserVersionRaw(dbPath)).toBe(BOARD_SCHEMA_VERSION + 1);
     expect(readApplicationIdRaw(dbPath)).toBe(BOARD_SCHEMA_VERSION);
+  });
+
+  it('the degraded-open listener fires on every SUBSEQUENT open too — three opens, three calls, still one console warning', () => {
+    const root = makeTempDir();
+    const dbPath = join(root, 'board.db');
+    openForWrite(dbPath).close();
+    forceUserVersion(dbPath, BOARD_SCHEMA_VERSION + 1);
+    forceApplicationId(dbPath, BOARD_SCHEMA_VERSION);
+
+    const stderr = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const seen: DegradedOpenInfo[] = [];
+    setDegradedOpenListener((info) => seen.push(info));
+
+    openForRead(dbPath)?.close();
+    openForRead(dbPath)?.close();
+    openForRead(dbPath)?.close();
+
+    expect(seen).toHaveLength(3);
+    const warnings = stderr.mock.calls.map((c) => String(c[0])).filter((m) => m.includes('opening DEGRADED'));
+    expect(warnings).toHaveLength(1);
+  });
+
+  it('a degraded-open listener that throws does not break the open — it commits and the failure is loud on stderr', () => {
+    const root = makeTempDir();
+    const dbPath = join(root, 'board.db');
+    openForWrite(dbPath).close();
+    forceUserVersion(dbPath, BOARD_SCHEMA_VERSION + 1);
+    forceApplicationId(dbPath, BOARD_SCHEMA_VERSION);
+
+    const stderr = vi.spyOn(console, 'error').mockImplementation(() => {});
+    setDegradedOpenListener(() => {
+      throw new Error('degraded-open listener boom');
+    });
+
+    const read = openForRead(dbPath); // must not throw
+    expect(read).not.toBeNull();
+    read?.close();
+
+    const errText = stderr.mock.calls.map((c) => String(c[0])).join('\n');
+    expect(errText).toContain('degraded-open listener failed');
+    expect(errText).toContain('degraded-open listener boom');
+  });
+
+  it('with NO degraded-open listener registered, the degraded open still succeeds (listener-optional, same as migration)', () => {
+    const root = makeTempDir();
+    const dbPath = join(root, 'board.db');
+    openForWrite(dbPath).close();
+    forceUserVersion(dbPath, BOARD_SCHEMA_VERSION + 1);
+    forceApplicationId(dbPath, BOARD_SCHEMA_VERSION);
+
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    const read = openForRead(dbPath);
+    expect(read).not.toBeNull();
+    read?.close();
   });
 
   it('a newer board whose stamped floor is ABOVE this binary refuses, loudly naming the floor, on both open paths', () => {
