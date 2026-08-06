@@ -28,12 +28,12 @@
 // filesystem work happens in mkdtemp dirs and os.tmpdir() — the real record
 // is never touched.
 
-import { execFileSync } from 'node:child_process';
-import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { execFileSync, spawnSync } from 'node:child_process';
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join, relative } from 'node:path';
+import { dirname, join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { afterEach, beforeAll, describe, expect, it } from 'vitest';
+import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 
 import { DEFAULT_RECORD_PATH, V3_SCHEMA_VERSION } from '../config/ideate-config.js';
 import type { IdeateConfigV3 } from '../config/ideate-config.js';
@@ -57,8 +57,17 @@ const FIXED_ISO = '2026-07-09T12:00:00.000Z';
 
 const tempDirs: string[] = [];
 const snapshotDirs: string[] = [];
+// Dirs chmod'd read-only by the containment tests below — restored to
+// writable BEFORE the recursive cleanup passes, or rmSync would itself be
+// blocked by the very permission the test set up.
+const permRestores: string[] = [];
 
 afterEach(() => {
+  vi.restoreAllMocks();
+  while (permRestores.length > 0) {
+    const dir = permRestores.pop();
+    if (dir !== undefined) chmodSync(dir, 0o700);
+  }
   while (tempDirs.length > 0) {
     const dir = tempDirs.pop();
     if (dir !== undefined) rmSync(dir, { recursive: true, force: true });
@@ -488,5 +497,104 @@ describe('fallback: bypass patterns never touch the snapshot (real bin)', () => 
     expect(out).toContain('Body 4.'); // bodies print on the human path
     expect(existsSync(dir)).toBe(false);
     expect(existsSync(snapshotDirOf(project))).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Containment: the accelerator's own filesystem operations — mkdir'ing the
+// cache parent, mkdir'ing the staging dir, writing the page files — must
+// never turn a correct read into a failure. Fault-injected with REAL
+// filesystem faults (permission, a colliding non-directory), not stubs,
+// mirroring the codebase's established pattern (record/store.test.ts,
+// work-state/completion-record.test.ts). This is the module's own header
+// claim made falsifiable (P-35): before this fix, every test in this block
+// failed with the fault propagating out of installSnapshot/buildSnapshot.
+// ---------------------------------------------------------------------------
+
+describe("containment: the accelerator's own I/O never turns a correct read into a failure", () => {
+  // Permission bits do not constrain root: under a root-privileged runner (a
+  // plain container image is the usual way this happens) `chmod 0500` does
+  // NOT produce EACCES, the write succeeds, and the two permission-based
+  // tests below fail on their assertions rather than covering anything. That
+  // is a false failure, not a false pass — but it is still noise that would
+  // send someone hunting a defect that is not there, so skip them explicitly
+  // and say why. The colliding-file test needs no guard: ENOTDIR/EEXIST binds
+  // root exactly as it binds anyone else, so the containment stays covered by
+  // at least one fault in every environment.
+  const skipAsRoot = process.getuid?.() === 0;
+
+  it.skipIf(skipAsRoot)('an UNWRITABLE cache directory: the walk still returns the page sequence IDENTICAL to direct paging, with nothing installed and a loud warning naming the real fault', () => {
+    const project = makeProject();
+    const seeding = freshStore(project);
+    const ids = seed(seeding, 20);
+    const options: WalkSnapshotPageOptions = { limit: 6 };
+
+    const dir = snapshotDirOf(project, options.scope, options.limit);
+    const parent = dirname(dir);
+    mkdirSync(parent, { recursive: true });
+    chmodSync(parent, 0o500); // read+execute only: nothing can be created inside it
+    permRestores.push(parent);
+
+    const emitWarning = vi.spyOn(process, 'emitWarning');
+    const walked = walkSnapshot(project, options); // every page rebuilt in-memory, nothing lands on disk
+    expect(walked.flatMap((p) => p.records.map((r) => r.id))).toEqual([...ids].reverse());
+    // The "may never change a correct answer" clause, TESTED: identical to
+    // the direct production paging chain, not merely plausible-looking.
+    expect(walked).toEqual(walkDirect(freshStore(project), options));
+    expect(existsSync(dir)).toBe(false); // the failed install left nothing behind
+
+    const messages = emitWarning.mock.calls.map((call) => String(call[0]));
+    expect(messages.some((m) => m.includes('walk snapshot build failed'))).toBe(true);
+    expect(messages.some((m) => /EACCES|permission/i.test(m))).toBe(true); // names the REAL fault, not a generic one
+    const warnOptions = emitWarning.mock.calls[0]?.[1] as { code?: string } | undefined;
+    expect(warnOptions?.code).toBe('IDEATE_RECORD_WALK_SNAPSHOT');
+  });
+
+  it('a DIFFERENT fault (a plain file sitting where the cache tree needs a directory, not a permission problem): the walk still returns correct data and warns', () => {
+    const project = makeProject();
+    const seeding = freshStore(project);
+    const ids = seed(seeding, 15);
+    const options: WalkSnapshotPageOptions = { limit: 4 };
+
+    const dir = snapshotDirOf(project, options.scope, options.limit);
+    const parent = dirname(dir);
+    mkdirSync(dirname(parent), { recursive: true });
+    writeFileSync(parent, 'a plain file where the accelerator expects a directory');
+    snapshotDirs.push(parent); // cleanup: rmSync handles a file path too
+
+    const emitWarning = vi.spyOn(process, 'emitWarning');
+    const walked = walkSnapshot(project, options);
+    expect(walked.flatMap((p) => p.records.map((r) => r.id))).toEqual([...ids].reverse());
+    expect(walked).toEqual(walkDirect(freshStore(project), options));
+
+    const messages = emitWarning.mock.calls.map((call) => String(call[0]));
+    expect(messages.some((m) => m.includes('walk snapshot build failed'))).toBe(true);
+  });
+
+  it.skipIf(skipAsRoot)('the real CLI: `read --json` exits 0 with the CORRECT records, installs nothing, and names the fault on stderr when the cache parent is unwritable', () => {
+    const project = makeProject();
+    for (let i = 0; i < 8; i += 1) {
+      runCli(
+        ['append', '--kind', 'finding', '--claim', `Containment claim ${String(i)}.`, '--anchor', 'a.ts', '--content', `Body ${String(i)}.`],
+        project.projectRoot,
+      );
+    }
+    // A warm-up read establishes the ground truth AND builds the snapshot
+    // (which is then torn down so the next read must rebuild under the fault).
+    const expected = JSON.parse(runCli(['read', '--json'], project.projectRoot)) as JsonPage;
+    const dir = snapshotDirOf(project);
+    rmSync(dir, { recursive: true, force: true });
+
+    const parent = dirname(dir);
+    mkdirSync(parent, { recursive: true });
+    chmodSync(parent, 0o500);
+    permRestores.push(parent);
+
+    const result = spawnSync(process.execPath, [BIN_PATH, 'read', '--json'], { cwd: project.projectRoot, encoding: 'utf8' });
+    expect(result.status).toBe(0); // never the hard exit 1 the defect produced
+    const page = JSON.parse(result.stdout) as JsonPage;
+    expect(page).toEqual(expected); // byte-identical to the unobstructed answer
+    expect(existsSync(dir)).toBe(false); // the failed install left nothing behind
+    expect(result.stderr).toContain('walk snapshot build failed'); // loud, not silent
   });
 });

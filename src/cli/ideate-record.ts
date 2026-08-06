@@ -69,6 +69,7 @@ import {
   projectRecordRow,
   readRecordPage,
 } from '../record/read-page.js';
+import type { RecordRowPage } from '../record/read-page.js';
 import type { RecordReference } from '../record/schema.js';
 import { RecordSchemaError } from '../record/schema.js';
 import { RecordStore } from '../record/store.js';
@@ -423,11 +424,31 @@ function runRead(argv: readonly string[], stdout: NodeJS.WritableStream, stderr:
     // boundRecordPage chain. --id (already cheap), --include-content (the
     // snapshot stores no bodies) and the human paths keep the direct read.
     if (asJson && id === undefined && !parsed.switches.has('--include-content')) {
-      const bounded = readWalkSnapshotPage(ctx.store, {
+      const selection = {
         ...(scope === undefined ? {} : { scope }),
         ...(limit === undefined ? {} : { limit }),
         ...(cursor === undefined ? {} : { cursor }),
-      });
+      };
+      let bounded: RecordRowPage;
+      try {
+        bounded = readWalkSnapshotPage(ctx.store, selection);
+      } catch (err) {
+        // A malformed cursor/limit is a real, typed failure — let it fall to
+        // the shared handler below (exit 1), exactly as the direct path
+        // reports it. Anything else here is the accelerator itself failing
+        // in a way its OWN containment did not catch (record-walk-snapshot.ts
+        // wraps every filesystem operation it performs); this is the last
+        // line of defense so this path can never become the hard exit 1 its
+        // contract forbids. Loud on stderr — never silent, the fail-loud
+        // mirror of P-45 — then the exact same direct paging chain below.
+        if (err instanceof RecordSchemaError) throw err;
+        stderr.write(
+          `ideate-record: read: walk snapshot failed (${err instanceof Error ? err.message : String(err)}); falling back to a live read\n`,
+        );
+        const page = readRecordPage(ctx.store, selection);
+        const rows = page.records.map((view) => projectRecordRow(view, false));
+        bounded = boundRecordPage({ records: rows, next_cursor: page.next_cursor }, measurePrettyItemChars);
+      }
       stdout.write(`${JSON.stringify({ records: bounded.records, next_cursor: bounded.next_cursor }, null, 2)}\n`);
       return 0;
     }

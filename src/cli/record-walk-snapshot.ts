@@ -216,21 +216,50 @@ function pageIndexFor(manifest: WalkSnapshotManifest, cursor: string | undefined
  */
 function installSnapshot(dir: string, files: ReadonlyMap<string, string>): void {
   const parent = dirname(dir);
-  // 0o700 / 0o600 throughout: page files carry record claims, scopes and kinds
-  // (finding text can describe vulnerabilities), and on a shared Linux host
-  // `os.tmpdir()` is the WORLD-visible /tmp — outside the project's own
-  // permission boundary. The snapshot must not leak record contents to other
-  // local users (macOS masks this with a per-user 0700 $TMPDIR; Linux does
-  // not). A cache is only safe to leave on disk if it is no more readable
-  // than the store it mirrors.
-  mkdirSync(parent, { recursive: true, mode: 0o700 });
   const nonce = `${String(process.pid)}-${Math.random().toString(36).slice(2)}`;
   const staging = join(parent, `.staging-${basename(dir)}-${nonce}`);
   const retired = join(parent, `.retired-${basename(dir)}-${nonce}`);
-  rmSync(staging, { recursive: true, force: true });
-  mkdirSync(staging, { mode: 0o700 });
-  for (const [name, body] of files) {
-    writeFileSync(join(staging, name), body, { mode: 0o600 });
+  try {
+    // 0o700 / 0o600 throughout: page files carry record claims, scopes and kinds
+    // (finding text can describe vulnerabilities), and on a shared Linux host
+    // `os.tmpdir()` is the WORLD-visible /tmp — outside the project's own
+    // permission boundary. The snapshot must not leak record contents to other
+    // local users (macOS masks this with a per-user 0700 $TMPDIR; Linux does
+    // not). A cache is only safe to leave on disk if it is no more readable
+    // than the store it mirrors.
+    mkdirSync(parent, { recursive: true, mode: 0o700 });
+    rmSync(staging, { recursive: true, force: true });
+    mkdirSync(staging, { mode: 0o700 });
+    for (const [name, body] of files) {
+      writeFileSync(join(staging, name), body, { mode: 0o600 });
+    }
+  } catch (err) {
+    // Every operation above is the accelerator's OWN filesystem work — an
+    // unwritable cache parent, a full disk, a read-only tmp, a quota fault —
+    // and NONE of it may propagate: buildSnapshot already holds the walked
+    // pages in memory and hands them to its caller regardless of whether this
+    // function ever runs, so giving up here costs only the on-disk copy,
+    // never the answer (the "may never change a correct answer" clause).
+    // Warn loudly — the fail-loud mirror of P-45: machinery that promised to
+    // degrade must not instead fail hard — and stop; there is nothing usable
+    // in `staging` to swap in.
+    //
+    // Drop `staging` first. The write loop above can fail PART WAY THROUGH —
+    // several page files already on disk when a quota or ENOSPC fault hits —
+    // and `staging`'s name embeds a fresh pid/random nonce, so no later build
+    // ever revisits this path to tidy it. Without this the partial directory
+    // leaks permanently, and every retry under the same disk-pressure
+    // condition leaks another, compounding the exact fault that caused it.
+    // Best-effort and force: a second failure here must not replace the
+    // warning we are about to emit with a throw.
+    try {
+      rmSync(staging, { recursive: true, force: true });
+    } catch {
+      // Nothing further to do — the disk that refused the write may equally
+      // refuse the cleanup. The warning below still names the real fault.
+    }
+    warnInstall('build', err);
+    return;
   }
   try {
     renameSync(dir, retired);
@@ -321,10 +350,15 @@ function buildSnapshot(
  * production paging of the same store state either way.
  *
  * Failure posture is always "fall back to the live bounded page": a foreign
- * (but well-formed) cursor, a torn snapshot, a raced rebuild. The snapshot
- * may only ever make a correct answer FASTER; it may never change one. A
- * malformed cursor raises RecordSchemaError before any snapshot work, exactly
- * as the direct path does.
+ * (but well-formed) cursor, a torn snapshot, a raced rebuild, or the
+ * accelerator's own build/install I/O failing (an unwritable cache
+ * directory, a full disk, a quota fault) — every filesystem operation the
+ * snapshot performs, while BUILDING it and while INSTALLING it, is contained
+ * so a failure there degrades to the live page rather than propagating. The
+ * snapshot may only ever make a correct answer FASTER; it may never change
+ * one, and it may never turn a correct read into a hard failure. A malformed
+ * cursor raises RecordSchemaError before any snapshot work, exactly as the
+ * direct path does.
  */
 export function readWalkSnapshotPage(store: RecordStore, options: WalkSnapshotPageOptions = {}): RecordRowPage {
   const limit = clampRecordReadLimit(options.limit ?? DEFAULT_RECORD_READ_LIMIT);
@@ -350,7 +384,24 @@ export function readWalkSnapshotPage(store: RecordStore, options: WalkSnapshotPa
     // Torn snapshot (a cleaner raced us between manifest and page): rebuild.
   }
 
-  const built = buildSnapshot(store, dir, selectionKey, options.scope, limit, freshnessToken);
+  let built: { manifest: WalkSnapshotManifest; pages: RecordRowPage[] };
+  try {
+    built = buildSnapshot(store, dir, selectionKey, options.scope, limit, freshnessToken);
+  } catch (err) {
+    // Defense in depth around installSnapshot's own containment above: ANY
+    // unexpected throw out of the build — not only the install writes —
+    // must still answer correctly. Warn loudly, naming the real fault, and
+    // serve the exact requested page via the SAME live-paging chain the
+    // direct read (and the snapshot build itself) uses, so the answer is
+    // identical to what an uncached read would have returned.
+    //
+    // Labelled distinctly from installSnapshot's own 'build' phase: reaching
+    // HERE means the inner containment did not catch it, which is a different
+    // diagnosis for whoever reads the warning — the fault was somewhere else
+    // in the build, not in writing the cache.
+    warnInstall('build-uncontained', err);
+    return livePage(store, options.scope, limit, options.cursor);
+  }
   const index = pageIndexFor(built.manifest, options.cursor);
   if (index !== undefined) {
     const page = built.pages[index];
