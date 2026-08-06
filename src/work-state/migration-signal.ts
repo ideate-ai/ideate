@@ -13,11 +13,15 @@
 // surfaced later, from the older binary, with nothing pointing back at the
 // moment it happened.
 //
-// Scope discipline: this is the ONLY work-state module that knows the
-// record store exists, and it knows it as a dumb append target behind a
-// factory — schema.ts itself stays record-agnostic (it fires a typed
-// callback; it has no idea a record store is on the other end). The seam
-// stays narrow in both directions (GP-26).
+// Scope discipline: one of exactly TWO work-state modules that import the
+// record store, and both are the same SHAPE — a small purpose-built bridge
+// that appends one kind of board event to the process record
+// (completion-record.ts: work completions; this module: schema migrations).
+// That pairing is the named pattern, not drift: board events that matter to
+// the process record cross via a bridge module like this one, never via the
+// stores knowing each other. schema.ts itself stays record-agnostic (it
+// fires a typed callback; it has no idea a record store is on the other
+// end). The seam stays narrow in both directions (GP-26).
 
 import { RecordStore } from '../record/store.js';
 import type { Clock } from '../record/id.js';
