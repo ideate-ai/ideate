@@ -26,6 +26,25 @@
 // Excludes from the copy: node_modules, dist, and any .tsbuildinfo files —
 // none of those may leak stale built state into the fresh install.
 //
+// A throwaway `git init` in the copy, before the test step: the suite run
+// in phase 1 below includes tests/integration/shipped-markdown-registry.ts's
+// scanners, which decide what counts as "shipped" markdown by asking git's
+// ignore rules (`git check-ignore`) — the mechanism that keeps
+// `docs/architecture/build/`'s generated copies out of the governed set.
+// That oracle needs a git work tree to consult; this copy has none, because
+// `.git` is excluded above (in a submodule checkout it is a gitlink FILE
+// pointing at the parent repository's modules directory — exactly the kind
+// of enclosing-layout reference this fresh copy must not carry). Without
+// SOME repository here, the registry module's own fail-loud guard would
+// (correctly) throw rather than silently widen what it governs. `git init`
+// creates a new, self-contained repository with no reference to anything
+// outside the copied subtree — it satisfies the oracle's precondition
+// without reintroducing what excluding `.git` guards against. The copy
+// already carries every `.gitignore` file the oracle reads (a plain
+// recursive copy includes them; they are ordinary tracked-content files,
+// not special git-internal state), so a bare `git init` — no `add`, no
+// `commit` — is enough for `git check-ignore` to answer correctly.
+//
 // The check also exercises at least one no-build path: after the
 // install -> build -> test cycle above passes (phase 1, the "built" proof),
 // this script deletes dist/ and any *.tsbuildinfo files from the fresh copy
@@ -121,6 +140,20 @@ function main() {
     recursive: true,
     filter: (src) => !shouldExclude(src),
   });
+
+  // A throwaway, self-contained git repository — see the header comment for
+  // why this is required (the shipped-markdown-registry's ignore-rule
+  // oracle needs SOME work tree to consult) and why it is safe (no `.git`
+  // was copied, so there is nothing enclosing to reintroduce). No `add`, no
+  // `commit`: `git check-ignore` reads `.gitignore` files straight off disk,
+  // it does not need anything staged or committed.
+  console.log('fresh-copy-check: git init-ing the fresh copy (throwaway, self-contained — no enclosing reference)');
+  const gitInitResult = spawnSync('git', ['init', '--quiet'], { cwd: copyDir, stdio: 'inherit', shell: false });
+  if (gitInitResult.error || gitInitResult.status !== 0) {
+    console.error(`fresh-copy-check: git init failed in the fresh copy: ${gitInitResult.error?.message ?? `exit ${String(gitInitResult.status)}`}`);
+    process.exitCode = 1;
+    return;
+  }
 
   // scripts/migrate-v2 is a workspace member (pnpm-workspace.yaml +
   // package.json#workspaces), so the single top-level `pnpm install` below

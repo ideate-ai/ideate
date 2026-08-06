@@ -48,7 +48,12 @@
 // and is fully mechanical, so per GP-24 it gets a real check rather than
 // being left to hope.
 //
-// REGISTRY (P-52 — derived, not hand-maintained): every `.md` file under
+// REGISTRY (P-52 — derived, not hand-maintained): every SHIPPED `.md` file
+// (see shipped-markdown-registry.ts, shared with the other three
+// registry-scanning suites, for the mechanical "shipped" walk this registry
+// is built on — it excludes generated output like
+// `docs/architecture/build/`, gitignored copies produced by
+// `docs/architecture/render.sh`, before content is ever examined) under
 // skills/, agents/, docs/ that instructs an agent to WRITE a `spec` (matched
 // by mentioning `work_create` alongside the word `spec`, OR by carrying this
 // requirement's own distinctive phrase — see MENTIONS_SPEC_AUTHORING below)
@@ -66,17 +71,21 @@
 // `agents/worker.md` (a spec CONSUMER, not an author) or any runtime spec
 // body actually written by an agent following this instruction.
 
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { dirname, join, sep } from 'node:path';
+import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterEach, describe, expect, it } from 'vitest';
+import { SHIPPED_PROSE_ROOTS, listShippedMarkdownFilesUnderRoots } from './shipped-markdown-registry.js';
 
 const PLUGIN_DIR = fileURLToPath(new URL('../..', import.meta.url));
 
 /** Roots scanned for spec-authoring prose — the plugin's own shipped
- *  operational-prose surfaces, not runtime data, build output, or tests. */
-const REGISTRY_ROOTS = ['skills', 'agents', 'docs'];
+ *  operational-prose surfaces: not `.ideate/` runtime data, not `dist/` or
+ *  `docs/architecture/build/` build output (excluded mechanically by
+ *  shipped-markdown-registry.ts's walk, even though `docs/` itself is a
+ *  scanned root), and not `tests/` itself. */
+const REGISTRY_ROOTS = SHIPPED_PROSE_ROOTS;
 
 /** The registry marker: a file only carries this phrase once it has adopted
  *  the opening-block authoring requirement. Distinctive enough that it will
@@ -116,31 +125,13 @@ const REQUIRED_MARKERS: { name: string; pattern: RegExp; describe: string }[] = 
   },
 ];
 
-/** Every `.md` file under `root` (relative to `base`), found recursively.
- *  A missing root (a synthetic test tree need not populate every registry
- *  root) simply contributes nothing — not an error. */
-function listMarkdownFiles(base: string, root: string): string[] {
-  if (!existsSync(join(base, root))) return [];
-  const out: string[] = [];
-  const walk = (relDir: string): void => {
-    for (const entry of readdirSync(join(base, relDir))) {
-      const rel = join(relDir, entry);
-      const st = statSync(join(base, rel));
-      if (st.isDirectory()) walk(rel);
-      else if (rel.endsWith('.md')) out.push(rel.split(sep).join('/'));
-    }
-  };
-  walk(root);
-  return out;
-}
-
-/** The registry: every markdown file under the shipped prose roots that has
+/** The registry: every SHIPPED markdown file under the prose roots that has
  *  adopted the opening-block authoring requirement — found by scanning,
  *  never typed. Whitespace is collapsed before matching (mirroring
  *  `checkFile` below) so markdown's hard-wrapping mid-phrase can never hide
  *  a real mention from the scan. */
 function deriveRegistry(base: string): string[] {
-  const candidates = REGISTRY_ROOTS.flatMap((root) => listMarkdownFiles(base, root));
+  const candidates = listShippedMarkdownFilesUnderRoots(base, REGISTRY_ROOTS);
   return candidates
     .filter((rel) => MENTIONS_OPENING_BLOCK_REQUIREMENT.test(readFileSync(join(base, rel), 'utf8').replace(/\s+/g, ' ')))
     .sort();

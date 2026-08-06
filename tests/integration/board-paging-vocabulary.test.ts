@@ -16,15 +16,17 @@
 //
 // REGISTRY (P-52 — derived, not hand-maintained): every `.md` file under
 // skills/, agents/, docs/ (the plugin's own shipped operational-prose
-// surfaces — as opposed to .ideate/ runtime data, dist/ build output, or
-// tests/ itself) that MENTIONS `work_list` or `ideate-work list` is
-// discovered by scanning those directory trees and grepping their content
-// at test time (`deriveRegistry` below), not typed into an array here. Add
-// a new skill/agent/doc file that names the board-listing surface and it
-// enters the registry on its own; nobody has to remember to add it.
-// FALSIFIED as genuinely derived (not a hardcoded list disguised as a scan)
-// by the first `describe` block below, which points `deriveRegistry` at a
-// synthetic temp tree the real repo has never seen.
+// surfaces — as opposed to .ideate/ runtime data, docs/architecture/build/
+// generated output, or tests/ itself) that MENTIONS `work_list` or
+// `ideate-work list` is discovered by scanning those directory trees (via
+// shipped-markdown-registry.ts's shared, mechanical "shipped" walk — see
+// that file for which oracle decides shipped-ness and why) and grepping
+// their content at test time (`deriveRegistry` below), not typed into an
+// array here. Add a new skill/agent/doc file that names the board-listing
+// surface and it enters the registry on its own; nobody has to remember to
+// add it. FALSIFIED as genuinely derived (not a hardcoded list disguised as
+// a scan) by the first `describe` block below, which points
+// `deriveRegistry` at a synthetic temp tree the real repo has never seen.
 //
 // ENUMERATING vs EXISTENCE-CHECKING (the spec's central design question):
 // distinguishing "this prose walks every item" from "this prose only asks
@@ -71,17 +73,21 @@
 // prose, or non-board reads (record/steering surfaces — explicitly out of
 // scope for this item; board that separately if needed).
 
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { dirname, join, sep } from 'node:path';
+import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterEach, describe, expect, it } from 'vitest';
+import { SHIPPED_PROSE_ROOTS, listShippedMarkdownFilesUnderRoots } from './shipped-markdown-registry.js';
 
 const PLUGIN_DIR = fileURLToPath(new URL('../..', import.meta.url));
 
 /** Roots scanned for board-reading prose — the plugin's own shipped
- *  operational-prose surfaces, not runtime data, build output, or tests. */
-const REGISTRY_ROOTS = ['skills', 'agents', 'docs'];
+ *  operational-prose surfaces: not `.ideate/` runtime data, not `dist/` or
+ *  `docs/architecture/build/` build output (excluded mechanically by
+ *  shipped-markdown-registry.ts's walk, even though `docs/` itself is a
+ *  scanned root), and not `tests/` itself. */
+const REGISTRY_ROOTS = SHIPPED_PROSE_ROOTS;
 
 /** A mention of the board-listing surface, by either name it can be read
  *  under: the MCP tool, or its CLI twin. */
@@ -110,30 +116,15 @@ const PAGING_VOCABULARY = /next_cursor`[\s\S]{0,80}?`null`/;
 const EXISTENCE_ONLY_ALLOWLIST: Record<string, string> = {
   'docs/transport-contract.md':
     'A contributor contract, not an agent procedure. Its sole mentions of `work_list`/`ideate-work list` are in the per-store table naming the board store\'s transports and process lifetime to characterize the fault line — descriptive, never an instruction to read the board. No enumerating passage anywhere in the file.',
+  'docs/architecture/01-process-record.md':
+    'An architecture inventory doc. Its sole mention is a historical reference to the 81KB single-line `work_list` overflow incident ("the fix for the ... overflow class") — naming the defect the payload budget closed, never instructing a board read. No enumerating passage anywhere in the file.',
 };
 
-/** Every `.md` file under `root` (relative to `base`), found recursively.
- *  A missing root (a synthetic test tree need not populate every registry
- *  root) simply contributes nothing — not an error. */
-function listMarkdownFiles(base: string, root: string): string[] {
-  if (!existsSync(join(base, root))) return [];
-  const out: string[] = [];
-  const walk = (relDir: string): void => {
-    for (const entry of readdirSync(join(base, relDir))) {
-      const rel = join(relDir, entry);
-      const st = statSync(join(base, rel));
-      if (st.isDirectory()) walk(rel);
-      else if (rel.endsWith('.md')) out.push(rel.split(sep).join('/'));
-    }
-  };
-  walk(root);
-  return out;
-}
-
-/** The registry: every markdown file under the shipped prose roots that
- *  mentions the board-listing surface — found by scanning, never typed. */
+/** The registry: every SHIPPED markdown file under the prose roots (see
+ *  shipped-markdown-registry.ts) that mentions the board-listing surface —
+ *  found by scanning, never typed. */
 function deriveRegistry(base: string): string[] {
-  const candidates = REGISTRY_ROOTS.flatMap((root) => listMarkdownFiles(base, root));
+  const candidates = listShippedMarkdownFilesUnderRoots(base, REGISTRY_ROOTS);
   return candidates
     .filter((rel) => MENTIONS_BOARD_READ.test(readFileSync(join(base, rel), 'utf8')))
     .sort();
@@ -180,6 +171,7 @@ describe('the registry is derived from the shipped tree, not hand-maintained (P-
     expect(registry).toEqual(
       [
         'agents/journal-keeper.md',
+        'docs/architecture/01-process-record.md',
         'docs/transport-contract.md',
         'docs/workflow-guide.md',
         'skills/autopilot/SKILL.md',
