@@ -191,11 +191,31 @@ describe('outside any git work tree, there is no oracle to consult — nothing i
 describe('the real plugin tree: generated build output is excluded, genuine source docs are not (P-35 — removing the exclusion breaks this)', () => {
   const PLUGIN_DIR = new URL('../..', import.meta.url).pathname;
 
-  it('docs/architecture/build/ is present on disk but excluded from the shipped walk', () => {
-    expect(existsSync(join(PLUGIN_DIR, 'docs/architecture/build'))).toBe(true);
-    const files = listShippedMarkdownFiles(PLUGIN_DIR, 'docs');
-    const buildFiles = files.filter((f) => f.startsWith('docs/architecture/build/'));
-    expect(buildFiles).toEqual([]);
+  // CREATES the generated file it tests, rather than assuming one is lying
+  // around. The first version of this test asserted that
+  // `docs/architecture/build/` already existed on disk — which is true only
+  // on a machine where someone has run `render.sh`, because that directory is
+  // gitignored and never committed. It passed locally and failed on every
+  // fresh checkout, taking CI red on the release candidate (finding
+  // 01KZCRBGT2QTVJF3BNTSCD9S1V). A test written to prove generated output is
+  // excluded must not depend on that output happening to be present; it makes
+  // its own, and cleans up only what it made.
+  it('a generated file under docs/architecture/build/ is excluded from the shipped walk', () => {
+    const buildDir = join(PLUGIN_DIR, 'docs/architecture/build');
+    const probe = join(buildDir, 'coordinator-probe.md');
+    const dirPreexisted = existsSync(buildDir);
+    mkdirSync(buildDir, { recursive: true });
+    writeFileSync(probe, '# probe\n\nGenerated output. Must never be governed by the prose censuses.\n');
+    try {
+      const files = listShippedMarkdownFiles(PLUGIN_DIR, 'docs');
+      expect(files).not.toContain('docs/architecture/build/coordinator-probe.md');
+      expect(files.filter((f) => f.startsWith('docs/architecture/build/'))).toEqual([]);
+    } finally {
+      rmSync(probe, { force: true });
+      // Only remove the directory if this test created it — on a developer
+      // machine it holds a real rendered PDF pipeline that is not ours to bin.
+      if (!dirPreexisted) rmSync(buildDir, { recursive: true, force: true });
+    }
   });
 
   it('the six architecture source docs are present on disk AND governed by the shipped walk', () => {

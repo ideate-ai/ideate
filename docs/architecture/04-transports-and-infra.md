@@ -130,19 +130,21 @@ design — high-signal-minimal, not a firehose.
 
 ## Telemetry — collected, mostly unconsumed (audit flag)
 
-Append-only NDJSON counters per project (`.ideate-telemetry/`). Seven
-counter names exist; four have writers:
+Append-only NDJSON counters per project (`.ideate-telemetry/`). Eight
+counter names exist; six have writers:
 
 | Counter | Written by | Read by |
 |---|---|---|
 | `capture_fired`, `capture_write_failed`, `redactions` | record store, completion bridge | tests + the `ideate-telemetry` diagnostic bin |
 | `work_claims` | priming hook (every claim — the future eval's denominator) | the report builder |
-| `priming`, `kg_unreachable`, `frontier_size` | **nothing — zero increment call sites** | the report parser only |
+| `priming` | the `ideate-record` CLI's `prime` subcommand (`cli:prime`) | the report builder |
+| `board_degraded_opens` | migration-signal.ts's degraded-open listener — every degraded open, including the ones the durable `board-degraded-open` process record de-dupes away | the report builder |
+| `kg_unreachable`, `frontier_size` | **nothing — zero increment call sites** | the report parser only |
 
 Nothing automated consumes the report: no hook, skill, agent, or doc calls
 `ideate-telemetry`. This is the audit's clearest "data we have but don't
 use" finding — kept deliberately cheap to collect, waiting on the stage-3
-harness to say which signals matter. The three zero-caller counters are
+harness to say which signals matter. The two zero-caller counters are
 leftovers of the retired usage surface / KG design and should be re-specced
 from the new harness's requirements, not resurrected.
 

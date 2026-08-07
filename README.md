@@ -286,12 +286,19 @@ recovery). This is safe to do on purpose because it is a DIFFERENT store
 from the append-only process record (`record.path`, default
 `.ideate/record/`) — deleting the board never touches the record, and vice
 versa. `board.db` also carries a schema version (`PRAGMA user_version`, checked on every
-open); if a build ever reports a version-mismatch error, that is
-deliberate, not a bug — it means the file was written by a different
-plugin version than the one reading it, and this project makes no
-promises about migration timelines. Older, pre-versioning boards are
-handled with a one-time grace (stamped on their next write) rather than
-rejected outright.
+open). Three things can happen when it does not match this binary's own
+version: an older, pre-versioning board is handled with a one-time grace
+(stamped on their next write) rather than rejected outright; a board newer
+than this binary but still within a compatibility floor its writer stamped
+into the file opens successfully but DEGRADED — anything the newer schema
+added is invisible to this binary — with a one-time-per-process warning on
+stderr and a durable note in the project's own process record (plus a
+telemetry counter tallying every such open), so an installed plugin lagging
+behind a newer board is quietly noticed rather than silently wrong; and a
+board newer than both this binary and its compatibility floor (or with no
+floor stamped at all) produces a hard version-mismatch error — that one is
+deliberate, not a bug, and this project makes no promises about migration
+timelines beyond it.
 
 **One item's lifecycle — an example trace.** The transcript below runs a
 work item end-to-end through the board (outputs trimmed for width). It

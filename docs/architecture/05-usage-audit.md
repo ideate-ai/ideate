@@ -13,7 +13,7 @@ shipped tree and the two dogfooding projects (ideate + plugin dev).*
 | **Board items** (~160 on ideate) | Work queue + decomposition | Every skill, every session | **Working.** The convergence oracle — "zero open claimable work" is the stage-completion signal |
 | **Board events log** | The board's own audit trail | `work_events` reads (rare; debugging/handoffs) | **Working, under-read.** Rich history, consumed mostly at incident time |
 | **Steering items** (~105) | The rules of the work | refine/review/autopilot reads; curator amendments | **Working.** The incident→finding→decision→amendment loop is real (P-40's transport clause) |
-| **Telemetry counters** | Capture-funnel + future eval signals | Nobody automated; manual `ideate-telemetry` only | **Collected, unconsumed.** 3 of 7 counters have *zero writers* — leftovers of the retired usage surface |
+| **Telemetry counters** | Capture-funnel + future eval signals | Nobody automated; manual `ideate-telemetry` only | **Collected, unconsumed.** 2 of 8 counters have *zero writers* — leftovers of the retired usage surface |
 | **Completion bridge records** | Completions visible in the record | Record readers | **Working** (and its failure path is tested loud) |
 | **Migration signal records** | The one-way door announces itself | Future incident investigators | **Just shipped** (item 5); mechanism mutation-proven |
 | **Config (`.ideate.json`)** | Per-project store paths/backend | Every transport open | **Working** |
@@ -44,7 +44,7 @@ shipped tree and the two dogfooding projects (ideate + plugin dev).*
 
 ## What's not working
 
-1. **Telemetry is a write-only store.** Seven counters, four with writers,
+1. **Telemetry is a write-only store.** Eight counters, six with writers,
    one diagnostic bin nobody calls. Data collected per its design; consumed
    by nothing. (Not waste — collection is cheap and the stage-3 harness may
    want the history — but today it answers no question.)
@@ -108,7 +108,7 @@ shipped tree and the two dogfooding projects (ideate + plugin dev).*
    re-derived recall metric.
 2. **Spec the in-product signals from requirements.** If the harness needs
    priming-usefulness or claim-latency data, say so and wire exactly that —
-   the three zero-writer counters are the cautionary tale of speccing
+   the two zero-writer counters are the cautionary tale of speccing
    signals ahead of the question.
 3. **Name or split the transport layers.** Cheap: either a comment-level
    naming (done in 00-overview) or a directory split. Decide at the

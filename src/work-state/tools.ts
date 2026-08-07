@@ -359,8 +359,16 @@ export function createWorkStateToolsRegistrar(options: WorkStateToolsOptions = {
       setMigrationListener(createMigrationListener({ config, projectRoot, telemetry, clock, capturePoint: 'mcp:work-state', sessionId }));
       // Durable degraded-open signal — the mirror-image crossing: if THIS
       // server is the older binary opening a newer, floor-accepted board,
-      // every open (not just the first) lands in the project's process
-      // record too, same reasoning as the migration signal above.
+      // only the FIRST open of each distinct condition (board path + board
+      // version + floor) lands in the project's process record; repeats of
+      // an already-recorded condition are suppressed (migration-signal.ts's
+      // `recordedConditions` cache). That cache is closure state on this
+      // listener, built once per `getContext()` call above — and getContext
+      // itself runs once per MCP server process (memoized on first tool
+      // call), so the cache genuinely bounds growth for the life of this
+      // session. The per-occurrence count — every call, including the ones
+      // the record suppresses — is carried separately by the
+      // `board_degraded_opens` telemetry counter.
       setDegradedOpenListener(createDegradedOpenListener({ config, projectRoot, telemetry, clock, capturePoint: 'mcp:work-state', sessionId }));
       // The completion-record writer, built ONCE from the same
       // project root/telemetry/clock this context already resolved, so

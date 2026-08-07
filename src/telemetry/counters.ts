@@ -50,7 +50,7 @@ import { join } from 'node:path';
 export type Clock = () => Date;
 
 /**
- * The seven counters — a closed set. `redactions` exists because secret-gate
+ * The eight counters — a closed set. `redactions` exists because secret-gate
  * redactions would otherwise be UNOBSERVABLE — a successful gate action that
  * never appeared on the telemetry dashboard, whose only signals (a process
  * warning + the AppendResult tally) were discarded in transit on the hook

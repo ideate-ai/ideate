@@ -258,8 +258,22 @@ function buildContext(projectRoot: string): CliContext {
   setMigrationListener(createMigrationListener({ config, projectRoot, telemetry, clock, capturePoint: 'cli:ideate-work', sessionId }));
   // Durable degraded-open signal — the mirror-image crossing: if THIS
   // invocation is the older binary opening a newer, floor-accepted board,
-  // every open (not just the first) lands in the project's process record
-  // too, same reasoning as the migration signal above.
+  // only the FIRST open of each distinct condition (board path + board
+  // version + floor) lands in the project's process record; repeats of an
+  // already-recorded condition are suppressed (migration-signal.ts's
+  // `recordedConditions` cache). The per-occurrence count — every call,
+  // including the ones the record suppresses — is carried separately by the
+  // `board_degraded_opens` telemetry counter.
+  //
+  // That de-dup cache is closure state on the listener built by
+  // buildContext() above, and buildContext() runs once per CLI PROCESS —
+  // and this CLI is a fresh process on every invocation. So the cache does
+  // NOT bound anything across invocations: an old `ideate-work` binary run
+  // repeatedly against a persistently degraded board starts with an empty
+  // cache each time and writes one durable record per invocation, not one
+  // total. Only a long-lived process (the MCP server, see
+  // work-state/tools.ts's own version of this comment) gets the
+  // per-condition bound across more than a single call.
   setDegradedOpenListener(createDegradedOpenListener({ config, projectRoot, telemetry, clock, capturePoint: 'cli:ideate-work', sessionId }));
   // The completion-record writer, built from the SAME project
   // root/telemetry/clock this context already resolved.
