@@ -1,6 +1,13 @@
 // .ideate.json — the ideate project config module.
 //
-// Config schema, lazy init, and non-destructive detection of a legacy config.
+// Config schema, project-root discovery, lazy init, and non-destructive
+// detection of a legacy config.
+//
+// Root discovery (`findProjectRoot` / `resolveProjectRoot`) is separate from
+// loading: `loadConfig` takes the root it is given and lazily creates a config
+// there, which is correct for an explicitly-targeted caller and was the whole
+// defect for a cwd-defaulted one. Callers that used to default to
+// `process.cwd()` now resolve through `resolveProjectRoot` first.
 // The record path defaults to `.ideate/record/` and is configurable per
 // project; the config tells the ingester and the tools where to look — record
 // IDs, not paths, are the stable URIs.
@@ -30,6 +37,7 @@
 // coexistence discipline the legacy-to-current merge used for `record`/`backend`.
 
 import * as fs from "node:fs";
+import * as os from "node:os";
 import * as path from "node:path";
 
 /** The config schema major. */
@@ -44,6 +52,120 @@ export const DEFAULT_WORK_STATE_PATH = ".ideate-work/";
 
 /** The config file's name at the project root. */
 export const CONFIG_FILENAME = ".ideate.json";
+
+/**
+ * Env override naming the project root explicitly, bypassing the upward walk.
+ *
+ * Mirrors the `IDEATE_TELEMETRY_DIR` precedent in telemetry/cli.ts. The other
+ * explicit-targeting path — passing `projectRoot` straight to `loadConfig` /
+ * the store constructors, which is what scripts/migrate-v2 and the isolated
+ * board-validation runs do — never reaches the walk at all and is unaffected.
+ */
+export const PROJECT_ROOT_ENV = "IDEATE_PROJECT_ROOT";
+
+/** How {@link findProjectRoot} arrived at the root it returned. */
+export type ProjectRootOrigin =
+  /** {@link PROJECT_ROOT_ENV} named it; no walk was performed. */
+  | "env"
+  /** An enclosing `.ideate.json` was found at or above the start directory. */
+  | "enclosing"
+  /** No enclosing project exists; the start directory itself onboards. */
+  | "onboarding";
+
+export interface ProjectRootResolution {
+  /** The absolute project root to load config from. */
+  root: string;
+  origin: ProjectRootOrigin;
+  /** The absolute directory the search began at. */
+  startedFrom: string;
+}
+
+/**
+ * Find the project root that governs `startDir`, by walking UPWARD for an
+ * existing `.ideate.json`.
+ *
+ * WHY THIS EXISTS. `loadConfig` lazily creates a config wherever it is
+ * pointed. Every caller that defaulted to `process.cwd()` therefore onboarded
+ * a brand-new empty project the moment it ran from anywhere but the root, and
+ * silently wrote everything from that invocation into it. Twenty-one such
+ * phantom stores accumulated across six projects, holding ~2,470 stranded
+ * records — the largest under `plugin/`, simply because `cd plugin` is the
+ * natural place to run this repository's own build and tests.
+ *
+ * WHERE THE WALK STOPS. At the filesystem root, and — when the start
+ * directory is inside `$HOME` — BELOW `$HOME`: the home directory itself is
+ * never accepted as a project root, and nothing above it is consulted.
+ *
+ * That exclusion is not theoretical tidiness. `$HOME/.ideate.json` exists on
+ * the machine this defect was found on, holding 24 records, itself one of the
+ * phantom stores this walk exists to stop creating. Accepting it as a root
+ * would turn the fix into a worse bug: every invocation anywhere under the
+ * user's home directory that is not inside a real project would silently
+ * attach to one catch-all store. A home directory is not a project.
+ *
+ * Deliberately NOT the git repository boundary: this repository's own
+ * `plugin/` is a git submodule, so a git-boundary stop would fail to find the
+ * root in exactly the case that produced the largest phantom store.
+ *
+ * WHEN NOTHING IS FOUND the start directory is returned with origin
+ * `onboarding`, and lazy init proceeds there. First-run onboarding stays
+ * frictionless — no ceremony, no interview, unchanged from before — but the
+ * CLI layer announces it on stderr rather than doing it in silence (P-45: an
+ * unexpected configuration must never be adopted quietly).
+ */
+export function findProjectRoot(
+  startDir: string,
+  env: NodeJS.ProcessEnv = process.env,
+): ProjectRootResolution {
+  const override = env[PROJECT_ROOT_ENV];
+  if (typeof override === "string" && override.trim().length > 0) {
+    const root = path.resolve(override.trim());
+    return { root, origin: "env", startedFrom: root };
+  }
+
+  const startedFrom = path.resolve(startDir);
+  const home = path.resolve(os.homedir());
+  // Only bind the walk to $HOME when the start is genuinely inside it;
+  // a start outside (a temp dir, a checkout under /srv) walks to the root.
+  const boundedByHome = startedFrom === home || startedFrom.startsWith(`${home}${path.sep}`);
+
+  let dir = startedFrom;
+  for (;;) {
+    // Checked BEFORE the existence probe, so `$HOME/.ideate.json` is never
+    // consulted at all — see the note above on why the home directory is
+    // excluded rather than merely being the last rung of the ladder.
+    if (boundedByHome && dir === home) break;
+    if (fs.existsSync(path.join(dir, CONFIG_FILENAME))) {
+      return { root: dir, origin: "enclosing", startedFrom };
+    }
+    const parent = path.dirname(dir);
+    if (parent === dir) break; // filesystem root
+    dir = parent;
+  }
+
+  return { root: startedFrom, origin: "onboarding", startedFrom };
+}
+
+/**
+ * The project root for a default-rooted caller: {@link findProjectRoot}, plus
+ * the loud stderr notice when the answer is "no enclosing project, onboarding
+ * a new one here". THE resolution seam for every caller that used to pass
+ * `process.cwd()` straight through.
+ */
+export function resolveProjectRoot(
+  startDir: string,
+  options: { env?: NodeJS.ProcessEnv; warn?: (message: string) => void } = {},
+): string {
+  const resolution = findProjectRoot(startDir, options.env ?? process.env);
+  if (resolution.origin === "onboarding" && options.warn !== undefined) {
+    options.warn(
+      `ideate: no enclosing ${CONFIG_FILENAME} found at or above ${resolution.startedFrom} — ` +
+        `onboarding a NEW ideate project there. If you meant to use an existing project, ` +
+        `run from inside it or set ${PROJECT_ROOT_ENV}.\n`,
+    );
+  }
+  return resolution.root;
+}
 
 /** The config shape — exactly these fields, nothing from the legacy knowledge-store schema. */
 export interface IdeateConfigV3 {

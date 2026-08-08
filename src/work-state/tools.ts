@@ -119,7 +119,7 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { CursorSchema, ProgressSchema, ToolAnnotationsSchema } from '@modelcontextprotocol/sdk/types.js';
 
-import { loadConfig, workStatePath } from '../config/ideate-config.js';
+import { loadConfig, resolveProjectRoot, workStatePath } from '../config/ideate-config.js';
 import type { Clock } from '../record/id.js';
 import { createUlidGenerator, isUlid } from '../record/id.js';
 import { TelemetryCounters } from '../telemetry/counters.js';
@@ -335,7 +335,7 @@ export function createWorkStateToolsRegistrar(options: WorkStateToolsOptions = {
   const getContext = (): ToolContext => {
     if (context === undefined) {
       const clock = options.clock ?? (() => new Date());
-      const projectRoot = options.projectRoot ?? process.cwd();
+      const projectRoot = options.projectRoot ?? resolveProjectRoot(process.cwd());
       // First call = onboarding: loadConfig lazily creates .ideate.json and
       // the record directory when absent (see ideate-config.ts) — the
       // work-state store itself stays lazy-init on its OWN first write

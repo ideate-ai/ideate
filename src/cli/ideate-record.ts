@@ -59,7 +59,7 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { dirname, isAbsolute, join, relative } from 'node:path';
 
-import { loadConfig } from '../config/ideate-config.js';
+import { loadConfig, resolveProjectRoot } from '../config/ideate-config.js';
 import type { Clock } from '../record/id.js';
 import { createUlidGenerator } from '../record/id.js';
 import {
@@ -223,6 +223,22 @@ interface CliContext {
  * default (`<projectRoot>/.ideate-telemetry`) so both transports and the
  * `ideate-telemetry` CLI share one state file.
  */
+/**
+ * The project root for this invocation: walk UPWARD from the working
+ * directory for an enclosing `.ideate.json` rather than onboarding a new
+ * project wherever the caller happened to be standing. See
+ * config/ideate-config.ts's `findProjectRoot` for why the walk stops where
+ * it does.
+ *
+ * This is also what fixes the lifecycle hooks: hook-lib.mjs spawns this
+ * binary with `cwd: projectRoot` taken from the host's payload, so a hook
+ * fired from a subdirectory now resolves to the enclosing project here
+ * rather than seeding a store beside whatever the shell was pointed at.
+ */
+function cliProjectRoot(stderr: NodeJS.WritableStream): string {
+  return resolveProjectRoot(process.cwd(), { warn: (message) => stderr.write(message) });
+}
+
 function buildContext(projectRoot: string, sessionId?: string): CliContext {
   const clock: Clock = () => new Date();
   const config = loadConfig(projectRoot);
@@ -274,7 +290,7 @@ async function runAppend(
   let content = parsed.values.get('--content') ?? '';
   if (content === '-') content = await readAll(stdin);
 
-  const ctx = buildContext(process.cwd());
+  const ctx = buildContext(cliProjectRoot(stderr));
   const taskId = parsed.values.get('--task');
   const supersedes = parsed.values.get('--supersedes');
   // THE write: through the gated core. No second write path exists here.
@@ -390,7 +406,7 @@ function runRead(argv: readonly string[], stdout: NodeJS.WritableStream, stderr:
     }
   }
 
-  const ctx = buildContext(process.cwd());
+  const ctx = buildContext(cliProjectRoot(stderr));
   const scope = parsed.values.get('--scope');
   const id = parsed.values.get('--id');
   const cursor = parsed.values.get('--cursor');
@@ -677,7 +693,13 @@ async function runSessionEnd(
   const sessionId = asString(payload['session_id']) ?? 'unknown';
   const reason = asString(payload['reason']) ?? 'unknown';
   const payloadCwd = asString(payload['cwd']);
-  const cwd = payloadCwd !== undefined && existsSync(payloadCwd) ? payloadCwd : process.cwd();
+  // The host's reported cwd is a STARTING POINT, not the project root: it is
+  // wherever the session happened to be standing. Resolve it the same way
+  // every other subcommand does, or session-end seeds a store next to it.
+  const cwd = resolveProjectRoot(
+    payloadCwd !== undefined && existsSync(payloadCwd) ? payloadCwd : process.cwd(),
+    { warn: (message) => stderr.write(message) },
+  );
   const transcriptPath = asString(payload['transcript_path']);
   const summary = transcriptPath === undefined ? undefined : summarizeTranscript(transcriptPath);
   if (transcriptPath !== undefined && summary === undefined) {
@@ -782,7 +804,7 @@ function runPrime(argv: readonly string[], stdout: NodeJS.WritableStream, stderr
     }
   }
 
-  const ctx = buildContext(process.cwd());
+  const ctx = buildContext(cliProjectRoot(stderr));
   // Counter 2: a priming injection fired from this source.
   ctx.telemetry.primingRequested('cli:prime', ctx.sessionId);
   const scope = parsed.values.get('--scope');

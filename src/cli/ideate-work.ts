@@ -40,7 +40,7 @@
 
 import { join } from 'node:path';
 
-import { loadConfig, workStatePath } from '../config/ideate-config.js';
+import { loadConfig, resolveProjectRoot, workStatePath } from '../config/ideate-config.js';
 import type { Clock } from '../record/id.js';
 import { createUlidGenerator } from '../record/id.js';
 import { TelemetryCounters } from '../telemetry/counters.js';
@@ -240,6 +240,55 @@ interface CliContext {
   completionRecordWriter: CompletionRecordWriter;
 }
 
+/**
+ * The project root for this invocation: walk UPWARD from the working
+ * directory for an enclosing `.ideate.json` rather than onboarding a new
+ * project wherever the caller happened to be standing.
+ *
+ * Subagents are the most exposed caller — nothing pins their working
+ * directory before they shell out, and this CLI is the only door they have.
+ * Before this seam existed, `cd plugin && ideate-work create ...` wrote into
+ * a brand-new empty board under `plugin/` and reported success.
+ */
+function cliProjectRoot(stderr: NodeJS.WritableStream): string {
+  return resolveProjectRoot(process.cwd(), { warn: (message) => stderr.write(message) });
+}
+
+/**
+ * Print the id-lint's own findings on stderr — WARN, never reject, so this
+ * never affects the exit code: the write already succeeded by the time this
+ * runs.
+ *
+ * WHY THIS IS HERE AT ALL. The check that surfaces these ids was itself added
+ * as a correction (01KYV387QKRP3V330WAS6DX95K), and the fix landed on the MCP
+ * door only — `work_create`, `work_update_meta` and `work_release` return the
+ * unresolved ids to their caller, while this file passed the callback at none
+ * of the three. A `--supersedes` naming an id that does not exist was accepted
+ * in silence.
+ *
+ * The door that was skipped is the wrong one to have skipped: a human working
+ * in a session got the warning, and a subagent — which has no MCP tools and no
+ * other door — did not, despite being the caller most likely to construct an
+ * id from something it read rather than one it holds.
+ *
+ * Deliberately a verbatim mirror of `writeUnresolvedIdWarnings` in
+ * cli/ideate-record.ts, down to the wording, because P-40 sibling-surface
+ * parity is the whole point of this function existing.
+ */
+function writeUnresolvedIdWarnings(
+  stderr: NodeJS.WritableStream,
+  subcommand: string,
+  unresolvedIds: readonly { id: string; resolution: 'unresolved' | 'unknown' }[],
+): void {
+  for (const item of unresolvedIds) {
+    stderr.write(
+      item.resolution === 'unknown'
+        ? `ideate-work: ${subcommand}: id-lint could not verify ${item.id} — no cross-store resolver was available\n`
+        : `ideate-work: ${subcommand}: id-lint: ${item.id} does not resolve as a record or a work item (if this is a correction quoting a dead id on purpose, no action is needed)\n`,
+    );
+  }
+}
+
 function buildContext(projectRoot: string): CliContext {
   const clock: Clock = () => new Date();
   const config = loadConfig(projectRoot);
@@ -340,7 +389,7 @@ function runCreate(argv: readonly string[], stdout: NodeJS.WritableStream, stder
   const tenantId = parsed.values.get('--tenant');
   const agent = parsed.values.get('--agent');
 
-  const ctx = buildContext(process.cwd());
+  const ctx = buildContext(cliProjectRoot(stderr));
   try {
     const item = ctx.verbs.create({
       title,
@@ -355,6 +404,8 @@ function runCreate(argv: readonly string[], stdout: NodeJS.WritableStream, stder
       ...(supersedes === undefined || supersedes === '' ? {} : { references: [{ rel: 'supersedes', id: supersedes }] }),
       ...(tenantId === undefined ? {} : { tenant_id: tenantId }),
       created_by: actorFrom(human, agent),
+    }, (ids) => {
+      writeUnresolvedIdWarnings(stderr, 'create', ids);
     });
     printItem(item, stdout, false);
     return 0;
@@ -375,7 +426,7 @@ function runGet(argv: readonly string[], stdout: NodeJS.WritableStream, stderr: 
     stderr.write('ideate-work: get requires --id\n');
     return 1;
   }
-  const ctx = buildContext(process.cwd());
+  const ctx = buildContext(cliProjectRoot(stderr));
   try {
     const item = ctx.verbs.get(id, makeExpiryCheck(ctx));
     if (item === null) {
@@ -412,7 +463,7 @@ function runList(argv: readonly string[], stdout: NodeJS.WritableStream, stderr:
     stderr.write('ideate-work: list: --include-spec requires --json (the human-readable listing never prints spec bodies)\n');
     return 1;
   }
-  const ctx = buildContext(process.cwd());
+  const ctx = buildContext(cliProjectRoot(stderr));
   try {
     const status = parseStatusArg(parsed.values.get('--status'));
     const tenantId = parsed.values.get('--tenant');
@@ -525,7 +576,7 @@ function runUpdateMeta(argv: readonly string[], stdout: NodeJS.WritableStream, s
     stderr.write('ideate-work: update-meta requires --id and --expected-version\n');
     return 1;
   }
-  const ctx = buildContext(process.cwd());
+  const ctx = buildContext(cliProjectRoot(stderr));
   try {
     const expectedVersion = parseIntArg(expectedVersionRaw, '--expected-version');
     const dependsOnRaw = parsed.values.get('--depends-on');
@@ -539,7 +590,9 @@ function runUpdateMeta(argv: readonly string[], stdout: NodeJS.WritableStream, s
       // semantics (mirrors `create --supersedes` and the MCP work_update_meta).
       ...(supersedes === undefined || supersedes === '' ? {} : { references: [{ rel: 'supersedes', id: supersedes }] }),
     };
-    const item = ctx.verbs.updateMeta(id, expectedVersion, patch, makeExpiryCheck(ctx));
+    const item = ctx.verbs.updateMeta(id, expectedVersion, patch, makeExpiryCheck(ctx), (ids) => {
+      writeUnresolvedIdWarnings(stderr, 'update-meta', ids);
+    });
     printItem(item, stdout, false);
     return 0;
   } catch (err) {
@@ -560,7 +613,7 @@ function runClaim(argv: readonly string[], stdout: NodeJS.WritableStream, stderr
     stderr.write('ideate-work: claim requires --id and --human\n');
     return 1;
   }
-  const ctx = buildContext(process.cwd());
+  const ctx = buildContext(cliProjectRoot(stderr));
   try {
     const leaseMsRaw = parsed.values.get('--lease-ms');
     const leaseMs = leaseMsRaw === undefined ? undefined : parseIntArg(leaseMsRaw, '--lease-ms');
@@ -589,7 +642,7 @@ function runRenew(argv: readonly string[], stdout: NodeJS.WritableStream, stderr
     stderr.write('ideate-work: renew requires --id and --token\n');
     return 1;
   }
-  const ctx = buildContext(process.cwd());
+  const ctx = buildContext(cliProjectRoot(stderr));
   try {
     const token = parseIntArg(tokenRaw, '--token');
     const leaseMsRaw = parsed.values.get('--lease-ms');
@@ -615,10 +668,12 @@ function runRelease(argv: readonly string[], stdout: NodeJS.WritableStream, stde
     stderr.write('ideate-work: release requires --id and --token\n');
     return 1;
   }
-  const ctx = buildContext(process.cwd());
+  const ctx = buildContext(cliProjectRoot(stderr));
   try {
     const token = parseIntArg(tokenRaw, '--token');
-    const item = release(ctx.store, ctx.clock, id, token, parsed.values.get('--note'));
+    const item = release(ctx.store, ctx.clock, id, token, parsed.values.get('--note'), (ids) => {
+      writeUnresolvedIdWarnings(stderr, 'release', ids);
+    });
     printItem(item, stdout, false);
     return 0;
   } catch (err) {
@@ -639,7 +694,7 @@ function runComplete(argv: readonly string[], stdout: NodeJS.WritableStream, std
     stderr.write('ideate-work: complete requires --id and --token\n');
     return 1;
   }
-  const ctx = buildContext(process.cwd());
+  const ctx = buildContext(cliProjectRoot(stderr));
   try {
     const token = parseIntArg(tokenRaw, '--token');
     // Completion-record post-commit hook — same call site as the MCP
@@ -678,7 +733,7 @@ function runCancel(argv: readonly string[], stdout: NodeJS.WritableStream, stder
     stderr.write('ideate-work: cancel requires --id and --human\n');
     return 1;
   }
-  const ctx = buildContext(process.cwd());
+  const ctx = buildContext(cliProjectRoot(stderr));
   try {
     const actor = actorFrom(human, parsed.values.get('--agent'));
     const item = ctx.verbs.cancel(id, actor, makeExpiryCheck(ctx));
@@ -702,7 +757,7 @@ function runReopen(argv: readonly string[], stdout: NodeJS.WritableStream, stder
     stderr.write('ideate-work: reopen requires --id and --human\n');
     return 1;
   }
-  const ctx = buildContext(process.cwd());
+  const ctx = buildContext(cliProjectRoot(stderr));
   try {
     const actor = actorFrom(human, parsed.values.get('--agent'));
     const item = ctx.verbs.reopen(id, actor, makeExpiryCheck(ctx));
@@ -725,7 +780,7 @@ function runEvents(argv: readonly string[], stdout: NodeJS.WritableStream, stder
     stderr.write('ideate-work: events requires --id\n');
     return 1;
   }
-  const ctx = buildContext(process.cwd());
+  const ctx = buildContext(cliProjectRoot(stderr));
   try {
     const events = ctx.verbs.events(id, makeExpiryCheck(ctx));
     printEvents(events, stdout, parsed.switches.has('--json'));
@@ -749,7 +804,7 @@ function runSweep(argv: readonly string[], stderr: NodeJS.WritableStream): numbe
     stderr.write(`ideate-work: sweep: ${err} (ignored — hook path)\n`);
   }
   try {
-    const ctx = buildContext(process.cwd());
+    const ctx = buildContext(cliProjectRoot(stderr));
     const tenantId = parsed.values.get('--tenant');
     const results = sweepBoard(ctx.store, ctx.clock, tenantId === undefined ? undefined : { tenant_id: tenantId });
     const recovered = results.filter((r) => r.expired).length;

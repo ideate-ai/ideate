@@ -60,6 +60,7 @@ import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { CursorSchema, ProgressSchema, ToolAnnotationsSchema } from '@modelcontextprotocol/sdk/types.js';
 
 import type { ToolRegistrar } from '../server.js';
+import { resolveProjectRoot } from '../config/ideate-config.js';
 import type { Clock } from '../record/id.js';
 import { LIST_PAYLOAD_BUDGET_CHARS, applyListPayloadBudget, measureCompactItemChars } from '../transport/payload-budget.js';
 import { STEERING_STATUSES, SteeringSchemaError, isSteeringId } from './schema.js';
@@ -320,7 +321,7 @@ export function createSteeringToolsRegistrar(options: SteeringToolsOptions = {})
         },
       },
       async (args): Promise<CallToolResult> => {
-        const projectRoot = options.projectRoot ?? process.cwd();
+        const projectRoot = options.projectRoot ?? resolveProjectRoot(process.cwd());
         // THE GATE STAYS FIRST — ahead of argument validation, cursor decoding
         // and any store touch. A gated project must not be able to learn
         // anything from an error message (not even that its cursor was
@@ -396,7 +397,7 @@ export function createSteeringToolsRegistrar(options: SteeringToolsOptions = {})
         },
       },
       async (args): Promise<CallToolResult> => {
-        const projectRoot = options.projectRoot ?? process.cwd();
+        const projectRoot = options.projectRoot ?? resolveProjectRoot(process.cwd());
         if (!readSteeringEnabledFlag(projectRoot)) return gatedResult();
         const status = normalizeStatus(args.status);
         const refs = referencesFromArgs(args.supersedes, args.references);

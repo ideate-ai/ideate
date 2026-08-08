@@ -66,7 +66,7 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { CursorSchema, ProgressSchema, ToolAnnotationsSchema } from '@modelcontextprotocol/sdk/types.js';
 
-import { loadConfig } from '../config/ideate-config.js';
+import { loadConfig, resolveProjectRoot } from '../config/ideate-config.js';
 import type { ToolRegistrar } from '../server.js';
 import { TelemetryCounters } from '../telemetry/counters.js';
 import { createProjectIdResolver } from '../transport/id-resolver.js';
@@ -261,7 +261,7 @@ export function createRecordToolsRegistrar(options: RecordToolsOptions = {}): To
   const getContext = (): ToolContext => {
     if (context === undefined) {
       const clock = options.clock ?? (() => new Date());
-      const projectRoot = options.projectRoot ?? process.cwd();
+      const projectRoot = options.projectRoot ?? resolveProjectRoot(process.cwd());
       // First call = onboarding: loadConfig lazily creates .ideate.json and
       // the record directory when absent (ideate-config.ts).
       const config = loadConfig(projectRoot);

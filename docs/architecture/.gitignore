@@ -2,15 +2,10 @@
 # deliberately NOT ignored: it is the artifact handed to the alignment session.
 build/
 
-# A phantom ideate store keeps appearing here: `loadConfig` lazily onboards
-# wherever it is pointed and does not walk up to find the enclosing project, so
-# any ideate command-line call whose working directory is this one starts a new
-# store instead of joining the project's. Twelve records accumulated that way
-# and were discarded on 2026-08-04 (all duplicates or spurious re-reports — see
-# board item 01KZ72R4NBMH9CDD0CDHS7FMDA, which tracks the underlying bug).
-# These lines stay until that item closes: the cause is still live, so the
-# directory can repopulate at any time, and this repo is the public-facing one
-# (P-39 — nothing enters public history by accident).
-.ideate/
-.ideate-telemetry/
-.ideate.json
+# The three phantom-store paths that used to be ignored here are gone: the
+# cause closed on 2026-08-07. `loadConfig` no longer onboards wherever it is
+# pointed — the command-line tools resolve the project root by walking upward
+# for an enclosing `.ideate.json` (src/config/ideate-config.ts's
+# `findProjectRoot`, guarded by src/config/project-root.test.ts), so a call
+# whose working directory is this one joins the project's store instead of
+# starting a new one beside it. Board item 01KZ72R4NBMH9CDD0CDHS7FMDA.
