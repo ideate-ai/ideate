@@ -77,7 +77,7 @@ describe('gate 1: a command is only a commit boundary when it actually runs `git
     'git check-ignore -v .ideate.json',
   ];
   for (const command of NOT_COMMITS) {
-    it(`rejects: ${command.split('\n')[0].slice(0, 62)}`, () => {
+    it(`rejects: ${(command.split('\n')[0] ?? command).slice(0, 62)}`, () => {
       expect(commandCommits(command)).toBe(false);
     });
   }
@@ -170,7 +170,9 @@ describe('the hook end to end, driven the way the host drives it', () => {
     fireHook(repo, 'git commit -m "the one real commit"');
     const records = commitBoundaryRecords(repo);
     expect(records).toHaveLength(1);
-    const body = execFileSync('cat', [records[0]], { encoding: 'utf8' });
+    const [only] = records;
+    if (only === undefined) throw new Error('no commit-boundary record was written');
+    const body = execFileSync('cat', [only], { encoding: 'utf8' });
     expect(body).toContain(repo.hash);
     expect(body).toContain('the one real commit');
   });
@@ -218,6 +220,8 @@ describe('the hook end to end, driven the way the host drives it', () => {
     fireHook(repo, 'git commit -m "the one real commit"');
     const first = commitBoundaryRecords(repo);
     expect(first).toHaveLength(1);
+    const [firstRecord] = first;
+    if (firstRecord === undefined) throw new Error('no commit-boundary record was written');
 
     // A later, different session fires on a command that is not a commit.
     const payload = JSON.stringify({
@@ -228,7 +232,7 @@ describe('the hook end to end, driven the way the host drives it', () => {
     });
     execFileSync(process.execPath, [HOOK], { cwd: repo.root, input: payload, encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] });
     expect(commitBoundaryRecords(repo)).toHaveLength(1);
-    expect(execFileSync('cat', [first[0]], { encoding: 'utf8' })).not.toContain('a-completely-different-session');
+    expect(execFileSync('cat', [firstRecord], { encoding: 'utf8' })).not.toContain('a-completely-different-session');
   });
 
   it('fired from a SUBDIRECTORY, the record lands in the project store — not a new one beside it', () => {
