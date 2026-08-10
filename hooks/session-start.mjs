@@ -23,6 +23,7 @@
 // hook-lib.mjs).
 
 import { spawnSync } from 'node:child_process';
+import { homedir } from 'node:os';
 import { join } from 'node:path';
 
 import { errorMessage, parsePayload, readStdin, resolveProjectRoot, PLUGIN_ROOT, RECORD_BIN } from './hook-lib.mjs';
@@ -69,6 +70,32 @@ try {
     if (sweepStderr.length > 0) {
       process.stderr.write(sweepStderr.endsWith('\n') ? sweepStderr : `${sweepStderr}\n`);
     }
+  }
+
+  // Duplicate-registration diagnostic. This project wired all seven of its
+  // hooks TWICE for the life of the repository — once via the plugin, once via
+  // the project's local settings — and nothing noticed; it was found by chance.
+  // Every captured fact was stored twice, so the digest emitted above carried
+  // half the distinct facts it appeared to.
+  //
+  // It runs HERE rather than in the test suite because it is a property of a
+  // machine's configuration, not of the shipped source: a vitest case would
+  // fail for a contributor whose setup is fine and pass vacuously in CI, where
+  // no plugin is installed. Warning rather than failing, but loudly and every
+  // session (P-45 — a degraded configuration must never be adopted in silence).
+  //
+  // Stderr, never stdout: stdout at SessionStart IS the priming digest handed
+  // to the model, and a diagnostic must never be mistaken for recalled context.
+  try {
+    const { enumerateRegistrations, findDuplicateRegistrations, formatDuplicateWarning } = await import(
+      join(PLUGIN_ROOT, 'dist', 'hooks-registry', 'duplicate-registrations.js')
+    );
+    const claudeDir = process.env.CLAUDE_CONFIG_DIR ?? join(homedir(), '.claude');
+    const warning = formatDuplicateWarning(findDuplicateRegistrations(enumerateRegistrations({ projectRoot, claudeDir })));
+    if (warning.length > 0) process.stderr.write(warning);
+  } catch (err) {
+    // A missing or unbuilt dist must not turn a diagnostic into a hook failure.
+    process.stderr.write(`ideate session-start hook: duplicate-registration check unavailable (${errorMessage(err)})\n`);
   }
 } catch (err) {
   process.stderr.write(`ideate session-start hook: ${errorMessage(err)}\n`);

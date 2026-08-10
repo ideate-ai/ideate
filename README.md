@@ -236,10 +236,12 @@ subcommands plus a CLI-only `sweep` (the session-boundary expiry pass the
 subcommand except `sweep` exits 1 on failure; `sweep` is a hook path and
 always exits 0, printing nothing to stdout.
 
-- `ideate-work create --title <t> --spec <s> --spec-format <f> --human <h> [--agent <a>] [--depends-on <id1,id2,...>] [--supersedes <id>] [--tenant <t>]`
+- `ideate-work create --title <t> --spec <s> --spec-format <f> --human <h> [--agent <a>] [--depends-on <id1,id2,...>] [--supersedes <id>] [--parent <id>] [--tenant <t>]`
   — create one item; prints it as JSON. `--supersedes <id>` records a
   supersedes edge to the item this one replaces, and the superseded item
   surfaces the replacement as a derived `referenced_by` backlink.
+  `--parent <id>` sets the CONTAINMENT parent — a different edge from
+  `--depends-on`, which is ordering; omit it for a root item.
 - `ideate-work get --id <id> [--json]` — fetch one item, running the
   lazy-expiry seam first; a miss prints `(not found)`, or `null` under
   `--json`. This is the way to read one item's full `spec`.
@@ -257,8 +259,11 @@ always exits 0, printing nothing to stdout.
   for). The human-readable listing is one line per item, unpaged and
   unbudgeted unless you pass `--limit` or `--cursor`, in which case it prints
   a resume hint while items remain.
-- `ideate-work update-meta --id <id> --expected-version <n> [--title <t>] [--spec <s>] [--spec-format <f>] [--depends-on <id1,id2,...>] [--supersedes <id>]`
-  — update metadata via optimistic compare-and-set on `version`.
+- `ideate-work update-meta --id <id> --expected-version <n> [--title <t>] [--spec <s>] [--spec-format <f>] [--depends-on <id1,id2,...>] [--supersedes <id>] [--parent <id>] [--clear-parent]`
+  — update metadata via optimistic compare-and-set on `version`. The
+  containment parent is tri-state: pass neither flag to leave it unchanged,
+  `--parent <id>` to set or move it, `--clear-parent` to make the item a root
+  again. The two are mutually exclusive.
 - `ideate-work claim --id <id> --human <h> [--agent <a>] [--lease-ms <n>]` —
   claim an open, claimable item; mints the fencing token the next three
   subcommands require.

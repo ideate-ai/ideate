@@ -75,8 +75,11 @@ const USAGE = `Usage: ideate-work <subcommand> [options]
 
 Subcommands (mirror the eleven MCP work-state verbs):
   create --title <t> --spec <s> --spec-format <f> --human <h> [--agent <a>]
-         [--depends-on <id1,id2,...>] [--supersedes <id>] [--tenant <t>]
+         [--depends-on <id1,id2,...>] [--supersedes <id>] [--parent <id>]
+         [--tenant <t>]
       Create a new work item; prints the created item as JSON.
+      \`--parent <id>\` sets the CONTAINMENT parent — a different edge from
+      \`--depends-on\`, which is ordering. Omit it for a root item.
       \`--supersedes <id>\` records a supersedes edge to the item this one
       replaces — the superseded item surfaces the replacement as a derived
       referenced_by backlink on get/list.
@@ -113,7 +116,11 @@ Subcommands (mirror the eleven MCP work-state verbs):
       The human-readable listing is NOT budgeted.
   update-meta --id <id> --expected-version <n> [--title <t>] [--spec <s>]
          [--spec-format <f>] [--depends-on <id1,id2,...>] [--supersedes <id>]
+         [--parent <id> | --clear-parent]
       Update metadata via optimistic CAS on version.
+      Containment parent is TRI-STATE: pass neither flag to leave it
+      unchanged, \`--parent <id>\` to set or move it, \`--clear-parent\` to
+      make the item a root again. The two are mutually exclusive.
   claim --id <id> --human <h> [--agent <a>] [--lease-ms <n>]
       Claim an open, claimable item; mints a fencing token.
   renew --id <id> --token <n> [--lease-ms <n>]
@@ -367,6 +374,7 @@ function runCreate(argv: readonly string[], stdout: NodeJS.WritableStream, stder
     '--spec-format': 'value',
     '--depends-on': 'value',
     '--supersedes': 'value',
+    '--parent': 'value',
     '--tenant': 'value',
     '--human': 'value',
     '--agent': 'value',
@@ -386,6 +394,7 @@ function runCreate(argv: readonly string[], stdout: NodeJS.WritableStream, stder
   const dependsOnRaw = parsed.values.get('--depends-on');
   const dependsOn = dependsOnRaw === undefined ? undefined : dependsOnRaw.split(',').filter((s) => s.length > 0);
   const supersedes = parsed.values.get('--supersedes');
+  const parentId = parsed.values.get('--parent');
   const tenantId = parsed.values.get('--tenant');
   const agent = parsed.values.get('--agent');
 
@@ -402,6 +411,11 @@ function runCreate(argv: readonly string[], stdout: NodeJS.WritableStream, stder
       // (store.ts's write chokepoint and dag.ts's guard), so a malformed or
       // dangling id surfaces as a typed engine error here, exit 1.
       ...(supersedes === undefined || supersedes === '' ? {} : { references: [{ rel: 'supersedes', id: supersedes }] }),
+      // CONTAINMENT parent. On create, absent and null both produce a root
+      // item, so a single optional flag is the whole surface — the tri-state
+      // only matters on update-meta, which has to distinguish "leave alone"
+      // from "move to root". Mirrors work-state/tools.ts's work_create.
+      ...(parentId === undefined || parentId === '' ? {} : { parent_id: parentId }),
       ...(tenantId === undefined ? {} : { tenant_id: tenantId }),
       created_by: actorFrom(human, agent),
     }, (ids) => {
@@ -565,6 +579,8 @@ function runUpdateMeta(argv: readonly string[], stdout: NodeJS.WritableStream, s
     '--spec-format': 'value',
     '--depends-on': 'value',
     '--supersedes': 'value',
+    '--parent': 'value',
+    '--clear-parent': 'switch',
   });
   if (parsed.errors.length > 0) {
     for (const err of parsed.errors) stderr.write(`ideate-work: update-meta: ${err}\n`);
@@ -576,6 +592,22 @@ function runUpdateMeta(argv: readonly string[], stdout: NodeJS.WritableStream, s
     stderr.write('ideate-work: update-meta requires --id and --expected-version\n');
     return 1;
   }
+  // CONTAINMENT parent, tri-state — the whole reason this needs care.
+  //
+  // The store distinguishes THREE cases and the difference is load-bearing:
+  // key absent means "leave the parent alone", a string means "set or move",
+  // and key present but null means "clear to root". A CLI has no null, so the
+  // three map onto: neither flag / `--parent <id>` / `--clear-parent`.
+  // work-state/tools.ts:596-611 preserves the same distinction through the
+  // MCP adapter; losing it here would make "move to root" unreachable and
+  // silently turn it into "leave unchanged".
+  const parentRaw = parsed.values.get('--parent');
+  const clearParent = parsed.switches.has('--clear-parent');
+  if (clearParent && parentRaw !== undefined) {
+    stderr.write('ideate-work: update-meta: --parent and --clear-parent are mutually exclusive\n');
+    return 1;
+  }
+
   const ctx = buildContext(cliProjectRoot(stderr));
   try {
     const expectedVersion = parseIntArg(expectedVersionRaw, '--expected-version');
@@ -589,6 +621,7 @@ function runUpdateMeta(argv: readonly string[], stdout: NodeJS.WritableStream, s
       // `--supersedes <id>` maps to one typed forward edge with wholesale-replace
       // semantics (mirrors `create --supersedes` and the MCP work_update_meta).
       ...(supersedes === undefined || supersedes === '' ? {} : { references: [{ rel: 'supersedes', id: supersedes }] }),
+      ...(clearParent ? { parent_id: null } : parentRaw === undefined ? {} : { parent_id: parentRaw }),
     };
     const item = ctx.verbs.updateMeta(id, expectedVersion, patch, makeExpiryCheck(ctx), (ids) => {
       writeUnresolvedIdWarnings(stderr, 'update-meta', ids);
