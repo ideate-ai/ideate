@@ -67,17 +67,35 @@ import { WorkStateModuleError } from '../work-state/types.js';
 import type { ActorRef, UpdateMetaInput, WorkItem, WorkItemStatus, WorkStateEvent } from '../work-state/types.js';
 import type { ExpiryCheck } from '../work-state/verbs.js';
 import { WorkStateVerbs } from '../work-state/verbs.js';
+import { readAllStdin, resolveStdinArg, stdinUsageNote } from './stdin-arg.js';
 
 /** The one CLI-only subcommand — never an MCP tool (see file header). */
 const HOOK_SUBCOMMANDS: ReadonlySet<string> = new Set(['sweep']);
 
+/**
+ * `update-meta`'s shrink guard (decision, made explicitly rather than left
+ * implicit — see runUpdateMeta below): replacing a spec at least this large
+ * with one under {@link SHRINK_GUARD_NEW_SPEC_MAX_CHARS} is refused unless
+ * `--confirm-shrink` is passed. Deliberately loose thresholds — the guard
+ * exists to catch "a substantial spec collapsed to a handful of characters"
+ * (the exact shape of finding 01M2MKGS5PRV7WSD0W4ZQYAG4A), not to police
+ * ordinary trims. Never consulted on `create`, which has no prior value.
+ */
+const SHRINK_GUARD_OLD_SPEC_MIN_CHARS = 200;
+/** See {@link SHRINK_GUARD_OLD_SPEC_MIN_CHARS}. */
+const SHRINK_GUARD_NEW_SPEC_MAX_CHARS = 20;
+
 const USAGE = `Usage: ideate-work <subcommand> [options]
 
 Subcommands (mirror the eleven MCP work-state verbs):
-  create --title <t> --spec <s> --spec-format <f> --human <h> [--agent <a>]
+  create --title <t> --spec <s|-> --spec-format <f> --human <h> [--agent <a>]
          [--depends-on <id1,id2,...>] [--supersedes <id>] [--parent <id>]
          [--tenant <t>]
       Create a new work item; prints the created item as JSON.
+      ${stdinUsageNote('--spec', 'the spec body')} — the same convention
+      \`ideate-record append --content -\` established, extended to this
+      binary's own long-text field (see \`update-meta\` below for the same
+      convention on an EXISTING item's spec).
       \`--parent <id>\` sets the CONTAINMENT parent — a different edge from
       \`--depends-on\`, which is ordering. Omit it for a root item.
       \`--supersedes <id>\` records a supersedes edge to the item this one
@@ -114,21 +132,32 @@ Subcommands (mirror the eleven MCP work-state verbs):
       whenever items remain for ANY reason and null ONLY at true exhaustion.
       A single item larger than the whole budget is still returned, alone.
       The human-readable listing is NOT budgeted.
-  update-meta --id <id> --expected-version <n> [--title <t>] [--spec <s>]
+  update-meta --id <id> --expected-version <n> [--title <t>] [--spec <s|->]
          [--spec-format <f>] [--depends-on <id1,id2,...>] [--supersedes <id>]
-         [--parent <id> | --clear-parent]
+         [--parent <id> | --clear-parent] [--confirm-shrink]
       Update metadata via optimistic CAS on version.
+      ${stdinUsageNote('--spec', 'the new spec body')}.
       Containment parent is TRI-STATE: pass neither flag to leave it
       unchanged, \`--parent <id>\` to set or move it, \`--clear-parent\` to
       make the item a root again. The two are mutually exclusive.
+      SHRINK GUARD: replacing a substantial existing spec (over
+      ${String(SHRINK_GUARD_OLD_SPEC_MIN_CHARS)} characters) with a tiny one (under
+      ${String(SHRINK_GUARD_NEW_SPEC_MAX_CHARS)} characters) is refused — a spec that shrinks that far is
+      almost never intentional (this is exactly the shape of the bug this
+      guard was added for: a well-formed write that quietly destroys the
+      spec body). Pass \`--confirm-shrink\` when the shrink really is
+      intentional. Never triggered on \`create\`, which has no prior value to
+      shrink from.
   claim --id <id> --human <h> [--agent <a>] [--lease-ms <n>]
       Claim an open, claimable item; mints a fencing token.
   renew --id <id> --token <n> [--lease-ms <n>]
       Renew an active claim's lease. No actor flags — the token proves identity.
-  release --id <id> --token <n> [--note <n>]
+  release --id <id> --token <n> [--note <n|->]
       Release an active claim back to open. No actor flags.
-  complete --id <id> --token <n> [--note <n>]
+      ${stdinUsageNote('--note', 'the handoff note')}.
+  complete --id <id> --token <n> [--note <n|->]
       Complete an active claim. No actor flags.
+      ${stdinUsageNote('--note', 'the completion note')}.
   cancel --id <id> --human <h> [--agent <a>]
       Cancel an item from open or in_progress; voids any active claim.
   reopen --id <id> --human <h> [--agent <a>]
@@ -148,6 +177,7 @@ and hooks/session-end.mjs).
 
 /** Injectable process edges, for tests; every member defaults to the real one. */
 export interface CliIo {
+  stdin?: NodeJS.ReadableStream & { isTTY?: boolean };
   stdout?: NodeJS.WritableStream;
   stderr?: NodeJS.WritableStream;
 }
@@ -367,7 +397,12 @@ function printEvents(events: readonly WorkStateEvent[], stdout: NodeJS.WritableS
 // Subcommand handlers — direct-use paths (exit 1 on failure)
 // ---------------------------------------------------------------------------
 
-function runCreate(argv: readonly string[], stdout: NodeJS.WritableStream, stderr: NodeJS.WritableStream): number {
+async function runCreate(
+  argv: readonly string[],
+  stdin: NodeJS.ReadableStream & { isTTY?: boolean },
+  stdout: NodeJS.WritableStream,
+  stderr: NodeJS.WritableStream,
+): Promise<number> {
   const parsed = parseArgs(argv, {
     '--title': 'value',
     '--spec': 'value',
@@ -384,13 +419,16 @@ function runCreate(argv: readonly string[], stdout: NodeJS.WritableStream, stder
     return 1;
   }
   const title = parsed.values.get('--title');
-  const spec = parsed.values.get('--spec');
+  const specRaw = parsed.values.get('--spec');
   const specFormat = parsed.values.get('--spec-format');
   const human = parsed.values.get('--human');
-  if (title === undefined || spec === undefined || specFormat === undefined || human === undefined) {
+  if (title === undefined || specRaw === undefined || specFormat === undefined || human === undefined) {
     stderr.write('ideate-work: create requires --title, --spec, --spec-format, and --human\n');
     return 1;
   }
+  // See stdin-arg.ts: `--spec -` reads the spec body from stdin rather than
+  // writing the literal string "-" (finding 01M2MKGS5PRV7WSD0W4ZQYAG4A).
+  const spec = (await resolveStdinArg(specRaw, () => readAllStdin(stdin))) ?? '';
   const dependsOnRaw = parsed.values.get('--depends-on');
   const dependsOn = dependsOnRaw === undefined ? undefined : dependsOnRaw.split(',').filter((s) => s.length > 0);
   const supersedes = parsed.values.get('--supersedes');
@@ -570,7 +608,12 @@ function runList(argv: readonly string[], stdout: NodeJS.WritableStream, stderr:
   }
 }
 
-function runUpdateMeta(argv: readonly string[], stdout: NodeJS.WritableStream, stderr: NodeJS.WritableStream): number {
+async function runUpdateMeta(
+  argv: readonly string[],
+  stdin: NodeJS.ReadableStream & { isTTY?: boolean },
+  stdout: NodeJS.WritableStream,
+  stderr: NodeJS.WritableStream,
+): Promise<number> {
   const parsed = parseArgs(argv, {
     '--id': 'value',
     '--expected-version': 'value',
@@ -581,6 +624,7 @@ function runUpdateMeta(argv: readonly string[], stdout: NodeJS.WritableStream, s
     '--supersedes': 'value',
     '--parent': 'value',
     '--clear-parent': 'switch',
+    '--confirm-shrink': 'switch',
   });
   if (parsed.errors.length > 0) {
     for (const err of parsed.errors) stderr.write(`ideate-work: update-meta: ${err}\n`);
@@ -613,9 +657,34 @@ function runUpdateMeta(argv: readonly string[], stdout: NodeJS.WritableStream, s
     const expectedVersion = parseIntArg(expectedVersionRaw, '--expected-version');
     const dependsOnRaw = parsed.values.get('--depends-on');
     const supersedes = parsed.values.get('--supersedes');
+    // See stdin-arg.ts: `--spec -` reads the new spec body from stdin rather
+    // than writing the literal string "-" (finding 01M2MKGS5PRV7WSD0W4ZQYAG4A).
+    const specRaw = parsed.values.get('--spec');
+    const spec = specRaw === undefined ? undefined : ((await resolveStdinArg(specRaw, () => readAllStdin(stdin))) ?? '');
+    // SHRINK GUARD (adopted — see the USAGE text and this file's header for
+    // the reasoning): a substantial existing spec collapsed to a handful of
+    // characters is almost never intentional, and it is exactly the shape a
+    // silently-mis-parsed argument or an empty/broken stdin pipe produces.
+    // Best-effort — an extra read before the write, not a second CAS layer —
+    // and skipped entirely when the item does not exist (updateMeta below
+    // reports NOT_FOUND on its own) or when the caller confirmed the shrink.
+    if (spec !== undefined && !parsed.switches.has('--confirm-shrink')) {
+      const current = ctx.verbs.get(id, makeExpiryCheck(ctx));
+      if (
+        current !== null &&
+        current.spec.length >= SHRINK_GUARD_OLD_SPEC_MIN_CHARS &&
+        spec.length < SHRINK_GUARD_NEW_SPEC_MAX_CHARS
+      ) {
+        throw new WorkStateModuleErrorForCli(
+          `update-meta: refusing to replace a ${String(current.spec.length)}-character spec with ` +
+            `${String(spec.length)} character(s) — this is the destructive-shrink pattern the guard exists ` +
+            'for, not an ordinary edit; pass --confirm-shrink if the shrink really is intentional',
+        );
+      }
+    }
     const patch: UpdateMetaInput = {
       ...(parsed.values.has('--title') ? { title: parsed.values.get('--title') as string } : {}),
-      ...(parsed.values.has('--spec') ? { spec: parsed.values.get('--spec') as string } : {}),
+      ...(spec === undefined ? {} : { spec }),
       ...(parsed.values.has('--spec-format') ? { spec_format: parsed.values.get('--spec-format') as string } : {}),
       ...(dependsOnRaw === undefined ? {} : { depends_on: dependsOnRaw.split(',').filter((s) => s.length > 0) }),
       // `--supersedes <id>` maps to one typed forward edge with wholesale-replace
@@ -689,7 +758,12 @@ function runRenew(argv: readonly string[], stdout: NodeJS.WritableStream, stderr
   }
 }
 
-function runRelease(argv: readonly string[], stdout: NodeJS.WritableStream, stderr: NodeJS.WritableStream): number {
+async function runRelease(
+  argv: readonly string[],
+  stdin: NodeJS.ReadableStream & { isTTY?: boolean },
+  stdout: NodeJS.WritableStream,
+  stderr: NodeJS.WritableStream,
+): Promise<number> {
   const parsed = parseArgs(argv, { '--id': 'value', '--token': 'value', '--note': 'value' });
   if (parsed.errors.length > 0) {
     for (const err of parsed.errors) stderr.write(`ideate-work: release: ${err}\n`);
@@ -704,7 +778,10 @@ function runRelease(argv: readonly string[], stdout: NodeJS.WritableStream, stde
   const ctx = buildContext(cliProjectRoot(stderr));
   try {
     const token = parseIntArg(tokenRaw, '--token');
-    const item = release(ctx.store, ctx.clock, id, token, parsed.values.get('--note'), (ids) => {
+    // See stdin-arg.ts: `--note -` reads the handoff note from stdin rather
+    // than writing the literal string "-".
+    const note = await resolveStdinArg(parsed.values.get('--note'), () => readAllStdin(stdin));
+    const item = release(ctx.store, ctx.clock, id, token, note, (ids) => {
       writeUnresolvedIdWarnings(stderr, 'release', ids);
     });
     printItem(item, stdout, false);
@@ -715,7 +792,12 @@ function runRelease(argv: readonly string[], stdout: NodeJS.WritableStream, stde
   }
 }
 
-function runComplete(argv: readonly string[], stdout: NodeJS.WritableStream, stderr: NodeJS.WritableStream): number {
+async function runComplete(
+  argv: readonly string[],
+  stdin: NodeJS.ReadableStream & { isTTY?: boolean },
+  stdout: NodeJS.WritableStream,
+  stderr: NodeJS.WritableStream,
+): Promise<number> {
   const parsed = parseArgs(argv, { '--id': 'value', '--token': 'value', '--note': 'value' });
   if (parsed.errors.length > 0) {
     for (const err of parsed.errors) stderr.write(`ideate-work: complete: ${err}\n`);
@@ -730,6 +812,9 @@ function runComplete(argv: readonly string[], stdout: NodeJS.WritableStream, std
   const ctx = buildContext(cliProjectRoot(stderr));
   try {
     const token = parseIntArg(tokenRaw, '--token');
+    // See stdin-arg.ts: `--note -` reads the completion note from stdin
+    // rather than writing the literal string "-".
+    const note = await resolveStdinArg(parsed.values.get('--note'), () => readAllStdin(stdin));
     // Completion-record post-commit hook — same call site as the MCP
     // work_complete tool (work-state/tools.ts), reusing this context's own
     // project root/telemetry/session id/writer.
@@ -738,7 +823,7 @@ function runComplete(argv: readonly string[], stdout: NodeJS.WritableStream, std
       ctx.clock,
       id,
       token,
-      parsed.values.get('--note'),
+      note,
       {
         projectRoot: ctx.projectRoot,
         telemetry: ctx.telemetry,
@@ -854,8 +939,11 @@ function runSweep(argv: readonly string[], stderr: NodeJS.WritableStream): numbe
 // entry
 // ---------------------------------------------------------------------------
 
-/** CLI entry. Returns the process exit code (see the exit-code split above). */
-export function main(argv: string[] = process.argv.slice(2), io: CliIo = {}): number {
+/** CLI entry. Returns the process exit code (see the exit-code split above).
+ *  Async (mirrors cli/ideate-record.ts's own main): create/update-meta/
+ *  release/complete may need to drain stdin for a `-` argument. */
+export async function main(argv: string[] = process.argv.slice(2), io: CliIo = {}): Promise<number> {
+  const stdin = io.stdin ?? process.stdin;
   const stdout = io.stdout ?? process.stdout;
   const stderr = io.stderr ?? process.stderr;
 
@@ -870,21 +958,21 @@ export function main(argv: string[] = process.argv.slice(2), io: CliIo = {}): nu
   try {
     switch (subcommand) {
       case 'create':
-        return runCreate(rest, stdout, stderr);
+        return await runCreate(rest, stdin, stdout, stderr);
       case 'get':
         return runGet(rest, stdout, stderr);
       case 'list':
         return runList(rest, stdout, stderr);
       case 'update-meta':
-        return runUpdateMeta(rest, stdout, stderr);
+        return await runUpdateMeta(rest, stdin, stdout, stderr);
       case 'claim':
         return runClaim(rest, stdout, stderr);
       case 'renew':
         return runRenew(rest, stdout, stderr);
       case 'release':
-        return runRelease(rest, stdout, stderr);
+        return await runRelease(rest, stdin, stdout, stderr);
       case 'complete':
-        return runComplete(rest, stdout, stderr);
+        return await runComplete(rest, stdin, stdout, stderr);
       case 'cancel':
         return runCancel(rest, stdout, stderr);
       case 'reopen':

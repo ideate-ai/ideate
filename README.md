@@ -188,9 +188,10 @@ of the record.
 **`ideate-record` CLI** (`bin/ideate-record`, the same gated core as a
 standalone executable — this is what the capture hooks invoke):
 
-- `ideate-record append --kind <k> --claim <c> [--anchor <a>] [--scope <s>] [--content <text>|-] [--task <id>] [--supersedes <id>]`
+- `ideate-record append --kind <k> --claim <c|-> [--anchor <a>] [--scope <s>] [--content <text>|-] [--task <id>] [--supersedes <id>]`
   — append one record directly; exits 1 on failure. `--content -` reads the
-  prose body from stdin.
+  prose body from stdin, and `--claim -` reads the claim from stdin the same
+  way — but only ONE of the two may claim stdin per call.
 - `ideate-record read [--scope <substring>] [--id <ulid>] [--limit <n>] [--cursor <c>] [--include-content] [--json]`
   — print records newest-first; exits 1 on failure. `--json` is the
   agent-facing door and is bounded exactly like `record_read` (summary rows,
@@ -236,8 +237,10 @@ subcommands plus a CLI-only `sweep` (the session-boundary expiry pass the
 subcommand except `sweep` exits 1 on failure; `sweep` is a hook path and
 always exits 0, printing nothing to stdout.
 
-- `ideate-work create --title <t> --spec <s> --spec-format <f> --human <h> [--agent <a>] [--depends-on <id1,id2,...>] [--supersedes <id>] [--parent <id>] [--tenant <t>]`
-  — create one item; prints it as JSON. `--supersedes <id>` records a
+- `ideate-work create --title <t> --spec <s|-> --spec-format <f> --human <h> [--agent <a>] [--depends-on <id1,id2,...>] [--supersedes <id>] [--parent <id>] [--tenant <t>]`
+  — create one item; prints it as JSON. `--spec -` reads the spec body from
+  stdin — the same convention `ideate-record append --content -` established.
+  `--supersedes <id>` records a
   supersedes edge to the item this one replaces, and the superseded item
   surfaces the replacement as a derived `referenced_by` backlink.
   `--parent <id>` sets the CONTAINMENT parent — a different edge from
@@ -259,20 +262,26 @@ always exits 0, printing nothing to stdout.
   for). The human-readable listing is one line per item, unpaged and
   unbudgeted unless you pass `--limit` or `--cursor`, in which case it prints
   a resume hint while items remain.
-- `ideate-work update-meta --id <id> --expected-version <n> [--title <t>] [--spec <s>] [--spec-format <f>] [--depends-on <id1,id2,...>] [--supersedes <id>] [--parent <id>] [--clear-parent]`
-  — update metadata via optimistic compare-and-set on `version`. The
+- `ideate-work update-meta --id <id> --expected-version <n> [--title <t>] [--spec <s|->] [--spec-format <f>] [--depends-on <id1,id2,...>] [--supersedes <id>] [--parent <id>] [--clear-parent] [--confirm-shrink]`
+  — update metadata via optimistic compare-and-set on `version`. `--spec -`
+  reads the new spec body from stdin. The
   containment parent is tri-state: pass neither flag to leave it unchanged,
   `--parent <id>` to set or move it, `--clear-parent` to make the item a root
-  again. The two are mutually exclusive.
+  again. The two are mutually exclusive. **Shrink guard:** replacing a spec
+  of 200+ characters with one under 20 characters is refused (almost never
+  intentional — this is the shape of finding 01M2MKGS5PRV7WSD0W4ZQYAG4A)
+  unless `--confirm-shrink` is passed; never triggered on `create`.
 - `ideate-work claim --id <id> --human <h> [--agent <a>] [--lease-ms <n>]` —
   claim an open, claimable item; mints the fencing token the next three
   subcommands require.
 - `ideate-work renew --id <id> --token <n> [--lease-ms <n>]` — extend an
   active claim's lease. No actor flags — the token proves identity.
-- `ideate-work release --id <id> --token <n> [--note <n>]` — hand an active
-  claim back to `open`. No actor flags.
-- `ideate-work complete --id <id> --token <n> [--note <n>]` — complete an
+- `ideate-work release --id <id> --token <n> [--note <n|->]` — hand an active
+  claim back to `open`. No actor flags. `--note -` reads the handoff note
+  from stdin.
+- `ideate-work complete --id <id> --token <n> [--note <n|->]` — complete an
   active claim. No actor flags; the note becomes a process record (below).
+  `--note -` reads the completion note from stdin.
 - `ideate-work cancel --id <id> --human <h> [--agent <a>]` — cancel an item
   from `open` or `in_progress`; voids any active claim.
 - `ideate-work reopen --id <id> --human <h> [--agent <a>]` — move an item from

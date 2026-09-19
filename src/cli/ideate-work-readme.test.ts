@@ -56,8 +56,8 @@ function flagsIn(text: string): string[] {
 /** The subcommand → runner pairs main() actually dispatches, read out of its
  *  own switch: the roster is the SHIPPED one, never a list maintained here. */
 function shippedSubcommands(): { subcommand: string; runner: string }[] {
-  const entry = CLI_SOURCE.slice(CLI_SOURCE.indexOf('export function main('));
-  const pairs = [...entry.matchAll(/case '([a-z-]+)':\s*\n?\s*return (run[A-Za-z]+)\(/g)].map((m) => ({
+  const entry = CLI_SOURCE.slice(CLI_SOURCE.indexOf('function main('));
+  const pairs = [...entry.matchAll(/case '([a-z-]+)':\s*\n?\s*return (?:await )?(run[A-Za-z]+)\(/g)].map((m) => ({
     subcommand: m[1] as string,
     runner: m[2] as string,
   }));

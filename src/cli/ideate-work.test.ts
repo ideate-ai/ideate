@@ -51,16 +51,25 @@ afterEach(() => {
 
 interface RunOptions {
   cwd: string;
+  input?: string;
 }
 
 /** Run the real bin. execFileSync throws on nonzero exit, so success IS exit 0. */
 function runCli(args: string[], options: RunOptions): string {
-  return execFileSync(process.execPath, [BIN_PATH, ...args], { cwd: options.cwd, encoding: 'utf8' });
+  return execFileSync(process.execPath, [BIN_PATH, ...args], {
+    cwd: options.cwd,
+    encoding: 'utf8',
+    ...(options.input === undefined ? {} : { input: options.input }),
+  });
 }
 
 /** Run the bin without throwing; returns the exit status and streams. */
 function runCliRaw(args: string[], options: RunOptions): { status: number | null; stdout: string; stderr: string } {
-  const result = spawnSync(process.execPath, [BIN_PATH, ...args], { cwd: options.cwd, encoding: 'utf8' });
+  const result = spawnSync(process.execPath, [BIN_PATH, ...args], {
+    cwd: options.cwd,
+    encoding: 'utf8',
+    ...(options.input === undefined ? {} : { input: options.input }),
+  });
   return { status: result.status, stdout: result.stdout, stderr: result.stderr };
 }
 
@@ -220,6 +229,123 @@ describe('create / get / list / update-meta', () => {
       referenced_by: { rel: string; id: string }[];
     };
     expect(gotB.referenced_by).toEqual([{ rel: 'supersedes', id: item.id }]);
+  });
+});
+
+describe('the stdin convention (finding 01M2MKGS5PRV7WSD0W4ZQYAG4A): `--spec -` reads the spec body from stdin', () => {
+  it('create --spec - reads the WHOLE piped body, not the literal string "-"', () => {
+    const root = makeProjectRoot();
+    const spec = 'Line one of a piped spec.\nLine two.\nLine three, the last one.';
+    const created = JSON.parse(runCli(['create', '--title', 'piped-in spec', '--spec', '-', '--spec-format', 'text/plain', '--human', 'dan'], {
+      cwd: root,
+      input: spec,
+    })) as { id: string; spec: string };
+    expect(created.spec).toBe(spec);
+    expect(created.spec).not.toBe('-');
+  });
+
+  it('THE EXACT REPRODUCTION: update-meta --spec - < file no longer collapses a large spec to "-"', () => {
+    const root = makeProjectRoot();
+    // Built independently of the fix — a spec sized like the one the finding
+    // describes (several KB), not copied from any production data.
+    const largeSpec = Array.from({ length: 4948 }, (_, i) => String(i % 10)).join('');
+    const created = JSON.parse(
+      runCli(['create', '--title', 'the item that must not be destroyed', '--spec', largeSpec, '--spec-format', 'text/plain', '--human', 'dan'], {
+        cwd: root,
+      }),
+    ) as { id: string; version: number; spec: string };
+    expect(created.spec).toHaveLength(4948);
+
+    const updated = JSON.parse(
+      runCli(['update-meta', '--id', created.id, '--expected-version', String(created.version), '--spec', '-'], {
+        cwd: root,
+        input: largeSpec,
+      }),
+    ) as { spec: string; version: number };
+
+    // The defect: this used to be "-" (length 1) with version bumped to 2 —
+    // a well-formed, "successful" write that silently destroyed the spec.
+    expect(updated.spec).toBe(largeSpec);
+    expect(updated.spec.length).toBe(4948);
+    expect(updated.version).toBe(2);
+
+    // A fresh `get` confirms the write actually persisted correctly, not
+    // just that this call's own JSON echo looked right.
+    const fetched = JSON.parse(runCli(['get', '--id', created.id, '--json'], { cwd: root })) as { spec: string };
+    expect(fetched.spec).toBe(largeSpec);
+  });
+});
+
+describe('the shrink guard (adopted): a substantial spec collapsed to a handful of characters is refused', () => {
+  function createWithSpec(root: string, spec: string): { id: string; version: number } {
+    return JSON.parse(
+      runCli(['create', '--title', 'shrink guard fixture', '--spec', spec, '--spec-format', 'text/plain', '--human', 'dan'], { cwd: root }),
+    ) as { id: string; version: number };
+  }
+
+  it('FIRES: a 300-character spec replaced by a 4-character one is refused, and the item is left unchanged', () => {
+    const root = makeProjectRoot();
+    const bigSpec = 'x'.repeat(300);
+    const item = createWithSpec(root, bigSpec);
+
+    const result = runCliRaw(['update-meta', '--id', item.id, '--expected-version', String(item.version), '--spec', 'oops'], { cwd: root });
+    expect(result.status).toBe(1);
+    expect(result.stderr).toMatch(/refusing to replace/);
+    expect(result.stderr).toContain('--confirm-shrink');
+
+    const after = JSON.parse(runCli(['get', '--id', item.id, '--json'], { cwd: root })) as { spec: string; version: number };
+    expect(after.spec).toBe(bigSpec);
+    expect(after.version).toBe(item.version); // no write happened at all
+  });
+
+  it('--confirm-shrink overrides the guard when the shrink really is intentional', () => {
+    const root = makeProjectRoot();
+    const item = createWithSpec(root, 'y'.repeat(300));
+
+    const updated = JSON.parse(
+      runCli(['update-meta', '--id', item.id, '--expected-version', String(item.version), '--spec', 'oops', '--confirm-shrink'], {
+        cwd: root,
+      }),
+    ) as { spec: string; version: number };
+    expect(updated.spec).toBe('oops');
+    expect(updated.version).toBe(item.version + 1);
+  });
+
+  it('STAYS QUIET: a small spec on a NEW item is never touched by the guard (create has no prior value)', () => {
+    const root = makeProjectRoot();
+    const created = JSON.parse(
+      runCli(['create', '--title', 'brand new, tiny spec', '--spec', 'tiny', '--spec-format', 'text/plain', '--human', 'dan'], { cwd: root }),
+    ) as { spec: string };
+    expect(created.spec).toBe('tiny');
+  });
+
+  it('STAYS QUIET: an ordinary small-to-small edit is not treated as a shrink at all', () => {
+    const root = makeProjectRoot();
+    const item = createWithSpec(root, 'small spec');
+    const updated = JSON.parse(
+      runCli(['update-meta', '--id', item.id, '--expected-version', String(item.version), '--spec', 'still small'], { cwd: root }),
+    ) as { spec: string };
+    expect(updated.spec).toBe('still small');
+  });
+
+  it('STAYS QUIET: a large-to-large edit (a real rewrite, not a collapse) is not refused', () => {
+    const root = makeProjectRoot();
+    const item = createWithSpec(root, 'a'.repeat(300));
+    const rewritten = 'b'.repeat(250); // still substantial — not "a handful of characters"
+    const updated = JSON.parse(
+      runCli(['update-meta', '--id', item.id, '--expected-version', String(item.version), '--spec', rewritten], { cwd: root }),
+    ) as { spec: string };
+    expect(updated.spec).toBe(rewritten);
+  });
+
+  it('STAYS QUIET: editing --title only (no --spec at all) never consults the guard', () => {
+    const root = makeProjectRoot();
+    const item = createWithSpec(root, 'x'.repeat(300));
+    const updated = JSON.parse(
+      runCli(['update-meta', '--id', item.id, '--expected-version', String(item.version), '--title', 'renamed'], { cwd: root }),
+    ) as { title: string; spec: string };
+    expect(updated.title).toBe('renamed');
+    expect(updated.spec).toBe('x'.repeat(300)); // untouched
   });
 });
 
@@ -544,6 +670,39 @@ describe('claim lifecycle: actor flags mirror the engine signatures exactly', ()
       runCli(['release', '--id', created.id, '--token', String(claimed.claim.claim_token), '--note', 'handoff'], { cwd: root }),
     ) as { status: string };
     expect(released.status).toBe('open');
+  });
+});
+
+describe('release/complete --note -: the same stdin convention extended to the handoff/completion note', () => {
+  function createAndClaim(root: string): { id: string; token: number } {
+    const created = JSON.parse(
+      runCli(['create', '--title', 'note-via-stdin fixture', '--spec', 's', '--spec-format', 'text/plain', '--human', 'dan'], { cwd: root }),
+    ) as { id: string };
+    const claimed = JSON.parse(runCli(['claim', '--id', created.id, '--human', 'dan'], { cwd: root })) as {
+      claim: { claim_token: number };
+    };
+    return { id: created.id, token: claimed.claim.claim_token };
+  }
+
+  function noteOf(root: string, id: string, transition: string): string | undefined {
+    const events = JSON.parse(runCli(['events', '--id', id, '--json'], { cwd: root })) as { transition: string; note?: string }[];
+    return events.find((e) => e.transition === transition)?.note;
+  }
+
+  it('release --note - reads a multi-line handoff note from stdin, not the literal "-"', () => {
+    const root = makeProjectRoot();
+    const { id, token } = createAndClaim(root);
+    const note = 'Handed off mid-way.\nSee the checklist for what remains.';
+    runCli(['release', '--id', id, '--token', String(token), '--note', '-'], { cwd: root, input: note });
+    expect(noteOf(root, id, 'release')).toBe(note);
+  });
+
+  it('complete --note - reads a multi-line completion note from stdin, not the literal "-"', () => {
+    const root = makeProjectRoot();
+    const { id, token } = createAndClaim(root);
+    const note = 'Completed successfully.\nVerification: the full suite passed.';
+    runCli(['complete', '--id', id, '--token', String(token), '--note', '-'], { cwd: root, input: note });
+    expect(noteOf(root, id, 'complete')).toBe(note);
   });
 });
 

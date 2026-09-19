@@ -188,6 +188,32 @@ describe('append (direct-use path)', () => {
     expect(isUlid(stdout.trim())).toBe(true);
   });
 
+  it('reads the claim from stdin when --claim is - (the same convention extended to a second flag)', () => {
+    const root = makeProjectRoot();
+    const claim = 'A multi-line claim,\ndescribed at length,\narriving on stdin verbatim.';
+    const stdout = runCli(['append', '--kind', 'finding', '--claim', '-', '--content', 'body text'], {
+      cwd: root,
+      input: claim,
+    });
+    const files = readRecordFiles(root);
+    expect(files).toHaveLength(1);
+    expect(files[0]?.record.claim).toBe(claim);
+    expect(isUlid(stdout.trim())).toBe(true);
+  });
+
+  it('refuses --claim - together with --content - rather than silently misreading either (stdin is one stream)', () => {
+    const root = makeProjectRoot();
+    const result = runCliRaw(['append', '--kind', 'finding', '--claim', '-', '--content', '-'], {
+      cwd: root,
+      input: 'whichever flag this lands on would be a silent bug',
+    });
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain('--claim');
+    expect(result.stderr).toContain('--content');
+    // Nothing was written — the refusal happens before any write is attempted.
+    expect(readRecordFiles(root)).toHaveLength(0);
+  });
+
   it('exits 1 on bad args: missing --kind, and unknown flags', () => {
     const root = makeProjectRoot();
     const missing = runCliRaw(['append', '--claim', 'no kind supplied'], { cwd: root });

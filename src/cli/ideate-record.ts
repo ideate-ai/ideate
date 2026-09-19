@@ -78,6 +78,7 @@ import { TelemetryCounters } from '../telemetry/counters.js';
 import { createProjectIdResolver } from '../transport/id-resolver.js';
 import { LIST_PAYLOAD_BUDGET_CHARS, measurePrettyItemChars } from '../transport/payload-budget.js';
 import { readWalkSnapshotPage } from './record-walk-snapshot.js';
+import { assertAtMostOneStdinRequest, readAllStdin, resolveStdinArg, stdinUsageNote } from './stdin-arg.js';
 
 /**
  * Default prime budget — a COUNT CAP (number of records), not a token
@@ -103,12 +104,14 @@ const HOOK_SUBCOMMANDS: ReadonlySet<string> = new Set(['session-end', 'prime']);
 const USAGE = `Usage: ideate-record <subcommand> [options]
 
 Subcommands:
-  append --kind <k> --claim <c> [--anchor <a>] [--scope <s>]
+  append --kind <k> --claim <c|-> [--anchor <a>] [--scope <s>]
          [--content <text> | --content -] [--task <id>] [--supersedes <id>]
       Append one record through the gated core (secret gate runs inside the
-      store); prints the new record id. \`--content -\` reads the prose body
-      from stdin. \`--supersedes <id>\` records a supersedes edge to the record
-      this one replaces (surfaced as a backlink when the old record is read).
+      store); prints the new record id. ${stdinUsageNote('--content', 'the prose body')}
+      and ${stdinUsageNote('--claim', 'the claim')} — the same convention on either
+      flag, but only ONE of them may claim stdin per call. \`--supersedes <id>\`
+      records a supersedes edge to the record this one replaces (surfaced as
+      a backlink when the old record is read).
   read [--scope <substring>] [--id <ulid>] [--limit <n>] [--cursor <c>]
        [--include-content] [--json]
       Print records, newest first. Scope is plain substring SELECTION over
@@ -196,16 +199,6 @@ function parseArgs(argv: readonly string[], spec: Readonly<Record<string, FlagKi
   return parsed;
 }
 
-/** Drain a stream to a string. A TTY stdin reads as empty — never hangs. */
-async function readAll(stream: NodeJS.ReadableStream & { isTTY?: boolean }): Promise<string> {
-  if (stream.isTTY === true) return '';
-  let data = '';
-  for await (const chunk of stream) {
-    data += typeof chunk === 'string' ? chunk : chunk.toString('utf8');
-  }
-  return data;
-}
-
 // ---------------------------------------------------------------------------
 // Composition edge: config → telemetry → store (the gated record core)
 // ---------------------------------------------------------------------------
@@ -280,15 +273,25 @@ async function runAppend(
     return 1;
   }
   const kind = parsed.values.get('--kind');
-  const claim = parsed.values.get('--claim');
-  if (kind === undefined || claim === undefined) {
+  const claimRaw = parsed.values.get('--claim');
+  if (kind === undefined || claimRaw === undefined) {
     stderr.write('ideate-record: append requires --kind and --claim\n');
     stderr.write(USAGE);
     return 1;
   }
 
-  let content = parsed.values.get('--content') ?? '';
-  if (content === '-') content = await readAll(stdin);
+  // Stdin is one stream: at most one of --claim/--content may claim it in a
+  // single call (see stdin-arg.ts's file header — the same choke point both
+  // flags resolve through, so neither can hand-roll its own "-" check).
+  try {
+    assertAtMostOneStdinRequest(parsed.values, ['--claim', '--content']);
+  } catch (err) {
+    stderr.write(`ideate-record: append: ${errorMessage(err)}\n`);
+    return 1;
+  }
+  const readStdinOnce = () => readAllStdin(stdin);
+  const claim = (await resolveStdinArg(claimRaw, readStdinOnce)) ?? '';
+  const content = (await resolveStdinArg(parsed.values.get('--content'), readStdinOnce)) ?? '';
 
   const ctx = buildContext(cliProjectRoot(stderr));
   const taskId = parsed.values.get('--task');
@@ -674,7 +677,7 @@ async function runSessionEnd(
 ): Promise<number> {
   // Hook path: every return from this function is 0.
   let payload: Record<string, unknown> = {};
-  const raw = await readAll(stdin);
+  const raw = await readAllStdin(stdin);
   if (raw.trim().length === 0) {
     stderr.write('ideate-record: session-end: empty stdin payload; writing a minimal record\n');
   } else {
