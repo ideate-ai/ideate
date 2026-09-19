@@ -565,3 +565,173 @@ describe('assembleContext prototype', () => {
     // RESURRECTS — this test turns red.
   });
 });
+
+// ---------------------------------------------------------------------------
+// The TOPICAL TIEBREAK (board item 01M2TV3FBE5S9PV4HEN01AR8A9).
+//
+// The defect these pin: every candidate at the same structural distance scored
+// identically, and dividing by size then handed the win to the smallest one
+// every single time — so relevant material was dropped for no reason beyond
+// being long. These build a seed whose two equal-distance neighbours differ ONLY
+// in length and in whether they talk about the seed's subject, which isolates
+// the tiebreak from every other part of the pack.
+// ---------------------------------------------------------------------------
+
+interface TiebreakFixture {
+  deps: AssembleDeps;
+  seed: string;
+  onTopicLongId: string;
+  offTopicShortId: string;
+}
+
+/** A seed about one subject, with two `depends_on` neighbours at the SAME
+ *  structural distance: a LONG one about the seed's subject and a SHORT one
+ *  about something else. `padding` is topic-free filler so the on-topic item is
+ *  decisively the larger of the two — under the old size tiebreak the short
+ *  off-topic item won on every run. */
+function makeTiebreakFixture(): TiebreakFixture {
+  const projectRoot = makeTempDir('ideate-assemble-tiebreak-root-');
+  const telemetryDir = makeTempDir('ideate-assemble-tiebreak-telemetry-');
+  const clock: Clock = () => new Date(FIXED_ISO);
+
+  const board = new WorkStateStore(join(projectRoot, 'work-state', 'board.db'), clock);
+  const verbs = new WorkStateVerbs(board, clock);
+
+  // Sized so the on-subject item is roughly 1.4x the off-subject one — the
+  // scale of difference the tiebreak is BUILT to overturn. A far larger item
+  // deliberately still loses; that bound has its own test below.
+  const onTopicLong = board.insertItem({
+    title: 'Certificate rotation runbook',
+    spec: 'Rotating the signing certificate means publishing the replacement certificate first, then waiting a full propagation window before the signer flips over to it. Skipping the wait is what broke the last rotation, because callers were still holding the previous certificate.',
+    spec_format: 'ideate/work-item',
+    created_by: ACTOR,
+  });
+  const offTopicShort = board.insertItem({
+    title: 'Invoice layout',
+    spec: 'Finance asked for wider margins on the printed invoice and a larger typeface on the total line, after several customers said the amount due was easy to miss.',
+    spec_format: 'ideate/work-item',
+    created_by: ACTOR,
+  });
+  const seed = board.insertItem({
+    title: 'Rotate the signing certificate',
+    spec: 'Rotate the signing certificate onto the new authority. Publish the replacement certificate, wait for rotation to propagate, then flip the signer.',
+    spec_format: 'ideate/work-item',
+    depends_on: [onTopicLong.id, offTopicShort.id],
+    created_by: ACTOR,
+  });
+
+  const steering = new SteeringStore(projectRoot, clock);
+  const config: IdeateConfigV3 = { schema_version: V3_SCHEMA_VERSION, record: { path: DEFAULT_RECORD_PATH }, backend: 'local' };
+  const records = new RecordStore(config, projectRoot, new TelemetryCounters(telemetryDir, clock), clock);
+
+  return {
+    deps: { records, steering, board: verbs },
+    seed: seed.id,
+    onTopicLongId: onTopicLong.id,
+    offTopicShortId: offTopicShort.id,
+  };
+}
+
+describe('assembleContext topical tiebreak', () => {
+  it('ranks the LONG on-subject neighbour ahead of the SHORT off-subject one — size no longer decides between structural equals', () => {
+    const { deps, seed, onTopicLongId, offTopicShortId } = makeTiebreakFixture();
+    const { manifest } = assembleContext(seed, deps, { tokenBudget: 4000 });
+
+    const order = manifest.included.map((i) => i.sourceId);
+    expect(order).toContain(onTopicLongId);
+    expect(order).toContain(offTopicShortId);
+    expect(order.indexOf(onTopicLongId)).toBeLessThan(order.indexOf(offTopicShortId));
+  });
+
+  it('delivers the on-subject neighbour rather than the off-subject one when only one of them fits', () => {
+    const { deps, seed, onTopicLongId, offTopicShortId } = makeTiebreakFixture();
+    // A cap of one board neighbour beside the seed forces the choice the
+    // tiebreak exists to make, with no budget arithmetic in the way.
+    const { manifest } = assembleContext(seed, deps, { tokenBudget: 4000, perSourceCaps: { board: 2 } });
+
+    const delivered = manifest.included.map((i) => i.sourceId);
+    expect(delivered).toContain(onTopicLongId);
+    expect(delivered).not.toContain(offTopicShortId);
+  });
+
+  it('is deterministic — the same stores and budget produce a byte-identical briefing every run', () => {
+    const { deps, seed } = makeTiebreakFixture();
+    const runs = [0, 1, 2].map(() => assembleContext(seed, deps, { tokenBudget: 4000 }));
+    expect(runs[1]?.briefing).toBe(runs[0]?.briefing);
+    expect(runs[2]?.briefing).toBe(runs[0]?.briefing);
+    expect(JSON.stringify(runs[1]?.manifest)).toBe(JSON.stringify(runs[0]?.manifest));
+  });
+
+  it('cannot overturn a size difference of any size — a hugely longer on-subject item still loses, so the tiebreak stays a tiebreak', () => {
+    const projectRoot = makeTempDir('ideate-assemble-bound-root-');
+    const telemetryDir = makeTempDir('ideate-assemble-bound-telemetry-');
+    const clock: Clock = () => new Date(FIXED_ISO);
+    const board = new WorkStateStore(join(projectRoot, 'work-state', 'board.db'), clock);
+    const verbs = new WorkStateVerbs(board, clock);
+
+    // Ten times the length. The weight tops out at 1.25 against a floor of
+    // 0.75 — a 1.67x span — so nothing this rule does can rescue an item that
+    // costs an order of magnitude more than its rival. That is the point: it
+    // decides between comparable candidates, it does not buy relevance at any
+    // price.
+    const huge = board.insertItem({
+      title: 'Certificate rotation runbook',
+      spec: 'Rotating the signing certificate and waiting for the rotation to propagate. '.repeat(20),
+      spec_format: 'ideate/work-item',
+      created_by: ACTOR,
+    });
+    const tiny = board.insertItem({
+      title: 'Invoice layout',
+      spec: 'Finance asked for wider margins on the printed invoice.',
+      spec_format: 'ideate/work-item',
+      created_by: ACTOR,
+    });
+    const seed = board.insertItem({
+      title: 'Rotate the signing certificate',
+      spec: 'Rotate the signing certificate onto the new authority and wait for the rotation to propagate.',
+      spec_format: 'ideate/work-item',
+      depends_on: [huge.id, tiny.id],
+      created_by: ACTOR,
+    });
+
+    const config: IdeateConfigV3 = { schema_version: V3_SCHEMA_VERSION, record: { path: DEFAULT_RECORD_PATH }, backend: 'local' };
+    const deps: AssembleDeps = {
+      records: new RecordStore(config, projectRoot, new TelemetryCounters(telemetryDir, clock), clock),
+      steering: new SteeringStore(projectRoot, clock),
+      board: verbs,
+    };
+    const order = assembleContext(seed.id, deps, { tokenBudget: 8000 }).manifest.included.map((i) => i.sourceId);
+    expect(order.indexOf(tiny.id)).toBeLessThan(order.indexOf(huge.id));
+  });
+
+  it('changes NOTHING when the candidates carry no distinguishing subject — the degenerate case is the old behaviour exactly', () => {
+    const projectRoot = makeTempDir('ideate-assemble-degenerate-root-');
+    const clock: Clock = () => new Date(FIXED_ISO);
+    const board = new WorkStateStore(join(projectRoot, 'work-state', 'board.db'), clock);
+    const verbs = new WorkStateVerbs(board, clock);
+    const telemetryDir = makeTempDir('ideate-assemble-degenerate-telemetry-');
+
+    // Two neighbours whose bodies share the SAME words in the same proportion,
+    // differing only in length: nothing for the tiebreak to read, so the size
+    // ordering it replaced must survive untouched.
+    const small = board.insertItem({
+      title: 'alpha beta', spec: 'alpha beta gamma delta.', spec_format: 'ideate/work-item', created_by: ACTOR,
+    });
+    const large = board.insertItem({
+      title: 'alpha beta', spec: 'alpha beta gamma delta. '.repeat(12), spec_format: 'ideate/work-item', created_by: ACTOR,
+    });
+    const seed = board.insertItem({
+      title: 'alpha beta', spec: 'alpha beta gamma delta.', spec_format: 'ideate/work-item',
+      depends_on: [small.id, large.id], created_by: ACTOR,
+    });
+
+    const config: IdeateConfigV3 = { schema_version: V3_SCHEMA_VERSION, record: { path: DEFAULT_RECORD_PATH }, backend: 'local' };
+    const deps: AssembleDeps = {
+      records: new RecordStore(config, projectRoot, new TelemetryCounters(telemetryDir, clock), clock),
+      steering: new SteeringStore(projectRoot, clock),
+      board: verbs,
+    };
+    const order = assembleContext(seed.id, deps, { tokenBudget: 4000 }).manifest.included.map((i) => i.sourceId);
+    expect(order.indexOf(small.id)).toBeLessThan(order.indexOf(large.id));
+  });
+});

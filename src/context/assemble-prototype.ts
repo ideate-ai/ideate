@@ -34,7 +34,9 @@
 //   3.  Gather candidates by source (board / steering / record), unfolding
 //        CONTAINER→CONTENT: bodies, not titles.
 //   4.  Pack by DENSITY (score / token) so one big weak item cannot crowd out
-//        several small strong ones.
+//        several small strong ones — with a TOPICAL TIEBREAK so that among
+//        candidates the structure rates equally it is shared wording with the
+//        task, not smallness, that decides (see the tiebreak's own note below).
 //   5.  SKIP — don't truncate. Per-source caps so no source monopolizes.
 //   7.  PROVENANCE / inclusion-reason on EVERY item (edge path / applicable-by-
 //        domain / scope-match) + state-at-time.
@@ -193,12 +195,140 @@ interface Candidate {
    *  provenance framing's own cost. */
   entry: string;
   tokens: number;
+  /** The candidate's own body text, WITHOUT the provenance heading — the text
+   *  the topical tiebreak below reads. The heading is excluded deliberately:
+   *  it carries ids and edge names this assembler itself wrote, so matching
+   *  against it would be the selector scoring its own prose. */
+  body: string;
   /** A non-live entry in any of the three sources (a status-superseded steering
    *  item, or a cross-item supersession via a typed `references` edge on
    *  steering, board, or record): gathered for the manifest, never delivered.
    *  The SEED board item is never marked supersededSkip (a claimed item is the
    *  live frontier). */
   supersededSkip: boolean;
+}
+
+// ---------------------------------------------------------------------------
+// The TOPICAL TIEBREAK (board item 01M2TV3FBE5S9PV4HEN01AR8A9).
+//
+// THE PROBLEM IT REPLACES: every candidate at the same structural distance
+// carried an identical score, and the density pack then divides by size — so
+// among structural equals the SMALLEST always won. Size was standing in for a
+// relevance judgment nothing was making, and the cost was not random: where
+// the material a worker needed happened to be large, it was left out every
+// time, not sometimes.
+//
+// THE RULE, in one sentence: among candidates the structure rates equally,
+// prefer the one whose text shares more of the task's own words, and let size
+// decide only between candidates that share the same amount.
+//
+// WHY WORD OVERLAP, AND WHAT IT IS NOT: this is not a ranking model and must
+// never become one. It is a bounded, deterministic reweighting with no learned
+// parameters, no vocabulary beyond the seed's own text, and no state. It reads
+// only text the stores already hold.
+//
+// WHERE THE BOUND COMES FROM — the one judgement call, stated openly rather
+// than tuned: the weight spans 0.75x to 1.25x, a spread of 1.67x. That is
+// deliberately LARGER than the size differences it must be able to overturn,
+// and deliberately SMALLER than the gap between two structural scores (the
+// narrowest being dependsOnUpstream 70 against record 40, a ratio of 1.75).
+// So topical affinity can outrank size, but can never outrank distance — which
+// is exactly what "break the tie among equals" means. Both figures are read off
+// this file's own SCORE table, not off any measurement's results.
+//
+// DEGENERATE CASE — IDENTICAL TO THE OLD BEHAVIOUR ON PURPOSE: when no
+// candidate's overlap differs from any other's (the seed carries no usable
+// words, or every body is boilerplate), every weight is exactly 1 and the
+// ordering is byte-for-byte what it was before this tiebreak existed. The rule
+// can only ever act where there is a difference to act on.
+// ---------------------------------------------------------------------------
+
+/** The half-width of the topical weight around 1 — see the note above for why
+ *  it is this and not something bigger. */
+const TOPICAL_WEIGHT_HALF_SPREAD = 0.25;
+
+/** Words too common to carry topic. Small and fixed on purpose: a long,
+ *  hand-curated list is a vocabulary, and a vocabulary is the first step
+ *  toward the ranking model this must not become. */
+const TOPIC_STOPWORDS = new Set(
+  ('the and for that with this from was were are our not but all its into than then when where which have has had they'
+    + ' them their you your one two out per off over under about after before more most some such only also each other'
+    + ' new now way can will would could should seed').split(' '),
+);
+
+/** Content words of `text`: alphanumeric runs of three characters or more,
+ *  lowercased, minus the stopwords above. */
+function contentWords(text: string): string[] {
+  return (text.toLowerCase().match(/[a-z][a-z0-9]{2,}/g) ?? []).filter((w) => !TOPIC_STOPWORDS.has(w));
+}
+
+/** The task's own words — the seed work item's title and spec. Empty when
+ *  there is no seed, which collapses every weight to 1 (see the note above). */
+function taskTerms(seedItem: WorkItem | null): Set<string> {
+  if (seedItem === null) return new Set();
+  return new Set(contentWords(`${seedItem.title} ${seedItem.spec}`));
+}
+
+/** The fraction of a candidate's content words that touch a task term. A
+ *  prefix match in either direction stands in for stemming (`rotate` /
+ *  `rotation`) without dragging in a stemmer's own vocabulary. */
+function topicalOverlap(body: string, terms: Set<string>): number {
+  const ws = contentWords(body);
+  if (ws.length === 0 || terms.size === 0) return 0;
+  let hits = 0;
+  for (const w of ws) {
+    for (const t of terms) {
+      if (w === t || (w.length >= 4 && t.startsWith(w)) || (t.length >= 4 && w.startsWith(t))) {
+        hits += 1;
+        break;
+      }
+    }
+  }
+  return hits / ws.length;
+}
+
+/**
+ * The per-candidate topical weight, computed WITHIN each structural score tier
+ * so it can only ever reorder candidates the structure already rated equally.
+ *
+ * Within a tier the weights are assigned by RANK, not by raw overlap: the
+ * least on-topic candidate gets 0.75, the most on-topic gets 1.25, the rest
+ * spread evenly between. Rank rather than magnitude because the raw overlap
+ * fraction has no stable scale — it depends on how verbose the bodies are and
+ * how many words the task's own title happens to carry — and a weight that
+ * swung with prose length would be another size proxy wearing a new hat.
+ *
+ * Ties share the average of the positions they span, so equal overlap always
+ * yields equal weight, and a tier where nothing differs yields weight 1
+ * throughout.
+ */
+function topicalWeights(candidates: readonly Candidate[], terms: Set<string>): Map<Candidate, number> {
+  const weights = new Map<Candidate, number>();
+  const tiers = new Map<number, Candidate[]>();
+  for (const c of candidates) {
+    const tier = tiers.get(c.score);
+    if (tier === undefined) tiers.set(c.score, [c]);
+    else tier.push(c);
+  }
+
+  for (const tier of tiers.values()) {
+    const overlaps = new Map<Candidate, number>(tier.map((c) => [c, topicalOverlap(c.body, terms)]));
+    for (const c of tier) {
+      const mine = overlaps.get(c) ?? 0;
+      let lower = 0;
+      let equal = 0;
+      for (const other of tier) {
+        const theirs = overlaps.get(other) ?? 0;
+        if (theirs < mine) lower += 1;
+        else if (theirs === mine) equal += 1;
+      }
+      // `equal` counts this candidate itself; (equal - 1) / 2 splits the tied
+      // band evenly, so ties land on their shared midpoint.
+      const position = tier.length > 1 ? (lower + (equal - 1) / 2) / (tier.length - 1) : 0.5;
+      weights.set(c, 1 + TOPICAL_WEIGHT_HALF_SPREAD * (2 * position - 1));
+    }
+  }
+  return weights;
 }
 
 /**
@@ -218,11 +348,16 @@ export function assembleContext(seed: string, deps: AssembleDeps, options: Assem
   ];
 
   // Density order: score-per-token descending, so a small strong item beats a
-  // big weak one (step 4). Deterministic tie-breaks.
+  // big weak one (step 4) — now weighted by TOPICAL AFFINITY so that size is
+  // no longer what decides between candidates the structure rates equally
+  // (board item 01M2TV3FBE5S9PV4HEN01AR8A9; see `topicalWeights` below).
+  // Deterministic tie-breaks.
   const qualified = candidates.filter((c) => !c.supersededSkip);
+  const affinity = topicalWeights(qualified, taskTerms(seedItem));
+  const density = (c: Candidate): number => (c.score * (affinity.get(c) ?? 1)) / Math.max(c.tokens, 1);
   qualified.sort((a, b) => {
-    const da = a.score / Math.max(a.tokens, 1);
-    const db = b.score / Math.max(b.tokens, 1);
+    const da = density(a);
+    const db = density(b);
     if (da !== db) return db - da;
     if (a.score !== b.score) return b.score - a.score;
     return a.provenance.sourceId.localeCompare(b.provenance.sourceId);
@@ -480,7 +615,7 @@ function makeCandidate(
 ): Candidate {
   const provenance: InclusionProvenance = { sourceId, source, inclusionReason, stateAtTime };
   const entry = renderEntry(provenance, score, body);
-  return { provenance, score, entry, tokens: estimateTokens(entry), supersededSkip: false };
+  return { provenance, score, entry, tokens: estimateTokens(entry), body, supersededSkip: false };
 }
 
 function makeSupersededCandidate(
@@ -497,7 +632,7 @@ function makeSupersededCandidate(
     stateAtTime,
   };
   const entry = renderEntry(provenance, 0, body);
-  return { provenance, score: 0, entry, tokens: estimateTokens(entry), supersededSkip: true };
+  return { provenance, score: 0, entry, tokens: estimateTokens(entry), body, supersededSkip: true };
 }
 
 /** One briefing entry: its provenance heading (step 7 — source id,
